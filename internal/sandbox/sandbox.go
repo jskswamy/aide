@@ -100,12 +100,9 @@ func DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir string) Policy {
 }
 
 // NewSandbox returns a Sandbox implementation for the current platform.
-// For now, returns a no-op sandbox on all platforms. Platform-specific
-// implementations (macOS sandbox-exec, Linux Landlock) will be added
-// in later tasks.
-func NewSandbox() Sandbox {
-	return &noopSandbox{}
-}
+// On macOS it returns darwinSandbox, on unsupported platforms it returns
+// a no-op sandbox. Platform-specific implementations are in build-tagged files.
+// This function is defined in darwin.go and sandbox_other.go.
 
 // noopSandbox is a fallback Sandbox that does nothing.
 // Used when no platform-specific sandbox is available.

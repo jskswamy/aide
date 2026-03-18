@@ -4,3 +4,15 @@
 *.db
 .beads/.beads-credential-key
 .claude/
+
+# Go build output
+bin/
+*.exe
+
+# IDE/editor
+.idea/
+.vscode/
+*.swp
+
+# Test secrets (plaintext only; encrypted .enc.yaml is safe to commit)
+testdata/test-secrets.yaml

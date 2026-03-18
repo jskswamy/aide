@@ -1,0 +1,150 @@
+package secrets
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/getsops/sops/v3/decrypt"
+	"gopkg.in/yaml.v3"
+)
+
+// DecryptSecretsFile decrypts a sops-encrypted YAML file and returns
+// the key-value pairs as a flat string map.
+//
+// The filePath is resolved relative to $XDG_CONFIG_HOME/aide/secrets/
+// unless it is an absolute path. The AgeIdentity is used to set up
+// the environment for sops decryption.
+func DecryptSecretsFile(filePath string, identity *AgeIdentity) (map[string]string, error) {
+	absPath := resolveSecretsPath(filePath)
+
+	// Set up environment for sops decryption based on identity source.
+	cleanup, err := setupDecryptEnv(identity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set up decryption environment for %s: %w", filePath, err)
+	}
+	defer cleanup()
+
+	// Decrypt using sops library.
+	decrypted, err := decrypt.File(absPath, "yaml")
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt %s: %w.\nIs your YubiKey plugged in? Check 'aide setup' for key configuration.", filePath, err)
+	}
+
+	// Unmarshal into map[string]interface{} first, then validate and flatten.
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(decrypted, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse decrypted YAML from %s: %w", filePath, err)
+	}
+
+	// Convert to map[string]string, rejecting non-scalar values.
+	result := make(map[string]string, len(raw))
+	for k, v := range raw {
+		switch val := v.(type) {
+		case string:
+			result[k] = val
+		case nil:
+			result[k] = ""
+		case int, int64, float64, bool:
+			result[k] = fmt.Sprintf("%v", val)
+		default:
+			return nil, fmt.Errorf(
+				"secrets file %s contains non-string value for key %q. Only flat key-value pairs are supported.",
+				filePath, k,
+			)
+		}
+	}
+
+	return result, nil
+}
+
+// resolveSecretsPath resolves the file path. If absolute, returns as-is.
+// If relative, joins with $XDG_CONFIG_HOME/aide/secrets/.
+func resolveSecretsPath(filePath string) string {
+	if filepath.IsAbs(filePath) {
+		return filePath
+	}
+
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "~"
+		}
+		configHome = filepath.Join(home, ".config")
+	}
+
+	return filepath.Join(configHome, "aide", "secrets", filePath)
+}
+
+// setupDecryptEnv configures environment variables for sops decryption
+// based on the AgeIdentity source. Returns a cleanup function that
+// restores the original environment.
+func setupDecryptEnv(identity *AgeIdentity) (func(), error) {
+	var restores []func()
+	noop := func() {}
+
+	setEnv := func(key, value string) error {
+		orig, existed := os.LookupEnv(key)
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+		restores = append(restores, func() {
+			if existed {
+				os.Setenv(key, orig)
+			} else {
+				os.Unsetenv(key)
+			}
+		})
+		return nil
+	}
+
+	cleanup := func() {
+		for i := len(restores) - 1; i >= 0; i-- {
+			restores[i]()
+		}
+	}
+
+	switch identity.Source {
+	case SourceYubiKey:
+		// No env setup needed; sops + age-plugin-yubikey handle it.
+		return noop, nil
+
+	case SourceEnvKey:
+		// Set SOPS_AGE_KEY to the raw key material.
+		if err := setEnv("SOPS_AGE_KEY", identity.KeyData); err != nil {
+			return noop, err
+		}
+		// Clear SOPS_AGE_KEY_FILE to avoid conflicts.
+		if err := setEnv("SOPS_AGE_KEY_FILE", ""); err != nil {
+			cleanup()
+			return noop, err
+		}
+		return cleanup, nil
+
+	case SourceEnvKeyFile, SourceDefaultFile:
+		// Set SOPS_AGE_KEY_FILE to the key file path.
+		if err := setEnv("SOPS_AGE_KEY_FILE", identity.KeyData); err != nil {
+			return noop, err
+		}
+		// Clear SOPS_AGE_KEY to avoid conflicts.
+		if err := setEnv("SOPS_AGE_KEY", ""); err != nil {
+			cleanup()
+			return noop, err
+		}
+		return cleanup, nil
+
+	default:
+		return noop, fmt.Errorf("unknown age identity source: %d", identity.Source)
+	}
+}
+
+// availableKeys returns a comma-separated list of keys for error messages.
+func availableKeys(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return strings.Join(keys, ", ")
+}

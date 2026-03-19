@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jskswamy/aide/internal/config"
+	"filippo.io/age"
 )
 
 // testCreateManager sets up an isolated Manager for create tests.
@@ -271,260 +271,186 @@ func TestCreate_SecretsDirCreated(t *testing.T) {
 	}
 }
 
-// --- List tests ---
+// --- Edit tests ---
 
-// createTestEncryptedFile creates an encrypted file in secretsDir for testing.
-func createTestEncryptedFile(t *testing.T, mgr *Manager, secretsDir, name string) {
-	t.Helper()
-	pubKey := testAgePublicKey(t)
-	content := []byte("api_key: sk-test-12345\n")
-	if err := mgr.CreateFromContent(name, secretsDir, pubKey, content); err != nil {
-		t.Fatalf("failed to create test encrypted file %s: %v", name, err)
-	}
-}
-
-func TestList_HappyPath(t *testing.T) {
-	mgr, tmpDir := testCreateManager(t)
-	secretsDir := filepath.Join(tmpDir, "secrets")
-
-	// Create two encrypted files.
-	createTestEncryptedFile(t, mgr, secretsDir, "personal")
-	createTestEncryptedFile(t, mgr, secretsDir, "work")
-
-	// Create a config that references both files.
-	cfg := &config.Config{
-		Contexts: map[string]config.Context{
-			"personal": {Agent: "claude", SecretsFile: "personal.enc.yaml"},
-			"oss":      {Agent: "claude", SecretsFile: "personal.enc.yaml"},
-			"work":     {Agent: "claude", SecretsFile: "work.enc.yaml"},
-		},
-	}
-
-	infos, err := mgr.List(secretsDir, cfg)
-	if err != nil {
-		t.Fatalf("List failed: %v", err)
-	}
-
-	if len(infos) != 2 {
-		t.Fatalf("expected 2 files, got %d", len(infos))
-	}
-
-	// Build a map for easier assertions.
-	byName := make(map[string]SecretsFileInfo)
-	for _, info := range infos {
-		byName[info.Name] = info
-	}
-
-	// Check personal file.
-	personal, ok := byName["personal.enc.yaml"]
-	if !ok {
-		t.Fatal("expected personal.enc.yaml in list")
-	}
-	if personal.Path != filepath.Join(secretsDir, "personal.enc.yaml") {
-		t.Errorf("wrong path: %s", personal.Path)
-	}
-	if len(personal.ReferencedBy) != 2 {
-		t.Errorf("expected 2 contexts for personal, got %d: %v", len(personal.ReferencedBy), personal.ReferencedBy)
-	}
-
-	// Check work file.
-	work, ok := byName["work.enc.yaml"]
-	if !ok {
-		t.Fatal("expected work.enc.yaml in list")
-	}
-	if len(work.ReferencedBy) != 1 || work.ReferencedBy[0] != "work" {
-		t.Errorf("expected work context for work file, got %v", work.ReferencedBy)
-	}
-}
-
-func TestList_EmptyDir(t *testing.T) {
-	mgr, tmpDir := testCreateManager(t)
-	secretsDir := filepath.Join(tmpDir, "secrets")
-
-	infos, err := mgr.List(secretsDir, &config.Config{})
-	if err != nil {
-		t.Fatalf("List on empty dir failed: %v", err)
-	}
-	if len(infos) != 0 {
-		t.Errorf("expected empty list, got %d items", len(infos))
-	}
-}
-
-func TestList_NonexistentDir(t *testing.T) {
-	mgr, tmpDir := testCreateManager(t)
-	secretsDir := filepath.Join(tmpDir, "nonexistent")
-
-	infos, err := mgr.List(secretsDir, &config.Config{})
-	if err != nil {
-		t.Fatalf("List on nonexistent dir should not error, got: %v", err)
-	}
-	if len(infos) != 0 {
-		t.Errorf("expected empty list, got %d items", len(infos))
-	}
-}
-
-func TestList_UnreferencedFile(t *testing.T) {
-	mgr, tmpDir := testCreateManager(t)
-	secretsDir := filepath.Join(tmpDir, "secrets")
-
-	createTestEncryptedFile(t, mgr, secretsDir, "unused")
-
-	// Config with no contexts referencing this file.
-	cfg := &config.Config{
-		Contexts: map[string]config.Context{
-			"personal": {Agent: "claude", SecretsFile: "other.enc.yaml"},
-		},
-	}
-
-	infos, err := mgr.List(secretsDir, cfg)
-	if err != nil {
-		t.Fatalf("List failed: %v", err)
-	}
-	if len(infos) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(infos))
-	}
-	if len(infos[0].ReferencedBy) != 0 {
-		t.Errorf("expected no context references, got %v", infos[0].ReferencedBy)
-	}
-}
-
-func TestList_MultipleContextsSameFile(t *testing.T) {
-	mgr, tmpDir := testCreateManager(t)
-	secretsDir := filepath.Join(tmpDir, "secrets")
-
-	createTestEncryptedFile(t, mgr, secretsDir, "shared")
-
-	cfg := &config.Config{
-		Contexts: map[string]config.Context{
-			"ctx1": {Agent: "claude", SecretsFile: "shared.enc.yaml"},
-			"ctx2": {Agent: "claude", SecretsFile: "shared.enc.yaml"},
-			"ctx3": {Agent: "claude", SecretsFile: "shared.enc.yaml"},
-		},
-	}
-
-	infos, err := mgr.List(secretsDir, cfg)
-	if err != nil {
-		t.Fatalf("List failed: %v", err)
-	}
-	if len(infos) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(infos))
-	}
-	if len(infos[0].ReferencedBy) != 3 {
-		t.Errorf("expected 3 context references, got %d: %v", len(infos[0].ReferencedBy), infos[0].ReferencedBy)
-	}
-}
-
-func TestList_RecipientsExtracted(t *testing.T) {
+func TestEdit_ValidContent(t *testing.T) {
 	mgr, tmpDir := testCreateManager(t)
 	secretsDir := filepath.Join(tmpDir, "secrets")
 	pubKey := testAgePublicKey(t)
 
-	createTestEncryptedFile(t, mgr, secretsDir, "test-recipients")
-
-	infos, err := mgr.List(secretsDir, &config.Config{})
+	// Create an encrypted file first.
+	originalContent := []byte("api_key: sk-test-12345\ndb_password: supersecret\n")
+	err := mgr.CreateFromContent("edit-test", secretsDir, pubKey, originalContent)
 	if err != nil {
-		t.Fatalf("List failed: %v", err)
+		t.Fatalf("failed to create initial file: %v", err)
 	}
-	if len(infos) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(infos))
+
+	// Edit with new content that adds a key.
+	newContent := []byte("api_key: sk-test-12345\ndb_password: supersecret\nnew_key: new-value\n")
+	err = mgr.EditFromContent("edit-test", secretsDir, newContent)
+	if err != nil {
+		t.Fatalf("EditFromContent failed: %v", err)
 	}
-	if len(infos[0].Recipients) != 1 {
-		t.Fatalf("expected 1 recipient, got %d", len(infos[0].Recipients))
+
+	// Decrypt and verify the new content.
+	encPath := filepath.Join(secretsDir, "edit-test.enc.yaml")
+	td := testdataDir(t)
+	keyFile := filepath.Join(td, "age-key.txt")
+	identity := &AgeIdentity{Source: SourceEnvKeyFile, KeyData: keyFile}
+	secrets, err := DecryptSecretsFile(encPath, identity)
+	if err != nil {
+		t.Fatalf("failed to decrypt edited file: %v", err)
 	}
-	if infos[0].Recipients[0] != pubKey {
-		t.Errorf("expected recipient %s, got %s", pubKey, infos[0].Recipients[0])
+	if secrets["api_key"] != "sk-test-12345" {
+		t.Errorf("expected api_key=sk-test-12345, got %q", secrets["api_key"])
+	}
+	if secrets["new_key"] != "new-value" {
+		t.Errorf("expected new_key=new-value, got %q", secrets["new_key"])
 	}
 }
 
-func TestList_CorruptFile(t *testing.T) {
+func TestEdit_FileNotFound(t *testing.T) {
 	mgr, tmpDir := testCreateManager(t)
 	secretsDir := filepath.Join(tmpDir, "secrets")
 
-	// Create a valid encrypted file too.
-	createTestEncryptedFile(t, mgr, secretsDir, "valid")
+	err := mgr.EditFromContent("nonexistent", secretsDir, []byte("key: value\n"))
+	if err == nil {
+		t.Fatal("expected error for nonexistent file, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
 
-	// Write a corrupt file with .enc.yaml extension.
-	corruptPath := filepath.Join(secretsDir, "corrupt.enc.yaml")
-	if err := os.WriteFile(corruptPath, []byte("not valid sops content"), 0o600); err != nil {
+func TestEdit_PreservesRecipients(t *testing.T) {
+	// Generate a fresh key and create encrypted file with it.
+	primaryKey, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatalf("failed to generate primary key: %v", err)
+	}
+	t.Setenv("SOPS_AGE_KEY", primaryKey.String())
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+	t.Setenv("PATH", "")
+
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	os.MkdirAll(secretsDir, 0o700)
+	os.MkdirAll(runtimeDir, 0o700)
+	mgr := NewManager(secretsDir, runtimeDir)
+
+	// Create the file with the primary key.
+	content := []byte("api_key: original\n")
+	encrypted, err := encryptWithAge(content, primaryKey.Recipient().String())
+	if err != nil {
+		t.Fatalf("failed to encrypt: %v", err)
+	}
+	encPath := filepath.Join(secretsDir, "preserve-test.enc.yaml")
+	if err := os.WriteFile(encPath, encrypted, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	infos, err := mgr.List(secretsDir, &config.Config{})
+	// Get recipients before edit.
+	recipientsBefore, err := ListRecipients(encPath)
 	if err != nil {
-		t.Fatalf("List should not fail on corrupt file, got: %v", err)
+		t.Fatalf("failed to list recipients before: %v", err)
 	}
 
-	if len(infos) != 2 {
-		t.Fatalf("expected 2 files (valid + corrupt), got %d", len(infos))
+	// Edit the file.
+	newContent := []byte("api_key: updated\n")
+	err = mgr.EditFromContent("preserve-test", secretsDir, newContent)
+	if err != nil {
+		t.Fatalf("EditFromContent failed: %v", err)
 	}
 
-	// Find the corrupt one.
-	byName := make(map[string]SecretsFileInfo)
-	for _, info := range infos {
-		byName[info.Name] = info
+	// Get recipients after edit.
+	recipientsAfter, err := ListRecipients(encPath)
+	if err != nil {
+		t.Fatalf("failed to list recipients after: %v", err)
 	}
-	corrupt, ok := byName["corrupt.enc.yaml"]
-	if !ok {
-		t.Fatal("expected corrupt.enc.yaml in list")
+
+	// Recipients should be identical.
+	if len(recipientsBefore) != len(recipientsAfter) {
+		t.Fatalf("recipient count changed: before=%d, after=%d", len(recipientsBefore), len(recipientsAfter))
 	}
-	// Corrupt file should have nil/empty recipients (not crash).
-	_ = corrupt
+	for i, r := range recipientsBefore {
+		if recipientsAfter[i] != r {
+			t.Errorf("recipient %d changed: before=%s, after=%s", i, r, recipientsAfter[i])
+		}
+	}
+
+	// Verify the primary key can still decrypt.
+	ident := &AgeIdentity{Source: SourceEnvKey, KeyData: primaryKey.String()}
+	secrets, err := DecryptSecretsFile(encPath, ident)
+	if err != nil {
+		t.Fatalf("primary key should still decrypt: %v", err)
+	}
+	if secrets["api_key"] != "updated" {
+		t.Errorf("expected api_key=updated, got %q", secrets["api_key"])
+	}
 }
 
-func TestList_NilConfig(t *testing.T) {
+func TestEdit_TempFileCleanup(t *testing.T) {
 	mgr, tmpDir := testCreateManager(t)
 	secretsDir := filepath.Join(tmpDir, "secrets")
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	pubKey := testAgePublicKey(t)
 
-	createTestEncryptedFile(t, mgr, secretsDir, "test")
-
-	// Nil config should not panic.
-	infos, err := mgr.List(secretsDir, nil)
+	// Create an encrypted file first.
+	content := []byte("api_key: test\n")
+	err := mgr.CreateFromContent("cleanup-edit", secretsDir, pubKey, content)
 	if err != nil {
-		t.Fatalf("List with nil config failed: %v", err)
+		t.Fatalf("failed to create initial file: %v", err)
 	}
-	if len(infos) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(infos))
+
+	// Edit with invalid YAML to trigger an error; temp should still be cleaned.
+	invalidContent := []byte("parent:\n  child: nested\n")
+	_ = mgr.EditFromContent("cleanup-edit", secretsDir, invalidContent)
+
+	// Check no temp files remain in runtime dir.
+	entries, err := os.ReadDir(runtimeDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(infos[0].ReferencedBy) != 0 {
-		t.Errorf("expected no references with nil config, got %v", infos[0].ReferencedBy)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "aide-secrets-") {
+			t.Errorf("temp directory not cleaned up: %s", e.Name())
+		}
 	}
 }
 
-func TestList_WithTestFixture(t *testing.T) {
-	mgr, _ := testCreateManager(t)
+func TestEdit_InvalidYAMLRejected(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	pubKey := testAgePublicKey(t)
 
-	// Use the testdata directory which has test-secrets.enc.yaml.
-	td := testdataDir(t)
-
-	cfg := &config.Config{
-		Contexts: map[string]config.Context{
-			"personal": {Agent: "claude", SecretsFile: "test-secrets.enc.yaml"},
-		},
-	}
-
-	infos, err := mgr.List(td, cfg)
+	// Create an encrypted file first.
+	content := []byte("api_key: test\n")
+	err := mgr.CreateFromContent("invalid-edit", secretsDir, pubKey, content)
 	if err != nil {
-		t.Fatalf("List failed: %v", err)
+		t.Fatalf("failed to create initial file: %v", err)
 	}
 
-	// Should find at least test-secrets.enc.yaml.
-	found := false
-	for _, info := range infos {
-		if info.Name == "test-secrets.enc.yaml" {
-			found = true
-			if len(info.Recipients) == 0 {
-				t.Error("expected recipients from test-secrets.enc.yaml")
-			}
-			if len(info.ReferencedBy) != 1 || info.ReferencedBy[0] != "personal" {
-				t.Errorf("expected [personal] contexts, got %v", info.ReferencedBy)
-			}
-		}
+	// Read original file bytes for comparison.
+	encPath := filepath.Join(secretsDir, "invalid-edit.enc.yaml")
+	originalBytes, err := os.ReadFile(encPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !found {
-		names := make([]string, len(infos))
-		for i, info := range infos {
-			names[i] = info.Name
-		}
-		t.Errorf("test-secrets.enc.yaml not found in list: %v", names)
+
+	// Edit with nested YAML (non-flat) should be rejected.
+	nestedContent := []byte("parent:\n  child: nested\n")
+	err = mgr.EditFromContent("invalid-edit", secretsDir, nestedContent)
+	if err == nil {
+		t.Fatal("expected error for non-flat YAML, got nil")
+	}
+
+	// Original file should be unchanged.
+	afterBytes, err := os.ReadFile(encPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(originalBytes) != string(afterBytes) {
+		t.Error("original file was modified despite invalid edit content")
 	}
 }

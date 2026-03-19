@@ -1,9 +1,12 @@
-.PHONY: all build test vet lint clean devcontainer-build test-linux test-integration test-all
+.PHONY: all build install test vet lint clean devcontainer-build test-linux test-integration test-all
 
 all: build vet test
 
 build:
 	go build -o bin/aide ./cmd/aide
+
+install:
+	go install ./cmd/aide
 
 test:
 	go test ./...

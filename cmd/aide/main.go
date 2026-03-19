@@ -64,6 +64,8 @@ agents on your PATH.`,
 	rootCmd.Flags().BoolVar(&cleanEnv, "clean-env", false, "Start agent with only essential environment variables")
 	rootCmd.Flags().BoolVar(&yolo, "yolo", false, "Launch agent with skip-permissions (agent-specific, sandbox still applies)")
 
+	registerCommands(rootCmd)
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

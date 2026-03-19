@@ -26,6 +26,16 @@ type PassthroughResult struct {
 	Found map[string]string
 }
 
+// IsKnownAgent returns true if the agent name is in KnownAgents.
+func IsKnownAgent(name string) bool {
+	for _, a := range KnownAgents {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
 // ScanAgents scans PATH for known agent binaries.
 func ScanAgents(lookPath LookPathFunc) *PassthroughResult {
 	found := make(map[string]string)
@@ -38,11 +48,27 @@ func ScanAgents(lookPath LookPathFunc) *PassthroughResult {
 }
 
 // Passthrough handles the zero-config case: no config.yaml exists.
-// It scans PATH for known agents and either execs the single found agent,
-// returns a helpful error listing multiple agents, or suggests installation.
-func (l *Launcher) Passthrough(cwd string, extraArgs []string) error {
+// If agentOverride is set, it launches that specific agent (must be known).
+// Otherwise it scans PATH for known agents and auto-selects.
+func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []string) error {
 	lookPath := l.lookPath()
 
+	// If user specified --agent, validate and launch it directly.
+	if agentOverride != "" {
+		if !IsKnownAgent(agentOverride) {
+			return fmt.Errorf(
+				"unknown agent %q.\n\nSupported agents: %s",
+				agentOverride, strings.Join(KnownAgents, ", "),
+			)
+		}
+		binary, err := lookPath(agentOverride)
+		if err != nil {
+			return fmt.Errorf("agent %q not found on PATH: %w", agentOverride, err)
+		}
+		return l.execAgent(agentOverride, binary, extraArgs)
+	}
+
+	// No --agent flag: scan PATH for known agents.
 	result := ScanAgents(lookPath)
 
 	switch len(result.Found) {
@@ -55,28 +81,14 @@ func (l *Launcher) Passthrough(cwd string, extraArgs []string) error {
 		)
 
 	case 1:
-		// Single agent found — exec it directly.
 		var name, binary string
 		for name, binary = range result.Found {
 			break
 		}
-
 		_ = writeFirstRunHint(name)
-
-		// Inject yolo flag if requested.
-		if l.Yolo {
-			yoloArgs, err := YoloArgs(name)
-			if err != nil {
-				return err
-			}
-			extraArgs = append(yoloArgs, extraArgs...)
-		}
-
-		args := append([]string{binary}, extraArgs...)
-		return l.Execer.Exec(binary, args, os.Environ())
+		return l.execAgent(name, binary, extraArgs)
 
 	default:
-		// Multiple agents found — ask user to be specific.
 		var agents []string
 		for name := range result.Found {
 			agents = append(agents, name)
@@ -90,6 +102,19 @@ func (l *Launcher) Passthrough(cwd string, extraArgs []string) error {
 			agents[0],
 		)
 	}
+}
+
+// execAgent injects yolo flags if needed and execs the agent.
+func (l *Launcher) execAgent(name, binary string, extraArgs []string) error {
+	if l.Yolo {
+		yoloArgs, err := YoloArgs(name)
+		if err != nil {
+			return err
+		}
+		extraArgs = append(yoloArgs, extraArgs...)
+	}
+	args := append([]string{binary}, extraArgs...)
+	return l.Execer.Exec(binary, args, os.Environ())
 }
 
 // lookPath returns the LookPathFunc to use (real or injected for testing).

@@ -52,7 +52,7 @@ agents on your PATH.`,
 			// Check if a config file exists.
 			configFile := config.ConfigFilePath()
 			if _, err := os.Stat(configFile); os.IsNotExist(err) {
-				return l.Passthrough(cwd, args)
+				return l.Passthrough(cwd, agentFlag, args)
 			}
 
 			// Config exists — use full launcher flow.

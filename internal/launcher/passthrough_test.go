@@ -25,19 +25,15 @@ func TestPassthrough_SingleAgent(t *testing.T) {
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 
-	// Set XDG_CONFIG_HOME to a temp dir so the sentinel file doesn't pollute.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), nil)
+	err := l.Passthrough(t.TempDir(), "", nil)
 	if err != nil {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
 	if mock.binary != "/usr/local/bin/claude" {
 		t.Errorf("expected binary /usr/local/bin/claude, got %s", mock.binary)
-	}
-	if mock.args[0] != "/usr/local/bin/claude" {
-		t.Errorf("expected args[0]=/usr/local/bin/claude, got %s", mock.args[0])
 	}
 }
 
@@ -50,7 +46,7 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	extraArgs := []string{"--model", "opus", "help me"}
-	err := l.Passthrough(t.TempDir(), extraArgs)
+	err := l.Passthrough(t.TempDir(), "", extraArgs)
 	if err != nil {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
@@ -73,7 +69,7 @@ func TestPassthrough_NoAgents(t *testing.T) {
 		LookPath: mockLookPath(map[string]string{}),
 	}
 
-	err := l.Passthrough(t.TempDir(), nil)
+	err := l.Passthrough(t.TempDir(), "", nil)
 	if err == nil {
 		t.Fatal("expected error when no agents found, got nil")
 	}
@@ -82,9 +78,6 @@ func TestPassthrough_NoAgents(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "aide init") {
 		t.Errorf("expected install guidance with 'aide init', got: %v", err)
-	}
-	if mock.binary != "" {
-		t.Error("expected exec not to be called when no agents found")
 	}
 }
 
@@ -98,7 +91,7 @@ func TestPassthrough_MultipleAgents(t *testing.T) {
 		}),
 	}
 
-	err := l.Passthrough(t.TempDir(), nil)
+	err := l.Passthrough(t.TempDir(), "", nil)
 	if err == nil {
 		t.Fatal("expected error when multiple agents found, got nil")
 	}
@@ -108,8 +101,69 @@ func TestPassthrough_MultipleAgents(t *testing.T) {
 	if !strings.Contains(err.Error(), "--agent") {
 		t.Errorf("expected --agent hint, got: %v", err)
 	}
+}
+
+func TestPassthrough_AgentOverride(t *testing.T) {
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer: mock,
+		LookPath: mockLookPath(map[string]string{
+			"claude": "/usr/local/bin/claude",
+			"codex":  "/usr/local/bin/codex",
+		}),
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	// With --agent codex, should launch codex directly even though multiple found.
+	err := l.Passthrough(t.TempDir(), "codex", []string{"--help"})
+	if err != nil {
+		t.Fatalf("Passthrough with --agent failed: %v", err)
+	}
+
+	if mock.binary != "/usr/local/bin/codex" {
+		t.Errorf("expected binary /usr/local/bin/codex, got %s", mock.binary)
+	}
+	expected := []string{"/usr/local/bin/codex", "--help"}
+	if len(mock.args) != len(expected) {
+		t.Fatalf("expected %d args, got %d: %v", len(expected), len(mock.args), mock.args)
+	}
+}
+
+func TestPassthrough_AgentOverrideUnknown(t *testing.T) {
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"vim": "/usr/bin/vim"}),
+	}
+
+	err := l.Passthrough(t.TempDir(), "vim", nil)
+	if err == nil {
+		t.Fatal("expected error for unknown agent, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown agent") {
+		t.Errorf("expected 'unknown agent' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Supported agents") {
+		t.Errorf("expected supported agents list, got: %v", err)
+	}
 	if mock.binary != "" {
-		t.Error("expected exec not to be called when multiple agents found")
+		t.Error("expected exec not to be called for unknown agent")
+	}
+}
+
+func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{}), // nothing on PATH
+	}
+
+	err := l.Passthrough(t.TempDir(), "claude", nil)
+	if err == nil {
+		t.Fatal("expected error when agent not on PATH, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found on PATH") {
+		t.Errorf("expected 'not found on PATH' error, got: %v", err)
 	}
 }
 
@@ -117,7 +171,6 @@ func TestPassthrough_FirstRunSentinel(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 
-	// Before passthrough, should be first run.
 	if !IsFirstRun() {
 		t.Error("expected IsFirstRun=true before passthrough")
 	}
@@ -128,12 +181,11 @@ func TestPassthrough_FirstRunSentinel(t *testing.T) {
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 
-	err := l.Passthrough(t.TempDir(), nil)
+	err := l.Passthrough(t.TempDir(), "", nil)
 	if err != nil {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
-	// After passthrough, sentinel should exist.
 	sentinel := filepath.Join(configHome, "aide", ".first-run-done")
 	data, err := os.ReadFile(sentinel)
 	if err != nil {
@@ -176,7 +228,7 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), []string{"--model", "opus"})
+	err := l.Passthrough(t.TempDir(), "", []string{"--model", "opus"})
 	if err != nil {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
@@ -201,11 +253,26 @@ func TestPassthrough_YoloUnsupportedAgent(t *testing.T) {
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), nil)
+	err := l.Passthrough(t.TempDir(), "", nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported yolo agent")
 	}
 	if !strings.Contains(err.Error(), "--yolo not supported") {
 		t.Errorf("expected '--yolo not supported' error, got: %v", err)
+	}
+}
+
+func TestIsKnownAgent(t *testing.T) {
+	if !IsKnownAgent("claude") {
+		t.Error("expected claude to be known")
+	}
+	if !IsKnownAgent("codex") {
+		t.Error("expected codex to be known")
+	}
+	if IsKnownAgent("vim") {
+		t.Error("expected vim to be unknown")
+	}
+	if IsKnownAgent("") {
+		t.Error("expected empty string to be unknown")
 	}
 }

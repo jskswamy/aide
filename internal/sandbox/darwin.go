@@ -136,34 +136,4 @@ func seatbeltPath(p string) string {
 	return fmt.Sprintf(`(literal "%s")`, p)
 }
 
-// expandGlobs expands glob patterns in a list of paths.
-// Non-glob paths are passed through unchanged.
-func expandGlobs(patterns []string) []string {
-	var result []string
-	for _, p := range patterns {
-		if strings.ContainsAny(p, "*?[") {
-			matches, _ := filepath.Glob(p)
-			result = append(result, matches...)
-		} else {
-			result = append(result, p)
-		}
-	}
-	return result
-}
-
-// filterEnv returns only essential env vars when CleanEnv is true (DD-17).
-func filterEnv(env []string) []string {
-	essential := map[string]bool{
-		"PATH": true, "HOME": true, "USER": true,
-		"SHELL": true, "TERM": true, "LANG": true,
-		"TMPDIR": true, "XDG_RUNTIME_DIR": true,
-	}
-	var filtered []string
-	for _, e := range env {
-		k := strings.SplitN(e, "=", 2)[0]
-		if essential[k] {
-			filtered = append(filtered, e)
-		}
-	}
-	return filtered
-}
+// expandGlobs and filterEnv are in sandbox.go (shared across platforms).

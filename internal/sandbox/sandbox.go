@@ -3,6 +3,7 @@ package sandbox
 import (
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Sandbox applies a security policy to a command before execution.
@@ -111,4 +112,36 @@ type noopSandbox struct{}
 // Apply is a no-op; the command runs unsandboxed.
 func (n *noopSandbox) Apply(_ *exec.Cmd, _ Policy, _ string) error {
 	return nil
+}
+
+// expandGlobs expands glob patterns in a list of paths.
+// Non-glob paths are passed through unchanged.
+func expandGlobs(patterns []string) []string {
+	var result []string
+	for _, p := range patterns {
+		if strings.ContainsAny(p, "*?[") {
+			matches, _ := filepath.Glob(p)
+			result = append(result, matches...)
+		} else {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// filterEnv returns only essential env vars when CleanEnv is true (DD-17).
+func filterEnv(env []string) []string {
+	essential := map[string]bool{
+		"PATH": true, "HOME": true, "USER": true,
+		"SHELL": true, "TERM": true, "LANG": true,
+		"TMPDIR": true, "XDG_RUNTIME_DIR": true, "XDG_CONFIG_HOME": true,
+	}
+	var filtered []string
+	for _, e := range env {
+		k := strings.SplitN(e, "=", 2)[0]
+		if essential[k] {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
 }

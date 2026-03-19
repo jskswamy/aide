@@ -412,3 +412,97 @@ env:
 		t.Error("expected non-empty SECRET_VAL")
 	}
 }
+
+func TestLauncher_ResolvesAgentFromPATH(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// Config uses a bare agent name (not absolute path).
+	writeMinimalConfig(t, configDir, `
+agent: my-agent
+env:
+  FOO: bar
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		// Mock LookPath to resolve "my-agent" to an absolute path.
+		LookPath: func(file string) (string, error) {
+			if file == "my-agent" {
+				return "/usr/local/bin/my-agent", nil
+			}
+			return "", fmt.Errorf("%s: not found", file)
+		},
+	}
+
+	if err := l.Launch(cwd, "", nil, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// Binary should be resolved to the absolute path.
+	if mock.binary != "/usr/local/bin/my-agent" {
+		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", mock.binary)
+	}
+}
+
+func TestLauncher_AgentNotOnPATH(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: nonexistent-agent
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			return "", fmt.Errorf("%s: not found", file)
+		},
+	}
+
+	err := l.Launch(cwd, "", nil, false)
+	if err == nil {
+		t.Fatal("expected error when agent not on PATH, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found on PATH") {
+		t.Errorf("expected 'not found on PATH' error, got: %v", err)
+	}
+	if mock.binary != "" {
+		t.Error("expected exec not to be called when agent not found")
+	}
+}
+
+func TestLauncher_AbsolutePathSkipsLookPath(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: /usr/local/bin/my-agent
+`)
+
+	lookPathCalled := false
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			lookPathCalled = true
+			return "", fmt.Errorf("should not be called")
+		},
+	}
+
+	if err := l.Launch(cwd, "", nil, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	if lookPathCalled {
+		t.Error("LookPath should not be called for absolute paths")
+	}
+	if mock.binary != "/usr/local/bin/my-agent" {
+		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", mock.binary)
+	}
+}

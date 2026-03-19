@@ -29,7 +29,8 @@ func (s *SyscallExecer) Exec(binary string, args []string, env []string) error {
 // Launcher orchestrates the full agent launch flow.
 type Launcher struct {
 	Execer    Execer
-	ConfigDir string // override for testing (default: config.ConfigDir())
+	ConfigDir string       // override for testing (default: config.ConfigDir())
+	LookPath  LookPathFunc // override for testing (default: exec.LookPath)
 }
 
 // configDir returns the effective config directory.

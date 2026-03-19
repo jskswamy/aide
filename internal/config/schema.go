@@ -1,5 +1,7 @@
 package config
 
+import "fmt"
+
 // Config is the top-level configuration, supporting both minimal and full formats.
 // When the YAML contains "agents" or "contexts" keys, it is the full (structured)
 // format. Otherwise it is the minimal (flat) format treated as a single default context.
@@ -76,13 +78,35 @@ type MCPAggregator struct {
 }
 
 // SandboxPolicy defines the OS-native sandbox constraints for an agent.
+// A nil pointer means "use defaults". The bool variant (sandbox: false)
+// is handled during YAML unmarshalling by setting Disabled = true.
 type SandboxPolicy struct {
+	// Disabled is true when the user writes `sandbox: false`.
+	Disabled bool `yaml:"-"`
+
 	Writable        []string `yaml:"writable,omitempty"`
 	Readable        []string `yaml:"readable,omitempty"`
 	Denied          []string `yaml:"denied,omitempty"`
-	Network         string   `yaml:"network,omitempty"`           // "outbound" | "none" | "unrestricted"
+	Network         string   `yaml:"network,omitempty"` // "outbound" | "none" | "unrestricted"
 	AllowSubprocess *bool    `yaml:"allow_subprocess,omitempty"`
 	CleanEnv        *bool    `yaml:"clean_env,omitempty"`
+}
+
+// UnmarshalYAML handles both `sandbox: false` (bool) and `sandbox: { ... }` (map).
+func (s *SandboxPolicy) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Try bool first
+	var b bool
+	if err := unmarshal(&b); err == nil {
+		if !b {
+			s.Disabled = true
+			return nil
+		}
+		return fmt.Errorf("sandbox: expected false or a mapping, got true")
+	}
+
+	// Otherwise decode as struct (use alias to avoid recursion)
+	type alias SandboxPolicy
+	return unmarshal((*alias)(s))
 }
 
 // ProjectOverride holds per-project override data from .aide.yaml.

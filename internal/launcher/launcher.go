@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -154,7 +155,18 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		}
 	}
 
-	// 12. Exec the agent binary
+	// 12. Resolve binary to absolute path (syscall.Exec requires it).
+	if !filepath.IsAbs(binary) {
+		lookPath := l.lookPath()
+		resolved, err := lookPath(binary)
+		if err != nil {
+			cleanup()
+			return fmt.Errorf("agent %q not found on PATH: %w", binary, err)
+		}
+		binary = resolved
+	}
+
+	// 13. Exec the agent binary
 	args := append([]string{binary}, extraArgs...)
 	return l.Execer.Exec(binary, args, env)
 }

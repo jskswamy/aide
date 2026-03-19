@@ -598,6 +598,10 @@ agent: claude
 		Execer:    mock,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
+			// vim is not on PATH either
+			if file == "vim" {
+				return "", fmt.Errorf("not found")
+			}
 			return "/usr/bin/" + file, nil
 		},
 	}
@@ -608,9 +612,6 @@ agent: claude
 	}
 	if !strings.Contains(err.Error(), "unknown agent") {
 		t.Errorf("expected 'unknown agent' error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "Supported agents") {
-		t.Errorf("expected supported agents list, got: %v", err)
 	}
 	if mock.binary != "" {
 		t.Error("expected exec not to be called for unknown agent")

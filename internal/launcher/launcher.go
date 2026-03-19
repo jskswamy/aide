@@ -68,13 +68,20 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving context: %w", err)
 	}
 
-	// 4. If agentOverride is set, validate and override context's agent
+	// 4. If agentOverride is set, validate and override context's agent.
+	// Accept: known agents, agents defined in config, or names resolvable on PATH.
 	if agentOverride != "" {
-		if !IsKnownAgent(agentOverride) && cfg.Agents[agentOverride].Binary == "" {
-			return fmt.Errorf(
-				"unknown agent %q.\n\nSupported agents: %s",
-				agentOverride, strings.Join(KnownAgents, ", "),
-			)
+		_, inAgentsMap := cfg.Agents[agentOverride]
+		if !IsKnownAgent(agentOverride) && !inAgentsMap {
+			lookPath := l.lookPath()
+			if _, err := lookPath(agentOverride); err != nil {
+				return fmt.Errorf(
+					"unknown agent %q (not in known agents, config, or PATH).\n\n"+
+						"Register it first: aide agents add %s --binary /path/to/binary\n"+
+						"Known agents: %s",
+					agentOverride, agentOverride, strings.Join(KnownAgents, ", "),
+				)
+			}
 		}
 		rc.Context.Agent = agentOverride
 	}
@@ -137,7 +144,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	resolvedEnv, err := config.ResolveTemplates(rc.Context.Env, templateData)
 	if err != nil {
 		cleanup()
-		return fmt.Errorf("resolving env templates: %w", err)
+		return wrapTemplateError(err, rc.Name, rc.Context.SecretsFile)
 	}
 
 	// 10. Build environment
@@ -229,6 +236,38 @@ func YoloArgs(agentName string) ([]string, error) {
 		"--yolo not supported for agent %q. Supported agents: %s",
 		agentName, strings.Join(supported, ", "),
 	)
+}
+
+// wrapTemplateError converts raw Go template errors into actionable messages.
+func wrapTemplateError(err error, contextName string, secretsFile string) error {
+	msg := err.Error()
+
+	if strings.Contains(msg, "map has no entry for key") {
+		if secretsFile == "" {
+			return fmt.Errorf(
+				"context %q references secrets in env vars but has no secrets_file.\n\n"+
+					"Fix with: aide env set <KEY> --from-secret",
+				contextName,
+			)
+		}
+		secretsName := strings.TrimSuffix(secretsFile, ".enc.yaml")
+		return fmt.Errorf(
+			"context %q: secret key not found in %s.\n\n"+
+				"Available keys: aide secrets keys %s\n"+
+				"Re-wire:        aide env set <KEY> --from-secret",
+			contextName, secretsFile, secretsName,
+		)
+	}
+
+	if strings.Contains(msg, "nil pointer") || strings.Contains(msg, "can't evaluate field") {
+		return fmt.Errorf(
+			"context %q references secrets but has no secrets_file.\n\n"+
+				"Fix with: aide env set <KEY> --from-secret",
+			contextName,
+		)
+	}
+
+	return fmt.Errorf("context %q: %w", contextName, err)
 }
 
 // filterEssentialEnv keeps only essential environment variables.

@@ -53,17 +53,17 @@ func ScanAgents(lookPath LookPathFunc) *PassthroughResult {
 func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []string) error {
 	lookPath := l.lookPath()
 
-	// If user specified --agent, validate and launch it directly.
+	// If user specified --agent, resolve and launch it directly.
+	// Accept known agents and any binary resolvable on PATH.
 	if agentOverride != "" {
-		if !IsKnownAgent(agentOverride) {
-			return fmt.Errorf(
-				"unknown agent %q.\n\nSupported agents: %s",
-				agentOverride, strings.Join(KnownAgents, ", "),
-			)
-		}
 		binary, err := lookPath(agentOverride)
 		if err != nil {
-			return fmt.Errorf("agent %q not found on PATH: %w", agentOverride, err)
+			return fmt.Errorf(
+				"agent %q not found on PATH.\n\n"+
+					"Register it first: aide agents add %s --binary /path/to/binary\n"+
+					"Known agents: %s",
+				agentOverride, agentOverride, strings.Join(KnownAgents, ", "),
+			)
 		}
 		return l.execAgent(agentOverride, binary, extraArgs)
 	}

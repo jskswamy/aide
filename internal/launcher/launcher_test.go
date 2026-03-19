@@ -506,3 +506,105 @@ agent: /usr/local/bin/my-agent
 		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", mock.binary)
 	}
 }
+
+func TestYoloArgs_Claude(t *testing.T) {
+	args, err := YoloArgs("claude")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(args) != 1 || args[0] != "--dangerously-skip-permissions" {
+		t.Errorf("expected [--dangerously-skip-permissions], got %v", args)
+	}
+}
+
+func TestYoloArgs_Codex(t *testing.T) {
+	args, err := YoloArgs("codex")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(args) != 1 || args[0] != "--full-auto" {
+		t.Errorf("expected [--full-auto], got %v", args)
+	}
+}
+
+func TestYoloArgs_AbsolutePath(t *testing.T) {
+	// Agent specified as full path should still match by basename.
+	args, err := YoloArgs("/usr/local/bin/claude")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(args) != 1 || args[0] != "--dangerously-skip-permissions" {
+		t.Errorf("expected [--dangerously-skip-permissions], got %v", args)
+	}
+}
+
+func TestYoloArgs_UnsupportedAgent(t *testing.T) {
+	_, err := YoloArgs("vim")
+	if err == nil {
+		t.Fatal("expected error for unsupported agent, got nil")
+	}
+	if !strings.Contains(err.Error(), "--yolo not supported") {
+		t.Errorf("expected '--yolo not supported' error, got: %v", err)
+	}
+}
+
+func TestLauncher_YoloInjectsFlag(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: claude
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		Yolo: true,
+	}
+
+	if err := l.Launch(cwd, "", []string{"--model", "opus"}, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// args[0] is binary, then yolo flag, then user args.
+	expected := []string{"/usr/local/bin/claude", "--dangerously-skip-permissions", "--model", "opus"}
+	if len(mock.args) != len(expected) {
+		t.Fatalf("expected %d args, got %d: %v", len(expected), len(mock.args), mock.args)
+	}
+	for i, want := range expected {
+		if mock.args[i] != want {
+			t.Errorf("args[%d] = %q, want %q", i, mock.args[i], want)
+		}
+	}
+}
+
+func TestLauncher_YoloUnsupportedAgent(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: vim
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		Yolo:      true,
+	}
+
+	err := l.Launch(cwd, "", nil, false)
+	if err == nil {
+		t.Fatal("expected error for unsupported yolo agent, got nil")
+	}
+	if !strings.Contains(err.Error(), "--yolo not supported") {
+		t.Errorf("expected '--yolo not supported' error, got: %v", err)
+	}
+}

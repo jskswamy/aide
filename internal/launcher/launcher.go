@@ -27,11 +27,18 @@ func (s *SyscallExecer) Exec(binary string, args []string, env []string) error {
 	return syscall.Exec(binary, args, env)
 }
 
+// agentYoloFlags maps agent names to their "skip all permissions" flags.
+var agentYoloFlags = map[string]string{
+	"claude": "--dangerously-skip-permissions",
+	"codex":  "--full-auto",
+}
+
 // Launcher orchestrates the full agent launch flow.
 type Launcher struct {
 	Execer    Execer
 	ConfigDir string       // override for testing (default: config.ConfigDir())
 	LookPath  LookPathFunc // override for testing (default: exec.LookPath)
+	Yolo      bool         // inject agent-specific skip-permissions flag
 }
 
 // configDir returns the effective config directory.
@@ -71,6 +78,15 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	binary, err := resolveAgentBinary(cfg, agentName)
 	if err != nil {
 		return err
+	}
+
+	// 5b. Inject yolo flag if requested
+	if l.Yolo {
+		yoloArgs, err := YoloArgs(agentName)
+		if err != nil {
+			return err
+		}
+		extraArgs = append(yoloArgs, extraArgs...)
 	}
 
 	// 6. Create runtime dir, register signal handlers
@@ -189,6 +205,24 @@ func resolveAgentBinary(cfg *config.Config, agentName string) (string, error) {
 
 	// No agents map at all (minimal config without normalization) - use agent name as binary
 	return agentName, nil
+}
+
+// YoloArgs returns the skip-permissions args for the given agent.
+// Returns an error if the agent does not support yolo mode.
+func YoloArgs(agentName string) ([]string, error) {
+	// Normalize: strip path prefix to match by binary basename.
+	base := filepath.Base(agentName)
+	if flag, ok := agentYoloFlags[base]; ok {
+		return []string{flag}, nil
+	}
+	supported := make([]string, 0, len(agentYoloFlags))
+	for k := range agentYoloFlags {
+		supported = append(supported, k)
+	}
+	return nil, fmt.Errorf(
+		"--yolo not supported for agent %q. Supported agents: %s",
+		agentName, strings.Join(supported, ", "),
+	)
 }
 
 // filterEssentialEnv keeps only essential environment variables.

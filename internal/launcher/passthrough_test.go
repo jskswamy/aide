@@ -166,3 +166,46 @@ func TestScanAgents(t *testing.T) {
 		t.Errorf("expected aider path, got %q", result.Found["aider"])
 	}
 }
+
+func TestPassthrough_YoloInjectsFlag(t *testing.T) {
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+		Yolo:     true,
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	err := l.Passthrough(t.TempDir(), []string{"--model", "opus"})
+	if err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	expected := []string{"/usr/local/bin/claude", "--dangerously-skip-permissions", "--model", "opus"}
+	if len(mock.args) != len(expected) {
+		t.Fatalf("expected %d args, got %d: %v", len(expected), len(mock.args), mock.args)
+	}
+	for i, want := range expected {
+		if mock.args[i] != want {
+			t.Errorf("args[%d] = %q, want %q", i, mock.args[i], want)
+		}
+	}
+}
+
+func TestPassthrough_YoloUnsupportedAgent(t *testing.T) {
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"aider": "/usr/local/bin/aider"}),
+		Yolo:     true,
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	err := l.Passthrough(t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("expected error for unsupported yolo agent")
+	}
+	if !strings.Contains(err.Error(), "--yolo not supported") {
+		t.Errorf("expected '--yolo not supported' error, got: %v", err)
+	}
+}

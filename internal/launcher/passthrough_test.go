@@ -129,28 +129,6 @@ func TestPassthrough_AgentOverride(t *testing.T) {
 	}
 }
 
-func TestPassthrough_AgentOverrideUnknown(t *testing.T) {
-	mock := &mockExecer{}
-	l := &Launcher{
-		Execer:   mock,
-		LookPath: mockLookPath(map[string]string{"vim": "/usr/bin/vim"}),
-	}
-
-	err := l.Passthrough(t.TempDir(), "vim", nil)
-	if err == nil {
-		t.Fatal("expected error for unknown agent, got nil")
-	}
-	if !strings.Contains(err.Error(), "unknown agent") {
-		t.Errorf("expected 'unknown agent' error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "Supported agents") {
-		t.Errorf("expected supported agents list, got: %v", err)
-	}
-	if mock.binary != "" {
-		t.Error("expected exec not to be called for unknown agent")
-	}
-}
-
 func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
 	mock := &mockExecer{}
 	l := &Launcher{
@@ -158,12 +136,15 @@ func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
 		LookPath: mockLookPath(map[string]string{}), // nothing on PATH
 	}
 
-	err := l.Passthrough(t.TempDir(), "claude", nil)
+	err := l.Passthrough(t.TempDir(), "nonexistent", nil)
 	if err == nil {
-		t.Fatal("expected error when agent not on PATH, got nil")
+		t.Fatal("expected error for agent not on PATH, got nil")
 	}
 	if !strings.Contains(err.Error(), "not found on PATH") {
 		t.Errorf("expected 'not found on PATH' error, got: %v", err)
+	}
+	if mock.binary != "" {
+		t.Error("expected exec not to be called for missing agent")
 	}
 }
 

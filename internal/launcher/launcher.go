@@ -68,8 +68,14 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving context: %w", err)
 	}
 
-	// 4. If agentOverride is set, override context's agent
+	// 4. If agentOverride is set, validate and override context's agent
 	if agentOverride != "" {
+		if !IsKnownAgent(agentOverride) && cfg.Agents[agentOverride].Binary == "" {
+			return fmt.Errorf(
+				"unknown agent %q.\n\nSupported agents: %s",
+				agentOverride, strings.Join(KnownAgents, ", "),
+			)
+		}
 		rc.Context.Agent = agentOverride
 	}
 

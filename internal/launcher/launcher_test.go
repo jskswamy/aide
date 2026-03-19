@@ -585,6 +585,73 @@ agent: claude
 	}
 }
 
+func TestLauncher_AgentOverrideUnknown(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: claude
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			return "/usr/bin/" + file, nil
+		},
+	}
+
+	err := l.Launch(cwd, "vim", nil, false)
+	if err == nil {
+		t.Fatal("expected error for unknown agent override, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown agent") {
+		t.Errorf("expected 'unknown agent' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Supported agents") {
+		t.Errorf("expected supported agents list, got: %v", err)
+	}
+	if mock.binary != "" {
+		t.Error("expected exec not to be called for unknown agent")
+	}
+}
+
+func TestLauncher_AgentOverrideKnown(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// Full config with both agents defined.
+	writeMinimalConfig(t, configDir, `
+agents:
+  claude:
+    binary: claude
+  codex:
+    binary: codex
+contexts:
+  default:
+    agent: claude
+default_context: default
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			return "/usr/local/bin/" + file, nil
+		},
+	}
+
+	err := l.Launch(cwd, "codex", nil, false)
+	if err != nil {
+		t.Fatalf("Launch with known agent override failed: %v", err)
+	}
+	if mock.binary != "/usr/local/bin/codex" {
+		t.Errorf("expected binary /usr/local/bin/codex, got %s", mock.binary)
+	}
+}
+
 func TestLauncher_YoloUnsupportedAgent(t *testing.T) {
 	configDir := t.TempDir()
 	cwd := t.TempDir()

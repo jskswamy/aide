@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/getsops/sops/v3"
@@ -14,7 +13,6 @@ import (
 	"github.com/getsops/sops/v3/age"
 	"github.com/getsops/sops/v3/keyservice"
 	"github.com/getsops/sops/v3/stores/yaml"
-	"github.com/jskswamy/aide/internal/config"
 	yamlpkg "gopkg.in/yaml.v3"
 )
 
@@ -37,104 +35,12 @@ type Manager struct {
 	runtimeDir string
 }
 
-// SecretsFileInfo holds metadata about an encrypted secrets file.
-type SecretsFileInfo struct {
-	Name         string   // filename (e.g. "personal.enc.yaml")
-	Path         string   // full absolute path
-	Recipients   []string // age public keys from sops metadata
-	ReferencedBy []string // context names that reference this file
-}
-
 // NewManager creates a new secrets Manager.
 func NewManager(secretsDir, runtimeDir string) *Manager {
 	return &Manager{
 		secretsDir: secretsDir,
 		runtimeDir: runtimeDir,
 	}
-}
-
-// List scans secretsDir for *.enc.yaml files, extracts sops metadata
-// (recipients) without decrypting, and cross-references with config contexts.
-func (m *Manager) List(secretsDir string, cfg *config.Config) ([]SecretsFileInfo, error) {
-	// Check if directory exists.
-	entries, err := os.ReadDir(secretsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to read secrets directory: %w", err)
-	}
-
-	// Build reverse map: secretsFile -> []contextName
-	contextsByFile := buildContextReverseMap(cfg)
-
-	var results []SecretsFileInfo
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".enc.yaml") {
-			continue
-		}
-
-		fullPath := filepath.Join(secretsDir, name)
-
-		// Extract recipients from sops metadata without decrypting.
-		recipients := extractRecipients(fullPath)
-
-		// Look up which contexts reference this file.
-		referencedBy := contextsByFile[name]
-		if referencedBy == nil {
-			referencedBy = []string{}
-		}
-		sort.Strings(referencedBy)
-
-		results = append(results, SecretsFileInfo{
-			Name:         name,
-			Path:         fullPath,
-			Recipients:   recipients,
-			ReferencedBy: referencedBy,
-		})
-	}
-
-	// Sort by name for stable output.
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Name < results[j].Name
-	})
-
-	return results, nil
-}
-
-// buildContextReverseMap builds a map from secrets filename to context names.
-func buildContextReverseMap(cfg *config.Config) map[string][]string {
-	result := make(map[string][]string)
-	if cfg == nil {
-		return result
-	}
-
-	for ctxName, ctx := range cfg.Contexts {
-		if ctx.SecretsFile != "" {
-			result[ctx.SecretsFile] = append(result[ctx.SecretsFile], ctxName)
-		}
-	}
-
-	// Handle minimal config with top-level secrets_file.
-	if cfg.IsMinimal() && cfg.SecretsFile != "" {
-		result[cfg.SecretsFile] = append(result[cfg.SecretsFile], "(default)")
-	}
-
-	return result
-}
-
-// extractRecipients reads a sops-encrypted file and returns the age recipient
-// public keys from its metadata, without decrypting.
-func extractRecipients(filePath string) []string {
-	recipients, err := ListRecipients(filePath)
-	if err != nil {
-		return nil
-	}
-	return recipients
 }
 
 // Create creates a new encrypted secrets file by opening $EDITOR.
@@ -340,6 +246,188 @@ func encryptWithAge(plaintext []byte, agePublicKey string) ([]byte, error) {
 	}
 
 	// Serialize to YAML.
+	encrypted, err := store.EmitEncryptedFile(tree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize encrypted file: %w", err)
+	}
+
+	return encrypted, nil
+}
+
+// Edit decrypts a secrets file to a secure temp file, opens $EDITOR,
+// re-encrypts on save, and removes the temp file on exit.
+func (m *Manager) Edit(name, secretsDir string) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+
+	srcPath := filepath.Join(secretsDir, name+".enc.yaml")
+	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		return fmt.Errorf("secrets/%s.enc.yaml not found. Use 'aide secrets create %s' to create it.", name, name)
+	}
+
+	// Decrypt using sops.
+	identity, err := DiscoverAgeKey()
+	if err != nil {
+		return err
+	}
+	secrets, err := DecryptSecretsFile(srcPath, identity)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt %s: %w", name, err)
+	}
+
+	// Build plaintext YAML from secrets.
+	var plainBuilder strings.Builder
+	for k, v := range secrets {
+		plainBuilder.WriteString(k + ": " + v + "\n")
+	}
+	plaintext := []byte(plainBuilder.String())
+
+	// Create secure temp directory.
+	tmpDir, cleanup, err := m.secureTempDir("aide-secrets-")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer cleanup()
+
+	// Write plaintext to temp file.
+	tmpFile := filepath.Join(tmpDir, name+".yaml")
+	if err := os.WriteFile(tmpFile, plaintext, 0o600); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// Open editor.
+	editor := resolveEditor()
+	cmd := exec.Command(editor, tmpFile)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("editor exited with error: %w", err)
+	}
+
+	// Read edited content.
+	newContent, err := os.ReadFile(tmpFile)
+	if err != nil {
+		return fmt.Errorf("failed to read edited file: %w", err)
+	}
+
+	return m.EditFromContent(name, secretsDir, newContent)
+}
+
+// EditFromContent re-encrypts a secrets file with newContent, preserving
+// the original recipients. This is the testable core that skips the editor.
+func (m *Manager) EditFromContent(name, secretsDir string, newContent []byte) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+
+	srcPath := filepath.Join(secretsDir, name+".enc.yaml")
+	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		return fmt.Errorf("secrets/%s.enc.yaml not found. Use 'aide secrets create %s' to create it.", name, name)
+	}
+
+	// Validate content.
+	if err := validateContent(newContent); err != nil {
+		return err
+	}
+	if err := validateFlatYAML(newContent); err != nil {
+		return err
+	}
+
+	// Load the existing encrypted tree to extract key groups (recipients).
+	fileBytes, err := os.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to read encrypted file: %w", err)
+	}
+
+	store := &yaml.Store{}
+	encTree, err := store.LoadEncryptedFile(fileBytes)
+	if err != nil {
+		return fmt.Errorf("failed to load encrypted file metadata: %w", err)
+	}
+
+	// Extract the existing key groups to preserve recipients.
+	keyGroups := encTree.Metadata.KeyGroups
+
+	// Create secure temp dir for the intermediate work.
+	tmpDir, cleanup, err := m.secureTempDir("aide-secrets-")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer cleanup()
+
+	// Write new content to secure temp file (for potential debugging; mostly
+	// for consistency with the Edit flow).
+	tmpFile := filepath.Join(tmpDir, name+".yaml")
+	if err := os.WriteFile(tmpFile, newContent, 0o600); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// Re-encrypt with the same recipients.
+	encrypted, err := encryptWithKeyGroups(newContent, keyGroups)
+	if err != nil {
+		return fmt.Errorf("sops re-encryption failed: %w", err)
+	}
+
+	// Atomic write: write to .tmp then rename.
+	tmpTarget := srcPath + ".tmp"
+	if err := os.WriteFile(tmpTarget, encrypted, 0o600); err != nil {
+		return fmt.Errorf("failed to write temporary file: %w", err)
+	}
+	if err := os.Rename(tmpTarget, srcPath); err != nil {
+		os.Remove(tmpTarget)
+		return fmt.Errorf("failed to rename temporary file: %w", err)
+	}
+
+	return nil
+}
+
+// encryptWithKeyGroups encrypts plaintext YAML content using sops with the
+// given key groups (preserving recipients from an existing file).
+func encryptWithKeyGroups(plaintext []byte, keyGroups []sops.KeyGroup) ([]byte, error) {
+	store := &yaml.Store{}
+
+	// Parse plaintext into sops branches.
+	branches, err := store.LoadPlainFile(plaintext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse YAML for encryption: %w", err)
+	}
+
+	// Create sops tree with the existing key groups.
+	tree := sops.Tree{
+		Branches: branches,
+		Metadata: sops.Metadata{
+			KeyGroups:         keyGroups,
+			UnencryptedSuffix: "_unencrypted",
+			Version:           "3.12.2",
+		},
+	}
+
+	// Generate a data key and encrypt.
+	svcs := []keyservice.KeyServiceClient{keyservice.NewLocalClient()}
+	dataKey, errs := tree.GenerateDataKeyWithKeyServices(svcs)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("failed to generate data key: %v", errs)
+	}
+
+	cipher := aes.NewCipher()
+	unencryptedMac, err := tree.Encrypt(dataKey, cipher)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt: %w", err)
+	}
+
+	encryptedMac, err := cipher.Encrypt(unencryptedMac, dataKey, tree.Metadata.LastModified.Format("2006-01-02T15:04:05Z"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt MAC: %w", err)
+	}
+	tree.Metadata.MessageAuthenticationCode = encryptedMac
+
+	errs2 := tree.Metadata.UpdateMasterKeysWithKeyServices(dataKey, svcs)
+	if len(errs2) > 0 {
+		return nil, fmt.Errorf("failed to update master keys: %v", errs2)
+	}
+
 	encrypted, err := store.EmitEncryptedFile(tree)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize encrypted file: %w", err)

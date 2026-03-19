@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jskswamy/aide/internal/config"
 )
 
 // testCreateManager sets up an isolated Manager for create tests.
@@ -266,5 +268,263 @@ func TestCreate_SecretsDirCreated(t *testing.T) {
 	encPath := filepath.Join(newSecretsDir, "auto-dir-test.enc.yaml")
 	if _, err := os.Stat(encPath); os.IsNotExist(err) {
 		t.Fatal("encrypted file was not created in new directory")
+	}
+}
+
+// --- List tests ---
+
+// createTestEncryptedFile creates an encrypted file in secretsDir for testing.
+func createTestEncryptedFile(t *testing.T, mgr *Manager, secretsDir, name string) {
+	t.Helper()
+	pubKey := testAgePublicKey(t)
+	content := []byte("api_key: sk-test-12345\n")
+	if err := mgr.CreateFromContent(name, secretsDir, pubKey, content); err != nil {
+		t.Fatalf("failed to create test encrypted file %s: %v", name, err)
+	}
+}
+
+func TestList_HappyPath(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+
+	// Create two encrypted files.
+	createTestEncryptedFile(t, mgr, secretsDir, "personal")
+	createTestEncryptedFile(t, mgr, secretsDir, "work")
+
+	// Create a config that references both files.
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"personal": {Agent: "claude", SecretsFile: "personal.enc.yaml"},
+			"oss":      {Agent: "claude", SecretsFile: "personal.enc.yaml"},
+			"work":     {Agent: "claude", SecretsFile: "work.enc.yaml"},
+		},
+	}
+
+	infos, err := mgr.List(secretsDir, cfg)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(infos))
+	}
+
+	// Build a map for easier assertions.
+	byName := make(map[string]SecretsFileInfo)
+	for _, info := range infos {
+		byName[info.Name] = info
+	}
+
+	// Check personal file.
+	personal, ok := byName["personal.enc.yaml"]
+	if !ok {
+		t.Fatal("expected personal.enc.yaml in list")
+	}
+	if personal.Path != filepath.Join(secretsDir, "personal.enc.yaml") {
+		t.Errorf("wrong path: %s", personal.Path)
+	}
+	if len(personal.ReferencedBy) != 2 {
+		t.Errorf("expected 2 contexts for personal, got %d: %v", len(personal.ReferencedBy), personal.ReferencedBy)
+	}
+
+	// Check work file.
+	work, ok := byName["work.enc.yaml"]
+	if !ok {
+		t.Fatal("expected work.enc.yaml in list")
+	}
+	if len(work.ReferencedBy) != 1 || work.ReferencedBy[0] != "work" {
+		t.Errorf("expected work context for work file, got %v", work.ReferencedBy)
+	}
+}
+
+func TestList_EmptyDir(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+
+	infos, err := mgr.List(secretsDir, &config.Config{})
+	if err != nil {
+		t.Fatalf("List on empty dir failed: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("expected empty list, got %d items", len(infos))
+	}
+}
+
+func TestList_NonexistentDir(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "nonexistent")
+
+	infos, err := mgr.List(secretsDir, &config.Config{})
+	if err != nil {
+		t.Fatalf("List on nonexistent dir should not error, got: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("expected empty list, got %d items", len(infos))
+	}
+}
+
+func TestList_UnreferencedFile(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+
+	createTestEncryptedFile(t, mgr, secretsDir, "unused")
+
+	// Config with no contexts referencing this file.
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"personal": {Agent: "claude", SecretsFile: "other.enc.yaml"},
+		},
+	}
+
+	infos, err := mgr.List(secretsDir, cfg)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(infos))
+	}
+	if len(infos[0].ReferencedBy) != 0 {
+		t.Errorf("expected no context references, got %v", infos[0].ReferencedBy)
+	}
+}
+
+func TestList_MultipleContextsSameFile(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+
+	createTestEncryptedFile(t, mgr, secretsDir, "shared")
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"ctx1": {Agent: "claude", SecretsFile: "shared.enc.yaml"},
+			"ctx2": {Agent: "claude", SecretsFile: "shared.enc.yaml"},
+			"ctx3": {Agent: "claude", SecretsFile: "shared.enc.yaml"},
+		},
+	}
+
+	infos, err := mgr.List(secretsDir, cfg)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(infos))
+	}
+	if len(infos[0].ReferencedBy) != 3 {
+		t.Errorf("expected 3 context references, got %d: %v", len(infos[0].ReferencedBy), infos[0].ReferencedBy)
+	}
+}
+
+func TestList_RecipientsExtracted(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	pubKey := testAgePublicKey(t)
+
+	createTestEncryptedFile(t, mgr, secretsDir, "test-recipients")
+
+	infos, err := mgr.List(secretsDir, &config.Config{})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(infos))
+	}
+	if len(infos[0].Recipients) != 1 {
+		t.Fatalf("expected 1 recipient, got %d", len(infos[0].Recipients))
+	}
+	if infos[0].Recipients[0] != pubKey {
+		t.Errorf("expected recipient %s, got %s", pubKey, infos[0].Recipients[0])
+	}
+}
+
+func TestList_CorruptFile(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+
+	// Create a valid encrypted file too.
+	createTestEncryptedFile(t, mgr, secretsDir, "valid")
+
+	// Write a corrupt file with .enc.yaml extension.
+	corruptPath := filepath.Join(secretsDir, "corrupt.enc.yaml")
+	if err := os.WriteFile(corruptPath, []byte("not valid sops content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	infos, err := mgr.List(secretsDir, &config.Config{})
+	if err != nil {
+		t.Fatalf("List should not fail on corrupt file, got: %v", err)
+	}
+
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 files (valid + corrupt), got %d", len(infos))
+	}
+
+	// Find the corrupt one.
+	byName := make(map[string]SecretsFileInfo)
+	for _, info := range infos {
+		byName[info.Name] = info
+	}
+	corrupt, ok := byName["corrupt.enc.yaml"]
+	if !ok {
+		t.Fatal("expected corrupt.enc.yaml in list")
+	}
+	// Corrupt file should have nil/empty recipients (not crash).
+	_ = corrupt
+}
+
+func TestList_NilConfig(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+
+	createTestEncryptedFile(t, mgr, secretsDir, "test")
+
+	// Nil config should not panic.
+	infos, err := mgr.List(secretsDir, nil)
+	if err != nil {
+		t.Fatalf("List with nil config failed: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(infos))
+	}
+	if len(infos[0].ReferencedBy) != 0 {
+		t.Errorf("expected no references with nil config, got %v", infos[0].ReferencedBy)
+	}
+}
+
+func TestList_WithTestFixture(t *testing.T) {
+	mgr, _ := testCreateManager(t)
+
+	// Use the testdata directory which has test-secrets.enc.yaml.
+	td := testdataDir(t)
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"personal": {Agent: "claude", SecretsFile: "test-secrets.enc.yaml"},
+		},
+	}
+
+	infos, err := mgr.List(td, cfg)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	// Should find at least test-secrets.enc.yaml.
+	found := false
+	for _, info := range infos {
+		if info.Name == "test-secrets.enc.yaml" {
+			found = true
+			if len(info.Recipients) == 0 {
+				t.Error("expected recipients from test-secrets.enc.yaml")
+			}
+			if len(info.ReferencedBy) != 1 || info.ReferencedBy[0] != "personal" {
+				t.Errorf("expected [personal] contexts, got %v", info.ReferencedBy)
+			}
+		}
+	}
+	if !found {
+		names := make([]string, len(infos))
+		for i, info := range infos {
+			names[i] = info.Name
+		}
+		t.Errorf("test-secrets.enc.yaml not found in list: %v", names)
 	}
 }

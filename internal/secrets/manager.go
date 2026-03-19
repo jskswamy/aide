@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/getsops/sops/v3"
@@ -13,6 +14,7 @@ import (
 	"github.com/getsops/sops/v3/age"
 	"github.com/getsops/sops/v3/keyservice"
 	"github.com/getsops/sops/v3/stores/yaml"
+	"github.com/jskswamy/aide/internal/config"
 	yamlpkg "gopkg.in/yaml.v3"
 )
 
@@ -35,12 +37,104 @@ type Manager struct {
 	runtimeDir string
 }
 
+// SecretsFileInfo holds metadata about an encrypted secrets file.
+type SecretsFileInfo struct {
+	Name         string   // filename (e.g. "personal.enc.yaml")
+	Path         string   // full absolute path
+	Recipients   []string // age public keys from sops metadata
+	ReferencedBy []string // context names that reference this file
+}
+
 // NewManager creates a new secrets Manager.
 func NewManager(secretsDir, runtimeDir string) *Manager {
 	return &Manager{
 		secretsDir: secretsDir,
 		runtimeDir: runtimeDir,
 	}
+}
+
+// List scans secretsDir for *.enc.yaml files, extracts sops metadata
+// (recipients) without decrypting, and cross-references with config contexts.
+func (m *Manager) List(secretsDir string, cfg *config.Config) ([]SecretsFileInfo, error) {
+	// Check if directory exists.
+	entries, err := os.ReadDir(secretsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read secrets directory: %w", err)
+	}
+
+	// Build reverse map: secretsFile -> []contextName
+	contextsByFile := buildContextReverseMap(cfg)
+
+	var results []SecretsFileInfo
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".enc.yaml") {
+			continue
+		}
+
+		fullPath := filepath.Join(secretsDir, name)
+
+		// Extract recipients from sops metadata without decrypting.
+		recipients := extractRecipients(fullPath)
+
+		// Look up which contexts reference this file.
+		referencedBy := contextsByFile[name]
+		if referencedBy == nil {
+			referencedBy = []string{}
+		}
+		sort.Strings(referencedBy)
+
+		results = append(results, SecretsFileInfo{
+			Name:         name,
+			Path:         fullPath,
+			Recipients:   recipients,
+			ReferencedBy: referencedBy,
+		})
+	}
+
+	// Sort by name for stable output.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Name < results[j].Name
+	})
+
+	return results, nil
+}
+
+// buildContextReverseMap builds a map from secrets filename to context names.
+func buildContextReverseMap(cfg *config.Config) map[string][]string {
+	result := make(map[string][]string)
+	if cfg == nil {
+		return result
+	}
+
+	for ctxName, ctx := range cfg.Contexts {
+		if ctx.SecretsFile != "" {
+			result[ctx.SecretsFile] = append(result[ctx.SecretsFile], ctxName)
+		}
+	}
+
+	// Handle minimal config with top-level secrets_file.
+	if cfg.IsMinimal() && cfg.SecretsFile != "" {
+		result[cfg.SecretsFile] = append(result[cfg.SecretsFile], "(default)")
+	}
+
+	return result
+}
+
+// extractRecipients reads a sops-encrypted file and returns the age recipient
+// public keys from its metadata, without decrypting.
+func extractRecipients(filePath string) []string {
+	recipients, err := ListRecipients(filePath)
+	if err != nil {
+		return nil
+	}
+	return recipients
 }
 
 // Create creates a new encrypted secrets file by opening $EDITOR.

@@ -14,6 +14,7 @@ var version = "dev"
 func main() {
 	var agentFlag string
 	var cleanEnv bool
+	var yolo bool
 
 	rootCmd := &cobra.Command{
 		Use:   "aide [flags] [-- agent-args...]",
@@ -25,6 +26,19 @@ agents on your PATH.`,
 		DisableFlagParsing: false,
 		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if yolo {
+				fmt.Fprintln(os.Stderr, "\033[1;33mWARNING:\033[0m --yolo mode enabled")
+				fmt.Fprintln(os.Stderr, "  Agent permission checks are disabled. The OS sandbox is your safety net.")
+				fmt.Fprintln(os.Stderr, "")
+				fmt.Fprintln(os.Stderr, "  \033[1mSandbox constraints (default policy):\033[0m")
+				fmt.Fprintln(os.Stderr, "    Writable    project dir, $TMPDIR")
+				fmt.Fprintln(os.Stderr, "    Read-only   /usr/bin, /bin, ~/.gitconfig, ~/.ssh/known_hosts")
+				fmt.Fprintln(os.Stderr, "    Denied      ~/.ssh/id_*, ~/.aws/credentials, ~/.config/gcloud,")
+				fmt.Fprintln(os.Stderr, "                ~/.config/aide/secrets, browser profiles")
+				fmt.Fprintln(os.Stderr, "    Network     outbound only (no inbound listeners)")
+				fmt.Fprintln(os.Stderr, "")
+			}
+
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
@@ -32,17 +46,12 @@ agents on your PATH.`,
 
 			l := &launcher.Launcher{
 				Execer: &launcher.SyscallExecer{},
+				Yolo:   yolo,
 			}
 
 			// Check if a config file exists.
 			configFile := config.ConfigFilePath()
 			if _, err := os.Stat(configFile); os.IsNotExist(err) {
-				// No config — use passthrough mode.
-				if agentFlag != "" {
-					// With --agent flag but no config, we can't resolve
-					// a full context. Just exec the agent directly.
-					return l.Passthrough(cwd, args)
-				}
 				return l.Passthrough(cwd, args)
 			}
 
@@ -53,6 +62,7 @@ agents on your PATH.`,
 
 	rootCmd.Flags().StringVar(&agentFlag, "agent", "", "Override which agent to launch")
 	rootCmd.Flags().BoolVar(&cleanEnv, "clean-env", false, "Start agent with only essential environment variables")
+	rootCmd.Flags().BoolVar(&yolo, "yolo", false, "Launch agent with skip-permissions (agent-specific, sandbox still applies)")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

@@ -63,6 +63,15 @@ func (l *Launcher) Passthrough(cwd string, extraArgs []string) error {
 
 		_ = writeFirstRunHint(name)
 
+		// Inject yolo flag if requested.
+		if l.Yolo {
+			yoloArgs, err := YoloArgs(name)
+			if err != nil {
+				return err
+			}
+			extraArgs = append(yoloArgs, extraArgs...)
+		}
+
 		args := append([]string{binary}, extraArgs...)
 		return l.Execer.Exec(binary, args, os.Environ())
 

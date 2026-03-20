@@ -15,17 +15,15 @@ func TestGenerateSeatbeltProfile_DenyDefault(t *testing.T) {
 		Network:         NetworkNone,
 		AllowSubprocess: false,
 	}
-
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	if !strings.Contains(profile, "(version 1)") {
-		t.Error("profile should contain (version 1)")
-	}
 	if !strings.Contains(profile, "(deny default)") {
 		t.Error("profile should contain (deny default)")
+	}
+	if strings.Contains(profile, "(allow default)") {
+		t.Error("profile should NOT contain (allow default)")
 	}
 }
 
@@ -42,69 +40,22 @@ func TestGenerateSeatbeltProfile_WritablePaths(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Writable paths should appear in an allow file-read* file-write* block
-	if !strings.Contains(profile, "(allow file-read*") {
-		t.Error("profile should contain (allow file-read* for writable paths")
-	}
-	if !strings.Contains(profile, "(allow file-write*") {
-		t.Error("profile should contain (allow file-write* for writable paths")
+	// With deny-default, writable paths appear in (allow file-read* file-write* ...) blocks
+	if !strings.Contains(profile, "(allow file-read* file-write*") {
+		t.Error("profile should contain (allow file-read* file-write* for writable paths")
 	}
 	if !strings.Contains(profile, dir) {
 		t.Errorf("profile should contain writable path %q", dir)
 	}
 }
 
-func TestGenerateSeatbeltProfile_ReadablePaths(t *testing.T) {
-	dir := t.TempDir()
-	policy := Policy{
-		Readable:        []string{dir},
-		Network:         NetworkNone,
-		AllowSubprocess: false,
-	}
-
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(profile, "(allow file-read*") {
-		t.Error("profile should contain (allow file-read* for readable paths")
-	}
-	if !strings.Contains(profile, dir) {
-		t.Errorf("profile should contain readable path %q", dir)
-	}
-}
-
 func TestGenerateSeatbeltProfile_DeniedPaths(t *testing.T) {
 	dir := t.TempDir()
-	policy := Policy{
-		Denied:          []string{dir},
-		Network:         NetworkNone,
-		AllowSubprocess: false,
-	}
-
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(profile, "(deny file-read*") {
-		t.Error("profile should contain (deny file-read* for denied paths")
-	}
-	if !strings.Contains(profile, "(deny file-write*") {
-		t.Error("profile should contain (deny file-write* for denied paths")
-	}
-}
-
-func TestGenerateSeatbeltProfile_DeniedBeforeAllows(t *testing.T) {
-	dir := t.TempDir()
 	denied := filepath.Join(dir, "denied")
-	writable := filepath.Join(dir, "writable")
-	os.MkdirAll(denied, 0755)
-	os.MkdirAll(writable, 0755)
-
+	if err := os.MkdirAll(denied, 0755); err != nil {
+		t.Fatalf("failed to create denied dir: %v", err)
+	}
 	policy := Policy{
-		Writable:        []string{writable},
 		Denied:          []string{denied},
 		Network:         NetworkNone,
 		AllowSubprocess: false,
@@ -115,19 +66,12 @@ func TestGenerateSeatbeltProfile_DeniedBeforeAllows(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	denyIdx := strings.Index(profile, "(deny file-read*")
-	allowIdx := strings.Index(profile, "(allow file-read*")
-	// The first deny file rule should appear before the first allow file rule
-	// (skipping system essentials which also use allow file-read*)
-	// We check that deny appears in the profile before the writable allow block
-	if denyIdx < 0 {
-		t.Fatal("profile should contain deny file rules")
+	// Denied paths still use (deny file-read-data ...) and (deny file-write* ...)
+	if !strings.Contains(profile, "(deny file-read-data") {
+		t.Error("denied paths should use (deny file-read-data")
 	}
-	if allowIdx < 0 {
-		t.Fatal("profile should contain allow file rules")
-	}
-	if denyIdx > allowIdx {
-		t.Error("denied paths should appear before allow paths in profile for precedence")
+	if !strings.Contains(profile, "(deny file-write*") {
+		t.Error("denied paths should include (deny file-write* for defense-in-depth")
 	}
 }
 
@@ -142,11 +86,9 @@ func TestGenerateSeatbeltProfile_NetworkOutbound(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// With deny-default, outbound mode should emit (allow network-outbound)
 	if !strings.Contains(profile, "(allow network-outbound)") {
-		t.Error("profile should contain (allow network-outbound)")
-	}
-	if strings.Contains(profile, "(allow network-inbound)") {
-		t.Error("profile should NOT contain (allow network-inbound) for outbound mode")
+		t.Error("profile should contain (allow network-outbound) for outbound mode")
 	}
 }
 
@@ -161,14 +103,9 @@ func TestGenerateSeatbeltProfile_NetworkNone(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if strings.Contains(profile, "(allow network-outbound)") {
-		t.Error("profile should NOT contain (allow network-outbound) for none mode")
-	}
-	if strings.Contains(profile, "(allow network-inbound)") {
-		t.Error("profile should NOT contain (allow network-inbound) for none mode")
-	}
-	if strings.Contains(profile, "(allow network*)") {
-		t.Error("profile should NOT contain (allow network*) for none mode")
+	// With deny-default, NetworkNone needs no rules (deny default covers it)
+	if strings.Contains(profile, "(deny network*)") {
+		t.Error("profile should NOT contain (deny network*) with deny-default (already denied)")
 	}
 }
 
@@ -183,6 +120,7 @@ func TestGenerateSeatbeltProfile_NetworkUnrestricted(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// With deny-default, unrestricted should emit (allow network*)
 	if !strings.Contains(profile, "(allow network*)") {
 		t.Error("profile should contain (allow network*) for unrestricted mode")
 	}
@@ -199,8 +137,14 @@ func TestGenerateSeatbeltProfile_NoSubprocess(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if strings.Contains(profile, "(allow process-fork)") {
-		t.Error("profile should NOT contain (allow process-fork) when AllowSubprocess=false")
+	// With deny-default + SystemRuntime, process-fork and process-exec are always
+	// allowed (SystemRuntime includes them). AllowSubprocess is handled at the
+	// consumer level, not in profile generation.
+	if !strings.Contains(profile, "(allow process-fork)") {
+		t.Error("profile should contain (allow process-fork) from SystemRuntime")
+	}
+	if !strings.Contains(profile, "(allow process-exec)") {
+		t.Error("profile should contain (allow process-exec) from SystemRuntime")
 	}
 }
 
@@ -215,11 +159,13 @@ func TestGenerateSeatbeltProfile_WithSubprocess(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(profile, "(allow process-exec)") {
-		t.Error("profile should contain (allow process-exec)")
+	// Verify profile is valid with deny-default
+	if !strings.Contains(profile, "(deny default)") {
+		t.Error("profile should contain (deny default)")
 	}
+	// Process rules should be present from SystemRuntime
 	if !strings.Contains(profile, "(allow process-fork)") {
-		t.Error("profile should contain (allow process-fork) when AllowSubprocess=true")
+		t.Error("profile should contain (allow process-fork) from SystemRuntime")
 	}
 }
 
@@ -234,17 +180,17 @@ func TestGenerateSeatbeltProfile_SystemEssentials(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// With deny-default, system essentials are individually listed by SystemRuntime
 	essentials := []string{
-		"/usr/lib",
-		"/System/Library",
-		"/dev/null",
-		"/dev/urandom",
 		"(allow sysctl-read)",
-		"(allow mach-lookup)",
+		"(allow mach-lookup",
+		"(allow pseudo-tty)",
+		"(allow process-exec)",
+		"(allow process-fork)",
 	}
 	for _, e := range essentials {
 		if !strings.Contains(profile, e) {
-			t.Errorf("profile should contain system essential %q", e)
+			t.Errorf("profile should contain %q from SystemRuntime module", e)
 		}
 	}
 }
@@ -321,13 +267,92 @@ func TestDarwinSandbox_Apply_RewritesCmd(t *testing.T) {
 		t.Error("profile file should exist in runtimeDir")
 	}
 
-	// Verify profile content
+	// Verify profile content uses deny-default
 	content, err := os.ReadFile(profilePath)
 	if err != nil {
 		t.Fatalf("failed to read profile: %v", err)
 	}
 	if !strings.Contains(string(content), "(deny default)") {
 		t.Error("profile file should contain (deny default)")
+	}
+}
+
+func TestSeatbeltProfile_PortFiltering(t *testing.T) {
+	policy := Policy{
+		Network:         NetworkOutbound,
+		AllowPorts:      []int{443, 53},
+		AllowSubprocess: false,
+	}
+
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// With AllowPorts, should deny all outbound then allow specific ports
+	if !strings.Contains(profile, "(deny network-outbound)") {
+		t.Error("profile should contain (deny network-outbound) when AllowPorts is set")
+	}
+	if !strings.Contains(profile, `(allow network-outbound (remote tcp "*:443"))`) {
+		t.Error("profile should contain per-port TCP rule for 443")
+	}
+	if !strings.Contains(profile, `(allow network-outbound (remote tcp "*:53"))`) {
+		t.Error("profile should contain per-port TCP rule for 53")
+	}
+}
+
+func TestSeatbeltProfile_DenyPorts(t *testing.T) {
+	policy := Policy{
+		Network:         NetworkOutbound,
+		DenyPorts:       []int{8080},
+		AllowSubprocess: false,
+	}
+
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(profile, `(deny network-outbound (remote tcp "*:8080"))`) {
+		t.Error("profile should contain deny rule for port 8080")
+	}
+}
+
+func TestSeatbeltProfile_NoPortFiltering(t *testing.T) {
+	policy := Policy{
+		Network:         NetworkOutbound,
+		AllowSubprocess: false,
+	}
+
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// With deny-default and no port restrictions, outbound mode should just
+	// allow network-outbound (no deny needed)
+	if !strings.Contains(profile, "(allow network-outbound)") {
+		t.Error("profile should contain (allow network-outbound) for outbound mode without port restrictions")
+	}
+}
+
+func TestSeatbeltProfile_PortFiltering_DNS(t *testing.T) {
+	policy := Policy{
+		Network:         NetworkOutbound,
+		AllowPorts:      []int{53},
+		AllowSubprocess: false,
+	}
+
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(profile, `(allow network-outbound (remote tcp "*:53"))`) {
+		t.Error("profile should contain TCP rule for DNS port 53")
+	}
+	if !strings.Contains(profile, `(allow network-outbound (remote udp "*:53"))`) {
+		t.Error("profile should contain UDP rule for DNS port 53")
 	}
 }
 

@@ -45,8 +45,12 @@ func (m *systemRuntimeModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 		// 3. Metadata traversal
 		seatbelt.Section("Metadata traversal"),
+		// Git requires stat() on parent directories up to / for its
+		// safe.directory ownership check. /Users is needed on macOS
+		// so git can walk /Users → /Users/<user> → ... → repo root.
 		seatbelt.Raw(`(allow file-read-metadata
     (literal "/")
+    (literal "/Users")
     (subpath "/System")
     (subpath "/private/var/run")
 )`),

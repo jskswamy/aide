@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 // NewSandbox returns a darwinSandbox on macOS.
@@ -52,88 +54,50 @@ func (d *darwinSandbox) Apply(cmd *exec.Cmd, policy Policy, runtimeDir string) e
 	return nil
 }
 
-// generateSeatbeltProfile builds a Seatbelt .sb profile string from a Policy.
+// GenerateProfile returns the Seatbelt .sb profile string for the given policy.
+func (d *darwinSandbox) GenerateProfile(policy Policy) (string, error) {
+	return generateSeatbeltProfile(policy)
+}
+
+// generateSeatbeltProfile builds a Seatbelt .sb profile string from a Policy
+// by composing modules from the pkg/seatbelt library.
 func generateSeatbeltProfile(policy Policy) (string, error) {
-	var b strings.Builder
+	homeDir, _ := os.UserHomeDir()
 
-	// Header
-	b.WriteString("(version 1)\n")
-	b.WriteString("(deny default)\n")
+	p := seatbelt.New(homeDir).
+		Use(
+			modules.Base(),
+			modules.SystemRuntime(),
+			networkModule(policy),
+			modules.Filesystem(modules.FilesystemConfig{
+				Writable: policy.Writable,
+				Readable: policy.Readable,
+				Denied:   policy.Denied,
+			}),
+			modules.NodeToolchain(),
+			modules.NixToolchain(),
+			modules.GitIntegration(),
+			modules.KeychainIntegration(),
+			modules.ClaudeAgent(),
+		)
 
-	// Process rules
-	b.WriteString("\n;; --- Process ---\n")
-	b.WriteString("(allow process-exec)\n")
-	if policy.AllowSubprocess {
-		b.WriteString("(allow process-fork)\n")
-	}
+	return p.Render()
+}
 
-	// Network rules
+// networkModule maps the sandbox package's NetworkMode to a seatbelt network module.
+func networkModule(policy Policy) seatbelt.Module {
 	switch policy.Network {
-	case NetworkOutbound:
-		b.WriteString("\n;; --- Network ---\n")
-		b.WriteString("(allow network-outbound)\n")
-	case NetworkUnrestricted:
-		b.WriteString("\n;; --- Network ---\n")
-		b.WriteString("(allow network*)\n")
 	case NetworkNone:
-		// deny default covers it
-	}
-
-	// Filesystem: denied paths (evaluated first by sandbox-exec for precedence)
-	deniedPaths := expandGlobs(policy.Denied)
-	if len(deniedPaths) > 0 {
-		b.WriteString("\n;; --- Filesystem: denied ---\n")
-		for _, p := range deniedPaths {
-			expr := seatbeltPath(p)
-			b.WriteString(fmt.Sprintf("(deny file-read* %s)\n", expr))
-			b.WriteString(fmt.Sprintf("(deny file-write* %s)\n", expr))
+		return modules.Network(modules.NetworkNone)
+	case NetworkOutbound:
+		if len(policy.AllowPorts) > 0 || len(policy.DenyPorts) > 0 {
+			return modules.NetworkWithPorts(modules.NetworkOutbound, modules.PortOpts{
+				AllowPorts: policy.AllowPorts,
+				DenyPorts:  policy.DenyPorts,
+			})
 		}
+		return modules.Network(modules.NetworkOutbound)
+	default:
+		return modules.Network(modules.NetworkOpen)
 	}
-
-	// Filesystem: writable paths
-	if len(policy.Writable) > 0 {
-		b.WriteString("\n;; --- Filesystem: writable ---\n")
-		for _, p := range policy.Writable {
-			expr := seatbeltPath(p)
-			b.WriteString(fmt.Sprintf("(allow file-read* %s)\n", expr))
-			b.WriteString(fmt.Sprintf("(allow file-write* %s)\n", expr))
-		}
-	}
-
-	// Filesystem: readable paths
-	if len(policy.Readable) > 0 {
-		b.WriteString("\n;; --- Filesystem: readable ---\n")
-		for _, p := range policy.Readable {
-			expr := seatbeltPath(p)
-			b.WriteString(fmt.Sprintf("(allow file-read* %s)\n", expr))
-		}
-	}
-
-	// System essentials (always allowed)
-	b.WriteString("\n;; --- System essentials ---\n")
-	b.WriteString("(allow file-read*\n")
-	b.WriteString("    (subpath \"/usr/lib\")\n")
-	b.WriteString("    (subpath \"/System/Library\")\n")
-	b.WriteString("    (subpath \"/Library/Frameworks\")\n")
-	b.WriteString("    (subpath \"/private/var/db/dyld\")\n")
-	b.WriteString("    (literal \"/dev/null\")\n")
-	b.WriteString("    (literal \"/dev/urandom\")\n")
-	b.WriteString("    (literal \"/dev/random\")\n")
-	b.WriteString(")\n")
-	b.WriteString("(allow sysctl-read)\n")
-	b.WriteString("(allow mach-lookup)\n")
-
-	return b.String(), nil
 }
-
-// seatbeltPath returns the Seatbelt path expression for a filesystem path.
-// Directories use (subpath ...), files use (literal ...).
-func seatbeltPath(p string) string {
-	info, err := os.Stat(p)
-	if err == nil && info.IsDir() {
-		return fmt.Sprintf(`(subpath "%s")`, p)
-	}
-	return fmt.Sprintf(`(literal "%s")`, p)
-}
-
-// expandGlobs and filterEnv are in sandbox.go (shared across platforms).

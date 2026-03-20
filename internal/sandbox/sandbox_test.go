@@ -15,20 +15,16 @@ func TestDefaultPolicy_Paths(t *testing.T) {
 
 	policy := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
 
-	// Verify writable contains projectRoot, runtimeDir, tempDir
+	// Writable
 	assertContains(t, policy.Writable, projectRoot, "Writable should contain projectRoot")
 	assertContains(t, policy.Writable, runtimeDir, "Writable should contain runtimeDir")
 	assertContains(t, policy.Writable, tempDir, "Writable should contain tempDir")
 
-	// Verify readable contains gitconfig and ssh/known_hosts
-	assertContains(t, policy.Readable, filepath.Join(homeDir, ".gitconfig"), "Readable should contain .gitconfig")
-	assertContains(t, policy.Readable, filepath.Join(homeDir, ".ssh/known_hosts"), "Readable should contain .ssh/known_hosts")
+	// Readable — deny-list model: homeDir + projectRoot (for Linux Landlock)
+	assertContains(t, policy.Readable, homeDir, "Readable should contain homeDir")
+	assertContains(t, policy.Readable, projectRoot, "Readable should contain projectRoot")
 
-	// Verify readable contains standard system paths
-	assertContains(t, policy.Readable, "/usr/bin", "Readable should contain /usr/bin")
-	assertContains(t, policy.Readable, "/bin", "Readable should contain /bin")
-
-	// Verify denied contains SSH keys and cloud creds
+	// Denied
 	assertContains(t, policy.Denied, filepath.Join(homeDir, ".ssh/id_*"), "Denied should contain SSH key glob")
 	assertContains(t, policy.Denied, filepath.Join(homeDir, ".aws/credentials"), "Denied should contain AWS credentials")
 	assertContains(t, policy.Denied, filepath.Join(homeDir, ".config/aide/secrets"), "Denied should contain aide secrets")

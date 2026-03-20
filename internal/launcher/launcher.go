@@ -158,11 +158,29 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// Merge resolved env on top of base
 	env := mergeEnv(baseEnv, resolvedEnv)
 
-	// 11. Apply sandbox if applicable
-	if rc.Context.Sandbox != nil && !rc.Context.Sandbox.Disabled {
+	// 11. Resolve binary to absolute path (syscall.Exec requires it).
+	// Must happen before sandbox wrapping since sandbox rewrites cmd.Path.
+	if !filepath.IsAbs(binary) {
+		lookPath := l.lookPath()
+		resolved, err := lookPath(binary)
+		if err != nil {
+			cleanup()
+			return fmt.Errorf("agent %q not found on PATH: %w", binary, err)
+		}
+		binary = resolved
+	}
+
+	// 12. Apply sandbox (DD-18: always applied unless explicitly disabled).
+	// ResolveSandboxRef resolves named profiles; PolicyFromConfig handles nil → defaults.
+	sandboxCfg, sbDisabled, sbErr := sandbox.ResolveSandboxRef(rc.Context.Sandbox, cfg.Sandboxes)
+	if sbErr != nil {
+		cleanup()
+		return fmt.Errorf("resolving sandbox: %w", sbErr)
+	}
+	if !sbDisabled {
 		homeDir, _ := os.UserHomeDir()
 		tempDir := os.TempDir()
-		policy, err := sandbox.PolicyFromConfig(rc.Context.Sandbox, projectRoot, rtDir.Path(), homeDir, tempDir)
+		policy, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
 		if err != nil {
 			cleanup()
 			return fmt.Errorf("building sandbox policy: %w", err)
@@ -182,17 +200,6 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			extraArgs = cmd.Args[1:]
 			env = cmd.Env
 		}
-	}
-
-	// 12. Resolve binary to absolute path (syscall.Exec requires it).
-	if !filepath.IsAbs(binary) {
-		lookPath := l.lookPath()
-		resolved, err := lookPath(binary)
-		if err != nil {
-			cleanup()
-			return fmt.Errorf("agent %q not found on PATH: %w", binary, err)
-		}
-		binary = resolved
 	}
 
 	// 13. Exec the agent binary

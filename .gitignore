@@ -5,6 +5,9 @@
 .beads/.beads-credential-key
 .claude/
 
+# Git worktrees
+.worktrees/
+
 # Go build output
 bin/
 /aide

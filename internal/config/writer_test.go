@@ -31,10 +31,10 @@ func TestWriteConfig_FullFormat(t *testing.T) {
 			},
 			"personal": {
 				Agent: "copilot",
-				Sandbox: &SandboxPolicy{
-					Network:         "outbound",
+				Sandbox: &SandboxRef{Inline: &SandboxPolicy{
+					Network:         &NetworkPolicy{Mode: "outbound"},
 					AllowSubprocess: &allowSub,
-				},
+				}},
 			},
 		},
 		DefaultContext: "work",

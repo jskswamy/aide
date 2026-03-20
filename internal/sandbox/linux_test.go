@@ -3,6 +3,9 @@
 package sandbox
 
 import (
+	"bytes"
+	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -172,6 +175,113 @@ func TestLinuxSandbox_Apply_FallsBackGracefully(t *testing.T) {
 	err := s.Apply(cmd, policy, "/tmp/runtime")
 	if err != nil {
 		t.Fatalf("Apply should not error: %v", err)
+	}
+}
+
+func TestLandlock_PortFiltering_RewritesCmd(t *testing.T) {
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hello")
+	policy := Policy{
+		Writable:        []string{"/tmp/project"},
+		Readable:        []string{"/usr"},
+		Network:         NetworkOutbound,
+		AllowPorts:      []int{443},
+		AllowSubprocess: true,
+	}
+
+	runtimeDir := t.TempDir()
+	err := s.applyLandlock(cmd, policy, runtimeDir)
+	if err != nil {
+		t.Fatalf("applyLandlock error: %v", err)
+	}
+
+	// Read the policy JSON that was written
+	policyPath := runtimeDir + "/landlock-policy.json"
+	policyBytes, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatalf("reading policy file: %v", err)
+	}
+
+	policyJSON := string(policyBytes)
+
+	// Verify the policy JSON contains AllowPorts with 443
+	if !strings.Contains(policyJSON, `"AllowPorts":[443]`) {
+		t.Errorf("policy JSON should contain AllowPorts=[443], got: %s", policyJSON)
+	}
+
+	// Verify the command was rewritten to use aide __sandbox-apply
+	args := strings.Join(cmd.Args, " ")
+	if !strings.Contains(args, "__sandbox-apply") {
+		t.Errorf("expected __sandbox-apply in args, got: %s", args)
+	}
+	if !strings.Contains(args, policyPath) {
+		t.Errorf("expected policy path %s in args, got: %s", policyPath, args)
+	}
+}
+
+func TestLandlock_PortFiltering_DenyPorts(t *testing.T) {
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hello")
+	policy := Policy{
+		Writable:        []string{"/tmp/project"},
+		Readable:        []string{"/usr"},
+		Network:         NetworkOutbound,
+		DenyPorts:       []int{22, 25},
+		AllowSubprocess: true,
+	}
+
+	runtimeDir := t.TempDir()
+	err := s.applyLandlock(cmd, policy, runtimeDir)
+	if err != nil {
+		t.Fatalf("applyLandlock error: %v", err)
+	}
+
+	policyPath := runtimeDir + "/landlock-policy.json"
+	policyBytes, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatalf("reading policy file: %v", err)
+	}
+
+	policyJSON := string(policyBytes)
+	if !strings.Contains(policyJSON, `"DenyPorts":[22,25]`) {
+		t.Errorf("policy JSON should contain DenyPorts=[22,25], got: %s", policyJSON)
+	}
+}
+
+func TestBwrap_PortFiltering_Warning(t *testing.T) {
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hello")
+	policy := Policy{
+		Writable:        []string{"/tmp/project"},
+		Readable:        []string{"/usr"},
+		Network:         NetworkOutbound,
+		AllowPorts:      []int{443},
+		AllowSubprocess: true,
+	}
+
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		t.Skip("bwrap not on PATH")
+	}
+
+	// Capture log output
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
+
+	err = s.applyBwrap(cmd, policy, bwrapPath)
+	if err != nil {
+		t.Fatalf("applyBwrap error: %v", err)
+	}
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "Port-level filtering not supported by bwrap") {
+		t.Errorf("expected warning about port filtering, got log output: %q", logOutput)
+	}
+
+	// Verify execution still proceeds (cmd.Path should be bwrap)
+	if cmd.Path != bwrapPath {
+		t.Errorf("cmd.Path = %q, want %q (execution should proceed despite warning)", cmd.Path, bwrapPath)
 	}
 }
 

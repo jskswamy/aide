@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,12 @@ type Sandbox interface {
 	//
 	// Returns an error if the policy cannot be enforced on this OS/kernel.
 	Apply(cmd *exec.Cmd, policy Policy, runtimeDir string) error
+
+	// GenerateProfile returns the platform-specific sandbox profile that
+	// would be applied for the given policy. On macOS this is the Seatbelt
+	// .sb profile, on Linux a description of Landlock/bwrap rules.
+	// This is used by "aide sandbox test" for debugging sandbox configuration.
+	GenerateProfile(policy Policy) (string, error)
 }
 
 // Policy describes the security boundary for an agent process.
@@ -36,6 +43,12 @@ type Policy struct {
 
 	// Network mode: "outbound", "none", "unrestricted".
 	Network NetworkMode
+
+	// AllowPorts restricts outbound connections to these ports only (whitelist).
+	AllowPorts []int
+
+	// DenyPorts blocks outbound connections to these ports (blacklist).
+	DenyPorts []int
 
 	// Whether the agent may spawn child processes.
 	AllowSubprocess bool
@@ -67,22 +80,20 @@ const (
 //	homeDir     — user's home directory (~)
 //	tempDir     — os.TempDir() result
 func DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir string) Policy {
+	writable := []string{
+		projectRoot,
+		runtimeDir,
+		tempDir,
+	}
+	for _, dir := range extraWritablePaths(homeDir) {
+		writable = append(writable, dir)
+	}
+
 	return Policy{
-		Writable: []string{
-			projectRoot,
-			runtimeDir,
-			tempDir,
-		},
+		Writable: writable,
 		Readable: []string{
+			homeDir,
 			projectRoot,
-			"/usr/bin",
-			"/usr/local/bin",
-			"/bin",
-			"/usr/lib",
-			"/usr/share",
-			filepath.Join(homeDir, ".gitconfig"),
-			filepath.Join(homeDir, ".config/git"),
-			filepath.Join(homeDir, ".ssh/known_hosts"),
 		},
 		Denied: []string{
 			filepath.Join(homeDir, ".ssh/id_*"),
@@ -112,6 +123,27 @@ type noopSandbox struct{}
 // Apply is a no-op; the command runs unsandboxed.
 func (n *noopSandbox) Apply(_ *exec.Cmd, _ Policy, _ string) error {
 	return nil
+}
+
+// GenerateProfile returns a message indicating sandbox is unavailable.
+func (n *noopSandbox) GenerateProfile(_ Policy) (string, error) {
+	return "Sandbox not available on this platform (no-op sandbox)", nil
+}
+
+// extraWritablePaths returns additional paths that agents need write access to.
+func extraWritablePaths(homeDir string) []string {
+	var paths []string
+	candidates := []string{
+		filepath.Join(homeDir, ".claude"),
+		filepath.Join(homeDir, ".config/claude"),
+		filepath.Join(homeDir, "Library/Application Support/Claude"),
+	}
+	for _, p := range candidates {
+		if _, err := os.Lstat(p); err == nil {
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }
 
 // expandGlobs expands glob patterns in a list of paths.

@@ -93,12 +93,24 @@ func normalizeMinimal(cfg *Config) *Config {
 				Env:         cfg.Env,
 				SecretsFile: cfg.SecretsFile,
 				MCPServers:  cfg.MCPServers,
-				Sandbox:     cfg.Sandbox,
+				Sandbox:     SandboxPolicyToRef(cfg.Sandbox),
 			},
 		},
 		MCP:            cfg.MCP,
 		DefaultContext: "default",
 	}
+}
+
+// SandboxPolicyToRef wraps a SandboxPolicy pointer into a SandboxRef.
+// Used when promoting a minimal config's or project override's sandbox field to a context.
+func SandboxPolicyToRef(sp *SandboxPolicy) *SandboxRef {
+	if sp == nil {
+		return nil
+	}
+	if sp.Disabled {
+		return &SandboxRef{Disabled: true}
+	}
+	return &SandboxRef{Inline: sp}
 }
 
 // findProjectConfig walks up from startDir looking for .aide.yaml.

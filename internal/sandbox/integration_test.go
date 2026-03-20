@@ -10,28 +10,11 @@ import (
 	"testing"
 )
 
-// patchProfile reads the generated sandbox profile and appends rules needed
-// for processes to start on modern macOS (the dynamic linker must be able to
-// stat the root directory). This keeps the integration tests independent of
-// any future fixes to the profile generator.
-func patchProfile(runtimeDir string) error {
-	profilePath := filepath.Join(runtimeDir, "sandbox.sb")
-	data, err := os.ReadFile(profilePath)
-	if err != nil {
-		return err
-	}
-	profile := string(data)
-
-	// The dynamic linker needs to read "/" metadata to resolve paths.
-	if !strings.Contains(profile, `(literal "/")`) {
-		profile = strings.Replace(profile,
-			"(allow sysctl-read)",
-			"(allow file-read* (literal \"/\"))\n(allow sysctl-read)",
-			1,
-		)
-	}
-
-	return os.WriteFile(profilePath, []byte(profile), 0600)
+// patchProfile is a no-op now that the profile generator includes all
+// necessary OS essentials (file-read-metadata, file-ioctl, root literal, etc.).
+// Kept for backward compatibility with existing tests.
+func patchProfile(_ string) error {
+	return nil
 }
 
 // realPath resolves symlinks in a path. On macOS, /var is a symlink to

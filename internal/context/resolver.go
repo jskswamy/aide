@@ -49,7 +49,7 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 			Env:         cfg.Env,
 			SecretsFile: cfg.SecretsFile,
 			MCPServers:  cfg.MCPServers,
-			Sandbox:     cfg.Sandbox,
+			Sandbox:     config.SandboxPolicyToRef(cfg.Sandbox),
 		}
 		rc := &ResolvedContext{
 			Name:        "default",
@@ -123,7 +123,7 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
 		rc.Context.MCPServers = po.MCPServers
 	}
 	if po.Sandbox != nil {
-		rc.Context.Sandbox = po.Sandbox
+		rc.Context.Sandbox = config.SandboxPolicyToRef(po.Sandbox)
 	}
 	// Env: merge additively, override wins on conflict
 	if len(po.Env) > 0 {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -26,14 +27,16 @@ func TestPassthrough_SingleAgent(t *testing.T) {
 	}
 
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	err := l.Passthrough(t.TempDir(), "", nil)
 	if err != nil {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
-	if mock.binary != "/usr/local/bin/claude" {
-		t.Errorf("expected binary /usr/local/bin/claude, got %s", mock.binary)
+	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBinary != "/usr/local/bin/claude" {
+		t.Errorf("expected inner binary /usr/local/bin/claude, got %s", innerBinary)
 	}
 }
 
@@ -44,6 +47,7 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 		LookPath: mockLookPath(map[string]string{"codex": "/usr/bin/codex"}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	extraArgs := []string{"--model", "opus", "help me"}
 	err := l.Passthrough(t.TempDir(), "", extraArgs)
@@ -51,13 +55,14 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
 	expected := []string{"/usr/bin/codex", "--model", "opus", "help me"}
-	if len(mock.args) != len(expected) {
-		t.Fatalf("expected %d args, got %d: %v", len(expected), len(mock.args), mock.args)
+	if len(innerArgs) != len(expected) {
+		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
 	}
 	for i, want := range expected {
-		if mock.args[i] != want {
-			t.Errorf("args[%d] = %q, want %q", i, mock.args[i], want)
+		if innerArgs[i] != want {
+			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
 	}
 }
@@ -113,6 +118,7 @@ func TestPassthrough_AgentOverride(t *testing.T) {
 		}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	// With --agent codex, should launch codex directly even though multiple found.
 	err := l.Passthrough(t.TempDir(), "codex", []string{"--help"})
@@ -120,12 +126,13 @@ func TestPassthrough_AgentOverride(t *testing.T) {
 		t.Fatalf("Passthrough with --agent failed: %v", err)
 	}
 
-	if mock.binary != "/usr/local/bin/codex" {
-		t.Errorf("expected binary /usr/local/bin/codex, got %s", mock.binary)
+	innerBinary, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBinary != "/usr/local/bin/codex" {
+		t.Errorf("expected inner binary /usr/local/bin/codex, got %s", innerBinary)
 	}
 	expected := []string{"/usr/local/bin/codex", "--help"}
-	if len(mock.args) != len(expected) {
-		t.Fatalf("expected %d args, got %d: %v", len(expected), len(mock.args), mock.args)
+	if len(innerArgs) != len(expected) {
+		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
 	}
 }
 
@@ -151,6 +158,7 @@ func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
 func TestPassthrough_FirstRunSentinel(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	if !IsFirstRun() {
 		t.Error("expected IsFirstRun=true before passthrough")
@@ -208,6 +216,7 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 		Yolo:     true,
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	err := l.Passthrough(t.TempDir(), "", []string{"--model", "opus"})
 	if err != nil {
@@ -215,12 +224,13 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 	}
 
 	expected := []string{"/usr/local/bin/claude", "--dangerously-skip-permissions", "--model", "opus"}
-	if len(mock.args) != len(expected) {
-		t.Fatalf("expected %d args, got %d: %v", len(expected), len(mock.args), mock.args)
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	if len(innerArgs) != len(expected) {
+		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
 	}
 	for i, want := range expected {
-		if mock.args[i] != want {
-			t.Errorf("args[%d] = %q, want %q", i, mock.args[i], want)
+		if innerArgs[i] != want {
+			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
 	}
 }
@@ -233,6 +243,7 @@ func TestPassthrough_YoloUnsupportedAgent(t *testing.T) {
 		Yolo:     true,
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	err := l.Passthrough(t.TempDir(), "", nil)
 	if err == nil {
@@ -240,6 +251,114 @@ func TestPassthrough_YoloUnsupportedAgent(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--yolo not supported") {
 		t.Errorf("expected '--yolo not supported' error, got: %v", err)
+	}
+}
+
+func TestPassthrough_AppliesSandbox(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec only available on macOS")
+	}
+
+	mock := &mockExecer{}
+	cwd := t.TempDir()
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	err := l.Passthrough(cwd, "", nil)
+	if err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	// On darwin, the binary should be rewritten to sandbox-exec
+	if mock.binary != "/usr/bin/sandbox-exec" {
+		t.Errorf("expected binary /usr/bin/sandbox-exec, got %s", mock.binary)
+	}
+	// Args should include -f <profile> and the original binary
+	if len(mock.args) < 4 {
+		t.Fatalf("expected at least 4 args (sandbox-exec -f <profile> <binary>), got %d: %v", len(mock.args), mock.args)
+	}
+	if mock.args[0] != "sandbox-exec" {
+		t.Errorf("args[0] = %q, want %q", mock.args[0], "sandbox-exec")
+	}
+	if mock.args[1] != "-f" {
+		t.Errorf("args[1] = %q, want %q", mock.args[1], "-f")
+	}
+	// args[2] should be the profile path
+	if !strings.Contains(mock.args[2], "sandbox.sb") {
+		t.Errorf("args[2] = %q, expected sandbox.sb profile path", mock.args[2])
+	}
+	// args[3] should be the original binary
+	if mock.args[3] != "/usr/local/bin/claude" {
+		t.Errorf("args[3] = %q, want %q", mock.args[3], "/usr/local/bin/claude")
+	}
+}
+
+func TestPassthrough_ExecAgent_UsesCwd(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec only available on macOS")
+	}
+
+	mock := &mockExecer{}
+	cwd := t.TempDir()
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	err := l.Passthrough(cwd, "", nil)
+	if err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	// The sandbox profile should be written; read it and verify it contains the cwd
+	// as a writable path (not "." or some other hardcoded value).
+	if len(mock.args) < 3 {
+		t.Fatalf("expected sandbox args, got: %v", mock.args)
+	}
+	profilePath := mock.args[2]
+	profileData, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("failed to read sandbox profile at %s: %v", profilePath, err)
+	}
+	profile := string(profileData)
+
+	// The profile should contain the actual cwd (project root) as a writable subpath
+	if !strings.Contains(profile, cwd) {
+		t.Errorf("sandbox profile does not contain cwd %q;\nprofile:\n%s", cwd, profile)
+	}
+}
+
+func TestPassthrough_NoOptOut_AlwaysSandboxed(t *testing.T) {
+	// Verify that execAgent always applies sandbox — there is no parameter or
+	// field on Launcher that can disable sandbox in passthrough mode.
+	mock := &mockExecer{}
+	cwd := t.TempDir()
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	// Even without Yolo, sandbox should be applied
+	err := l.Passthrough(cwd, "claude", nil)
+	if err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	// The binary should be a sandbox wrapper, not the agent directly
+	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBin != "/usr/local/bin/claude" {
+		t.Errorf("expected inner binary /usr/local/bin/claude, got %s", innerBin)
+	}
+	if mock.binary == "/usr/local/bin/claude" {
+		t.Error("expected sandbox wrapping, but agent was executed directly")
 	}
 }
 

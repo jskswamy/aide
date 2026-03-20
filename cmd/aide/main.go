@@ -28,14 +28,8 @@ agents on your PATH.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if yolo {
 				fmt.Fprintln(os.Stderr, "\033[1;33mWARNING:\033[0m --yolo mode enabled")
-				fmt.Fprintln(os.Stderr, "  Agent permission checks are disabled. The OS sandbox is your safety net.")
-				fmt.Fprintln(os.Stderr, "")
-				fmt.Fprintln(os.Stderr, "  \033[1mSandbox constraints (default policy):\033[0m")
-				fmt.Fprintln(os.Stderr, "    Writable    project dir, $TMPDIR")
-				fmt.Fprintln(os.Stderr, "    Read-only   /usr/bin, /bin, ~/.gitconfig, ~/.ssh/known_hosts")
-				fmt.Fprintln(os.Stderr, "    Denied      ~/.ssh/id_*, ~/.aws/credentials, ~/.config/gcloud,")
-				fmt.Fprintln(os.Stderr, "                ~/.config/aide/secrets, browser profiles")
-				fmt.Fprintln(os.Stderr, "    Network     outbound only (no inbound listeners)")
+				fmt.Fprintln(os.Stderr, "  Agent permission checks are disabled.")
+				fmt.Fprintln(os.Stderr, "  OS sandbox is active with default policy (use `aide sandbox show` to inspect).")
 				fmt.Fprintln(os.Stderr, "")
 			}
 

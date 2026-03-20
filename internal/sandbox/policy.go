@@ -18,16 +18,15 @@ import (
 //   - writable/readable/denied: if user specifies any entries, they REPLACE
 //     the default list (not append). This gives full control.
 //   - network/allow_subprocess/clean_env: if user specifies, overrides default.
-//   - sandbox: false (Disabled=true) -> returns nil (no sandbox).
-//   - sandbox: absent (cfg==nil) -> returns DefaultPolicy unchanged.
+//   - cfg==nil -> returns DefaultPolicy unchanged.
+//
+// Callers must resolve SandboxRef to SandboxPolicy before calling this function.
+// A disabled sandbox (sandbox: false) should not reach this function — the
+// caller should skip sandbox entirely.
 func PolicyFromConfig(
 	cfg *config.SandboxPolicy,
 	projectRoot, runtimeDir, homeDir, tempDir string,
 ) (*Policy, error) {
-	if cfg != nil && cfg.Disabled {
-		return nil, nil // nil policy = no sandbox
-	}
-
 	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
 
 	if cfg == nil {
@@ -43,32 +42,59 @@ func PolicyFromConfig(
 
 	policy := defaults // copy
 
+	// Writable: override replaces defaults, extra appends to defaults
 	if len(cfg.Writable) > 0 {
 		w, err := ResolvePaths(cfg.Writable, templateVars)
 		if err != nil {
 			return nil, err
 		}
 		policy.Writable = w
+	} else if len(cfg.WritableExtra) > 0 {
+		extra, err := ResolvePaths(cfg.WritableExtra, templateVars)
+		if err != nil {
+			return nil, err
+		}
+		policy.Writable = append(policy.Writable, extra...)
 	}
 
+	// Readable: override replaces defaults, extra appends to defaults
 	if len(cfg.Readable) > 0 {
 		r, err := ResolvePaths(cfg.Readable, templateVars)
 		if err != nil {
 			return nil, err
 		}
 		policy.Readable = r
+	} else if len(cfg.ReadableExtra) > 0 {
+		extra, err := ResolvePaths(cfg.ReadableExtra, templateVars)
+		if err != nil {
+			return nil, err
+		}
+		policy.Readable = append(policy.Readable, extra...)
 	}
 
+	// Denied: override replaces defaults, extra appends to defaults
 	if len(cfg.Denied) > 0 {
 		d, err := ResolvePaths(cfg.Denied, templateVars)
 		if err != nil {
 			return nil, err
 		}
 		policy.Denied = d
+	} else if len(cfg.DeniedExtra) > 0 {
+		extra, err := ResolvePaths(cfg.DeniedExtra, templateVars)
+		if err != nil {
+			return nil, err
+		}
+		policy.Denied = append(policy.Denied, extra...)
 	}
 
-	if cfg.Network != "" {
-		policy.Network = NetworkMode(cfg.Network)
+	if cfg.Network != nil && cfg.Network.Mode != "" {
+		policy.Network = NetworkMode(cfg.Network.Mode)
+	}
+
+	// Extract port filtering from NetworkPolicy
+	if cfg.Network != nil {
+		policy.AllowPorts = cfg.Network.AllowPorts
+		policy.DenyPorts = cfg.Network.DenyPorts
 	}
 
 	if cfg.AllowSubprocess != nil {
@@ -115,19 +141,159 @@ func resolvePathTemplate(tmplStr string, vars map[string]string) (string, error)
 	return buf.String(), nil
 }
 
-// ValidateSandboxConfig validates a SandboxPolicy configuration.
-func ValidateSandboxConfig(cfg *config.SandboxPolicy) error {
-	if cfg == nil || cfg.Disabled {
-		return nil
+// ValidationResult holds the results of a detailed sandbox config validation.
+type ValidationResult struct {
+	Errors   []string
+	Warnings []string
+}
+
+// ValidateSandboxConfigDetailed validates a SandboxPolicy configuration,
+// returning both errors and warnings.
+func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
+	var result ValidationResult
+	if cfg == nil {
+		return result
 	}
-	validNetworkModes := map[string]bool{
-		"outbound": true, "none": true, "unrestricted": true, "": true,
+
+	// Validate network mode
+	if cfg.Network != nil {
+		validNetworkModes := map[string]bool{
+			"outbound": true, "none": true, "unrestricted": true, "": true,
+		}
+		if !validNetworkModes[cfg.Network.Mode] {
+			result.Errors = append(result.Errors, fmt.Sprintf(
+				"sandbox.network: invalid value %q, must be one of: outbound, none, unrestricted",
+				cfg.Network.Mode,
+			))
+		}
+
+		// Validate port numbers in AllowPorts
+		for _, port := range cfg.Network.AllowPorts {
+			if port < 1 || port > 65535 {
+				result.Errors = append(result.Errors, fmt.Sprintf(
+					"sandbox.network.allow_ports: invalid port %d, must be 1-65535", port,
+				))
+			}
+		}
+
+		// Validate port numbers in DenyPorts
+		for _, port := range cfg.Network.DenyPorts {
+			if port < 1 || port > 65535 {
+				result.Errors = append(result.Errors, fmt.Sprintf(
+					"sandbox.network.deny_ports: invalid port %d, must be 1-65535", port,
+				))
+			}
+		}
 	}
-	if !validNetworkModes[cfg.Network] {
-		return fmt.Errorf(
-			"sandbox.network: invalid value %q, must be one of: outbound, none, unrestricted",
-			cfg.Network,
+
+	// Warn if both denied and denied_extra are set (extra is ignored when override is present)
+	if len(cfg.Denied) > 0 && len(cfg.DeniedExtra) > 0 {
+		result.Warnings = append(result.Warnings,
+			"sandbox: both denied and denied_extra are set; denied_extra is ignored when denied is specified",
 		)
 	}
+
+	// Warn if both writable and writable_extra are set
+	if len(cfg.Writable) > 0 && len(cfg.WritableExtra) > 0 {
+		result.Warnings = append(result.Warnings,
+			"sandbox: both writable and writable_extra are set; writable_extra is ignored when writable is specified",
+		)
+	}
+
+	// Warn if both readable and readable_extra are set
+	if len(cfg.Readable) > 0 && len(cfg.ReadableExtra) > 0 {
+		result.Warnings = append(result.Warnings,
+			"sandbox: both readable and readable_extra are set; readable_extra is ignored when readable is specified",
+		)
+	}
+
+	// Warn if writable contains home dir (too broad)
+	for _, w := range cfg.Writable {
+		if w == "~" || w == "~/" || isHomeDirPath(w) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"sandbox.writable: %q includes the entire home directory, which is very broad", w,
+			))
+		}
+	}
+
+	return result
+}
+
+// isHomeDirPath returns true if the path looks like a user home directory.
+func isHomeDirPath(path string) bool {
+	// Match common home directory patterns: /home/*, /Users/*
+	if strings.HasPrefix(path, "/home/") || strings.HasPrefix(path, "/Users/") {
+		// Must be exactly /home/user or /Users/user (no further subdirectory)
+		parts := strings.Split(strings.TrimRight(path, "/"), "/")
+		return len(parts) == 3
+	}
+	return false
+}
+
+// ValidateSandboxConfig validates a SandboxPolicy configuration.
+// Returns the first error found, or nil. For detailed results including
+// warnings, use ValidateSandboxConfigDetailed.
+func ValidateSandboxConfig(cfg *config.SandboxPolicy) error {
+	result := ValidateSandboxConfigDetailed(cfg)
+	if len(result.Errors) > 0 {
+		return fmt.Errorf("%s", result.Errors[0])
+	}
 	return nil
+}
+
+// ValidateSandboxRef validates a SandboxRef, checking that profile references
+// resolve to entries in the sandboxes map.
+func ValidateSandboxRef(ref *config.SandboxRef, sandboxes map[string]config.SandboxPolicy) error {
+	if ref == nil || ref.Disabled {
+		return nil
+	}
+	if ref.Inline != nil {
+		return ValidateSandboxConfig(ref.Inline)
+	}
+	if ref.ProfileName != "" {
+		if ref.ProfileName == "default" || ref.ProfileName == "none" {
+			return nil
+		}
+		if sandboxes == nil {
+			return fmt.Errorf("sandbox profile %q not found (no sandboxes defined)", ref.ProfileName)
+		}
+		if _, ok := sandboxes[ref.ProfileName]; !ok {
+			return fmt.Errorf("sandbox profile %q not found in sandboxes map", ref.ProfileName)
+		}
+		sp := sandboxes[ref.ProfileName]
+		return ValidateSandboxConfig(&sp)
+	}
+	return nil
+}
+
+// ResolveSandboxRef resolves a SandboxRef into a *SandboxPolicy suitable for
+// passing to PolicyFromConfig. Returns:
+//   - (nil, false, nil) when ref is nil → use default policy
+//   - (nil, true, nil) when sandbox is disabled → skip sandbox entirely
+//   - (*SandboxPolicy, false, nil) when resolved to an inline or named profile
+//   - (nil, false, err) on error (e.g. unknown profile name)
+func ResolveSandboxRef(ref *config.SandboxRef, sandboxes map[string]config.SandboxPolicy) (*config.SandboxPolicy, bool, error) {
+	if ref == nil {
+		return nil, false, nil
+	}
+	if ref.Disabled {
+		return nil, true, nil
+	}
+	if ref.Inline != nil {
+		return ref.Inline, false, nil
+	}
+	if ref.ProfileName == "" || ref.ProfileName == "default" {
+		return nil, false, nil
+	}
+	if ref.ProfileName == "none" {
+		return nil, true, nil
+	}
+	if sandboxes == nil {
+		return nil, false, fmt.Errorf("sandbox profile %q not found (no sandboxes defined)", ref.ProfileName)
+	}
+	sp, ok := sandboxes[ref.ProfileName]
+	if !ok {
+		return nil, false, fmt.Errorf("sandbox profile %q not found in sandboxes map", ref.ProfileName)
+	}
+	return &sp, false, nil
 }

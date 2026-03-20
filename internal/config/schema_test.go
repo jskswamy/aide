@@ -139,14 +139,14 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 				Match: []config.MatchRule{
 					{Remote: "github.com/acme/*"},
 				},
-				Sandbox: &config.SandboxPolicy{
+				Sandbox: &config.SandboxRef{Inline: &config.SandboxPolicy{
 					Writable:        []string{"/tmp"},
 					Readable:        []string{"/etc"},
 					Denied:          []string{"/root"},
-					Network:         "outbound",
+					Network:         &config.NetworkPolicy{Mode: "outbound"},
 					AllowSubprocess: &allowSub,
 					CleanEnv:        &cleanEnv,
-				},
+				}},
 			},
 		},
 		DefaultContext: "work",
@@ -181,14 +181,17 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 	if ctx.Sandbox == nil {
 		t.Fatal("Sandbox is nil")
 	}
-	if ctx.Sandbox.Network != "outbound" {
-		t.Errorf("Sandbox.Network = %q, want %q", ctx.Sandbox.Network, "outbound")
+	if ctx.Sandbox.Inline == nil {
+		t.Fatal("Sandbox.Inline is nil")
 	}
-	if ctx.Sandbox.AllowSubprocess == nil || *ctx.Sandbox.AllowSubprocess != true {
-		t.Errorf("Sandbox.AllowSubprocess = %v, want true", ctx.Sandbox.AllowSubprocess)
+	if ctx.Sandbox.Inline.Network == nil || ctx.Sandbox.Inline.Network.Mode != "outbound" {
+		t.Errorf("Sandbox.Inline.Network.Mode = %v, want %q", ctx.Sandbox.Inline.Network, "outbound")
 	}
-	if ctx.Sandbox.CleanEnv == nil || *ctx.Sandbox.CleanEnv != false {
-		t.Errorf("Sandbox.CleanEnv = %v, want false", ctx.Sandbox.CleanEnv)
+	if ctx.Sandbox.Inline.AllowSubprocess == nil || *ctx.Sandbox.Inline.AllowSubprocess != true {
+		t.Errorf("Sandbox.Inline.AllowSubprocess = %v, want true", ctx.Sandbox.Inline.AllowSubprocess)
+	}
+	if ctx.Sandbox.Inline.CleanEnv == nil || *ctx.Sandbox.Inline.CleanEnv != false {
+		t.Errorf("Sandbox.Inline.CleanEnv = %v, want false", ctx.Sandbox.Inline.CleanEnv)
 	}
 	if len(ctx.MCPServerOverrides) != 1 {
 		t.Errorf("len(MCPServerOverrides) = %d, want 1", len(ctx.MCPServerOverrides))
@@ -251,14 +254,120 @@ func TestSandboxPolicy_Defaults(t *testing.T) {
 	if len(sp.Denied) != 0 {
 		t.Errorf("Denied = %v, want empty", sp.Denied)
 	}
-	if sp.Network != "" {
-		t.Errorf("Network = %q, want empty", sp.Network)
+	if sp.Network != nil {
+		t.Errorf("Network = %v, want nil", sp.Network)
 	}
 	if sp.AllowSubprocess != nil {
 		t.Errorf("AllowSubprocess = %v, want nil", sp.AllowSubprocess)
 	}
 	if sp.CleanEnv != nil {
 		t.Errorf("CleanEnv = %v, want nil", sp.CleanEnv)
+	}
+}
+
+func TestNetworkPolicy_UnmarshalString(t *testing.T) {
+	input := `network: outbound`
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sp.Network == nil {
+		t.Fatal("Network is nil")
+	}
+	if sp.Network.Mode != "outbound" {
+		t.Errorf("Network.Mode = %q, want %q", sp.Network.Mode, "outbound")
+	}
+	if len(sp.Network.AllowPorts) != 0 {
+		t.Errorf("Network.AllowPorts = %v, want empty", sp.Network.AllowPorts)
+	}
+	if len(sp.Network.DenyPorts) != 0 {
+		t.Errorf("Network.DenyPorts = %v, want empty", sp.Network.DenyPorts)
+	}
+}
+
+func TestNetworkPolicy_UnmarshalMap(t *testing.T) {
+	input := `network:
+  mode: outbound
+  allow_ports: [443, 53]
+`
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sp.Network == nil {
+		t.Fatal("Network is nil")
+	}
+	if sp.Network.Mode != "outbound" {
+		t.Errorf("Network.Mode = %q, want %q", sp.Network.Mode, "outbound")
+	}
+	if len(sp.Network.AllowPorts) != 2 || sp.Network.AllowPorts[0] != 443 || sp.Network.AllowPorts[1] != 53 {
+		t.Errorf("Network.AllowPorts = %v, want [443 53]", sp.Network.AllowPorts)
+	}
+	if len(sp.Network.DenyPorts) != 0 {
+		t.Errorf("Network.DenyPorts = %v, want empty", sp.Network.DenyPorts)
+	}
+}
+
+func TestNetworkPolicy_UnmarshalString_AllModes(t *testing.T) {
+	modes := []string{"none", "unrestricted", "outbound"}
+	for _, mode := range modes {
+		input := "network: " + mode
+		var sp config.SandboxPolicy
+		if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
+			t.Fatalf("unmarshal mode %q: %v", mode, err)
+		}
+		if sp.Network == nil {
+			t.Fatalf("Network is nil for mode %q", mode)
+		}
+		if sp.Network.Mode != mode {
+			t.Errorf("Network.Mode = %q, want %q", sp.Network.Mode, mode)
+		}
+	}
+}
+
+func TestSandboxPolicy_NetworkBackwardCompat(t *testing.T) {
+	input := `
+agent: claude
+sandbox:
+  writable: ["/tmp"]
+  network: outbound
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Sandbox == nil {
+		t.Fatal("Sandbox is nil")
+	}
+	if cfg.Sandbox.Network == nil {
+		t.Fatal("Sandbox.Network is nil")
+	}
+	if cfg.Sandbox.Network.Mode != "outbound" {
+		t.Errorf("Sandbox.Network.Mode = %q, want %q", cfg.Sandbox.Network.Mode, "outbound")
+	}
+}
+
+func TestNetworkPolicy_UnmarshalMapWithDenyPorts(t *testing.T) {
+	input := `network:
+  mode: outbound
+  allow_ports: [443, 53, 22]
+  deny_ports: [8080]
+`
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sp.Network == nil {
+		t.Fatal("Network is nil")
+	}
+	if sp.Network.Mode != "outbound" {
+		t.Errorf("Network.Mode = %q, want %q", sp.Network.Mode, "outbound")
+	}
+	if len(sp.Network.AllowPorts) != 3 {
+		t.Errorf("Network.AllowPorts = %v, want [443 53 22]", sp.Network.AllowPorts)
+	}
+	if len(sp.Network.DenyPorts) != 1 || sp.Network.DenyPorts[0] != 8080 {
+		t.Errorf("Network.DenyPorts = %v, want [8080]", sp.Network.DenyPorts)
 	}
 }
 
@@ -292,7 +401,94 @@ sandbox:
 	if po.Sandbox == nil {
 		t.Fatal("Sandbox is nil")
 	}
-	if po.Sandbox.Network != "none" {
-		t.Errorf("Sandbox.Network = %q, want %q", po.Sandbox.Network, "none")
+	if po.Sandbox.Network == nil || po.Sandbox.Network.Mode != "none" {
+		t.Errorf("Sandbox.Network.Mode = %v, want %q", po.Sandbox.Network, "none")
+	}
+}
+
+func TestSandboxPolicy_ExtraFields_Parse(t *testing.T) {
+	input := `
+writable_extra:
+  - /tmp/myproject
+  - /var/cache
+readable_extra:
+  - /opt/tools
+  - /usr/local/share
+denied_extra:
+  - ~/.kube
+  - ~/.terraform.d
+network: outbound
+`
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sp.WritableExtra) != 2 || sp.WritableExtra[0] != "/tmp/myproject" || sp.WritableExtra[1] != "/var/cache" {
+		t.Errorf("WritableExtra = %v, want [/tmp/myproject /var/cache]", sp.WritableExtra)
+	}
+	if len(sp.ReadableExtra) != 2 || sp.ReadableExtra[0] != "/opt/tools" || sp.ReadableExtra[1] != "/usr/local/share" {
+		t.Errorf("ReadableExtra = %v, want [/opt/tools /usr/local/share]", sp.ReadableExtra)
+	}
+	if len(sp.DeniedExtra) != 2 || sp.DeniedExtra[0] != "~/.kube" || sp.DeniedExtra[1] != "~/.terraform.d" {
+		t.Errorf("DeniedExtra = %v, want [~/.kube ~/.terraform.d]", sp.DeniedExtra)
+	}
+	if sp.Network == nil || sp.Network.Mode != "outbound" {
+		t.Errorf("Network = %v, want mode=outbound", sp.Network)
+	}
+	if len(sp.Writable) != 0 {
+		t.Errorf("Writable = %v, want empty", sp.Writable)
+	}
+}
+
+func TestConfigRoundTrip_SandboxExtraFields(t *testing.T) {
+	dir := t.TempDir()
+	configPath := dir + "/config.yaml"
+
+	original := &config.Config{
+		Agent: "claude",
+		Sandbox: &config.SandboxPolicy{
+			Writable:      []string{"/tmp"},
+			WritableExtra: []string{"/tmp/myproject"},
+			Readable:      []string{"/etc"},
+			ReadableExtra: []string{"/opt/tools"},
+			Denied:        []string{"/root"},
+			DeniedExtra:   []string{"~/.kube", "~/.terraform.d"},
+			Network:       &config.NetworkPolicy{Mode: "outbound"},
+		},
+	}
+
+	if err := config.WriteConfigTo(original, configPath); err != nil {
+		t.Fatalf("WriteConfigTo() error = %v", err)
+	}
+
+	loaded, err := config.Load(dir, dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	ctx, ok := loaded.Contexts["default"]
+	if !ok {
+		t.Fatal("expected 'default' context after loading minimal config")
+	}
+	sbRef := ctx.Sandbox
+	if sbRef == nil {
+		t.Fatal("Sandbox is nil after round-trip")
+	}
+	if sbRef.Inline == nil {
+		t.Fatal("Sandbox.Inline is nil after round-trip")
+	}
+	sb := sbRef.Inline
+
+	if len(sb.Writable) != 1 || sb.Writable[0] != "/tmp" {
+		t.Errorf("Writable = %v, want [/tmp]", sb.Writable)
+	}
+	if len(sb.WritableExtra) != 1 || sb.WritableExtra[0] != "/tmp/myproject" {
+		t.Errorf("WritableExtra = %v, want [/tmp/myproject]", sb.WritableExtra)
+	}
+	if len(sb.DeniedExtra) != 2 || sb.DeniedExtra[0] != "~/.kube" {
+		t.Errorf("DeniedExtra = %v, want [~/.kube ~/.terraform.d]", sb.DeniedExtra)
+	}
+	if sb.Network == nil || sb.Network.Mode != "outbound" {
+		t.Errorf("Network = %v, want mode=outbound", sb.Network)
 	}
 }

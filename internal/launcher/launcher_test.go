@@ -47,6 +47,32 @@ func writeMinimalConfig(t *testing.T, configDir string, content string) {
 	}
 }
 
+// unwrapSandbox extracts the inner binary and args from a sandbox-wrapped exec.
+// On darwin: sandbox-exec -f <profile> <binary> <args...>
+// On linux:  bwrap <bwrap-args...> -- <binary> <args...>
+// If not sandboxed, it returns the values as-is.
+func unwrapSandbox(t *testing.T, binary string, args []string) (innerBinary string, innerArgs []string) {
+	t.Helper()
+	if runtime.GOOS == "darwin" && binary == "/usr/bin/sandbox-exec" {
+		// args: [sandbox-exec, -f, <profile>, <inner-binary>, <inner-args...>]
+		if len(args) < 4 {
+			t.Fatalf("sandbox-exec args too short: %v", args)
+		}
+		return args[3], args[3:]
+	}
+	// Check for bwrap (Linux)
+	if strings.HasSuffix(binary, "/bwrap") || binary == "bwrap" {
+		// args: [bwrap, <bwrap-flags...>, --, <inner-binary>, <inner-args...>]
+		for i, a := range args {
+			if a == "--" && i+1 < len(args) {
+				return args[i+1], args[i+1:]
+			}
+		}
+		t.Fatalf("bwrap args missing -- separator: %v", args)
+	}
+	return binary, args
+}
+
 // envValue looks up a key in a KEY=VALUE slice.
 func envValue(env []string, key string) (string, bool) {
 	prefix := key + "="
@@ -79,8 +105,9 @@ env:
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	if mock.binary != "/usr/local/bin/my-agent" {
-		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", mock.binary)
+	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBinary != "/usr/local/bin/my-agent" {
+		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", innerBinary)
 	}
 
 	foo, ok := envValue(mock.env, "FOO")
@@ -165,14 +192,16 @@ agent: /usr/local/bin/my-agent
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	// args[0] should be the binary, followed by extra args
+	// Unwrap sandbox to get the inner binary and args.
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	// innerArgs[0] should be the binary, followed by extra args
 	expectedArgs := append([]string{"/usr/local/bin/my-agent"}, extraArgs...)
-	if len(mock.args) != len(expectedArgs) {
-		t.Fatalf("expected %d args, got %d: %v", len(expectedArgs), len(mock.args), mock.args)
+	if len(innerArgs) != len(expectedArgs) {
+		t.Fatalf("expected %d inner args, got %d: %v", len(expectedArgs), len(innerArgs), innerArgs)
 	}
 	for i, want := range expectedArgs {
-		if mock.args[i] != want {
-			t.Errorf("args[%d] = %q, want %q", i, mock.args[i], want)
+		if innerArgs[i] != want {
+			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
 	}
 }
@@ -244,8 +273,9 @@ default_context: default
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	if mock.binary != "/usr/local/bin/codex" {
-		t.Errorf("expected binary /usr/local/bin/codex, got %s", mock.binary)
+	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBinary != "/usr/local/bin/codex" {
+		t.Errorf("expected binary /usr/local/bin/codex, got %s", innerBinary)
 	}
 }
 
@@ -441,9 +471,10 @@ env:
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	// Binary should be resolved to the absolute path.
-	if mock.binary != "/usr/local/bin/my-agent" {
-		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", mock.binary)
+	// Binary should be resolved to the absolute path (may be wrapped in sandbox).
+	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBin != "/usr/local/bin/my-agent" {
+		t.Errorf("expected inner binary /usr/local/bin/my-agent, got %s", innerBin)
 	}
 }
 
@@ -502,8 +533,9 @@ agent: /usr/local/bin/my-agent
 	if lookPathCalled {
 		t.Error("LookPath should not be called for absolute paths")
 	}
-	if mock.binary != "/usr/local/bin/my-agent" {
-		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", mock.binary)
+	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBin != "/usr/local/bin/my-agent" {
+		t.Errorf("expected inner binary /usr/local/bin/my-agent, got %s", innerBin)
 	}
 }
 
@@ -573,14 +605,15 @@ agent: claude
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	// args[0] is binary, then yolo flag, then user args.
+	// Unwrap sandbox to check inner args: binary, then yolo flag, then user args.
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
 	expected := []string{"/usr/local/bin/claude", "--dangerously-skip-permissions", "--model", "opus"}
-	if len(mock.args) != len(expected) {
-		t.Fatalf("expected %d args, got %d: %v", len(expected), len(mock.args), mock.args)
+	if len(innerArgs) != len(expected) {
+		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
 	}
 	for i, want := range expected {
-		if mock.args[i] != want {
-			t.Errorf("args[%d] = %q, want %q", i, mock.args[i], want)
+		if innerArgs[i] != want {
+			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
 	}
 }
@@ -648,8 +681,106 @@ default_context: default
 	if err != nil {
 		t.Fatalf("Launch with known agent override failed: %v", err)
 	}
-	if mock.binary != "/usr/local/bin/codex" {
-		t.Errorf("expected binary /usr/local/bin/codex, got %s", mock.binary)
+	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBin != "/usr/local/bin/codex" {
+		t.Errorf("expected inner binary /usr/local/bin/codex, got %s", innerBin)
+	}
+}
+
+func TestLaunch_NoSandboxBlock_DefaultSandboxApplied(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// Config has NO sandbox: block at all — Sandbox field will be nil.
+	// With default-on sandbox, nil means default policy IS applied.
+	writeMinimalConfig(t, configDir, `
+agent: /usr/local/bin/my-agent
+env:
+  FOO: bar
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+	}
+
+	if err := l.Launch(cwd, "", nil, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// With default-on sandbox, the binary should be wrapped by the platform sandbox.
+	// On darwin: sandbox-exec, on linux: bwrap (or landlock re-exec).
+	// Regardless of platform, the inner binary should be our agent.
+	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	if innerBinary != "/usr/local/bin/my-agent" {
+		t.Errorf("expected inner binary /usr/local/bin/my-agent, got %s", innerBinary)
+	}
+	// Verify the outer binary is a sandbox wrapper (not the agent directly)
+	if mock.binary == "/usr/local/bin/my-agent" {
+		t.Error("expected sandbox wrapping (default-on), but agent was executed directly")
+	}
+}
+
+func TestLaunch_ExplicitSandbox_Applied(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// Config explicitly enables sandbox with writable paths.
+	writeMinimalConfig(t, configDir, `
+agent: /usr/local/bin/my-agent
+sandbox:
+  writable:
+    - /tmp
+  network: outbound
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+	}
+
+	if err := l.Launch(cwd, "", nil, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// With explicit sandbox config, on darwin it should be wrapped with sandbox-exec.
+	if runtime.GOOS == "darwin" {
+		if mock.binary != "/usr/bin/sandbox-exec" {
+			t.Errorf("expected binary /usr/bin/sandbox-exec (sandbox applied), got %s", mock.binary)
+		}
+		if len(mock.args) < 3 || mock.args[1] != "-f" {
+			t.Errorf("expected sandbox-exec -f <profile> args, got %v", mock.args)
+		}
+	}
+}
+
+func TestLaunch_SandboxFalse_NoSandbox(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// Config explicitly disables sandbox with `sandbox: false`.
+	writeMinimalConfig(t, configDir, `
+agent: /usr/local/bin/my-agent
+sandbox: false
+env:
+  FOO: bar
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+	}
+
+	if err := l.Launch(cwd, "", nil, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// With sandbox: false, the binary should be the agent directly, NOT sandbox-exec.
+	if mock.binary != "/usr/local/bin/my-agent" {
+		t.Errorf("expected binary /usr/local/bin/my-agent (no sandbox), got %s", mock.binary)
 	}
 }
 

@@ -113,6 +113,13 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 		rules = append(rules, landlock.RODirs(p))
 	}
 
+	// Add per-port TCP connection rules if AllowPorts is specified.
+	// Landlock v4+ (kernel 6.7+) supports port-level network restrictions.
+	// When AllowPorts is set, only connections to those ports are permitted.
+	for _, port := range policy.AllowPorts {
+		rules = append(rules, landlock.ConnectTCP(uint16(port)))
+	}
+
 	// Apply with BestEffort for graceful degradation on older kernels.
 	// V5 covers FS + network + ioctl; BestEffort downgrades to whatever
 	// the kernel actually supports.
@@ -127,6 +134,64 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 	}
 
 	return syscall.Exec(agentPath, agentCmd, os.Environ())
+}
+
+// GenerateProfile returns a human-readable description of the Landlock/bwrap
+// rules that would be applied for the given policy.
+func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
+	var b strings.Builder
+
+	b.WriteString("# Linux Sandbox Profile\n")
+	if landlockAvailable() {
+		b.WriteString("# Backend: Landlock\n\n")
+	} else if _, err := exec.LookPath("bwrap"); err == nil {
+		b.WriteString("# Backend: bubblewrap (bwrap)\n\n")
+	} else {
+		b.WriteString("# Backend: NONE (sandboxing unavailable)\n\n")
+	}
+
+	b.WriteString("## Writable paths\n")
+	for _, p := range policy.Writable {
+		b.WriteString(fmt.Sprintf("  %s\n", p))
+	}
+
+	b.WriteString("\n## Readable paths\n")
+	for _, p := range policy.Readable {
+		b.WriteString(fmt.Sprintf("  %s\n", p))
+	}
+
+	deniedPaths := expandGlobs(policy.Denied)
+	if len(deniedPaths) > 0 {
+		b.WriteString("\n## Denied paths\n")
+		for _, p := range deniedPaths {
+			b.WriteString(fmt.Sprintf("  %s\n", p))
+		}
+		// Show glob expansions
+		if len(deniedPaths) != len(policy.Denied) {
+			b.WriteString("\n  # (expanded from globs in denied list)\n")
+		}
+	}
+
+	b.WriteString(fmt.Sprintf("\n## Network: %s\n", policy.Network))
+	if len(policy.AllowPorts) > 0 {
+		b.WriteString("  Allow ports:")
+		for _, port := range policy.AllowPorts {
+			b.WriteString(fmt.Sprintf(" %d", port))
+		}
+		b.WriteString("\n")
+	}
+	if len(policy.DenyPorts) > 0 {
+		b.WriteString("  Deny ports:")
+		for _, port := range policy.DenyPorts {
+			b.WriteString(fmt.Sprintf(" %d", port))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString(fmt.Sprintf("\n## Allow subprocess: %v\n", policy.AllowSubprocess))
+	b.WriteString(fmt.Sprintf("## Clean env: %v\n", policy.CleanEnv))
+
+	return b.String(), nil
 }
 
 // applyBwrap wraps the command with bubblewrap for filesystem isolation.
@@ -170,6 +235,11 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 	// Network isolation
 	if policy.Network == NetworkNone {
 		bwrapArgs = append(bwrapArgs, "--unshare-net")
+	}
+
+	// Port-level filtering is not supported by bwrap — log a warning
+	if len(policy.AllowPorts) > 0 || len(policy.DenyPorts) > 0 {
+		log.Println("warning: Port-level filtering not supported by bwrap; using mode-only network policy")
 	}
 
 	// Subprocess control

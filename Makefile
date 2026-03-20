@@ -35,7 +35,7 @@ devcontainer-build:
 # This is needed for Linux-specific code (Landlock, bwrap) that can't run on macOS
 test-linux: devcontainer-build
 	@if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then \
-		docker run --rm --security-opt seccomp=unconfined \
+		docker run --rm --privileged \
 			-v $(PWD):/workspace -w /workspace \
 			aide-devcontainer make all test-integration; \
 	else \

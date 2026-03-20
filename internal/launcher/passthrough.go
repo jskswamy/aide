@@ -6,6 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/sandbox"
 )
 
 // KnownAgents is the list of agent binaries aide can detect on PATH.
@@ -65,7 +68,7 @@ func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []str
 				agentOverride, agentOverride, strings.Join(KnownAgents, ", "),
 			)
 		}
-		return l.execAgent(agentOverride, binary, extraArgs)
+		return l.execAgent(cwd, agentOverride, binary, extraArgs)
 	}
 
 	// No --agent flag: scan PATH for known agents.
@@ -86,7 +89,7 @@ func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []str
 			break
 		}
 		_ = writeFirstRunHint(name)
-		return l.execAgent(name, binary, extraArgs)
+		return l.execAgent(cwd, name, binary, extraArgs)
 
 	default:
 		var agents []string
@@ -104,8 +107,8 @@ func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []str
 	}
 }
 
-// execAgent injects yolo flags if needed and execs the agent.
-func (l *Launcher) execAgent(name, binary string, extraArgs []string) error {
+// execAgent injects yolo flags if needed, applies the OS sandbox, and execs the agent.
+func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error {
 	if l.Yolo {
 		yoloArgs, err := YoloArgs(name)
 		if err != nil {
@@ -113,8 +116,35 @@ func (l *Launcher) execAgent(name, binary string, extraArgs []string) error {
 		}
 		extraArgs = append(yoloArgs, extraArgs...)
 	}
-	args := append([]string{binary}, extraArgs...)
-	return l.Execer.Exec(binary, args, os.Environ())
+
+	// Resolve project root from cwd (git root or cwd fallback).
+	projectRoot := aidectx.ProjectRoot(cwd)
+
+	// Create runtime directory for sandbox profile files.
+	rtDir, err := NewRuntimeDir()
+	if err != nil {
+		return fmt.Errorf("creating runtime dir: %w", err)
+	}
+	// Best-effort cleanup of stale runtime dirs from previous runs.
+	_ = CleanStale()
+
+	homeDir, _ := os.UserHomeDir()
+	tempDir := os.TempDir()
+
+	policy := sandbox.DefaultPolicy(projectRoot, rtDir.Path(), homeDir, tempDir)
+
+	cmd := &exec.Cmd{
+		Path: binary,
+		Args: append([]string{binary}, extraArgs...),
+		Env:  os.Environ(),
+	}
+
+	sb := sandbox.NewSandbox()
+	if err := sb.Apply(cmd, policy, rtDir.Path()); err != nil {
+		return fmt.Errorf("applying sandbox: %w", err)
+	}
+
+	return l.Execer.Exec(cmd.Path, cmd.Args, cmd.Env)
 }
 
 // lookPath returns the LookPathFunc to use (real or injected for testing).

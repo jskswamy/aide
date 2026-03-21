@@ -406,6 +406,85 @@ sandbox:
 	}
 }
 
+func TestPreferences_Unmarshal(t *testing.T) {
+	input := `
+preferences:
+  show_info: true
+  info_style: boxed
+  info_detail: detailed
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Preferences == nil {
+		t.Fatal("Preferences is nil")
+	}
+	if cfg.Preferences.ShowInfo == nil || !*cfg.Preferences.ShowInfo {
+		t.Errorf("ShowInfo = %v, want true", cfg.Preferences.ShowInfo)
+	}
+	if cfg.Preferences.InfoStyle != "boxed" {
+		t.Errorf("InfoStyle = %q, want %q", cfg.Preferences.InfoStyle, "boxed")
+	}
+	if cfg.Preferences.InfoDetail != "detailed" {
+		t.Errorf("InfoDetail = %q, want %q", cfg.Preferences.InfoDetail, "detailed")
+	}
+}
+
+func TestPreferences_Defaults(t *testing.T) {
+	result := config.ResolvePreferences(nil, nil)
+	if result.ShowInfo == nil || !*result.ShowInfo {
+		t.Errorf("ShowInfo = %v, want true", result.ShowInfo)
+	}
+	if result.InfoStyle != "compact" {
+		t.Errorf("InfoStyle = %q, want %q", result.InfoStyle, "compact")
+	}
+	if result.InfoDetail != "normal" {
+		t.Errorf("InfoDetail = %q, want %q", result.InfoDetail, "normal")
+	}
+}
+
+func TestPreferences_GlobalOverride(t *testing.T) {
+	global := &config.Preferences{InfoStyle: "boxed"}
+	result := config.ResolvePreferences(global, nil)
+	if result.InfoStyle != "boxed" {
+		t.Errorf("InfoStyle = %q, want %q", result.InfoStyle, "boxed")
+	}
+}
+
+func TestPreferences_ProjectOverride(t *testing.T) {
+	global := &config.Preferences{InfoStyle: "boxed"}
+	project := &config.Preferences{InfoStyle: "clean"}
+	result := config.ResolvePreferences(global, project)
+	if result.InfoStyle != "clean" {
+		t.Errorf("InfoStyle = %q, want %q", result.InfoStyle, "clean")
+	}
+}
+
+func TestPreferences_PartialProjectOverride(t *testing.T) {
+	f := false
+	global := &config.Preferences{InfoStyle: "boxed", InfoDetail: "verbose"}
+	project := &config.Preferences{ShowInfo: &f}
+	result := config.ResolvePreferences(global, project)
+	if result.ShowInfo == nil || *result.ShowInfo {
+		t.Errorf("ShowInfo = %v, want false", result.ShowInfo)
+	}
+	if result.InfoStyle != "boxed" {
+		t.Errorf("InfoStyle = %q, want %q", result.InfoStyle, "boxed")
+	}
+	if result.InfoDetail != "verbose" {
+		t.Errorf("InfoDetail = %q, want %q", result.InfoDetail, "verbose")
+	}
+}
+
+func TestPreferences_InvalidStyle(t *testing.T) {
+	global := &config.Preferences{InfoStyle: "unknown"}
+	result := config.ResolvePreferences(global, nil)
+	if result.InfoStyle != "unknown" {
+		t.Errorf("InfoStyle = %q, want %q", result.InfoStyle, "unknown")
+	}
+}
+
 func TestSandboxPolicy_ExtraFields_Parse(t *testing.T) {
 	input := `
 writable_extra:

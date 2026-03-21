@@ -64,7 +64,7 @@ func TestDiscoverAgeKey_EnvKeyInvalid(t *testing.T) {
 		t.Fatal("expected error when no valid key is found, got nil")
 	}
 	// Should have fallen through all sources and returned an error.
-	if !strings.Contains(err.Error(), "No age identity found") {
+	if !strings.Contains(err.Error(), "no age identity found") {
 		t.Errorf("expected 'No age identity found' in error, got: %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestDiscoverAgeKey_EnvKeyFileMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when key file is missing, got nil")
 	}
-	if !strings.Contains(err.Error(), "No age identity found") {
+	if !strings.Contains(err.Error(), "no age identity found") {
 		t.Errorf("expected 'No age identity found' in error, got: %v", err)
 	}
 }
@@ -195,7 +195,7 @@ func TestDiscoverAgeKey_NoneFound(t *testing.T) {
 	msg := err.Error()
 	// Check the error contains actionable guidance.
 	for _, want := range []string{
-		"No age identity found",
+		"no age identity found",
 		"SOPS_AGE_KEY",
 		"SOPS_AGE_KEY_FILE",
 		"age-keygen",

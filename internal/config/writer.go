@@ -34,7 +34,7 @@ func WriteConfigTo(cfg *Config, path string) error {
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		// Clean up .tmp on failure
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp config file: %w", err)
 	}
 

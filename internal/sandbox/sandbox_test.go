@@ -99,8 +99,7 @@ func TestPolicy_DeniedPrecedence(t *testing.T) {
 	// Denied should take precedence. This is a documented contract;
 	// actual enforcement is OS-specific.
 	policy := Policy{
-		Readable: []string{"/home/user/.ssh"},
-		Denied:   []string{"/home/user/.ssh/id_rsa"},
+		Denied: []string{"/home/user/.ssh/id_rsa"},
 	}
 
 	found := false

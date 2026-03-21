@@ -124,20 +124,7 @@ func (n *noopSandbox) GenerateProfile(_ Policy) (string, error) {
 	return "Sandbox not available on this platform (no-op sandbox)", nil
 }
 
-// expandGlobs expands glob patterns in a list of paths.
-// Non-glob paths are passed through unchanged.
-func expandGlobs(patterns []string) []string {
-	var result []string
-	for _, p := range patterns {
-		if strings.ContainsAny(p, "*?[") {
-			matches, _ := filepath.Glob(p)
-			result = append(result, matches...)
-		} else {
-			result = append(result, p)
-		}
-	}
-	return result
-}
+
 
 // filterEnv returns only essential env vars when CleanEnv is true (DD-17).
 func filterEnv(env []string) []string {

@@ -199,7 +199,9 @@ func TestGenerateSeatbeltProfile_GlobExpansion(t *testing.T) {
 	dir := t.TempDir()
 	// Create test files matching a glob
 	for _, name := range []string{"id_rsa", "id_ed25519"} {
-		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0600)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	policy := Policy{

@@ -13,8 +13,12 @@ func TestFilesystem_WritablePaths(t *testing.T) {
 	tmp := t.TempDir()
 	dir1 := filepath.Join(tmp, "writable1")
 	dir2 := filepath.Join(tmp, "writable2")
-	os.Mkdir(dir1, 0o755)
-	os.Mkdir(dir2, 0o755)
+	if err := os.Mkdir(dir1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir2, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	m := modules.Filesystem(modules.FilesystemConfig{
 		Writable: []string{dir1, dir2},
@@ -40,7 +44,9 @@ func TestFilesystem_WritablePaths(t *testing.T) {
 func TestFilesystem_ReadablePaths(t *testing.T) {
 	tmp := t.TempDir()
 	dir1 := filepath.Join(tmp, "readonly")
-	os.Mkdir(dir1, 0o755)
+	if err := os.Mkdir(dir1, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	m := modules.Filesystem(modules.FilesystemConfig{
 		Readable: []string{dir1},
@@ -67,7 +73,9 @@ func TestFilesystem_ReadablePaths(t *testing.T) {
 func TestFilesystem_DeniedPaths(t *testing.T) {
 	tmp := t.TempDir()
 	file1 := filepath.Join(tmp, "secret.txt")
-	os.WriteFile(file1, []byte("secret"), 0o644)
+	if err := os.WriteFile(file1, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	m := modules.Filesystem(modules.FilesystemConfig{
 		Denied: []string{file1},
@@ -89,8 +97,12 @@ func TestFilesystem_DeniedPaths(t *testing.T) {
 func TestFilesystem_GlobExpansion(t *testing.T) {
 	tmp := t.TempDir()
 	// Create files matching a glob
-	os.WriteFile(filepath.Join(tmp, "a.env"), []byte("A=1"), 0o644)
-	os.WriteFile(filepath.Join(tmp, "b.env"), []byte("B=2"), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "a.env"), []byte("A=1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "b.env"), []byte("B=2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	m := modules.Filesystem(modules.FilesystemConfig{
 		Denied: []string{filepath.Join(tmp, "*.env")},
@@ -111,9 +123,15 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 	wdir := filepath.Join(tmp, "work")
 	rdir := filepath.Join(tmp, "docs")
 	denied := filepath.Join(tmp, "secret.key")
-	os.Mkdir(wdir, 0o755)
-	os.Mkdir(rdir, 0o755)
-	os.WriteFile(denied, []byte("key"), 0o644)
+	if err := os.Mkdir(wdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(rdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(denied, []byte("key"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	m := modules.Filesystem(modules.FilesystemConfig{
 		Writable: []string{wdir},

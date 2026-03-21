@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/getsops/sops/v3/decrypt"
 	"gopkg.in/yaml.v3"
@@ -29,7 +28,7 @@ func DecryptSecretsFile(filePath string, identity *AgeIdentity) (map[string]stri
 	// Decrypt using sops library.
 	decrypted, err := decrypt.File(absPath, "yaml")
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt %s: %w.\nIs your YubiKey plugged in? Check 'aide setup' for key configuration.", filePath, err)
+		return nil, fmt.Errorf("failed to decrypt %s: %w, is your YubiKey plugged in? Check 'aide setup' for key configuration", filePath, err)
 	}
 
 	// Unmarshal into map[string]interface{} first, then validate and flatten.
@@ -50,7 +49,7 @@ func DecryptSecretsFile(filePath string, identity *AgeIdentity) (map[string]stri
 			result[k] = fmt.Sprintf("%v", val)
 		default:
 			return nil, fmt.Errorf(
-				"secrets file %s contains non-string value for key %q. Only flat key-value pairs are supported.",
+				"secrets file %s contains non-string value for key %q, only flat key-value pairs are supported",
 				filePath, k,
 			)
 		}
@@ -92,9 +91,9 @@ func setupDecryptEnv(identity *AgeIdentity) (func(), error) {
 		}
 		restores = append(restores, func() {
 			if existed {
-				os.Setenv(key, orig)
+				_ = os.Setenv(key, orig)
 			} else {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
 		})
 		return nil
@@ -138,13 +137,4 @@ func setupDecryptEnv(identity *AgeIdentity) (func(), error) {
 	default:
 		return noop, fmt.Errorf("unknown age identity source: %d", identity.Source)
 	}
-}
-
-// availableKeys returns a comma-separated list of keys for error messages.
-func availableKeys(m map[string]string) string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return strings.Join(keys, ", ")
 }

@@ -3,6 +3,7 @@ package launcher
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -94,7 +95,7 @@ func TestClaudeConfigDirs_NoExistingDirs(t *testing.T) {
 		t.Error("expected non-empty dirs for first-run support")
 	}
 	for _, d := range dirs {
-		if !filepath.HasPrefix(d, homeDir) {
+		if !strings.HasPrefix(d, homeDir) {
 			t.Errorf("expected dir under %s, got %s", homeDir, d)
 		}
 	}

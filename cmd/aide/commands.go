@@ -2428,7 +2428,7 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 			}
 		}
 
-		switch {
+		switch { //nolint:staticcheck
 		case choice == skipIdx:
 			fmt.Fprintln(out, "  Skipping secrets.")
 		case choice == createIdx:

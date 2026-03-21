@@ -67,7 +67,7 @@ func TestProfile_WithContext(t *testing.T) {
 			ctx.TempDir = "/tmp"
 		}).
 		Use(captureModule)
-	p.Render()
+	_, _ = p.Render()
 	if captured.HomeDir != "/home/user" {
 		t.Errorf("expected HomeDir=/home/user, got %q", captured.HomeDir)
 	}

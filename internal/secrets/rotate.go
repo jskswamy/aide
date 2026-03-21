@@ -196,4 +196,3 @@ func ListRecipients(filePath string) ([]string, error) {
 
 	return recipients, nil
 }
-

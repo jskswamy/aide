@@ -1591,6 +1591,7 @@ func envCmd() *cobra.Command {
 	}
 	cmd.AddCommand(envSetCmd())
 	cmd.AddCommand(envListCmd())
+	cmd.AddCommand(envRemoveCmd())
 	return cmd
 }
 
@@ -1938,6 +1939,41 @@ func envListCmd() *cobra.Command {
 				annotation := envAnnotation(v)
 				fmt.Fprintf(out, "  %-*s   %s\n", maxKeyLen, k, annotation)
 			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	return cmd
+}
+
+func envRemoveCmd() *cobra.Command {
+	var contextName string
+
+	cmd := &cobra.Command{
+		Use:          "remove KEY",
+		Short:        "Remove an environment variable from a context",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			key := args[0]
+
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+
+			if ctx.Env == nil || ctx.Env[key] == "" {
+				return fmt.Errorf("env var %q not found on context %q", key, ctxName)
+			}
+
+			delete(ctx.Env, key)
+			cfg.Contexts[ctxName] = ctx
+
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from context %q\n", key, ctxName)
 			return nil
 		},
 	}

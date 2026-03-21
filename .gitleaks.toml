@@ -1,0 +1,11 @@
+title = "aide gitleaks config"
+
+# Allowlist test fixture files containing fake/test-only age keys
+[allowlist]
+  description = "Test fixtures with fake age keys"
+  paths = [
+    '''testdata/age-key\.txt''',
+    '''testdata/age-key\.pub''',
+    '''internal/secrets/age_test\.go''',
+    '''internal/secrets/sops_test\.go''',
+  ]

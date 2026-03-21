@@ -18,6 +18,7 @@ import (
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
+	"github.com/jskswamy/aide/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -197,13 +198,13 @@ func initCmd() *cobra.Command {
 }
 
 func whichCmd() *cobra.Command {
-	var resolve bool
-
 	cmd := &cobra.Command{
 		Use:          "which",
 		Short:        "Show which context matches the current directory",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			resolve, _ := cmd.Flags().GetBool("resolve")
+
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
@@ -221,116 +222,101 @@ func whichCmd() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Context:  %s\n", resolved.Name)
-			fmt.Fprintf(out, "Matched:  %s\n", resolved.MatchReason)
+			prefs := resolved.Preferences
 
-			if resolve {
-				agentPath, lookErr := exec.LookPath(resolved.Context.Agent)
-				if lookErr != nil {
-					fmt.Fprintf(out, "Agent:    %s (not found)\n", resolved.Context.Agent)
-				} else {
-					fmt.Fprintf(out, "Agent:    %s (-> %s)\n", resolved.Context.Agent, agentPath)
-				}
-			} else {
-				fmt.Fprintf(out, "Agent:    %s\n", resolved.Context.Agent)
+			// Build BannerData
+			agentPath, lookErr := exec.LookPath(resolved.Context.Agent)
+			if lookErr != nil {
+				agentPath = ""
 			}
 
-			var secretKeys []string
-			var secretMap map[string]string
-			if resolve && resolved.Context.Secret != "" {
-				filePath := config.ResolveSecretPath(resolved.Context.Secret)
-				identity, idErr := secrets.DiscoverAgeKey()
-				if idErr == nil {
-					data, decErr := secrets.DecryptSecretsFile(filePath, identity)
-					if decErr == nil {
-						secretMap = data
-						for k := range data {
-							secretKeys = append(secretKeys, k)
-						}
-						sort.Strings(secretKeys)
-					}
-				}
+			data := &ui.BannerData{
+				ContextName: resolved.Name,
+				MatchReason: resolved.MatchReason,
+				AgentName:   resolved.Context.Agent,
+				AgentPath:   agentPath,
+				SecretName:  resolved.Context.Secret,
 			}
 
-			if resolved.Context.Secret != "" {
-				if resolve && len(secretKeys) > 0 {
-					fmt.Fprintf(out, "Secret:   %s (%d keys: %s)\n",
-						resolved.Context.Secret, len(secretKeys), strings.Join(secretKeys, ", "))
-				} else {
-					fmt.Fprintf(out, "Secret:   %s\n", resolved.Context.Secret)
-				}
-			}
-
+			// Build env annotations
 			if len(resolved.Context.Env) > 0 {
-				keys := make([]string, 0, len(resolved.Context.Env))
-				for k := range resolved.Context.Env {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-
-				if resolve {
-					maxKeyLen := 0
-					for _, k := range keys {
-						if len(k) > maxKeyLen {
-							maxKeyLen = len(k)
-						}
-					}
-					fmt.Fprintln(out, "Env:")
-					for _, k := range keys {
-						v := resolved.Context.Env[k]
-						source, secretKey := classifyEnvSource(v)
-						displayVal := resolveEnvDisplay(v, source, secretKey, secretMap)
-						fmt.Fprintf(out, "  %-*s = %s  (%s)\n", maxKeyLen, k, displayVal, source)
-					}
-				} else {
-					fmt.Fprintf(out, "Env:      %s\n", strings.Join(keys, ", "))
+				data.Env = make(map[string]string, len(resolved.Context.Env))
+				for k, v := range resolved.Context.Env {
+					source, _ := classifyEnvSource(v)
+					data.Env[k] = "← " + source
 				}
 			}
 
+			// In resolve mode, populate detailed fields
+			var secretMap map[string]string
 			if resolve {
-				homeDir, _ := os.UserHomeDir()
-				resolvedSandbox, sbDisabled, _ := sandbox.ResolveSandboxRef(resolved.Context.Sandbox, cfg.Sandboxes)
-				if sbDisabled {
-					fmt.Fprintln(out, "Sandbox:  disabled")
-				} else {
-					tempDir := os.TempDir()
-					policy, _, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, aidectx.ProjectRoot(cwd), "/tmp/aide-preview", homeDir, tempDir)
-					if policyErr == nil && policy != nil {
-						shortenPath := func(p string) string {
-							if homeDir != "" && strings.HasPrefix(p, homeDir) {
-								return "~" + p[len(homeDir):]
+				// Resolve secret keys
+				if resolved.Context.Secret != "" {
+					filePath := config.ResolveSecretPath(resolved.Context.Secret)
+					identity, idErr := secrets.DiscoverAgeKey()
+					if idErr == nil {
+						decrypted, decErr := secrets.DecryptSecretsFile(filePath, identity)
+						if decErr == nil {
+							secretMap = decrypted
+							data.SecretKeys = make([]string, 0, len(decrypted))
+							for k := range decrypted {
+								data.SecretKeys = append(data.SecretKeys, k)
 							}
-							return p
+							sort.Strings(data.SecretKeys)
 						}
-						shortenPaths := func(paths []string) string {
-							short := make([]string, len(paths))
-							for i, p := range paths {
-								short[i] = shortenPath(p)
-							}
-							return strings.Join(short, ", ")
-						}
-						fmt.Fprintln(out, "Sandbox:")
-						fmt.Fprintf(out, "  Writable    %s\n", shortenPaths(policy.Writable))
-						fmt.Fprintf(out, "  Readable    %s\n", shortenPaths(policy.Readable))
-						fmt.Fprintf(out, "  Denied      %s\n", shortenPaths(policy.Denied))
-						portInfo := "all"
-						if len(policy.AllowPorts) > 0 {
-							portStrs := make([]string, len(policy.AllowPorts))
-							for i, p := range policy.AllowPorts {
-								portStrs[i] = strconv.Itoa(p)
-							}
-							portInfo = strings.Join(portStrs, ", ")
-						}
-						fmt.Fprintf(out, "  Network     %s (ports: %s)\n", policy.Network, portInfo)
+					}
+				}
+
+				// Resolve env values
+				if len(resolved.Context.Env) > 0 {
+					data.EnvResolved = make(map[string]string, len(resolved.Context.Env))
+					for k, v := range resolved.Context.Env {
+						_, secretKey := classifyEnvSource(v)
+						displayVal := resolveEnvDisplay(v, "", secretKey, secretMap)
+						data.EnvResolved[k] = redactValue(displayVal)
 					}
 				}
 			}
 
+			// Build sandbox info
+			homeDir, _ := os.UserHomeDir()
+			resolvedSandbox, sbDisabled, _ := sandbox.ResolveSandboxRef(resolved.Context.Sandbox, cfg.Sandboxes)
+			if sbDisabled {
+				data.Sandbox = &ui.SandboxInfo{Disabled: true}
+			} else {
+				tempDir := os.TempDir()
+				policy, pathWarnings, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, aidectx.ProjectRoot(cwd), "/tmp/aide-preview", homeDir, tempDir)
+				if policyErr == nil && policy != nil {
+					si := &ui.SandboxInfo{
+						Network:       string(policy.Network),
+						WritableCount: len(policy.Writable),
+						ReadableCount: len(policy.Readable),
+						Denied:        policy.Denied,
+					}
+					if len(policy.AllowPorts) > 0 {
+						portStrs := make([]string, len(policy.AllowPorts))
+						for i, p := range policy.AllowPorts {
+							portStrs[i] = strconv.Itoa(p)
+						}
+						si.Ports = strings.Join(portStrs, ", ")
+					} else {
+						si.Ports = "all"
+					}
+					if resolve {
+						si.Writable = policy.Writable
+						si.Readable = policy.Readable
+					}
+					data.Sandbox = si
+					data.Warnings = append(data.Warnings, pathWarnings...)
+				}
+			}
+
+			// aide which always renders regardless of show_info
+			ui.RenderBanner(out, prefs.InfoStyle, data)
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolVar(&resolve, "resolve", false, "Show resolved values")
 	return cmd
 }
 

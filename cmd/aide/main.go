@@ -15,6 +15,7 @@ func main() {
 	var agentFlag string
 	var cleanEnv bool
 	var yolo bool
+	var resolve bool
 
 	rootCmd := &cobra.Command{
 		Use:   "aide [flags] [-- agent-args...]",
@@ -50,13 +51,14 @@ agents on your PATH.`,
 			}
 
 			// Config exists — use full launcher flow.
-			return l.Launch(cwd, agentFlag, args, cleanEnv)
+			return l.Launch(cwd, agentFlag, args, cleanEnv, resolve)
 		},
 	}
 
 	rootCmd.Flags().StringVar(&agentFlag, "agent", "", "Override which agent to launch")
 	rootCmd.Flags().BoolVar(&cleanEnv, "clean-env", false, "Start agent with only essential environment variables")
 	rootCmd.Flags().BoolVar(&yolo, "yolo", false, "Launch agent with skip-permissions (agent-specific, sandbox still applies)")
+	rootCmd.PersistentFlags().BoolVar(&resolve, "resolve", false, "Show detailed startup info")
 
 	registerCommands(rootCmd)
 

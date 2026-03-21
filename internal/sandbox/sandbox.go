@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -80,17 +79,12 @@ const (
 //	homeDir     — user's home directory (~)
 //	tempDir     — os.TempDir() result
 func DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir string) Policy {
-	writable := []string{
-		projectRoot,
-		runtimeDir,
-		tempDir,
-	}
-	for _, dir := range extraWritablePaths(homeDir) {
-		writable = append(writable, dir)
-	}
-
 	return Policy{
-		Writable: writable,
+		Writable: []string{
+			projectRoot,
+			runtimeDir,
+			tempDir,
+		},
 		Readable: []string{
 			homeDir,
 			projectRoot,
@@ -128,22 +122,6 @@ func (n *noopSandbox) Apply(_ *exec.Cmd, _ Policy, _ string) error {
 // GenerateProfile returns a message indicating sandbox is unavailable.
 func (n *noopSandbox) GenerateProfile(_ Policy) (string, error) {
 	return "Sandbox not available on this platform (no-op sandbox)", nil
-}
-
-// extraWritablePaths returns additional paths that agents need write access to.
-func extraWritablePaths(homeDir string) []string {
-	var paths []string
-	candidates := []string{
-		filepath.Join(homeDir, ".claude"),
-		filepath.Join(homeDir, ".config/claude"),
-		filepath.Join(homeDir, "Library/Application Support/Claude"),
-	}
-	for _, p := range candidates {
-		if _, err := os.Lstat(p); err == nil {
-			paths = append(paths, p)
-		}
-	}
-	return paths
 }
 
 // expandGlobs expands glob patterns in a list of paths.

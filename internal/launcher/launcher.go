@@ -177,8 +177,8 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		cleanup()
 		return fmt.Errorf("resolving sandbox: %w", sbErr)
 	}
+	homeDir, _ := os.UserHomeDir()
 	if !sbDisabled {
-		homeDir, _ := os.UserHomeDir()
 		tempDir := os.TempDir()
 		policy, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
 		if err != nil {
@@ -186,6 +186,10 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			return fmt.Errorf("building sandbox policy: %w", err)
 		}
 		if policy != nil {
+			// 12b. Add agent-specific writable dirs to sandbox policy
+			agentDirs := ResolveAgentConfigDirs(agentName, env, homeDir)
+			policy.Writable = append(policy.Writable, agentDirs...)
+
 			cmd := &exec.Cmd{
 				Path: binary,
 				Args: append([]string{binary}, extraArgs...),

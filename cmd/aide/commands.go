@@ -294,7 +294,7 @@ func whichCmd() *cobra.Command {
 					fmt.Fprintln(out, "Sandbox:  disabled")
 				} else {
 					tempDir := os.TempDir()
-					policy, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, aidectx.ProjectRoot(cwd), "/tmp/aide-preview", homeDir, tempDir)
+					policy, _, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, aidectx.ProjectRoot(cwd), "/tmp/aide-preview", homeDir, tempDir)
 					if policyErr == nil && policy != nil {
 						shortenPath := func(p string) string {
 							if homeDir != "" && strings.HasPrefix(p, homeDir) {
@@ -2658,7 +2658,7 @@ func sandboxShowCmd() *cobra.Command {
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
 
-			policy, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, "/tmp/aide-preview", homeDir, tempDir)
+			policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, "/tmp/aide-preview", homeDir, tempDir)
 			if err != nil {
 				return fmt.Errorf("building sandbox policy: %w", err)
 			}
@@ -2739,7 +2739,7 @@ func sandboxTestCmd() *cobra.Command {
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
 
-			policy, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, "/tmp/aide-preview", homeDir, tempDir)
+			policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, "/tmp/aide-preview", homeDir, tempDir)
 			if err != nil {
 				return fmt.Errorf("building sandbox policy: %w", err)
 			}

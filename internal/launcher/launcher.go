@@ -180,7 +180,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	homeDir, _ := os.UserHomeDir()
 	if !sbDisabled {
 		tempDir := os.TempDir()
-		policy, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
+		policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
 		if err != nil {
 			cleanup()
 			return fmt.Errorf("building sandbox policy: %w", err)

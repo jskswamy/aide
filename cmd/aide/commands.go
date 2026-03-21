@@ -1219,6 +1219,7 @@ func contextCmd() *cobra.Command {
 	cmd.AddCommand(contextRemoveCmd())
 	cmd.AddCommand(contextSetSecretCmd())
 	cmd.AddCommand(contextRemoveSecretCmd())
+	cmd.AddCommand(contextSetDefaultCmd())
 	return cmd
 }
 
@@ -1582,6 +1583,52 @@ func contextRemoveSecretCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
 	return cmd
+}
+
+func contextSetDefaultCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "set-default [context-name]",
+		Short: "Set a context as the default fallback",
+		Long: `Set a context as the default fallback when no match rules apply.
+
+If no context name is given, the CWD-matched context is used.`,
+		Args:         cobra.MaximumNArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				cwd = "."
+			}
+			cfg, err := config.Load(config.ConfigDir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			var ctxName string
+			if len(args) > 0 {
+				ctxName = args[0]
+			} else {
+				remoteURL := aidectx.DetectRemote(cwd, "origin")
+				rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+				if err != nil {
+					return fmt.Errorf("resolving context: %w", err)
+				}
+				ctxName = rc.Name
+			}
+
+			if _, ok := cfg.Contexts[ctxName]; !ok {
+				return fmt.Errorf("context %q not found", ctxName)
+			}
+
+			cfg.DefaultContext = ctxName
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Set default context to %q\n", ctxName)
+			return nil
+		},
+	}
 }
 
 func envCmd() *cobra.Command {

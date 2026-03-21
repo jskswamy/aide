@@ -1182,6 +1182,10 @@ Examples:
 				cfg.Agents[agentName] = config.AgentDef{Binary: agentName}
 			}
 
+			if cfg.DefaultContext == "" {
+				cfg.DefaultContext = ctxName
+			}
+
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
@@ -1357,6 +1361,10 @@ func contextAddCmd() *cobra.Command {
 				newCtx.Secret = secretsInput
 			}
 			cfg.Contexts[name] = newCtx
+
+			if cfg.DefaultContext == "" {
+				cfg.DefaultContext = name
+			}
 
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
@@ -2593,6 +2601,10 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 
 	if _, ok := cfg.Agents[agentName]; !ok {
 		cfg.Agents[agentName] = config.AgentDef{Binary: agentName}
+	}
+
+	if cfg.DefaultContext == "" {
+		cfg.DefaultContext = ctxName
 	}
 
 	if err := config.WriteConfig(cfg); err != nil {

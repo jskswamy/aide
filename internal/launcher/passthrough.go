@@ -132,6 +132,8 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	tempDir := os.TempDir()
 
 	policy := sandbox.DefaultPolicy(projectRoot, rtDir.Path(), homeDir, tempDir)
+	agentDirs := ResolveAgentConfigDirs(name, os.Environ(), homeDir)
+	policy.Writable = append(policy.Writable, agentDirs...)
 
 	cmd := &exec.Cmd{
 		Path: binary,

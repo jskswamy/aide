@@ -118,10 +118,10 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// 7. Clean stale dirs (best-effort)
 	_ = CleanStale()
 
-	// 8. Decrypt secrets if context has SecretsFile
+	// 8. Decrypt secrets if context has Secret
 	var secretsMap map[string]string
-	if rc.Context.SecretsFile != "" {
-		secretsPath := config.ResolveSecretsFilePath(rc.Context.SecretsFile)
+	if rc.Context.Secret != "" {
+		secretsPath := config.ResolveSecretPath(rc.Context.Secret)
 		identity, err := secrets.DiscoverAgeKey()
 		if err != nil {
 			cleanup()
@@ -144,7 +144,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	resolvedEnv, err := config.ResolveTemplates(rc.Context.Env, templateData)
 	if err != nil {
 		cleanup()
-		return wrapTemplateError(err, rc.Name, rc.Context.SecretsFile)
+		return wrapTemplateError(err, rc.Name, rc.Context.Secret)
 	}
 
 	// 10. Build environment
@@ -246,29 +246,28 @@ func YoloArgs(agentName string) ([]string, error) {
 }
 
 // wrapTemplateError converts raw Go template errors into actionable messages.
-func wrapTemplateError(err error, contextName string, secretsFile string) error {
+func wrapTemplateError(err error, contextName string, secret string) error {
 	msg := err.Error()
 
 	if strings.Contains(msg, "map has no entry for key") {
-		if secretsFile == "" {
+		if secret == "" {
 			return fmt.Errorf(
-				"context %q references secrets in env vars but has no secrets_file.\n\n"+
+				"context %q references secrets in env vars but has no secret configured.\n\n"+
 					"Fix with: aide env set <KEY> --from-secret",
 				contextName,
 			)
 		}
-		secretsName := strings.TrimSuffix(secretsFile, ".enc.yaml")
 		return fmt.Errorf(
 			"context %q: secret key not found in %s.\n\n"+
 				"Available keys: aide secrets keys %s\n"+
 				"Re-wire:        aide env set <KEY> --from-secret",
-			contextName, secretsFile, secretsName,
+			contextName, secret, secret,
 		)
 	}
 
 	if strings.Contains(msg, "nil pointer") || strings.Contains(msg, "can't evaluate field") {
 		return fmt.Errorf(
-			"context %q references secrets but has no secrets_file.\n\n"+
+			"context %q references secrets but has no secret configured.\n\n"+
 				"Fix with: aide env set <KEY> --from-secret",
 			contextName,
 		)

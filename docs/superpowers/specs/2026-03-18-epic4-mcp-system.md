@@ -167,7 +167,7 @@ The template context includes:
 
 | Variable | Source |
 |----------|--------|
-| `.secrets.<key>` | Decrypted secrets map from context's `secrets_file` |
+| `.secrets.<key>` | Decrypted secrets map from context's `secret` |
 | `.project_root` | Git root of current working directory |
 | `.runtime_dir` | Ephemeral runtime directory path |
 

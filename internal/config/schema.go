@@ -17,7 +17,7 @@ type Config struct {
 	// These are promoted to a synthetic "default" context during loading.
 	Agent       string            `yaml:"agent,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
-	SecretsFile string            `yaml:"secrets_file,omitempty"`
+	Secret      string            `yaml:"secret,omitempty"`
 	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
 
@@ -43,7 +43,7 @@ type AgentDef struct {
 type Context struct {
 	Match              []MatchRule          `yaml:"match,omitempty"`
 	Agent              string               `yaml:"agent"`
-	SecretsFile        string               `yaml:"secrets_file,omitempty"`
+	Secret             string               `yaml:"secret,omitempty"`
 	Env                map[string]string    `yaml:"env,omitempty"`
 	MCPServers         []string             `yaml:"mcp_servers,omitempty"`
 	MCPServerOverrides map[string]MCPServer `yaml:"mcp_server_overrides,omitempty"`
@@ -196,7 +196,7 @@ func (s *SandboxRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type ProjectOverride struct {
 	Agent       string            `yaml:"agent,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
-	SecretsFile string            `yaml:"secrets_file,omitempty"`
+	Secret      string            `yaml:"secret,omitempty"`
 	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
 }

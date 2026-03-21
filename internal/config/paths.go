@@ -2,12 +2,31 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/adrg/xdg"
 )
 
 const appName = "aide"
+
+// configHome returns the base config directory, preferring ~/.config on
+// macOS when $XDG_CONFIG_HOME is not explicitly set. The adrg/xdg library
+// follows Apple conventions (~/Library/Application Support) but CLI tools
+// conventionally use ~/.config on all platforms.
+func configHome() string {
+	if v := os.Getenv("XDG_CONFIG_HOME"); v != "" {
+		return v
+	}
+	if runtime.GOOS == "darwin" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, ".config")
+		}
+	}
+	return xdg.ConfigHome
+}
 
 // --- Parameterized variants (testable, no dependency on cached xdg values) ---
 
@@ -32,14 +51,18 @@ func ConfigFilePathFrom(base string) string {
 	return filepath.Join(ConfigDirFrom(base), "config.yaml")
 }
 
-// ResolveSecretsFilePathFrom resolves a secrets_file value to an absolute path.
+// ResolveSecretPathFrom resolves a secret name to an absolute path.
 // If the value is already absolute, return it as-is.
 // Otherwise, resolve relative to SecretsDirFrom(base).
-func ResolveSecretsFilePathFrom(base, secretsFile string) string {
-	if filepath.IsAbs(secretsFile) {
-		return secretsFile
+// Bare names (e.g. "work") get ".enc.yaml" appended automatically.
+func ResolveSecretPathFrom(base, secret string) string {
+	if filepath.IsAbs(secret) {
+		return secret
 	}
-	return filepath.Join(SecretsDirFrom(base), secretsFile)
+	if !strings.HasSuffix(secret, ".enc.yaml") {
+		secret = secret + ".enc.yaml"
+	}
+	return filepath.Join(SecretsDirFrom(base), secret)
 }
 
 // --- Convenience wrappers (use adrg/xdg cached values) ---
@@ -48,13 +71,13 @@ func ResolveSecretsFilePathFrom(base, secretsFile string) string {
 // $XDG_CONFIG_HOME/aide/ (typically ~/.config/aide/)
 // Everything lives here: config.yaml and secrets/ (DD-6).
 func ConfigDir() string {
-	return ConfigDirFrom(xdg.ConfigHome)
+	return ConfigDirFrom(configHome())
 }
 
 // SecretsDir returns the directory for encrypted secrets files.
 // $XDG_CONFIG_HOME/aide/secrets/
 func SecretsDir() string {
-	return SecretsDirFrom(xdg.ConfigHome)
+	return SecretsDirFrom(configHome())
 }
 
 // RuntimeDir returns a per-process ephemeral directory on tmpfs.
@@ -68,15 +91,16 @@ func RuntimeDir(pid int) string {
 // ConfigFilePath returns the path to the global config file.
 // $XDG_CONFIG_HOME/aide/config.yaml
 func ConfigFilePath() string {
-	return ConfigFilePathFrom(xdg.ConfigHome)
+	return ConfigFilePathFrom(configHome())
 }
 
 // ProjectConfigFileName is the per-project override filename.
 const ProjectConfigFileName = ".aide.yaml"
 
-// ResolveSecretsFilePath resolves a secrets_file value to an absolute path.
+// ResolveSecretPath resolves a secret name to an absolute path.
 // If the value is already absolute, return it as-is.
 // Otherwise, resolve relative to SecretsDir().
-func ResolveSecretsFilePath(secretsFile string) string {
-	return ResolveSecretsFilePathFrom(xdg.ConfigHome, secretsFile)
+// Bare names (e.g. "work") get ".enc.yaml" appended automatically.
+func ResolveSecretPath(secret string) string {
+	return ResolveSecretPathFrom(configHome(), secret)
 }

@@ -14,7 +14,7 @@ func TestLoad_MinimalConfig(t *testing.T) {
 	configYAML := `agent: claude
 env:
   ANTHROPIC_API_KEY: "sk-test"
-secrets_file: personal.enc.yaml
+secret: personal
 mcp_servers: [git, context7]
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configYAML), 0644); err != nil {
@@ -42,8 +42,8 @@ mcp_servers: [git, context7]
 	if ctx.Env["ANTHROPIC_API_KEY"] != "sk-test" {
 		t.Errorf("expected env ANTHROPIC_API_KEY='sk-test', got %q", ctx.Env["ANTHROPIC_API_KEY"])
 	}
-	if ctx.SecretsFile != "personal.enc.yaml" {
-		t.Errorf("expected secrets_file 'personal.enc.yaml', got %q", ctx.SecretsFile)
+	if ctx.Secret != "personal" {
+		t.Errorf("expected secret 'personal', got %q", ctx.Secret)
 	}
 	if len(ctx.MCPServers) != 2 || ctx.MCPServers[0] != "git" || ctx.MCPServers[1] != "context7" {
 		t.Errorf("expected mcp_servers [git, context7], got %v", ctx.MCPServers)
@@ -112,7 +112,7 @@ env:
 	overrideYAML := `agent: codex
 env:
   PROJECT_KEY: project-value
-secrets_file: project.enc.yaml
+secret: project
 mcp_servers: [git]
 `
 	if err := os.WriteFile(filepath.Join(projectDir, ".aide.yaml"), []byte(overrideYAML), 0644); err != nil {
@@ -133,8 +133,8 @@ mcp_servers: [git]
 	if cfg.ProjectOverride.Env["PROJECT_KEY"] != "project-value" {
 		t.Errorf("expected override env PROJECT_KEY='project-value', got %q", cfg.ProjectOverride.Env["PROJECT_KEY"])
 	}
-	if cfg.ProjectOverride.SecretsFile != "project.enc.yaml" {
-		t.Errorf("expected override secrets_file 'project.enc.yaml', got %q", cfg.ProjectOverride.SecretsFile)
+	if cfg.ProjectOverride.Secret != "project" {
+		t.Errorf("expected override secret 'project', got %q", cfg.ProjectOverride.Secret)
 	}
 	if len(cfg.ProjectOverride.MCPServers) != 1 || cfg.ProjectOverride.MCPServers[0] != "git" {
 		t.Errorf("expected override mcp_servers [git], got %v", cfg.ProjectOverride.MCPServers)

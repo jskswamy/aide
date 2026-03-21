@@ -24,10 +24,10 @@ func TestWriteConfig_FullFormat(t *testing.T) {
 		},
 		Contexts: map[string]Context{
 			"work": {
-				Agent:       "claude",
-				SecretsFile: "work.env",
-				Env:         map[string]string{"FOO": "bar"},
-				MCPServers:  []string{"myserver"},
+				Agent:      "claude",
+				Secret:     "work",
+				Env:        map[string]string{"FOO": "bar"},
+				MCPServers: []string{"myserver"},
 			},
 			"personal": {
 				Agent: "copilot",
@@ -88,9 +88,9 @@ func TestWriteConfig_MinimalFormat(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := &Config{
-		Agent:       "claude",
-		Env:         map[string]string{"KEY": "value"},
-		SecretsFile: "secrets.env",
+		Agent:  "claude",
+		Env:    map[string]string{"KEY": "value"},
+		Secret: "secrets",
 	}
 
 	if err := WriteConfigTo(cfg, path); err != nil {
@@ -109,8 +109,8 @@ func TestWriteConfig_MinimalFormat(t *testing.T) {
 	if raw.Env["KEY"] != "value" {
 		t.Errorf("env KEY = %q, want %q", raw.Env["KEY"], "value")
 	}
-	if raw.SecretsFile != "secrets.env" {
-		t.Errorf("secrets_file = %q, want %q", raw.SecretsFile, "secrets.env")
+	if raw.Secret != "secrets" {
+		t.Errorf("secret = %q, want %q", raw.Secret, "secrets")
 	}
 	if !raw.IsMinimal() {
 		t.Error("expected config to be minimal (no agents/contexts)")

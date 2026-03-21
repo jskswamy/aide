@@ -264,7 +264,7 @@ in
           env = {
             ANTHROPIC_API_KEY = "{{ .secrets.anthropic_api_key }}";
           };
-          secrets_file = "personal.enc.yaml";
+          secret = "personal";
         }
       '';
     };

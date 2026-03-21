@@ -166,7 +166,7 @@ func DecryptSecretsFile(filePath string, identity *AgeIdentity) (map[string]stri
   - If relative, join with `$XDG_CONFIG_HOME/aide/secrets/`.
 - Error wrapping must include the file path and a hint about key configuration:
   ```
-  failed to decrypt secrets/work.enc.yaml: <sops error>.
+  failed to decrypt secrets/work: <sops error>.
   Is your YubiKey plugged in? Check 'aide setup' for key configuration.
   ```
 
@@ -183,7 +183,7 @@ secrets file %s contains non-string value for key %q. Only flat key-value pairs 
 | # | Test | Description |
 |---|------|-------------|
 | 1 | `TestDecryptSecretsFile_Success` | Create a sops-encrypted test fixture (checked into `testdata/`). Decrypt and verify key-value pairs match expected. Use `SOPS_AGE_KEY` env with a test key. |
-| 2 | `TestDecryptSecretsFile_RelativePath` | Pass `personal.enc.yaml` (relative). Verify it resolves to `$XDG_CONFIG_HOME/aide/secrets/personal.enc.yaml`. |
+| 2 | `TestDecryptSecretsFile_RelativePath` | Pass `personal` (relative). Verify it resolves to `$XDG_CONFIG_HOME/aide/secrets/personal`. |
 | 3 | `TestDecryptSecretsFile_AbsolutePath` | Pass an absolute path. Verify it is used as-is. |
 | 4 | `TestDecryptSecretsFile_FileNotFound` | Pass a nonexistent path. Verify clear error. |
 | 5 | `TestDecryptSecretsFile_WrongKey` | Encrypt with one age key, try to decrypt with a different one. Verify error includes guidance. |
@@ -451,8 +451,8 @@ func Launch(cfg *config.Config, opts *LaunchOptions) error
 
 #### Step 3: Decrypt Secrets
 
-- If the resolved context has no `secrets_file`, skip decryption. The secrets map is nil -- template resolution will still work for literal values (DD-11).
-- If `secrets_file` is set, call `DiscoverAgeKey()` then `DecryptSecretsFile()`.
+- If the resolved context has no `secret`, skip decryption. The secrets map is nil -- template resolution will still work for literal values (DD-11).
+- If `secret` is set, call `DiscoverAgeKey()` then `DecryptSecretsFile()`.
 
 #### Step 5: MCP Config Generation (Stub)
 
@@ -503,7 +503,7 @@ When `opts.Verbose` is true, print to stderr (not stdout, to avoid interfering w
 ```
 [aide] Config: ~/.config/aide/config.yaml
 [aide] Context: personal (matched via remote github.com/jskswamy/aide)
-[aide] Secrets: personal.enc.yaml (age key from YubiKey)
+[aide] Secrets: personal (age key from YubiKey)
 [aide] Runtime dir: /run/user/1000/aide-12345/
 [aide] Agent: claude (/usr/local/bin/claude)
 [aide] Env vars: ANTHROPIC_API_KEY=***, AIDE_CONTEXT=personal
@@ -522,7 +522,7 @@ Env var values are redacted (shown as `***`) in verbose output. Only the key nam
 | 3 | `TestLaunch_CleanEnvMinimal` | Set `CleanEnv: true`. Verify only minimal env vars + aide-injected vars are in the env slice. |
 | 4 | `TestLaunch_InheritsEnvByDefault` | Set `CleanEnv: false`. Verify current process env vars are included in the output. |
 | 5 | `TestLaunch_ForwardsArgs` | Set `AgentArgs: ["--model", "opus", "-p", "fix bug"]`. Verify they appear in the argv after the binary name. |
-| 6 | `TestLaunch_NoSecretsFile` | Context without `secrets_file`. Verify decryption is skipped, literal env values work. |
+| 6 | `TestLaunch_NoSecretsFile` | Context without `secret`. Verify decryption is skipped, literal env values work. |
 | 7 | `TestLaunch_AgentBinaryResolution` | Config with `agents.claude.binary: claude-code`. Verify `exec.LookPath("claude-code")` is called. |
 | 8 | `TestLaunch_AgentBinaryNotFound` | Agent binary not on PATH. Verify error with install guidance. |
 | 9 | `TestLaunch_RuntimeDirCreated` | Verify `NewRuntimeDir()` is called and the path is set in env as `AIDE_RUNTIME_DIR`. |

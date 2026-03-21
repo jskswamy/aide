@@ -9,6 +9,7 @@ import (
 
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/sandbox"
+	"github.com/jskswamy/aide/internal/ui"
 )
 
 // KnownAgents is the list of agent binaries aide can detect on PATH.
@@ -145,6 +146,21 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	if err := sb.Apply(cmd, policy, rtDir.Path()); err != nil {
 		return fmt.Errorf("applying sandbox: %w", err)
 	}
+
+	// Render minimal startup banner
+	bannerData := &ui.BannerData{
+		AgentName: name,
+		AgentPath: binary,
+		Sandbox: &ui.SandboxInfo{
+			Network:       string(policy.Network),
+			Ports:         "all",
+			WritableCount: len(policy.Writable),
+			ReadableCount: len(policy.Readable),
+			Denied:        policy.Denied,
+		},
+	}
+	ui.RenderBanner(l.stderr(), "compact", bannerData)
+	fmt.Fprintln(l.stderr())
 
 	return l.Execer.Exec(cmd.Path, cmd.Args, cmd.Env)
 }

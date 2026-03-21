@@ -208,6 +208,26 @@ contexts:
       CLAUDE_CODE_USE_BEDROCK: "1"
 ```
 
+### Preferences
+
+Global display settings for startup info banner:
+
+```yaml
+# In config.yaml (top-level)
+preferences:
+  show_info: true       # Show startup banner (default: true)
+  info_style: compact   # compact | boxed | clean (default: compact)
+  info_detail: normal   # normal | detailed (default: normal)
+```
+
+Can also be overridden per-project in `.aide.yaml`:
+
+```yaml
+# .aide.yaml
+preferences:
+  info_detail: detailed  # Always show detailed info for this project
+```
+
 ## Usage
 
 ### Launching an Agent
@@ -215,6 +235,7 @@ contexts:
 ```bash
 aide                              # Auto-resolve context and launch
 aide --agent claude               # Override agent selection
+aide --resolve                    # Show detailed startup info then launch
 aide -- --model opus -p "fix it"  # Forward arguments to the agent
 aide --yolo                       # Skip agent permissions (sandbox still applies)
 aide --clean-env                  # Launch with only aide-injected env vars

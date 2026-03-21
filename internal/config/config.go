@@ -98,6 +98,7 @@ func normalizeMinimal(cfg *Config) *Config {
 		},
 		MCP:            cfg.MCP,
 		DefaultContext: "default",
+		Preferences:    cfg.Preferences,
 	}
 }
 

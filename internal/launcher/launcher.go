@@ -2,9 +2,11 @@ package launcher
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -12,6 +14,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
+	"github.com/jskswamy/aide/internal/ui"
 )
 
 // Execer abstracts process execution for testability.
@@ -39,6 +42,15 @@ type Launcher struct {
 	ConfigDir string       // override for testing (default: config.ConfigDir())
 	LookPath  LookPathFunc // override for testing (default: exec.LookPath)
 	Yolo      bool         // inject agent-specific skip-permissions flag
+	Stderr    io.Writer    // override for testing (default: os.Stderr)
+}
+
+// stderr returns the effective stderr writer.
+func (l *Launcher) stderr() io.Writer {
+	if l.Stderr != nil {
+		return l.Stderr
+	}
+	return os.Stderr
 }
 
 // configDir returns the effective config directory.
@@ -51,7 +63,7 @@ func (l *Launcher) configDir() string {
 
 // Launch resolves context, decrypts secrets, resolves templates, creates
 // a runtime directory, applies sandbox policy, and execs the agent binary.
-func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, cleanEnv bool) error {
+func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, cleanEnv bool, resolve bool) error {
 	// 1. Load config
 	cfg, err := config.Load(l.configDir(), cwd)
 	if err != nil {
@@ -178,9 +190,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving sandbox: %w", sbErr)
 	}
 	homeDir, _ := os.UserHomeDir()
+	var pathWarnings []string
 	if !sbDisabled {
 		tempDir := os.TempDir()
-		policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
+		policy, pw, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
+		pathWarnings = pw
 		if err != nil {
 			cleanup()
 			return fmt.Errorf("building sandbox policy: %w", err)
@@ -206,7 +220,20 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		}
 	}
 
-	// 13. Exec the agent binary
+	// 13. Render startup banner
+	prefs := rc.Preferences
+	if resolve {
+		t := true
+		prefs.ShowInfo = &t
+		prefs.InfoDetail = "detailed"
+	}
+	if prefs.ShowInfo != nil && *prefs.ShowInfo {
+		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs)
+		ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData)
+		fmt.Fprintln(l.stderr())
+	}
+
+	// 14. Exec the agent binary
 	args := append([]string{binary}, extraArgs...)
 	return l.Execer.Exec(binary, args, env)
 }
@@ -321,4 +348,119 @@ func mergeEnv(base []string, resolved map[string]string) []string {
 	}
 
 	return result
+}
+
+// buildBannerData constructs a BannerData from the resolved context and launch state.
+func (l *Launcher) buildBannerData(
+	rc *aidectx.ResolvedContext,
+	agentName, binary string,
+	resolvedEnv map[string]string,
+	pathWarnings []string,
+	sbDisabled bool,
+	sandboxCfg *config.SandboxPolicy,
+	projectRoot, rtDirPath, homeDir string,
+	prefs *config.Preferences,
+) *ui.BannerData {
+	data := &ui.BannerData{
+		ContextName: rc.Name,
+		MatchReason: rc.MatchReason,
+		AgentName:   agentName,
+		AgentPath:   binary,
+		SecretName:  rc.Context.Secret,
+		Warnings:    pathWarnings,
+	}
+
+	// Build env annotations
+	if len(rc.Context.Env) > 0 {
+		data.Env = make(map[string]string, len(rc.Context.Env))
+		for k, v := range rc.Context.Env {
+			source, _ := classifyEnvSource(v)
+			data.Env[k] = "← " + source
+		}
+	}
+
+	// In detailed mode, add resolved env values
+	if prefs.InfoDetail == "detailed" && len(resolvedEnv) > 0 {
+		data.EnvResolved = make(map[string]string, len(resolvedEnv))
+		for k, v := range resolvedEnv {
+			data.EnvResolved[k] = redactValue(v)
+		}
+	}
+
+	// Build sandbox info
+	if sbDisabled {
+		data.Sandbox = &ui.SandboxInfo{Disabled: true}
+	} else {
+		tempDir := os.TempDir()
+		policy, _, _ := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDirPath, homeDir, tempDir)
+		if policy != nil {
+			si := &ui.SandboxInfo{
+				Network:       string(policy.Network),
+				WritableCount: len(policy.Writable),
+				ReadableCount: len(policy.Readable),
+				Denied:        policy.Denied,
+			}
+			if len(policy.AllowPorts) > 0 {
+				portStrs := make([]string, len(policy.AllowPorts))
+				for i, p := range policy.AllowPorts {
+					portStrs[i] = strconv.Itoa(p)
+				}
+				si.Ports = strings.Join(portStrs, ", ")
+			} else {
+				si.Ports = "all"
+			}
+			if prefs.InfoDetail == "detailed" {
+				si.Writable = policy.Writable
+				si.Readable = policy.Readable
+			}
+			data.Sandbox = si
+		}
+	}
+
+	return data
+}
+
+// classifyEnvSource determines the source type of an env template value.
+func classifyEnvSource(val string) (source string, secretKey string) {
+	if strings.Contains(val, ".secrets.") || strings.Contains(val, "index .secrets") {
+		// Extract the key name from template patterns like {{ .secrets.foo }} or {{ index .secrets "foo" }}
+		if idx := strings.Index(val, ".secrets."); idx >= 0 {
+			rest := val[idx+len(".secrets."):]
+			end := strings.IndexAny(rest, " \t}\"")
+			if end > 0 {
+				return "secrets." + rest[:end], rest[:end]
+			}
+		}
+		if idx := strings.Index(val, "index .secrets"); idx >= 0 {
+			// Find the quoted key name
+			rest := val[idx:]
+			qStart := strings.Index(rest, "\"")
+			if qStart >= 0 {
+				rest2 := rest[qStart+1:]
+				qEnd := strings.Index(rest2, "\"")
+				if qEnd > 0 {
+					return "secrets." + rest2[:qEnd], rest2[:qEnd]
+				}
+			}
+		}
+		return "secret", ""
+	}
+	if strings.Contains(val, ".project_root") {
+		return "project_root", ""
+	}
+	if strings.Contains(val, ".runtime_dir") {
+		return "runtime_dir", ""
+	}
+	if strings.Contains(val, "{{") {
+		return "template", ""
+	}
+	return "literal", ""
+}
+
+// redactValue shows the first 8 chars of a value then ***.
+func redactValue(s string) string {
+	if len(s) <= 8 {
+		return s + "***"
+	}
+	return s[:8] + "***"
 }

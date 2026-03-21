@@ -12,6 +12,7 @@ type Config struct {
 	Contexts       map[string]Context         `yaml:"contexts,omitempty"`
 	DefaultContext string                     `yaml:"default_context,omitempty"`
 	Sandboxes      map[string]SandboxPolicy   `yaml:"sandboxes,omitempty"`
+	Preferences    *Preferences               `yaml:"preferences,omitempty"`
 
 	// --- Minimal (flat) format fields ---
 	// These are promoted to a synthetic "default" context during loading.
@@ -199,4 +200,46 @@ type ProjectOverride struct {
 	Secret      string            `yaml:"secret,omitempty"`
 	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
+	Preferences *Preferences      `yaml:"preferences,omitempty"`
+}
+
+// Preferences holds global display/behavior settings.
+type Preferences struct {
+	ShowInfo   *bool  `yaml:"show_info,omitempty"`
+	InfoStyle  string `yaml:"info_style,omitempty"`
+	InfoDetail string `yaml:"info_detail,omitempty"`
+}
+
+// ResolvePreferences merges global and project preferences,
+// applying defaults for unset fields.
+func ResolvePreferences(global, project *Preferences) Preferences {
+	t := true
+	result := Preferences{
+		ShowInfo:   &t,
+		InfoStyle:  "compact",
+		InfoDetail: "normal",
+	}
+	if global != nil {
+		if global.ShowInfo != nil {
+			result.ShowInfo = global.ShowInfo
+		}
+		if global.InfoStyle != "" {
+			result.InfoStyle = global.InfoStyle
+		}
+		if global.InfoDetail != "" {
+			result.InfoDetail = global.InfoDetail
+		}
+	}
+	if project != nil {
+		if project.ShowInfo != nil {
+			result.ShowInfo = project.ShowInfo
+		}
+		if project.InfoStyle != "" {
+			result.InfoStyle = project.InfoStyle
+		}
+		if project.InfoDetail != "" {
+			result.InfoDetail = project.InfoDetail
+		}
+	}
+	return result
 }

@@ -1,3 +1,4 @@
+// Package launcher orchestrates agent discovery, sandbox setup, and process execution.
 package launcher
 
 import (

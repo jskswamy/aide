@@ -1,3 +1,4 @@
+// Package config handles aide configuration loading, parsing, and normalization.
 package config
 
 import (
@@ -13,7 +14,7 @@ import (
 // discovers a project-level .aide.yaml by walking up from projectDir to
 // the git root (or filesystem root).
 //
-// configDir: typically ConfigDir() ($XDG_CONFIG_HOME/aide/)
+// configDir: typically Dir() ($XDG_CONFIG_HOME/aide/)
 // projectDir: typically the current working directory or a subdirectory
 //
 // If the global config file does not exist, an empty Config is returned

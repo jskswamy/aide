@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// SeatbeltPath returns the Seatbelt path expression for a filesystem path.
+// Path returns the Seatbelt path expression for a filesystem path.
 // Directories use (subpath ...), files use (literal ...).
-func SeatbeltPath(p string) string {
+func Path(p string) string {
 	info, err := os.Stat(p)
 	if err == nil && info.IsDir() {
 		return fmt.Sprintf(`(subpath "%s")`, p)

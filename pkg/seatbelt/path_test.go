@@ -6,25 +6,25 @@ import (
 	"testing"
 )
 
-func TestSeatbeltPath_Directory(t *testing.T) {
+func TestPath_Directory(t *testing.T) {
 	dir := t.TempDir()
-	got := SeatbeltPath(dir)
+	got := Path(dir)
 	want := `(subpath "` + dir + `")`
 	if got != want {
-		t.Errorf("SeatbeltPath(%q) = %q, want %q", dir, got, want)
+		t.Errorf("Path(%q) = %q, want %q", dir, got, want)
 	}
 }
 
-func TestSeatbeltPath_File(t *testing.T) {
+func TestPath_File(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "test.txt")
 	if err := os.WriteFile(f, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	got := SeatbeltPath(f)
+	got := Path(f)
 	want := `(literal "` + f + `")`
 	if got != want {
-		t.Errorf("SeatbeltPath(%q) = %q, want %q", f, got, want)
+		t.Errorf("Path(%q) = %q, want %q", f, got, want)
 	}
 }
 

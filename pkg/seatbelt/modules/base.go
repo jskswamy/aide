@@ -1,6 +1,4 @@
-// Base module for macOS Seatbelt profiles.
-//
-// Sets the profile version and default-deny policy.
+// Package modules provides composable Seatbelt profile building blocks.
 package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"

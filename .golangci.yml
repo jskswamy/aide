@@ -6,6 +6,11 @@ linters:
     - govet
     - staticcheck
     - unused
+    - misspell
+    - revive
+    - gocritic
+    - exhaustive
+    - nolintlint
   settings:
     errcheck:
       check-type-assertions: true
@@ -20,6 +25,11 @@ linters:
       disable:
         - fieldalignment
         - shadow
+    exhaustive:
+      default-signifies-exhaustive: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
 
 issues:
   max-issues-per-linter: 0

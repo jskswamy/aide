@@ -1,3 +1,4 @@
+// Package ui provides terminal rendering for aide's startup banner and status output.
 package ui
 
 import (

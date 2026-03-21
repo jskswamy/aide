@@ -1,5 +1,6 @@
 //go:build darwin
 
+// Package sandbox provides OS-native sandboxing for agent processes.
 package sandbox
 
 import (

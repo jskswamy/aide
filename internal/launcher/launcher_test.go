@@ -521,7 +521,7 @@ agent: /usr/local/bin/my-agent
 	l := &Launcher{
 		Execer:    mock,
 		ConfigDir: configDir,
-		LookPath: func(file string) (string, error) {
+		LookPath: func(_ string) (string, error) {
 			lookPathCalled = true
 			return "", fmt.Errorf("should not be called")
 		},

@@ -16,7 +16,7 @@ func TestNewRuntimeDir_Creates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRuntimeDir() error: %v", err)
 	}
-	defer rd.Cleanup() //nolint:errcheck
+	defer rd.Cleanup() //nolint:errcheck // cleanup is best-effort in tests
 
 	info, err := os.Stat(rd.Path())
 	if err != nil {
@@ -39,7 +39,7 @@ func TestNewRuntimeDir_UsesXDGRuntimeDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRuntimeDir() error: %v", err)
 	}
-	defer rd.Cleanup() //nolint:errcheck
+	defer rd.Cleanup() //nolint:errcheck // cleanup is best-effort in tests
 
 	expected := filepath.Join(base, fmt.Sprintf("aide-%d", os.Getpid()))
 	if rd.Path() != expected {
@@ -54,7 +54,7 @@ func TestNewRuntimeDir_FallsBackToTempDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRuntimeDir() error: %v", err)
 	}
-	defer rd.Cleanup() //nolint:errcheck
+	defer rd.Cleanup() //nolint:errcheck // cleanup is best-effort in tests
 
 	// Should be under os.TempDir()
 	tmpDir := os.TempDir()
@@ -71,7 +71,7 @@ func TestRuntimeDir_PathContainsPID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRuntimeDir() error: %v", err)
 	}
-	defer rd.Cleanup() //nolint:errcheck
+	defer rd.Cleanup() //nolint:errcheck // cleanup is best-effort in tests
 
 	pidStr := fmt.Sprintf("aide-%d", os.Getpid())
 	if !contains(rd.Path(), pidStr) {
@@ -178,7 +178,7 @@ func TestNewRuntimeDir_ReplacesExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRuntimeDir() error: %v", err)
 	}
-	defer rd.Cleanup() //nolint:errcheck
+	defer rd.Cleanup() //nolint:errcheck // cleanup is best-effort in tests
 
 	// Old file should be gone
 	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {

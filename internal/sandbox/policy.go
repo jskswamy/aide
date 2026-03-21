@@ -3,6 +3,7 @@ package sandbox
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -26,12 +27,14 @@ import (
 func PolicyFromConfig(
 	cfg *config.SandboxPolicy,
 	projectRoot, runtimeDir, homeDir, tempDir string,
-) (*Policy, error) {
+) (*Policy, []string, error) {
 	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
 
 	if cfg == nil {
-		return &defaults, nil
+		return &defaults, nil, nil
 	}
+
+	var warnings []string
 
 	templateVars := map[string]string{
 		"project_root": projectRoot,
@@ -46,45 +49,45 @@ func PolicyFromConfig(
 	if len(cfg.Writable) > 0 {
 		w, err := ResolvePaths(cfg.Writable, templateVars)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		policy.Writable = w
+		policy.Writable = validateAndFilterPaths(w, &warnings)
 	} else if len(cfg.WritableExtra) > 0 {
 		extra, err := ResolvePaths(cfg.WritableExtra, templateVars)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		policy.Writable = append(policy.Writable, extra...)
+		policy.Writable = append(policy.Writable, validateAndFilterPaths(extra, &warnings)...)
 	}
 
 	// Readable: override replaces defaults, extra appends to defaults
 	if len(cfg.Readable) > 0 {
 		r, err := ResolvePaths(cfg.Readable, templateVars)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		policy.Readable = r
+		policy.Readable = validateAndFilterPaths(r, &warnings)
 	} else if len(cfg.ReadableExtra) > 0 {
 		extra, err := ResolvePaths(cfg.ReadableExtra, templateVars)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		policy.Readable = append(policy.Readable, extra...)
+		policy.Readable = append(policy.Readable, validateAndFilterPaths(extra, &warnings)...)
 	}
 
 	// Denied: override replaces defaults, extra appends to defaults
 	if len(cfg.Denied) > 0 {
 		d, err := ResolvePaths(cfg.Denied, templateVars)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		policy.Denied = d
+		policy.Denied = validateAndFilterPaths(d, &warnings)
 	} else if len(cfg.DeniedExtra) > 0 {
 		extra, err := ResolvePaths(cfg.DeniedExtra, templateVars)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		policy.Denied = append(policy.Denied, extra...)
+		policy.Denied = append(policy.Denied, validateAndFilterPaths(extra, &warnings)...)
 	}
 
 	if cfg.Network != nil && cfg.Network.Mode != "" {
@@ -105,7 +108,30 @@ func PolicyFromConfig(
 		policy.CleanEnv = *cfg.CleanEnv
 	}
 
-	return &policy, nil
+	return &policy, warnings, nil
+}
+
+// isGlobPattern reports whether path contains any glob metacharacters.
+func isGlobPattern(path string) bool {
+	return strings.ContainsAny(path, "*?[{")
+}
+
+// validateAndFilterPaths checks each resolved path. Non-glob paths that
+// don't exist on disk are skipped and a warning is added.
+func validateAndFilterPaths(paths []string, warnings *[]string) []string {
+	var filtered []string
+	for _, p := range paths {
+		if isGlobPattern(p) {
+			filtered = append(filtered, p)
+			continue
+		}
+		if _, err := os.Lstat(p); err != nil {
+			*warnings = append(*warnings, fmt.Sprintf("skipped: %s (not found)", p))
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	return filtered
 }
 
 // ResolvePaths resolves template variables and ~ in a list of path strings.

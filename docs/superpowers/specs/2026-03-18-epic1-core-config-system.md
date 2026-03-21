@@ -61,7 +61,7 @@ type Config struct {
     // These are promoted to a synthetic "default" context during loading.
     Agent       string            `yaml:"agent,omitempty"`
     Env         map[string]string `yaml:"env,omitempty"`
-    SecretsFile string            `yaml:"secrets_file,omitempty"`
+    SecretsFile string            `yaml:"secret,omitempty"`
     MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 
     // --- Project override (populated by loader, not from YAML) ---
@@ -86,7 +86,7 @@ type AgentDef struct {
 type Context struct {
     Match              []MatchRule       `yaml:"match,omitempty"`
     Agent              string            `yaml:"agent"`
-    SecretsFile        string            `yaml:"secrets_file,omitempty"`
+    SecretsFile        string            `yaml:"secret,omitempty"`
     Env                map[string]string `yaml:"env,omitempty"`
     MCPServers         []string          `yaml:"mcp_servers,omitempty"`
     MCPServerOverrides map[string]MCPServer `yaml:"mcp_server_overrides,omitempty"`
@@ -140,7 +140,7 @@ type SandboxPolicy struct {
 agent: claude
 env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-secrets_file: personal.enc.yaml
+secret: personal
 mcp_servers: [git, context7]
 ```
 
@@ -155,7 +155,7 @@ contexts:
     match:
       - remote: "github.com/jskswamy/*"
     agent: claude
-    secrets_file: personal.enc.yaml
+    secret: personal
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
     mcp_servers: [git, context7]
@@ -273,7 +273,7 @@ Use the `adrg/xdg` library for cross-platform correctness (DD-3).
        return filepath.Join(ConfigDirFrom(base), "config.yaml")
    }
 
-   // ResolveSecretsFilePathFrom resolves a secrets_file value to an absolute path.
+   // ResolveSecretsFilePathFrom resolves a secret value to an absolute path.
    // If the value is already absolute, return it as-is.
    // Otherwise, resolve relative to SecretsDirFrom(base).
    func ResolveSecretsFilePathFrom(base, secretsFile string) string {
@@ -315,7 +315,7 @@ Use the `adrg/xdg` library for cross-platform correctness (DD-3).
    // ProjectConfigFileName is the per-project override filename.
    const ProjectConfigFileName = ".aide.yaml"
 
-   // ResolveSecretsFilePath resolves a secrets_file value to an absolute path.
+   // ResolveSecretsFilePath resolves a secret value to an absolute path.
    // If the value is already absolute, return it as-is.
    // Otherwise, resolve relative to SecretsDir().
    func ResolveSecretsFilePath(secretsFile string) string {
@@ -336,7 +336,7 @@ Use the `adrg/xdg` library for cross-platform correctness (DD-3).
    | `TestSecretsDirFrom` | `SecretsDirFrom("/tmp/xdg")` returns `"/tmp/xdg/aide/secrets"` |
    | `TestRuntimeDirFrom_ContainsPID` | `RuntimeDirFrom("/tmp/run", 12345)` returns `"/tmp/run/aide-12345"` |
    | `TestConfigFilePathFrom` | `ConfigFilePathFrom("/tmp/xdg")` returns `"/tmp/xdg/aide/config.yaml"` |
-   | `TestResolveSecretsFilePathFrom_Relative` | `ResolveSecretsFilePathFrom("/tmp/xdg", "personal.enc.yaml")` returns `"/tmp/xdg/aide/secrets/personal.enc.yaml"` |
+   | `TestResolveSecretsFilePathFrom_Relative` | `ResolveSecretsFilePathFrom("/tmp/xdg", "personal")` returns `"/tmp/xdg/aide/secrets/personal"` |
    | `TestResolveSecretsFilePathFrom_Absolute` | `ResolveSecretsFilePathFrom("/tmp/xdg", "/custom/path/keys.yaml")` returns `"/custom/path/keys.yaml"` unchanged |
 
    **Important:** `adrg/xdg` caches `XDG_CONFIG_HOME` at init time, so
@@ -483,7 +483,7 @@ so downstream code only deals with one shape (DD-12).
    type ProjectOverride struct {
        Agent       string            `yaml:"agent,omitempty"`
        Env         map[string]string `yaml:"env,omitempty"`
-       SecretsFile string            `yaml:"secrets_file,omitempty"`
+       SecretsFile string            `yaml:"secret,omitempty"`
        MCPServers  []string          `yaml:"mcp_servers,omitempty"`
        Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
    }
@@ -516,7 +516,7 @@ so downstream code only deals with one shape (DD-12).
    | `TestLoad_MinimalNormalization` | Write minimal config, load, assert `IsMinimal()` is false on the result (it was normalized) |
    | `TestLoad_ProjectOverride` | Write global config.yaml + .aide.yaml in project dir, assert `cfg.ProjectOverride` is non-nil with overridden agent |
    | `TestLoad_ProjectOverrideMergesEnv` | Global context has `env: {A: 1}`, project .aide.yaml has `env: {B: 2}`. Resolve the config. Assert the merged context env has BOTH `A: 1` (inherited from matched context) AND `B: 2` (from project override) |
-   | `TestLoad_ProjectOverrideSecretsFile` | Global context has `secrets_file: global.enc.yaml`, project .aide.yaml has `secrets_file: project.enc.yaml`. Assert resolved context's `SecretsFile` is `"project.enc.yaml"` |
+   | `TestLoad_ProjectOverrideSecretsFile` | Global context has `secret: global`, project .aide.yaml has `secret: project`. Assert resolved context's `SecretsFile` is `"project"` |
    | `TestLoad_NoProjectOverride` | No .aide.yaml in project dir, assert `cfg.ProjectOverride` is nil, no error |
    | `TestLoad_MissingGlobalConfig` | No config.yaml exists, assert error is returned |
    | `TestLoad_InvalidYAML` | Write broken YAML, assert error contains parsing info |
@@ -989,7 +989,7 @@ internal/context/resolver_test.go
 | Decision | Where Used |
 |----------|-----------|
 | DD-3 (adrg/xdg) | Task 2: `paths.go` uses `xdg.ConfigHome` and `xdg.RuntimeDir` |
-| DD-5 (env on context, not agent) | Task 1: `AgentDef` has no `Env` field; `Context` has `Env`, `SecretsFile` |
+| DD-5 (env on context, not agent) | Task 1: `AgentDef` has no `Env` field; `Context` has `Env`, `SecretsFile` (yaml: `secret`) |
 | DD-6 (single XDG dir) | Task 2: `ConfigDir()` and `SecretsDir()` both under `$XDG_CONFIG_HOME/aide/` |
 | DD-12 (minimal format) | Task 1: `IsMinimal()` method; Task 3: `normalizeMinimal()` in loader |
 | DD-18 (project root = git root) | Task 4: `ProjectRoot()` calls `git rev-parse --show-toplevel`, falls back to cwd |

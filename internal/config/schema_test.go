@@ -12,7 +12,7 @@ func TestConfig_IsMinimal_True(t *testing.T) {
 agent: claude
 env:
   ANTHROPIC_API_KEY: "sk-test"
-secrets_file: personal.enc.yaml
+secret: personal
 mcp_servers: [git, context7]
 `
 	var cfg config.Config
@@ -28,8 +28,8 @@ mcp_servers: [git, context7]
 	if cfg.Env["ANTHROPIC_API_KEY"] != "sk-test" {
 		t.Errorf("Env[ANTHROPIC_API_KEY] = %q, want %q", cfg.Env["ANTHROPIC_API_KEY"], "sk-test")
 	}
-	if cfg.SecretsFile != "personal.enc.yaml" {
-		t.Errorf("SecretsFile = %q, want %q", cfg.SecretsFile, "personal.enc.yaml")
+	if cfg.Secret != "personal" {
+		t.Errorf("Secret = %q, want %q", cfg.Secret, "personal")
 	}
 	if len(cfg.MCPServers) != 2 || cfg.MCPServers[0] != "git" || cfg.MCPServers[1] != "context7" {
 		t.Errorf("MCPServers = %v, want [git context7]", cfg.MCPServers)
@@ -44,7 +44,7 @@ agents:
 contexts:
   personal:
     agent: claude
-    secrets_file: personal.enc.yaml
+    secret: personal
     env:
       ANTHROPIC_API_KEY: "sk-test"
     mcp_servers: [git, context7]
@@ -70,8 +70,8 @@ default_context: personal
 	if ctx.Agent != "claude" {
 		t.Errorf("Context.Agent = %q, want %q", ctx.Agent, "claude")
 	}
-	if ctx.SecretsFile != "personal.enc.yaml" {
-		t.Errorf("Context.SecretsFile = %q, want %q", ctx.SecretsFile, "personal.enc.yaml")
+	if ctx.Secret != "personal" {
+		t.Errorf("Context.Secret = %q, want %q", ctx.Secret, "personal")
 	}
 	if cfg.DefaultContext != "personal" {
 		t.Errorf("DefaultContext = %q, want %q", cfg.DefaultContext, "personal")
@@ -80,10 +80,10 @@ default_context: personal
 
 func TestConfig_UnmarshalMinimal_RoundTrip(t *testing.T) {
 	original := config.Config{
-		Agent:       "claude",
-		Env:         map[string]string{"KEY": "val"},
-		SecretsFile: "test.enc.yaml",
-		MCPServers:  []string{"git"},
+		Agent:      "claude",
+		Env:        map[string]string{"KEY": "val"},
+		Secret:     "test",
+		MCPServers: []string{"git"},
 	}
 	data, err := yaml.Marshal(&original)
 	if err != nil {
@@ -99,8 +99,8 @@ func TestConfig_UnmarshalMinimal_RoundTrip(t *testing.T) {
 	if decoded.Env["KEY"] != "val" {
 		t.Errorf("Env[KEY] = %q, want %q", decoded.Env["KEY"], "val")
 	}
-	if decoded.SecretsFile != original.SecretsFile {
-		t.Errorf("SecretsFile = %q, want %q", decoded.SecretsFile, original.SecretsFile)
+	if decoded.Secret != original.Secret {
+		t.Errorf("Secret = %q, want %q", decoded.Secret, original.Secret)
 	}
 	if len(decoded.MCPServers) != 1 || decoded.MCPServers[0] != "git" {
 		t.Errorf("MCPServers = %v, want [git]", decoded.MCPServers)
@@ -129,9 +129,9 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 		},
 		Contexts: map[string]config.Context{
 			"work": {
-				Agent:       "claude",
-				SecretsFile: "work.enc.yaml",
-				Env:         map[string]string{"ORG": "acme"},
+				Agent:  "claude",
+				Secret: "work",
+				Env:    map[string]string{"ORG": "acme"},
 				MCPServers:  []string{"git"},
 				MCPServerOverrides: map[string]config.MCPServer{
 					"git": {Args: []string{"--quiet"}},
@@ -376,7 +376,7 @@ func TestProjectOverride_Unmarshal(t *testing.T) {
 agent: codex
 env:
   PROJECT_KEY: "proj-val"
-secrets_file: project.enc.yaml
+secret: project
 mcp_servers: [context7]
 sandbox:
   writable: ["/tmp/project"]
@@ -392,8 +392,8 @@ sandbox:
 	if po.Env["PROJECT_KEY"] != "proj-val" {
 		t.Errorf("Env[PROJECT_KEY] = %q, want %q", po.Env["PROJECT_KEY"], "proj-val")
 	}
-	if po.SecretsFile != "project.enc.yaml" {
-		t.Errorf("SecretsFile = %q, want %q", po.SecretsFile, "project.enc.yaml")
+	if po.Secret != "project" {
+		t.Errorf("Secret = %q, want %q", po.Secret, "project")
 	}
 	if len(po.MCPServers) != 1 || po.MCPServers[0] != "context7" {
 		t.Errorf("MCPServers = %v, want [context7]", po.MCPServers)

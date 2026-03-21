@@ -242,8 +242,8 @@ func TestResolve_NoProjectOverride(t *testing.T) {
 				Match: []config.MatchRule{
 					{Remote: "github.com/org/*"},
 				},
-				Agent:       "work-agent",
-				SecretsFile: "work.enc.yaml",
+				Agent:  "work-agent",
+				Secret: "work",
 			},
 		},
 		DefaultContext: "work",
@@ -256,8 +256,8 @@ func TestResolve_NoProjectOverride(t *testing.T) {
 	if rc.Context.Agent != "work-agent" {
 		t.Errorf("expected agent 'work-agent', got %q", rc.Context.Agent)
 	}
-	if rc.Context.SecretsFile != "work.enc.yaml" {
-		t.Errorf("expected secrets_file 'work.enc.yaml', got %q", rc.Context.SecretsFile)
+	if rc.Context.Secret != "work" {
+		t.Errorf("expected secret 'work', got %q", rc.Context.Secret)
 	}
 }
 
@@ -419,17 +419,225 @@ func TestResolve_ProjectOverrideReplacesMCPServers(t *testing.T) {
 	}
 }
 
-func TestResolve_ProjectOverrideReplacesSecretsFile(t *testing.T) {
+func TestResolve_ParentWalk_GlobMatchesFromSubdir(t *testing.T) {
+	// Pattern twlabs/* should match when cwd is twlabs/repo/src/pkg
+	// because the resolver walks up: src/pkg -> src -> repo (matches twlabs/*)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	deep := filepath.Join(repo, "src", "pkg")
+
 	cfg := &config.Config{
 		Contexts: map[string]config.Context{
 			"work": {
-				Agent:       "work-agent",
-				SecretsFile: "global.enc.yaml",
+				Match: []config.MatchRule{
+					{Path: parent + "/*"},
+				},
+				Agent: "work-agent",
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, deep, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "work" {
+		t.Errorf("expected context 'work' via parent walk, got %q", rc.Name)
+	}
+}
+
+func TestResolve_ParentWalk_DoubleStarMatchesDeep(t *testing.T) {
+	// Pattern parent/** should match cwd at any depth
+	parent := t.TempDir()
+	deep := filepath.Join(parent, "org", "repo", "src", "main")
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Match: []config.MatchRule{
+					{Path: parent + "/**"},
+				},
+				Agent: "work-agent",
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, deep, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "work" {
+		t.Errorf("expected context 'work' via ** glob, got %q", rc.Name)
+	}
+}
+
+func TestResolve_ParentWalk_ExactChildMatchFromSubdir(t *testing.T) {
+	// Exact path match on a parent directory should work from a subdirectory
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	subdir := filepath.Join(repo, "src")
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"exact": {
+				Match: []config.MatchRule{
+					{Path: repo},
+				},
+				Agent: "exact-agent",
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, subdir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "exact" {
+		t.Errorf("expected context 'exact' via parent walk, got %q", rc.Name)
+	}
+}
+
+func TestResolve_ParentWalk_BaseOfGlobMatches(t *testing.T) {
+	// When cwd IS the base directory of a glob pattern (e.g., cwd=/work
+	// and pattern=/work/*), it should match. The user is at the root
+	// of the context's scope.
+	parent := t.TempDir()
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Match: []config.MatchRule{
+					{Path: parent + "/*"},
+				},
+				Agent: "work-agent",
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, parent, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "work" {
+		t.Errorf("expected context 'work' when cwd is glob base, got %q", rc.Name)
+	}
+}
+
+func TestResolve_ParentWalk_BaseOfDoubleStarMatches(t *testing.T) {
+	// cwd=/work with pattern=/work/** should also match
+	parent := t.TempDir()
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Match: []config.MatchRule{
+					{Path: parent + "/**"},
+				},
+				Agent: "work-agent",
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, parent, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "work" {
+		t.Errorf("expected context 'work' when cwd is ** glob base, got %q", rc.Name)
+	}
+}
+
+func TestResolve_ParentWalk_DoesNotMatchUnrelatedDir(t *testing.T) {
+	// Pattern /foo/* should NOT match /bar/baz even with parent walking
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Match: []config.MatchRule{
+					{Path: "/foo/*"},
+				},
+				Agent: "work-agent",
+			},
+		},
+	}
+
+	_, err := Resolve(cfg, "/bar/baz/deep", "")
+	if err == nil {
+		t.Fatal("expected error for unmatched path, got nil")
+	}
+}
+
+func TestResolve_ParentWalk_DirectMatchStillWorks(t *testing.T) {
+	// Existing behavior: cwd directly matches glob without needing parent walk
+	parent := t.TempDir()
+	child := filepath.Join(parent, "repo")
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Match: []config.MatchRule{
+					{Path: parent + "/*"},
+				},
+				Agent: "work-agent",
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, child, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "work" {
+		t.Errorf("expected context 'work' via direct glob match, got %q", rc.Name)
+	}
+}
+
+func TestResolve_ParentWalk_ExactMatchBeatsParentGlob(t *testing.T) {
+	// If cwd has an exact match, it should beat a glob that matches a parent
+	parent := t.TempDir()
+	child := filepath.Join(parent, "repo")
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"glob-ctx": {
+				Match: []config.MatchRule{
+					{Path: parent + "/*"},
+				},
+				Agent: "glob-agent",
+			},
+			"exact-ctx": {
+				Match: []config.MatchRule{
+					{Path: child},
+				},
+				Agent: "exact-agent",
+			},
+		},
+	}
+
+	// From a subdir of child, both could match:
+	// - exact-ctx matches child (via parent walk)
+	// - glob-ctx matches child (directly)
+	// Exact should win due to higher specificity tier
+	subdir := filepath.Join(child, "src")
+	rc, err := Resolve(cfg, subdir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "exact-ctx" {
+		t.Errorf("expected exact match to beat glob via parent walk, got %q", rc.Name)
+	}
+}
+
+func TestResolve_ProjectOverrideReplacesSecret(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent:  "work-agent",
+				Secret: "global",
 			},
 		},
 		DefaultContext: "work",
 		ProjectOverride: &config.ProjectOverride{
-			SecretsFile: "project.enc.yaml",
+			Secret: "project",
 		},
 	}
 
@@ -437,7 +645,7 @@ func TestResolve_ProjectOverrideReplacesSecretsFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if rc.Context.SecretsFile != "project.enc.yaml" {
-		t.Errorf("expected secrets_file 'project.enc.yaml', got %q", rc.Context.SecretsFile)
+	if rc.Context.Secret != "project" {
+		t.Errorf("expected secret 'project', got %q", rc.Context.Secret)
 	}
 }

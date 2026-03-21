@@ -143,7 +143,7 @@ func TestLauncher_WithSecrets(t *testing.T) {
 	// Use absolute path to the encrypted secrets file.
 	writeMinimalConfig(t, configDir, fmt.Sprintf(`
 agent: /usr/local/bin/my-agent
-secrets_file: %s
+secret: %s
 env:
   API_KEY: "{{ index .secrets \"anthropic_api_key\" }}"
   PLAIN: literal-value
@@ -325,7 +325,7 @@ func TestLauncher_CleanupOnError(t *testing.T) {
 
 	writeMinimalConfig(t, configDir, `
 agent: /usr/local/bin/my-agent
-secrets_file: /nonexistent/secrets.enc.yaml
+secret: /nonexistent/secrets.enc.yaml
 `)
 
 	// Set up age key so DiscoverAgeKey succeeds but DecryptSecretsFile fails.
@@ -419,7 +419,7 @@ func TestLauncher_WithSecrets_DiscoverKeyFromEnv(t *testing.T) {
 
 	writeMinimalConfig(t, configDir, fmt.Sprintf(`
 agent: /usr/local/bin/my-agent
-secrets_file: %s
+secret: %s
 env:
   SECRET_VAL: "{{ index .secrets \"anthropic_api_key\" }}"
 `, encFile))

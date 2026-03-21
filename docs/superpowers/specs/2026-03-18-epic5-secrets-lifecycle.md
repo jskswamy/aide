@@ -382,9 +382,9 @@ unused          (none)           age1abc...def (primary)
 
 3. Load config.yaml (if it exists) and build a reverse map:
      contextsBySecretsFile map[string][]string
-   Iterate over all contexts. For each context with a secrets_file field, add
+   Iterate over all contexts. For each context with a secret field, add
    the context name to the map entry for that filename.
-   Also handle minimal (flat) config format -- if secrets_file is set at the
+   Also handle minimal (flat) config format -- if secret is set at the
    top level, map it to "(default)".
 
 4. For each encrypted file, extract recipient information:
@@ -424,7 +424,7 @@ unused          (none)           age1abc...def (primary)
 4. **TestList_MultipleContextsSameFile** -- Two contexts reference the same
    secrets file. Assert both context names appear.
 
-5. **TestList_MinimalConfig** -- Use flat config format with `secrets_file`.
+5. **TestList_MinimalConfig** -- Use flat config format with `secret`.
    Assert it maps to "(default)" context.
 
 6. **TestList_RecipientsExtracted** -- Create a file with known age recipients.

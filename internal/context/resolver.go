@@ -39,7 +39,7 @@ const (
 // cfg.DefaultContext. If that is also unset, returns an error.
 //
 // If cfg.ProjectOverride is set, it is merged on top of the matched context:
-// env merges additively (override wins on conflict), agent/secrets_file/mcp_servers/sandbox
+// env merges additively (override wins on conflict), agent/secret/mcp_servers/sandbox
 // replace if set.
 func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext, error) {
 	// Handle minimal config: build a synthetic default context
@@ -47,7 +47,7 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 		ctx := config.Context{
 			Agent:       cfg.Agent,
 			Env:         cfg.Env,
-			SecretsFile: cfg.SecretsFile,
+			Secret: cfg.Secret,
 			MCPServers:  cfg.MCPServers,
 			Sandbox:     config.SandboxPolicyToRef(cfg.Sandbox),
 		}
@@ -116,8 +116,8 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
 	if po.Agent != "" {
 		rc.Context.Agent = po.Agent
 	}
-	if po.SecretsFile != "" {
-		rc.Context.SecretsFile = po.SecretsFile
+	if po.Secret != "" {
+		rc.Context.Secret = po.Secret
 	}
 	if len(po.MCPServers) > 0 {
 		rc.Context.MCPServers = po.MCPServers
@@ -154,24 +154,71 @@ func scoreRule(rule *config.MatchRule, cwd string, remoteURL string) int {
 // scorePathRule scores a path match rule against cwd.
 // Expands ~ to home directory. Exact match gets specificityPathExact + len,
 // glob match gets specificityPathGlob + len.
+//
+// Matching strategy (checked in order):
+//  1. Direct: cwd itself matches the pattern (exact or glob)
+//  2. Parent walk: walk up from cwd; if any parent matches, score it
+//  3. Base match: if cwd equals the non-glob prefix of the pattern,
+//     the user is at the root of the pattern's scope (e.g., cwd is
+//     /work and pattern is /work/*)
 func scorePathRule(pattern string, cwd string) int {
 	expanded := expandTilde(pattern)
 
-	// Try exact match
-	absPattern, err := filepath.Abs(expanded)
-	if err == nil && absPattern == cwd {
-		return specificityPathExact + len(pattern)
-	}
+	// Try exact match first (works even if pattern has no glob chars)
+	absPattern, _ := filepath.Abs(expanded)
 
-	// Try glob match
 	g, err := glob.Compile(expanded, filepath.Separator)
 	if err != nil {
+		if absPattern == cwd {
+			return specificityPathExact + len(pattern)
+		}
 		return 0
 	}
-	if g.Match(cwd) {
-		return specificityPathGlob + len(pattern)
+
+	// Walk cwd and its parents, return the score for the first match.
+	dir := cwd
+	for {
+		if absPattern == dir {
+			return specificityPathExact + len(pattern)
+		}
+		if g.Match(dir) {
+			return specificityPathGlob + len(pattern)
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
+
+	// Base match: if cwd is the literal prefix of the glob pattern,
+	// the user is at the root directory that the pattern covers.
+	// E.g., pattern=/work/* and cwd=/work → match.
+	base := globBase(expanded)
+	if base != "" {
+		absBase, err := filepath.Abs(base)
+		if err == nil && absBase == cwd {
+			return specificityPathGlob + len(pattern)
+		}
+	}
+
 	return 0
+}
+
+// globBase returns the longest non-glob prefix directory of a pattern.
+// For "/home/user/work/*" it returns "/home/user/work".
+// For "/home/user/work/**" it returns "/home/user/work".
+// For a pattern with no glob characters it returns "".
+func globBase(pattern string) string {
+	if !strings.ContainsAny(pattern, "*?[{") {
+		return ""
+	}
+	dir := pattern
+	for strings.ContainsAny(filepath.Base(dir), "*?[{") {
+		dir = filepath.Dir(dir)
+	}
+	return dir
 }
 
 // scoreRemoteRule scores a remote match rule against a normalized remote URL.

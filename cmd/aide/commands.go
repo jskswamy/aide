@@ -151,7 +151,7 @@ func initCmd() *cobra.Command {
 					return fmt.Errorf("secrets file name cannot be empty")
 				}
 
-				yamlContent += fmt.Sprintf("secrets_file: %s.enc.yaml\n", secretsName)
+				yamlContent += fmt.Sprintf("secret: %s\n", secretsName)
 
 				// Create the secrets file
 				secretsDir := config.SecretsDir()
@@ -237,8 +237,8 @@ func whichCmd() *cobra.Command {
 
 			var secretKeys []string
 			var secretMap map[string]string
-			if resolve && resolved.Context.SecretsFile != "" {
-				filePath := config.ResolveSecretsFilePath(resolved.Context.SecretsFile)
+			if resolve && resolved.Context.Secret != "" {
+				filePath := config.ResolveSecretPath(resolved.Context.Secret)
 				identity, idErr := secrets.DiscoverAgeKey()
 				if idErr == nil {
 					data, decErr := secrets.DecryptSecretsFile(filePath, identity)
@@ -252,12 +252,12 @@ func whichCmd() *cobra.Command {
 				}
 			}
 
-			if resolved.Context.SecretsFile != "" {
+			if resolved.Context.Secret != "" {
 				if resolve && len(secretKeys) > 0 {
-					fmt.Fprintf(out, "Secrets:  %s (%d keys: %s)\n",
-						resolved.Context.SecretsFile, len(secretKeys), strings.Join(secretKeys, ", "))
+					fmt.Fprintf(out, "Secret:   %s (%d keys: %s)\n",
+						resolved.Context.Secret, len(secretKeys), strings.Join(secretKeys, ", "))
 				} else {
-					fmt.Fprintf(out, "Secrets:  %s\n", resolved.Context.SecretsFile)
+					fmt.Fprintf(out, "Secret:   %s\n", resolved.Context.Secret)
 				}
 			}
 
@@ -391,7 +391,7 @@ func validateCmd() *cobra.Command {
 
 			var errors []string
 			var warnings []string
-			secretsFiles := make(map[string]bool)
+			secretsCount := make(map[string]bool)
 
 			for ctxName, ctx := range cfg.Contexts {
 				if ctx.Agent != "" && len(cfg.Agents) > 0 {
@@ -402,12 +402,12 @@ func validateCmd() *cobra.Command {
 					}
 				}
 
-				if ctx.SecretsFile != "" {
-					secretsFiles[ctx.SecretsFile] = true
-					path := config.ResolveSecretsFilePath(ctx.SecretsFile)
+				if ctx.Secret != "" {
+					secretsCount[ctx.Secret] = true
+					path := config.ResolveSecretPath(ctx.Secret)
 					if _, err := os.Stat(path); os.IsNotExist(err) {
 						errors = append(errors, fmt.Sprintf(
-							"context %q references secrets file %q which does not exist", ctxName, ctx.SecretsFile,
+							"context %q references secret %q which does not exist", ctxName, ctx.Secret,
 						))
 					}
 				}
@@ -434,9 +434,9 @@ func validateCmd() *cobra.Command {
 							errors = append(errors, fmt.Sprintf(
 								"context %q env var %q has invalid template syntax: %s", ctxName, envKey, tmplErr,
 							))
-						} else if strings.Contains(envVal, ".secrets.") && ctx.SecretsFile == "" {
+						} else if strings.Contains(envVal, ".secrets.") && ctx.Secret == "" {
 							errors = append(errors, fmt.Sprintf(
-								"context %q env var %q references secrets but no secrets_file is configured", ctxName, envKey,
+								"context %q env var %q references secrets but no secret is configured", ctxName, envKey,
 							))
 						}
 					}
@@ -457,8 +457,8 @@ func validateCmd() *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if len(errors) == 0 && len(warnings) == 0 {
-				fmt.Fprintf(out, "OK (%d contexts, %d agents, %d secrets files)\n",
-					len(cfg.Contexts), len(cfg.Agents), len(secretsFiles))
+				fmt.Fprintf(out, "OK (%d contexts, %d agents, %d secrets)\n",
+					len(cfg.Contexts), len(cfg.Agents), len(secretsCount))
 				return nil
 			}
 
@@ -541,7 +541,7 @@ func secretsEditCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			// Capture keys before edit for diff.
-			filePath := config.ResolveSecretsFilePath(name + ".enc.yaml")
+			filePath := config.ResolveSecretPath(name + ".enc.yaml")
 			var keysBefore map[string]bool
 			if identity, err := secrets.DiscoverAgeKey(); err == nil {
 				if data, err := secrets.DecryptSecretsFile(filePath, identity); err == nil {
@@ -613,7 +613,7 @@ func secretsKeysCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			filePath := config.ResolveSecretsFilePath(name + ".enc.yaml")
+			filePath := config.ResolveSecretPath(name + ".enc.yaml")
 
 			if _, err := os.Stat(filePath); os.IsNotExist(err) {
 				return fmt.Errorf("secrets/%s.enc.yaml not found", name)
@@ -669,13 +669,18 @@ func secretsListCmd() *cobra.Command {
 			}
 			cfg, _ := config.Load(config.ConfigDir(), cwd)
 
-			// Build a map of secrets file -> context names
+			// Build a map of secret -> context names
 			secretsToContexts := make(map[string][]string)
 			if cfg != nil {
 				for ctxName, ctx := range cfg.Contexts {
-					if ctx.SecretsFile != "" {
-						secretsToContexts[ctx.SecretsFile] = append(
-							secretsToContexts[ctx.SecretsFile], ctxName,
+					if ctx.Secret != "" {
+						// Normalize bare name to filename for matching
+						key := ctx.Secret
+						if !strings.HasSuffix(key, ".enc.yaml") {
+							key = key + ".enc.yaml"
+						}
+						secretsToContexts[key] = append(
+							secretsToContexts[key], ctxName,
 						)
 					}
 				}
@@ -726,7 +731,7 @@ func secretsRotateCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			filePath := config.ResolveSecretsFilePath(name + ".enc.yaml")
+			filePath := config.ResolveSecretPath(name + ".enc.yaml")
 			if err := secrets.Rotate(filePath, addKeys, removeKeys); err != nil {
 				return err
 			}
@@ -1051,7 +1056,7 @@ func agentsListCmd() *cobra.Command {
 func useCmd() *cobra.Command {
 	var matchPattern string
 	var contextName string
-	var secretsFile string
+	var secretFlag string
 	var sandboxProfile string
 
 	cmd := &cobra.Command{
@@ -1063,7 +1068,7 @@ Examples:
   aide use claude                       # Bind CWD to claude
   aide use claude --match "~/work/*"    # Bind a glob pattern
   aide use --context myproject          # Add CWD match to existing context
-  aide use claude --secrets personal    # Also set secrets_file
+  aide use claude --secret personal     # Also set secret
   aide use claude --sandbox strict      # Use a named sandbox profile`,
 		SilenceUsage: true,
 		Args:         cobra.MaximumNArgs(1),
@@ -1110,6 +1115,14 @@ Examples:
 					return fmt.Errorf("context %q not found in config", contextName)
 				}
 				ctx.Match = append(ctx.Match, newRule)
+				if secretFlag != "" {
+					ctx.Secret = secretFlag
+					resolvedPath := config.ResolveSecretPath(ctx.Secret)
+					if _, err := os.Stat(resolvedPath); os.IsNotExist(err) {
+						fmt.Fprintf(out, "Warning: secret %q does not exist yet.\n", ctx.Secret)
+						fmt.Fprintf(out, "Create it with: aide secrets create %s --age-key <key>\n\n", secretFlag)
+					}
+				}
 				cfg.Contexts[contextName] = ctx
 
 				if err := config.WriteConfig(cfg); err != nil {
@@ -1118,6 +1131,9 @@ Examples:
 
 				fmt.Fprintf(out, "Added match rule to context %q:\n", contextName)
 				fmt.Fprintf(out, "  path: %s\n", matchPath)
+				if secretFlag != "" {
+					fmt.Fprintf(out, "  secret: %s\n", secretFlag)
+				}
 				return nil
 			}
 
@@ -1155,13 +1171,13 @@ Examples:
 				}
 			}
 
-			if secretsFile != "" {
-				ctx.SecretsFile = secretsFile + ".enc.yaml"
+			if secretFlag != "" {
+				ctx.Secret = secretFlag
 				// Validate secrets file exists
-				resolvedPath := config.ResolveSecretsFilePath(ctx.SecretsFile)
+				resolvedPath := config.ResolveSecretPath(ctx.Secret)
 				if _, err := os.Stat(resolvedPath); os.IsNotExist(err) {
-					fmt.Fprintf(out, "Warning: %s does not exist yet.\n", ctx.SecretsFile)
-					fmt.Fprintf(out, "Create it with: aide secrets create %s --age-key <key>\n\n", secretsFile)
+					fmt.Fprintf(out, "Warning: secret %q does not exist yet.\n", ctx.Secret)
+					fmt.Fprintf(out, "Create it with: aide secrets create %s --age-key <key>\n\n", secretFlag)
 				}
 			}
 			if sandboxProfile != "" {
@@ -1191,8 +1207,8 @@ Examples:
 			}
 			fmt.Fprintf(out, "  agent: %s\n", agentName)
 			fmt.Fprintf(out, "  match: %s\n", matchPath)
-			if secretsFile != "" {
-				fmt.Fprintf(out, "  secrets_file: %s.enc.yaml\n", secretsFile)
+			if secretFlag != "" {
+				fmt.Fprintf(out, "  secret: %s\n", secretFlag)
 			}
 			return nil
 		},
@@ -1200,7 +1216,7 @@ Examples:
 
 	cmd.Flags().StringVar(&matchPattern, "match", "", "Glob pattern to match instead of CWD")
 	cmd.Flags().StringVar(&contextName, "context", "", "Add match rule to an existing context")
-	cmd.Flags().StringVar(&secretsFile, "secrets", "", "Secrets file name (without .enc.yaml suffix)")
+	cmd.Flags().StringVar(&secretFlag, "secret", "", "Secret name (e.g. work)")
 	cmd.Flags().StringVar(&sandboxProfile, "sandbox", "", "Sandbox profile name (e.g. strict, none, default)")
 	return cmd
 }
@@ -1215,6 +1231,8 @@ func contextCmd() *cobra.Command {
 	cmd.AddCommand(contextAddMatchCmd())
 	cmd.AddCommand(contextRenameCmd())
 	cmd.AddCommand(contextRemoveCmd())
+	cmd.AddCommand(contextSetSecretCmd())
+	cmd.AddCommand(contextRemoveSecretCmd())
 	return cmd
 }
 
@@ -1248,8 +1266,8 @@ func contextListCmd() *cobra.Command {
 				ctx := cfg.Contexts[name]
 				fmt.Fprintln(out, name)
 				fmt.Fprintf(out, "  Agent:    %s\n", ctx.Agent)
-				if ctx.SecretsFile != "" {
-					fmt.Fprintf(out, "  Secrets:  %s\n", ctx.SecretsFile)
+				if ctx.Secret != "" {
+					fmt.Fprintf(out, "  Secret:   %s\n", ctx.Secret)
 				}
 				for _, rule := range ctx.Match {
 					if rule.Path != "" {
@@ -1319,10 +1337,10 @@ func contextAddCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprint(out, "Secrets file (optional, press enter to skip): ")
+			fmt.Fprint(out, "Secret name (optional, press enter to skip): ")
 			secretsInput, err := reader.ReadString('\n')
 			if err != nil {
-				return fmt.Errorf("reading secrets file: %w", err)
+				return fmt.Errorf("reading secret name: %w", err)
 			}
 			secretsInput = strings.TrimSpace(secretsInput)
 
@@ -1349,7 +1367,7 @@ func contextAddCmd() *cobra.Command {
 				Match: []config.MatchRule{matchRule},
 			}
 			if secretsInput != "" {
-				newCtx.SecretsFile = secretsInput
+				newCtx.Secret = secretsInput
 			}
 			cfg.Contexts[name] = newCtx
 
@@ -1501,6 +1519,93 @@ func contextRemoveCmd() *cobra.Command {
 	}
 }
 
+func contextSetSecretCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "set-secret <context-name> <secret-name>",
+		Short:        "Set the secret on a context",
+		Args:         cobra.ExactArgs(2),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctxName := args[0]
+			secretName := args[1]
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				cwd = "."
+			}
+			cfg, err := config.Load(config.ConfigDir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+			ctx, ok := cfg.Contexts[ctxName]
+			if !ok {
+				return fmt.Errorf("context %q not found", ctxName)
+			}
+
+			// Warn if secret file doesn't exist on disk
+			resolvedPath := config.ResolveSecretPath(secretName)
+			if _, err := os.Stat(resolvedPath); os.IsNotExist(err) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s does not exist yet.\n", resolvedPath)
+			}
+
+			ctx.Secret = secretName
+			cfg.Contexts[ctxName] = ctx
+
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set secret %q on context %q\n", secretName, ctxName)
+			return nil
+		},
+	}
+}
+
+func contextRemoveSecretCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "remove-secret <context-name>",
+		Short:        "Remove the secret from a context",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctxName := args[0]
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				cwd = "."
+			}
+			cfg, err := config.Load(config.ConfigDir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+			ctx, ok := cfg.Contexts[ctxName]
+			if !ok {
+				return fmt.Errorf("context %q not found", ctxName)
+			}
+
+			oldSecret := ctx.Secret
+			if oldSecret == "" {
+				return fmt.Errorf("context %q has no secret configured", ctxName)
+			}
+
+			// Warn if env vars reference secrets templates
+			for envKey, envVal := range ctx.Env {
+				if strings.Contains(envVal, ".secrets.") {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: env var %q references secrets templates\n", envKey)
+				}
+			}
+
+			ctx.Secret = ""
+			cfg.Contexts[ctxName] = ctx
+
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed secret %q from context %q\n", oldSecret, ctxName)
+			return nil
+		},
+	}
+}
+
 func envCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "env",
@@ -1571,19 +1676,19 @@ Examples:
 
 			var value string
 			if isFromSecret {
-				// Auto-detect secrets_file if missing
-				if ctx.SecretsFile == "" {
-					selected, err := selectSecretsFile(out, reader, config.SecretsDir())
+				// Auto-detect secret if missing
+				if ctx.Secret == "" {
+					selected, err := selectSecret(out, reader, config.SecretsDir())
 					if err != nil {
 						return err
 					}
-					ctx.SecretsFile = selected
-					fmt.Fprintf(out, "Set secrets_file=%q on context %q.\n", selected, targetName)
+					ctx.Secret = selected
+					fmt.Fprintf(out, "Set secret=%q on context %q.\n", selected, targetName)
 				}
 
 				var secretKey string
 				if isInteractive {
-					secretsFilePath := config.ResolveSecretsFilePath(ctx.SecretsFile)
+					secretsFilePath := config.ResolveSecretPath(ctx.Secret)
 					picked, err := selectSecretKey(out, reader, secretsFilePath)
 					if err != nil {
 						return err
@@ -1591,7 +1696,7 @@ Examples:
 					secretKey = picked
 				} else {
 					secretKey = fromSecret
-					secretsFilePath := config.ResolveSecretsFilePath(ctx.SecretsFile)
+					secretsFilePath := config.ResolveSecretPath(ctx.Secret)
 					identity, err := secrets.DiscoverAgeKey()
 					if err != nil {
 						return err
@@ -1607,7 +1712,7 @@ Examples:
 						}
 						sort.Strings(available)
 						return fmt.Errorf("key %q not found in %s.\nAvailable keys: %s",
-							secretKey, ctx.SecretsFile, strings.Join(available, ", "))
+							secretKey, ctx.Secret, strings.Join(available, ", "))
 					}
 				}
 				value = fmt.Sprintf("{{ .secrets.%s }}", secretKey)
@@ -1635,31 +1740,31 @@ Examples:
 	return cmd
 }
 
-func selectSecretsFile(out io.Writer, reader *bufio.Reader, secretsDir string) (string, error) {
+func selectSecret(out io.Writer, reader *bufio.Reader, secretsDir string) (string, error) {
 	matches, err := filepath.Glob(filepath.Join(secretsDir, "*.enc.yaml"))
 	if err != nil {
 		return "", fmt.Errorf("scanning secrets directory: %w", err)
 	}
 	if len(matches) == 0 {
-		return "", fmt.Errorf("no secrets files found.\nCreate one with: aide secrets create <name> --age-key <key>")
+		return "", fmt.Errorf("no secrets found.\nCreate one with: aide secrets create <name> --age-key <key>")
 	}
 
 	names := make([]string, len(matches))
 	for i, m := range matches {
-		names[i] = filepath.Base(m)
+		names[i] = strings.TrimSuffix(filepath.Base(m), ".enc.yaml")
 	}
 	sort.Strings(names)
 
 	if len(names) == 1 {
-		fmt.Fprintf(out, "Auto-selected secrets file: %s\n", names[0])
+		fmt.Fprintf(out, "Auto-selected secret: %s\n", names[0])
 		return names[0], nil
 	}
 
-	fmt.Fprintln(out, "Available secrets files:")
+	fmt.Fprintln(out, "Available secrets:")
 	for i, name := range names {
 		fmt.Fprintf(out, "  [%d] %s\n", i+1, name)
 	}
-	fmt.Fprint(out, "Select secrets file [1]: ")
+	fmt.Fprint(out, "Select secret [1]: ")
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("reading selection: %w", err)
@@ -1752,7 +1857,7 @@ func askMatchRule(out io.Writer, reader *bufio.Reader, cwd string) (config.Match
 		}
 		answer = strings.TrimSpace(strings.ToLower(answer))
 		if answer == "" || answer == "y" || answer == "yes" {
-			path = cwd + "/*"
+			path = cwd + "/**"
 		}
 		return config.MatchRule{Path: path}, nil
 
@@ -1773,7 +1878,7 @@ func askMatchRule(out io.Writer, reader *bufio.Reader, cwd string) (config.Match
 		}
 		answer = strings.TrimSpace(strings.ToLower(answer))
 		if answer == "" || answer == "y" || answer == "yes" {
-			path = strings.TrimRight(path, "/") + "/*"
+			path = strings.TrimRight(path, "/") + "/**"
 		}
 		return config.MatchRule{Path: path}, nil
 
@@ -2011,14 +2116,14 @@ func setupCmd() *cobra.Command {
 						}
 					}
 
-					// Let user override secrets file
-					newSecrets := parentCtx.SecretsFile
-					if parentCtx.SecretsFile != "" {
-						secretsPrompt := fmt.Sprintf("  Secrets file [%s]: ", parentCtx.SecretsFile)
+					// Let user override secret
+					newSecrets := parentCtx.Secret
+					if parentCtx.Secret != "" {
+						secretsPrompt := fmt.Sprintf("  Secret [%s]: ", parentCtx.Secret)
 						fmt.Fprint(out, secretsPrompt)
 						secretsInput, err := reader.ReadString('\n')
 						if err != nil {
-							return fmt.Errorf("reading secrets file: %w", err)
+							return fmt.Errorf("reading secret: %w", err)
 						}
 						si := strings.TrimSpace(secretsInput)
 						if si != "" {
@@ -2079,7 +2184,7 @@ func setupCmd() *cobra.Command {
 						Match: []config.MatchRule{rule},
 					}
 					if newSecrets != "" {
-						newCtx.SecretsFile = newSecrets
+						newCtx.Secret = newSecrets
 					}
 					if len(newEnv) > 0 {
 						newCtx.Env = newEnv
@@ -2215,13 +2320,13 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 	matches, _ := filepath.Glob(filepath.Join(secretsDir, "*.enc.yaml"))
 	sort.Strings(matches)
 
-	var selectedSecretsFile string
+	var selectedSecret string
 
 	if len(matches) > 0 {
-		fmt.Fprintln(out, "  Available secrets files:")
+		fmt.Fprintln(out, "  Available secrets:")
 		secretsBaseNames := make([]string, len(matches))
 		for i, m := range matches {
-			baseName := filepath.Base(m)
+			baseName := strings.TrimSuffix(filepath.Base(m), ".enc.yaml")
 			secretsBaseNames[i] = baseName
 			keyCount := ""
 			if identity, idErr := secrets.DiscoverAgeKey(); idErr == nil {
@@ -2258,9 +2363,9 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 			if err != nil {
 				return err
 			}
-			selectedSecretsFile = sf
+			selectedSecret = sf
 		default:
-			selectedSecretsFile = secretsBaseNames[choice-1]
+			selectedSecret = secretsBaseNames[choice-1]
 		}
 	} else {
 		fmt.Fprintln(out, "  No secrets files found.")
@@ -2275,7 +2380,7 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 			if err != nil {
 				return err
 			}
-			selectedSecretsFile = sf
+			selectedSecret = sf
 		} else {
 			fmt.Fprintln(out, "  Skipping secrets.")
 		}
@@ -2284,10 +2389,10 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 	// Step 3: Env wiring
 	envMap := make(map[string]string)
 
-	if selectedSecretsFile != "" {
+	if selectedSecret != "" {
 		fmt.Fprintln(out, "\nStep 3: Environment variables")
 
-		secretsFilePath := config.ResolveSecretsFilePath(selectedSecretsFile)
+		secretsFilePath := config.ResolveSecretPath(selectedSecret)
 		identity, idErr := secrets.DiscoverAgeKey()
 		if idErr != nil {
 			fmt.Fprintln(out, "  Could not discover age key; skipping env wiring.")
@@ -2304,7 +2409,7 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 				}
 				sort.Strings(keys)
 
-				fmt.Fprintf(out, "  Keys in %s:\n", selectedSecretsFile)
+				fmt.Fprintf(out, "  Keys in %s:\n", selectedSecret)
 				for i, k := range keys {
 					fmt.Fprintf(out, "    [%d] %s\n", i+1, k)
 				}
@@ -2414,8 +2519,8 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 		Agent: agentName,
 		Match: []config.MatchRule{{Path: cwd}},
 	}
-	if selectedSecretsFile != "" {
-		ctx.SecretsFile = selectedSecretsFile
+	if selectedSecret != "" {
+		ctx.Secret = selectedSecret
 	}
 	if len(envMap) > 0 {
 		ctx.Env = envMap
@@ -2435,8 +2540,8 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 
 	fmt.Fprintf(out, "\nCreated context %q:\n", ctxName)
 	fmt.Fprintf(out, "  Agent:    %s\n", agentName)
-	if selectedSecretsFile != "" {
-		fmt.Fprintf(out, "  Secrets:  %s\n", selectedSecretsFile)
+	if selectedSecret != "" {
+		fmt.Fprintf(out, "  Secret:   %s\n", selectedSecret)
 	}
 	fmt.Fprintf(out, "  Match:    %s\n", cwd)
 	if len(envMap) > 0 {
@@ -2479,9 +2584,8 @@ func setupCreateSecrets(out io.Writer, reader *bufio.Reader) (string, error) {
 		return "", fmt.Errorf("creating secrets: %w", err)
 	}
 
-	fileName := name + ".enc.yaml"
-	fmt.Fprintf(out, "  Created secrets/%s\n", fileName)
-	return fileName, nil
+	fmt.Fprintf(out, "  Created secrets/%s.enc.yaml\n", name)
+	return name, nil
 }
 
 func sandboxCmd() *cobra.Command {

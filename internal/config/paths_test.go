@@ -50,19 +50,28 @@ func TestConfigFilePathFrom(t *testing.T) {
 	}
 }
 
-func TestResolveSecretsFilePathFrom_Relative(t *testing.T) {
+func TestResolveSecretPathFrom_Relative(t *testing.T) {
 	base := t.TempDir()
-	got := ResolveSecretsFilePathFrom(base, "personal.enc.yaml")
+	got := ResolveSecretPathFrom(base, "personal.enc.yaml")
 	want := filepath.Join(base, "aide", "secrets", "personal.enc.yaml")
 	if got != want {
-		t.Errorf("ResolveSecretsFilePathFrom(%q, 'personal.enc.yaml') = %q, want %q", base, got, want)
+		t.Errorf("ResolveSecretPathFrom(%q, 'personal.enc.yaml') = %q, want %q", base, got, want)
 	}
 }
 
-func TestResolveSecretsFilePathFrom_Absolute(t *testing.T) {
-	got := ResolveSecretsFilePathFrom("/tmp/xdg", "/custom/path/keys.yaml")
+func TestResolveSecretPathFrom_BareName(t *testing.T) {
+	base := t.TempDir()
+	got := ResolveSecretPathFrom(base, "personal")
+	want := filepath.Join(base, "aide", "secrets", "personal.enc.yaml")
+	if got != want {
+		t.Errorf("ResolveSecretPathFrom(%q, 'personal') = %q, want %q", base, got, want)
+	}
+}
+
+func TestResolveSecretPathFrom_Absolute(t *testing.T) {
+	got := ResolveSecretPathFrom("/tmp/xdg", "/custom/path/keys.yaml")
 	want := "/custom/path/keys.yaml"
 	if got != want {
-		t.Errorf("ResolveSecretsFilePathFrom should return absolute path as-is, got %q, want %q", got, want)
+		t.Errorf("ResolveSecretPathFrom should return absolute path as-is, got %q, want %q", got, want)
 	}
 }

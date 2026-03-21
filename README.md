@@ -94,14 +94,14 @@ The interactive wizard will:
 aide use claude                          # Bind current directory to claude
 aide use claude --match "~/work/*"       # Bind a glob pattern
 aide use --context work                  # Add current directory to existing context
-aide use claude --secrets personal       # Also set the secrets file
+aide use claude --secret personal        # Also set the secrets file
 aide use claude --sandbox strict         # Use a named sandbox profile
 ```
 
 ## Configuration
 
-All configuration lives under `$XDG_CONFIG_HOME/aide/` (defaults to
-`~/.config/aide/`):
+All configuration lives under `~/.config/aide/` (or `$XDG_CONFIG_HOME/aide/`
+if the environment variable is set):
 
 ```
 ~/.config/aide/
@@ -122,7 +122,7 @@ For users with one agent and one set of credentials:
 agent: claude
 env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-secrets_file: personal.enc.yaml
+secret: personal
 ```
 
 The `agent` field maps to a binary name on PATH. Template syntax
@@ -147,7 +147,7 @@ contexts:
       - remote: "github.com/work-org/*"
       - path: "~/work/*"
     agent: claude
-    secrets_file: work.enc.yaml
+    secret: work
     env:
       CLAUDE_CODE_USE_BEDROCK: "1"
       AWS_PROFILE: "{{ .secrets.aws_profile }}"
@@ -156,7 +156,7 @@ contexts:
     match:
       - remote: "github.com/jskswamy/*"
     agent: claude
-    secrets_file: personal.enc.yaml
+    secret: personal
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 
@@ -164,7 +164,7 @@ contexts:
     match:
       - remote: "github.com/*"
     agent: codex
-    secrets_file: personal.enc.yaml
+    secret: personal
     env:
       OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
 
@@ -196,7 +196,7 @@ Project overrides take the highest priority in context resolution.
 
 ### Optional Secrets
 
-`secrets_file` is optional. If API keys are already in your shell environment
+`secret` is optional. If API keys are already in your shell environment
 (via direnv, `.envrc`, exports), aide works without sops. Env values without
 `{{ }}` template syntax pass through as literals:
 

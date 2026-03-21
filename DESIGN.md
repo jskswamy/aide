@@ -125,7 +125,7 @@ overridden.
 agent: claude
 env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-secrets_file: personal.enc.yaml
+secret: personal
 mcp_servers: [git, context7]
 ```
 
@@ -170,7 +170,7 @@ contexts:
       - remote: "github.com/work-org/*"
       - path: "~/work/*"
     agent: claude
-    secrets_file: work.enc.yaml
+    secret: work
     env:
       CLAUDE_CODE_USE_BEDROCK: "1"
       AWS_PROFILE: "{{ .secrets.aws_profile }}"
@@ -184,7 +184,7 @@ contexts:
       - remote: "github.com/jskswamy/*"
       - path: "~/source/github.com/jskswamy/*"
     agent: claude
-    secrets_file: personal.enc.yaml
+    secret: personal
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
     mcp_servers: [git, context7, serena, things]
@@ -193,7 +193,7 @@ contexts:
     match:
       - remote: "github.com/*"     # catch-all for other GitHub repos
     agent: claude
-    secrets_file: personal.enc.yaml
+    secret: personal
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 
@@ -204,20 +204,20 @@ default_context: personal
 ### Why Env Lives on Context, Not Agent
 
 Agents are just binary definitions (name to binary path). All env vars,
-secrets_file, and MCP server selection live on the context. This avoids
+secret, and MCP server selection live on the context. This avoids
 confusion where agent-level env templates would be misleading — for example,
 a work context uses Bedrock (CLAUDE_CODE_USE_BEDROCK), not ANTHROPIC_API_KEY,
 even though both use the same `claude` binary.
 
 ### Optional Secrets (Env Passthrough)
 
-`secrets_file` is optional. If a user already has `ANTHROPIC_API_KEY` in their
+`secret` is optional. If a user already has `ANTHROPIC_API_KEY` in their
 shell environment (via `.envrc`, direnv, etc.), aide works without sops. Env
 values without `{{ }}` template syntax pass through as literals. This supports
 zero-config and gradual adoption.
 
 ```yaml
-# No secrets_file needed — CLAUDE_CODE_USE_BEDROCK is a literal
+# No secret needed — CLAUDE_CODE_USE_BEDROCK is a literal
 contexts:
   work:
     agent: claude
@@ -484,7 +484,7 @@ openai_api_key: sk-...
 context7_token: ctx7-...
 ```
 
-The `secrets_file` field in context config is a filename resolved relative
+The `secret` field in context config is a filename resolved relative
 to `$XDG_CONFIG_HOME/aide/secrets/`. Absolute paths are also supported.
 
 ### Secrets Lifecycle
@@ -685,7 +685,7 @@ import it (FluxCD, Terragrunt, etc.). The `decrypt.File()` API is clean.
 MCP selection live on the context.
 **Why:** Same `claude` binary can be used with personal API key OR work Bedrock
 credentials. Agent-level env templates were misleading — they looked like they
-hardcoded one key but actually varied by context's secrets_file. Moving env to
+hardcoded one key but actually varied by context's secret. Moving env to
 context makes the data flow explicit.
 **UX issue surfaced:** Work context uses `CLAUDE_CODE_USE_BEDROCK`, not
 `ANTHROPIC_API_KEY`. Agent-level env would force defining keys not all contexts need.
@@ -732,7 +732,7 @@ Signal handlers cover normal termination. Stale dir cleanup on next launch
 covers SIGKILL edge case.
 
 ### DD-11: Optional Secrets (Gradual Adoption)
-**Decision:** `secrets_file` is optional. Env values without `{{ }}` syntax
+**Decision:** `secret` is optional. Env values without `{{ }}` syntax
 pass through as literals.
 **Why:** Not everyone needs sops. Users with API keys already in their shell
 env (direnv, .envrc, exports) should be able to use aide without setting up
@@ -743,7 +743,7 @@ add encryption later.
 **Decision:** Flat config (no `agents`/`contexts` keys) is treated as a single
 default context. Agent name implies binary name.
 **Why:** A user with one agent and one context shouldn't need 20+ lines of YAML.
-`agent: claude` + `env:` + `secrets_file:` is the minimal viable config.
+`agent: claude` + `env:` + `secret:` is the minimal viable config.
 Multi-context uses the full format. Similar to how docker-compose handles
 single vs multi-service.
 

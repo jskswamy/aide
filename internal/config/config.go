@@ -91,7 +91,7 @@ func normalizeMinimal(cfg *Config) *Config {
 			"default": {
 				Agent:       agentName,
 				Env:         cfg.Env,
-				SecretsFile: cfg.SecretsFile,
+				Secret:      cfg.Secret,
 				MCPServers:  cfg.MCPServers,
 				Sandbox:     SandboxPolicyToRef(cfg.Sandbox),
 			},

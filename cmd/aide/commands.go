@@ -1255,7 +1255,11 @@ func contextListCmd() *cobra.Command {
 
 			for i, name := range names {
 				ctx := cfg.Contexts[name]
-				fmt.Fprintln(out, name)
+				if name == cfg.DefaultContext {
+					fmt.Fprintf(out, "%s (default)\n", name)
+				} else {
+					fmt.Fprintln(out, name)
+				}
 				fmt.Fprintf(out, "  Agent:    %s\n", ctx.Agent)
 				if ctx.Secret != "" {
 					fmt.Fprintf(out, "  Secret:   %s\n", ctx.Secret)

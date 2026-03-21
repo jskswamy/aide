@@ -1367,27 +1367,25 @@ func contextAddCmd() *cobra.Command {
 }
 
 func contextAddMatchCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:          "add-match <context-name>",
-		Short:        "Add a match rule to an existing context",
-		Args:         cobra.ExactArgs(1),
+	var contextName string
+
+	cmd := &cobra.Command{
+		Use:          "add-match",
+		Short:        "Add a match rule to the current context",
+		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			cfg, name, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+
 			out := cmd.OutOrStdout()
 			reader := bufio.NewReader(os.Stdin)
 
-			cwd, err := os.Getwd()
-			if err != nil {
+			cwd, cwdErr := os.Getwd()
+			if cwdErr != nil {
 				cwd = "."
-			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
-			ctx, ok := cfg.Contexts[name]
-			if !ok {
-				return fmt.Errorf("context %q not found", name)
 			}
 
 			rule, err := askMatchRule(out, reader, cwd)
@@ -1411,6 +1409,9 @@ func contextAddMatchCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	return cmd
 }
 
 func contextRenameCmd() *cobra.Command {
@@ -1506,26 +1507,19 @@ func contextRemoveCmd() *cobra.Command {
 }
 
 func contextSetSecretCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:          "set-secret <context-name> <secret-name>",
-		Short:        "Set the secret on a context",
-		Args:         cobra.ExactArgs(2),
+	var contextName string
+
+	cmd := &cobra.Command{
+		Use:          "set-secret <secret-name>",
+		Short:        "Set the secret on the current context",
+		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctxName := args[0]
-			secretName := args[1]
+			secretName := args[0]
 
-			cwd, err := os.Getwd()
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
-			ctx, ok := cfg.Contexts[ctxName]
-			if !ok {
-				return fmt.Errorf("context %q not found", ctxName)
+				return err
 			}
 
 			// Warn if secret file doesn't exist on disk
@@ -1544,28 +1538,23 @@ func contextSetSecretCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	return cmd
 }
 
 func contextRemoveSecretCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:          "remove-secret <context-name>",
-		Short:        "Remove the secret from a context",
-		Args:         cobra.ExactArgs(1),
+	var contextName string
+
+	cmd := &cobra.Command{
+		Use:          "remove-secret",
+		Short:        "Remove the secret from the current context",
+		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctxName := args[0]
-
-			cwd, err := os.Getwd()
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
-			ctx, ok := cfg.Contexts[ctxName]
-			if !ok {
-				return fmt.Errorf("context %q not found", ctxName)
+				return err
 			}
 
 			oldSecret := ctx.Secret
@@ -1590,6 +1579,9 @@ func contextRemoveSecretCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	return cmd
 }
 
 func envCmd() *cobra.Command {
@@ -1604,7 +1596,7 @@ func envCmd() *cobra.Command {
 
 func envSetCmd() *cobra.Command {
 	var fromSecret string
-	var contextFlag string
+	var contextName string
 
 	cmd := &cobra.Command{
 		Use:   "set KEY [VALUE]",
@@ -1644,8 +1636,8 @@ Examples:
 			}
 
 			var targetName string
-			if contextFlag != "" {
-				targetName = contextFlag
+			if contextName != "" {
+				targetName = contextName
 				if _, ok := cfg.Contexts[targetName]; !ok {
 					return fmt.Errorf("context %q not found", targetName)
 				}
@@ -1722,7 +1714,7 @@ Examples:
 
 	cmd.Flags().StringVar(&fromSecret, "from-secret", "", "Generate template referencing a secret key")
 	cmd.Flags().Lookup("from-secret").NoOptDefVal = " "
-	cmd.Flags().StringVar(&contextFlag, "context", "", "Target context name (default: CWD-matched)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
 	return cmd
 }
 
@@ -1886,7 +1878,7 @@ func askMatchRule(out io.Writer, reader *bufio.Reader, cwd string) (config.Match
 }
 
 func envListCmd() *cobra.Command {
-	var contextFlag string
+	var contextName string
 
 	cmd := &cobra.Command{
 		Use:          "list",
@@ -1904,8 +1896,8 @@ func envListCmd() *cobra.Command {
 
 			var targetName string
 			var envMap map[string]string
-			if contextFlag != "" {
-				targetName = contextFlag
+			if contextName != "" {
+				targetName = contextName
 				ctx, ok := cfg.Contexts[targetName]
 				if !ok {
 					return fmt.Errorf("context %q not found", targetName)
@@ -1950,7 +1942,7 @@ func envListCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&contextFlag, "context", "", "Context name (default: CWD-matched)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
 	return cmd
 }
 
@@ -2589,6 +2581,38 @@ func sandboxCmd() *cobra.Command {
 	cmd.AddCommand(sandboxAllowCmd())
 	cmd.AddCommand(sandboxResetCmd())
 	cmd.AddCommand(sandboxPortsCmd())
+	cmd.AddCommand(sandboxNetworkCmd())
+	return cmd
+}
+
+func sandboxNetworkCmd() *cobra.Command {
+	var contextName string
+	cmd := &cobra.Command{
+		Use:          "network <mode>",
+		Short:        "Set network mode for a context's sandbox (outbound|none|unrestricted)",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mode := args[0]
+			validModes := map[string]bool{"outbound": true, "none": true, "unrestricted": true}
+			if !validModes[mode] {
+				return fmt.Errorf("invalid network mode %q (must be outbound, none, or unrestricted)", mode)
+			}
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+			sp := ensureInlineSandbox(&ctx)
+			sp.Network = &config.NetworkPolicy{Mode: mode}
+			cfg.Contexts[ctxName] = ctx
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set network mode to %q for context %q\n", mode, ctxName)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
 	return cmd
 }
 
@@ -2907,7 +2931,7 @@ func sandboxCreateCmd() *cobra.Command {
 }
 
 func sandboxEditCmd() *cobra.Command {
-	var addDenied, addWritable, removeDenied, removeWritable []string
+	var addDenied, addWritable, addReadable, removeDenied, removeWritable, removeReadable []string
 	var network string
 
 	cmd := &cobra.Command{
@@ -2965,6 +2989,18 @@ func sandboxEditCmd() *cobra.Command {
 				sp.DeniedExtra = removeFromSlice(sp.DeniedExtra, p)
 			}
 
+			for _, p := range addReadable {
+				expanded := expandHome(p)
+				if _, err := os.Stat(expanded); err != nil {
+					fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
+				}
+				sp.ReadableExtra = append(sp.ReadableExtra, p)
+			}
+
+			for _, p := range removeReadable {
+				sp.ReadableExtra = removeFromSlice(sp.ReadableExtra, p)
+			}
+
 			if network != "" {
 				validModes := map[string]bool{"outbound": true, "none": true, "unrestricted": true}
 				if !validModes[network] {
@@ -2985,8 +3021,10 @@ func sandboxEditCmd() *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&addDenied, "add-denied", nil, "add denied paths")
 	cmd.Flags().StringSliceVar(&addWritable, "add-writable", nil, "add writable paths")
+	cmd.Flags().StringSliceVar(&addReadable, "add-readable", nil, "add readable paths")
 	cmd.Flags().StringSliceVar(&removeDenied, "remove-denied", nil, "remove denied paths")
 	cmd.Flags().StringSliceVar(&removeWritable, "remove-writable", nil, "remove writable paths")
+	cmd.Flags().StringSliceVar(&removeReadable, "remove-readable", nil, "remove readable paths")
 	cmd.Flags().StringVar(&network, "network", "", "set network mode")
 	return cmd
 }

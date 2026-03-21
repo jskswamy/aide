@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,7 +58,7 @@ func TestNewRuntimeDir_FallsBackToTempDir(t *testing.T) {
 
 	// Should be under os.TempDir()
 	tmpDir := os.TempDir()
-	if !filepath.HasPrefix(rd.Path(), tmpDir) {
+	if !strings.HasPrefix(rd.Path(), tmpDir) {
 		t.Errorf("expected path under %s, got %s", tmpDir, rd.Path())
 	}
 }

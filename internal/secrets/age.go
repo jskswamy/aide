@@ -58,7 +58,7 @@ func DiscoverAgeKey() (*AgeIdentity, error) {
 		return &AgeIdentity{Source: SourceDefaultFile, KeyData: defaultPath}, nil
 	}
 
-	return nil, fmt.Errorf(`No age identity found. aide needs an age key to decrypt secrets.
+	return nil, fmt.Errorf(`no age identity found. aide needs an age key to decrypt secrets.
 
 Options:
   1. Plug in a YubiKey with age-plugin-yubikey installed
@@ -66,7 +66,7 @@ Options:
   3. Set SOPS_AGE_KEY_FILE to point to your key file
   4. Run: age-keygen -o %s
 
-Run 'aide setup' for guided configuration.`, defaultPath)
+Run 'aide setup' for guided configuration`, defaultPath)
 }
 
 // defaultKeyPath returns the standard sops age key location.

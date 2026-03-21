@@ -164,7 +164,7 @@ func Rotate(filePath string, addKeys []string, removeKeys []string) error {
 		return fmt.Errorf("failed to write temporary file: %w", err)
 	}
 	if err := os.Rename(tmpPath, filePath); err != nil {
-		os.Remove(tmpPath) // clean up on failure
+		_ = os.Remove(tmpPath) // clean up on failure
 		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
 

@@ -18,7 +18,9 @@ func TestSeatbeltPath_Directory(t *testing.T) {
 func TestSeatbeltPath_File(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "test.txt")
-	os.WriteFile(f, []byte("x"), 0644)
+	if err := os.WriteFile(f, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	got := SeatbeltPath(f)
 	want := `(literal "` + f + `")`
 	if got != want {

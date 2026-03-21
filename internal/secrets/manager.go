@@ -51,7 +51,7 @@ func (m *Manager) Create(name, secretsDir, agePublicKey string) error {
 
 	targetPath := filepath.Join(secretsDir, name+".enc.yaml")
 	if _, err := os.Stat(targetPath); err == nil {
-		return fmt.Errorf("secrets/%s.enc.yaml already exists. Use 'aide secrets edit %s' to modify it.", name, name)
+		return fmt.Errorf("secrets/%s.enc.yaml already exists, use 'aide secrets edit %s' to modify it", name, name)
 	}
 
 	// Create secure temp directory.
@@ -96,7 +96,7 @@ func (m *Manager) CreateFromContent(name, secretsDir, agePublicKey string, conte
 
 	targetPath := filepath.Join(secretsDir, name+".enc.yaml")
 	if _, err := os.Stat(targetPath); err == nil {
-		return fmt.Errorf("secrets/%s.enc.yaml already exists. Use 'aide secrets edit %s' to modify it.", name, name)
+		return fmt.Errorf("secrets/%s.enc.yaml already exists, use 'aide secrets edit %s' to modify it", name, name)
 	}
 
 	// Validate content is not empty or comment-only.
@@ -134,7 +134,7 @@ func validateName(name string) error {
 		return fmt.Errorf("invalid secrets name: name cannot be empty")
 	}
 	if !namePattern.MatchString(name) {
-		return fmt.Errorf("invalid secrets name %q. Use alphanumeric, hyphens, underscores only.", name)
+		return fmt.Errorf("invalid secrets name %q, use alphanumeric, hyphens, underscores only", name)
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func validateName(name string) error {
 func validateContent(content []byte) error {
 	trimmed := strings.TrimSpace(string(content))
 	if trimmed == "" {
-		return fmt.Errorf("No secrets entered. Aborting.")
+		return fmt.Errorf("no secrets entered, aborting")
 	}
 
 	// Check if all non-empty lines are comments.
@@ -156,7 +156,7 @@ func validateContent(content []byte) error {
 		}
 	}
 	if !hasNonComment {
-		return fmt.Errorf("No secrets entered. Aborting.")
+		return fmt.Errorf("no secrets entered, aborting")
 	}
 
 	return nil
@@ -263,7 +263,7 @@ func (m *Manager) Edit(name, secretsDir string) error {
 
 	srcPath := filepath.Join(secretsDir, name+".enc.yaml")
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		return fmt.Errorf("secrets/%s.enc.yaml not found. Use 'aide secrets create %s' to create it.", name, name)
+		return fmt.Errorf("secrets/%s.enc.yaml not found, use 'aide secrets create %s' to create it", name, name)
 	}
 
 	// Decrypt using sops.
@@ -324,7 +324,7 @@ func (m *Manager) EditFromContent(name, secretsDir string, newContent []byte) er
 
 	srcPath := filepath.Join(secretsDir, name+".enc.yaml")
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		return fmt.Errorf("secrets/%s.enc.yaml not found. Use 'aide secrets create %s' to create it.", name, name)
+		return fmt.Errorf("secrets/%s.enc.yaml not found, use 'aide secrets create %s' to create it", name, name)
 	}
 
 	// Validate content.
@@ -376,7 +376,7 @@ func (m *Manager) EditFromContent(name, secretsDir string, newContent []byte) er
 		return fmt.Errorf("failed to write temporary file: %w", err)
 	}
 	if err := os.Rename(tmpTarget, srcPath); err != nil {
-		os.Remove(tmpTarget)
+		_ = os.Remove(tmpTarget)
 		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
 
@@ -460,12 +460,12 @@ func (m *Manager) secureTempDir(prefix string) (string, func(), error) {
 	}
 
 	if err := os.Chmod(tmpDir, 0o700); err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return "", func() {}, err
 	}
 
 	cleanup := func() {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return tmpDir, cleanup, nil

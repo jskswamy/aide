@@ -269,7 +269,7 @@ func TestPolicyFromConfig_TildeExpansion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	cfg := &config.SandboxPolicy{
 		Readable: []string{"~/.gitconfig", "~/foo"},

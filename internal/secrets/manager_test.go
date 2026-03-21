@@ -191,7 +191,7 @@ func TestCreate_EmptyContent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty content, got nil")
 	}
-	if !strings.Contains(err.Error(), "No secrets entered") && !strings.Contains(err.Error(), "empty") {
+	if !strings.Contains(err.Error(), "no secrets entered") && !strings.Contains(err.Error(), "empty") {
 		t.Errorf("error should mention empty/no secrets, got: %v", err)
 	}
 
@@ -335,8 +335,12 @@ func TestEdit_PreservesRecipients(t *testing.T) {
 	tmpDir := t.TempDir()
 	secretsDir := filepath.Join(tmpDir, "secrets")
 	runtimeDir := filepath.Join(tmpDir, "runtime")
-	os.MkdirAll(secretsDir, 0o700)
-	os.MkdirAll(runtimeDir, 0o700)
+	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	mgr := NewManager(secretsDir, runtimeDir)
 
 	// Create the file with the primary key.

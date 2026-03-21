@@ -153,7 +153,7 @@ func TestWriteConfig_AtomicOnError(t *testing.T) {
 	if err := os.Chmod(readOnlyDir, 0555); err != nil {
 		t.Fatalf("Chmod() error = %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(readOnlyDir, 0755) })
+	t.Cleanup(func() { _ = os.Chmod(readOnlyDir, 0755) })
 
 	// Try to write a new config — should fail
 	newCfg := &Config{Agent: "modified"}

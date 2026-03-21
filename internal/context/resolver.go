@@ -12,9 +12,10 @@ import (
 
 // ResolvedContext holds the result of context resolution.
 type ResolvedContext struct {
-	Name        string         // name of the matched context
-	MatchReason string         // human-readable reason for the match
-	Context     config.Context // the resolved context (with project override merged if applicable)
+	Name        string             // name of the matched context
+	MatchReason string             // human-readable reason for the match
+	Context     config.Context     // the resolved context (with project override merged if applicable)
+	Preferences config.Preferences // resolved display/behavior preferences
 }
 
 // Specificity tiers. Within a tier, longer pattern string = higher specificity.
@@ -56,6 +57,7 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 			MatchReason: "minimal config (default)",
 			Context:     ctx,
 		}
+		rc.Preferences = config.ResolvePreferences(cfg.Preferences, nil)
 		applyProjectOverride(rc, cfg.ProjectOverride)
 		return rc, nil
 	}
@@ -103,6 +105,7 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 		)
 	}
 
+	rc.Preferences = config.ResolvePreferences(cfg.Preferences, nil)
 	applyProjectOverride(rc, cfg.ProjectOverride)
 	return rc, nil
 }
@@ -135,6 +138,9 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
 			merged[k] = v
 		}
 		rc.Context.Env = merged
+	}
+	if po.Preferences != nil {
+		rc.Preferences = config.ResolvePreferences(&rc.Preferences, po.Preferences)
 	}
 	rc.MatchReason = fmt.Sprintf("project override on top of %s", rc.MatchReason)
 }

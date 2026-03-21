@@ -627,6 +627,75 @@ func TestResolve_ParentWalk_ExactMatchBeatsParentGlob(t *testing.T) {
 	}
 }
 
+func TestResolve_PreferencesFromGlobal(t *testing.T) {
+	style := "boxed"
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "work-agent",
+			},
+		},
+		DefaultContext: "work",
+		Preferences:    &config.Preferences{InfoStyle: style},
+	}
+
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Preferences.InfoStyle != "boxed" {
+		t.Errorf("expected InfoStyle %q, got %q", "boxed", rc.Preferences.InfoStyle)
+	}
+}
+
+func TestResolve_PreferencesProjectOverride(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "work-agent",
+			},
+		},
+		DefaultContext: "work",
+		Preferences:    &config.Preferences{InfoStyle: "boxed"},
+		ProjectOverride: &config.ProjectOverride{
+			Preferences: &config.Preferences{InfoStyle: "clean"},
+		},
+	}
+
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Preferences.InfoStyle != "clean" {
+		t.Errorf("expected InfoStyle %q after project override, got %q", "clean", rc.Preferences.InfoStyle)
+	}
+}
+
+func TestResolve_PreferencesDefaults(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "work-agent",
+			},
+		},
+		DefaultContext: "work",
+	}
+
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Preferences.ShowInfo == nil || !*rc.Preferences.ShowInfo {
+		t.Errorf("expected ShowInfo=true by default, got %v", rc.Preferences.ShowInfo)
+	}
+	if rc.Preferences.InfoStyle != "compact" {
+		t.Errorf("expected InfoStyle %q by default, got %q", "compact", rc.Preferences.InfoStyle)
+	}
+	if rc.Preferences.InfoDetail != "normal" {
+		t.Errorf("expected InfoDetail %q by default, got %q", "normal", rc.Preferences.InfoDetail)
+	}
+}
+
 func TestResolve_ProjectOverrideReplacesSecret(t *testing.T) {
 	cfg := &config.Config{
 		Contexts: map[string]config.Context{

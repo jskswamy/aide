@@ -818,98 +818,18 @@ do nothing. `aide validate` catches issues before you're in the middle of work.
 Complete context names, agent names, secrets file names.
 **Why:** Minimal effort (cobra generates them), big UX improvement for daily use.
 
-## Epic Breakdown
+### DD-22: Agent Config Dir Resolver
+**Decision:** Each agent has a config dir resolver — a function that reads agent-specific env vars (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, etc.) and adds the appropriate directories to the sandbox writable list. New agents only need a resolver function and a registry entry.
+**Why:** Hardcoding agent config paths in the sandbox policy doesn't scale as new agents are added and breaks when users customize agent config locations via env vars. The resolver makes the sandbox self-configuring based on the actual runtime environment.
 
-### Epic 1: Core Config System (P0)
+### DD-23: Path Validation at Launch
+**Decision:** User-specified sandbox paths (`writable_extra`, `denied_extra`, etc.) are validated at launch time. Non-existent literal paths are skipped with a warning shown in the startup banner. Glob patterns pass through without validation.
+**Why:** Silently including non-existent paths wastes sandbox policy space and confuses users debugging sandbox issues. Skipping with a warning is better than a hard failure — the rest of the config is still valid and the agent can still launch.
 
-0. Build harness bootstrap (go mod, Makefile, lint, test fixtures)
-1. Config schema types
-2. XDG config path resolution (via adrg/xdg)
-3. Config loader (global + project merge, minimal format detection)
-4. Git remote detection + project root
-5. Context matching engine (glob, specificity, fallback)
+### DD-24: Default Context Auto-Set
+**Decision:** When `aide use`, `aide setup`, or `aide context add` creates the first explicit context and no `default_context` is configured, it's automatically set to that context.
+**Why:** Users transitioning from a minimal flat config to a multi-context config would otherwise lose the zero-config "works everywhere" behavior. Auto-setting the default preserves that behavior without requiring an extra manual step.
 
-### Epic 2: Secrets & Agent Launch (P0)
-
-6. Age key discovery (YubiKey + key file + env var)
-7. Sops decryption via library
-8. Template resolution for env vars
-9. Ephemeral runtime dir management
-10. Agent launcher (resolve + exec with env + cleanup)
-11. Zero-config passthrough (agent detection, no-config launch)
-
-### Epic 3: Agent Sandboxing (P0)
-
-12. Sandbox interface and default policy
-13. macOS sandbox-exec (Seatbelt profile generation)
-14. Linux Landlock sandboxing (via go-landlock + bwrap fallback)
-15. Sandbox policy config parsing (from context config)
-
-### Epic 4: MCP System (P1)
-
-16. MCP server definitions with secrets
-17. MCP config generation (per-agent native format)
-18. MCP aggregator support (1mcp config generation)
-
-### Epic 5: Secrets Lifecycle (P1)
-
-19. `aide secrets create`
-20. `aide secrets edit`
-21. `aide secrets list`
-22. `aide secrets rotate`
-
-### Epic 6: CLI UX (P2)
-
-23. `aide which` (context introspection with conflict info)
-24. `aide validate` (config validation with actionable errors)
-25. `aide init` (project override creation)
-26. `aide setup` (interactive wizard with age key generation)
-27. `aide contexts` + `aide agents` (list commands)
-28. Verbose mode (`-v` flag for debug output)
-29. Shell completions (bash, zsh, fish via cobra)
-30. First-run guidance (no config detected message)
-
-### Epic 7: Distribution (P2)
-
-31. Nix overlay and packaging (replace cctx)
-
-### Dependency Graph
-
-```
-Epic 1: Core Config
-  T1 (schema) -> T2 (xdg) -> T3 (loader)
-  T1 -> T4 (git remote)
-  T3 + T4 -> T5 (context matcher)
-
-Epic 2: Secrets & Launch
-  T6 (age discovery) -> T7 (sops decrypt) -> T8 (template)
-  T8 + T3 -> T9 (runtime dir) -> T10 (launcher)
-  T5 + T10 -> T11 (zero-config passthrough)
-
-Epic 3: Sandboxing
-  T12 (sandbox interface + defaults) -> T13 (macOS sandbox-exec)
-  T12 -> T14 (Linux Landlock + bwrap)
-  T12 + T3 -> T15 (sandbox policy from config)
-  T15 -> T10 (launcher uses sandbox)
-
-Epic 4: MCP
-  T10 -> T16 (mcp definitions) -> T17 (mcp gen) -> T18 (aggregator)
-
-Epic 5: Secrets Lifecycle
-  T6 + T7 -> T19 (create) -> T20 (edit)
-  T3 -> T21 (list)
-  T7 -> T22 (rotate)
-
-Epic 6: CLI UX
-  T5 -> T23 (which)
-  T3 -> T24 (validate)
-  T3 -> T25 (init)
-  T6 -> T26 (setup)
-  T3 -> T27 (list cmds)
-  T5 -> T28 (verbose)
-  T3 -> T29 (completions)
-  T11 -> T30 (first-run)
-
-Epic 7: Distribution
-  T10 -> T31 (nix overlay)
-```
+### DD-25: Preferences System
+**Decision:** Global display and behavior settings live in a `preferences:` block at config top level. Currently controls: `show_info` (bool), `info_style` (compact|boxed|clean), `info_detail` (normal|detailed). Project-level `.aide.yaml` can override field-by-field.
+**Why:** Startup banners and info display are personal preferences that shouldn't be buried in context config or require CLI flags. A top-level `preferences:` block keeps them separate from context/agent config and allows per-project overrides for cases where a project needs different verbosity.

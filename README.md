@@ -276,10 +276,20 @@ different API keys across contexts.
 ```bash
 aide context list                 # List all configured contexts
 aide context add                  # Add a new context interactively
-aide context add-match work       # Add a match rule to an existing context
+aide context add-match            # Add a match rule (auto-detects context from CWD)
+aide context add-match work       # Add a match rule to a specific context
+aide context set-secret <name>    # Set secret file for context (auto-detects from CWD)
+aide context remove-secret        # Remove secret reference (auto-detects from CWD)
+aide context set-default [name]   # Set the default fallback context
 aide context rename work corp     # Rename a context
 aide context remove oss           # Remove a context
 ```
+
+The `add-match`, `set-secret`, and `remove-secret` commands auto-detect the context
+from your current working directory. Use `--context <name>` to override.
+
+The first context created via `aide use` or `aide context add` automatically becomes
+the default fallback context.
 
 ### Managing Environment Variables
 
@@ -290,6 +300,7 @@ aide env set API_KEY sk-ant-xxx            # Set a literal value
 aide env set API_KEY --from-secret api_key # Set as template referencing a secret
 aide env set API_KEY --from-secret         # Interactive secret key picker
 aide env set REGION us-west-2 --context work  # Target a specific context
+aide env remove KEY                        # Remove an env var from context
 ```
 
 The `--from-secret` flag generates `{{ .secrets.<key> }}` template syntax
@@ -344,6 +355,19 @@ the sandbox boundary. No per-action permission prompts.
 | Denied | SSH private keys, cloud credentials, browser data |
 | Network | Outbound allowed |
 | Subprocesses | Allowed |
+
+**Agent config directories** are automatically added to the sandbox writable list.
+aide respects agent-specific config dir env vars when they are set:
+
+| Agent | Env var |
+|-------|---------|
+| Claude | `CLAUDE_CONFIG_DIR` |
+| Codex | `CODEX_HOME` |
+| Goose | `GOOSE_PATH_ROOT` |
+| Amp | `AMP_HOME` |
+
+If these variables are set in the environment, the referenced paths are included in
+the writable list without manual sandbox configuration.
 
 ```bash
 aide sandbox show                          # Effective policy for current directory
@@ -403,7 +427,16 @@ Without it, they apply to the context matched by the current directory.
 aide sandbox list                 # List all named profiles
 aide sandbox create strict        # Create a new profile (opens $EDITOR)
 aide sandbox create strict --from default  # Create based on existing profile
-aide sandbox edit strict          # Modify a profile
+aide sandbox edit strict          # Modify a profile (opens $EDITOR)
+aide sandbox edit strict \
+  --add-writable /tmp/cache \
+  --add-readable ~/.config/tool \
+  --add-denied ~/.ssh/id_rsa \
+  --remove-writable /old/path \
+  --remove-readable /old/readable \
+  --remove-denied /old/denied \
+  --network outbound              # Edit profile flags inline (no $EDITOR)
+aide sandbox network outbound     # Set network mode for CWD context (outbound|none|unrestricted)
 aide sandbox remove strict        # Delete a profile
 ```
 

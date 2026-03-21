@@ -5,22 +5,22 @@ import (
 	"testing"
 )
 
-func TestConfigDirFrom(t *testing.T) {
+func TestDirFrom(t *testing.T) {
 	base := t.TempDir()
-	got := ConfigDirFrom(base)
+	got := DirFrom(base)
 	want := filepath.Join(base, "aide")
 	if got != want {
-		t.Errorf("ConfigDirFrom(%q) = %q, want %q", base, got, want)
+		t.Errorf("DirFrom(%q) = %q, want %q", base, got, want)
 	}
 }
 
-func TestConfigDir_Default(t *testing.T) {
-	dir := ConfigDir()
+func TestDir_Default(t *testing.T) {
+	dir := Dir()
 	if !filepath.IsAbs(dir) {
-		t.Errorf("ConfigDir() returned non-absolute path: %q", dir)
+		t.Errorf("Dir() returned non-absolute path: %q", dir)
 	}
 	if filepath.Base(dir) != "aide" {
-		t.Errorf("ConfigDir() should end with 'aide', got %q", dir)
+		t.Errorf("Dir() should end with 'aide', got %q", dir)
 	}
 }
 
@@ -41,12 +41,12 @@ func TestRuntimeDirFrom_ContainsPID(t *testing.T) {
 	}
 }
 
-func TestConfigFilePathFrom(t *testing.T) {
+func TestFilePathFrom(t *testing.T) {
 	base := t.TempDir()
-	got := ConfigFilePathFrom(base)
+	got := FilePathFrom(base)
 	want := filepath.Join(base, "aide", "config.yaml")
 	if got != want {
-		t.Errorf("ConfigFilePathFrom(%q) = %q, want %q", base, got, want)
+		t.Errorf("FilePathFrom(%q) = %q, want %q", base, got, want)
 	}
 }
 

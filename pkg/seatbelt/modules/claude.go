@@ -3,6 +3,7 @@
 // Rules ported from agent-safehouse by Eugene Goldin:
 // https://github.com/eugene1g/agent-safehouse
 // Source: profiles/60-agents/claude-code.sb
+
 package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"

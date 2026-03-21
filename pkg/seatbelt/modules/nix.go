@@ -1,6 +1,7 @@
 // Nix toolchain module for macOS Seatbelt profiles.
 //
 // Custom rules for Nix package manager paths.
+
 package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"

@@ -1,3 +1,4 @@
+// Package context provides git remote detection and context resolution for aide.
 package context
 
 import (

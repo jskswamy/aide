@@ -11,7 +11,7 @@ import (
 // WriteConfig writes the given Config to the global config file atomically.
 // It writes to a .tmp file first, then renames.
 func WriteConfig(cfg *Config) error {
-	return WriteConfigTo(cfg, ConfigFilePath())
+	return WriteConfigTo(cfg, FilePath())
 }
 
 // WriteConfigTo writes the given Config to the given path atomically.

@@ -2,6 +2,7 @@
 //
 // Controls file system access with writable, readable, and denied paths.
 // Denied paths support glob expansion.
+
 package modules
 
 import (
@@ -61,7 +62,7 @@ func (m *filesystemModule) deniedRules() []seatbelt.Rule {
 	expanded := seatbelt.ExpandGlobs(m.cfg.Denied)
 	var rules []seatbelt.Rule
 	for _, p := range expanded {
-		expr := seatbelt.SeatbeltPath(p)
+		expr := seatbelt.Path(p)
 		rules = append(rules,
 			seatbelt.Raw(fmt.Sprintf("(deny file-read-data %s)", expr)),
 			seatbelt.Raw(fmt.Sprintf("(deny file-write* %s)", expr)),
@@ -72,11 +73,11 @@ func (m *filesystemModule) deniedRules() []seatbelt.Rule {
 
 func buildRequireAny(paths []string) string {
 	if len(paths) == 1 {
-		return seatbelt.SeatbeltPath(paths[0])
+		return seatbelt.Path(paths[0])
 	}
 	var exprs []string
 	for _, p := range paths {
-		exprs = append(exprs, "    "+seatbelt.SeatbeltPath(p))
+		exprs = append(exprs, "    "+seatbelt.Path(p))
 	}
 	return fmt.Sprintf("(require-any\n%s)", strings.Join(exprs, "\n"))
 }

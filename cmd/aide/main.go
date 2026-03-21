@@ -26,7 +26,7 @@ agents on your PATH.`,
 		Version:            version,
 		DisableFlagParsing: false,
 		SilenceUsage:       true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if yolo {
 				fmt.Fprintln(os.Stderr, "\033[1;33mWARNING:\033[0m --yolo mode enabled")
 				fmt.Fprintln(os.Stderr, "  Agent permission checks are disabled.")
@@ -45,7 +45,7 @@ agents on your PATH.`,
 			}
 
 			// Check if a config file exists.
-			configFile := config.ConfigFilePath()
+			configFile := config.FilePath()
 			if _, err := os.Stat(configFile); os.IsNotExist(err) {
 				return l.Passthrough(cwd, agentFlag, args)
 			}

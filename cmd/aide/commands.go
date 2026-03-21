@@ -1,3 +1,4 @@
+// Package main provides the aide CLI commands.
 package main
 
 import (
@@ -43,9 +44,9 @@ func initCmd() *cobra.Command {
 		Use:          "init",
 		Short:        "Initialize aide configuration",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			configPath := config.ConfigFilePath()
+			configPath := config.FilePath()
 
 			// Check existing config
 			if _, err := os.Stat(configPath); err == nil {
@@ -164,7 +165,7 @@ func initCmd() *cobra.Command {
 			}
 
 			// Ensure config directory exists
-			configDir := config.ConfigDir()
+			configDir := config.Dir()
 			if err := os.MkdirAll(configDir, 0o755); err != nil {
 				return fmt.Errorf("creating config directory: %w", err)
 			}
@@ -202,7 +203,7 @@ func whichCmd() *cobra.Command {
 		Use:          "which",
 		Short:        "Show which context matches the current directory",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			resolve, _ := cmd.Flags().GetBool("resolve")
 
 			cwd, err := os.Getwd()
@@ -210,7 +211,7 @@ func whichCmd() *cobra.Command {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -342,7 +343,7 @@ func classifyEnvSource(val string) (source string, secretKey string) {
 	return "literal", ""
 }
 
-func resolveEnvDisplay(val, source, secretKey string, secretMap map[string]string) string {
+func resolveEnvDisplay(val, _, secretKey string, secretMap map[string]string) string {
 	if secretKey != "" && secretMap != nil {
 		if sv, ok := secretMap[secretKey]; ok {
 			return redactValue(sv)
@@ -363,13 +364,13 @@ func validateCmd() *cobra.Command {
 		Use:          "validate",
 		Short:        "Validate aide configuration",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Config error: %s\n", err)
 				return err
@@ -636,7 +637,7 @@ func secretsListCmd() *cobra.Command {
 		Use:          "list",
 		Short:        "List encrypted secrets files",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			secretsDir := config.SecretsDir()
 			entries, err := filepath.Glob(filepath.Join(secretsDir, "*.enc.yaml"))
 			if err != nil {
@@ -653,7 +654,7 @@ func secretsListCmd() *cobra.Command {
 			if err != nil {
 				cwd = "."
 			}
-			cfg, _ := config.Load(config.ConfigDir(), cwd)
+			cfg, _ := config.Load(config.Dir(), cwd)
 
 			// Build a map of secret -> context names
 			secretsToContexts := make(map[string][]string)
@@ -663,7 +664,7 @@ func secretsListCmd() *cobra.Command {
 						// Normalize bare name to filename for matching
 						key := ctx.Secret
 						if !strings.HasSuffix(key, ".enc.yaml") {
-							key = key + ".enc.yaml"
+							key += ".enc.yaml"
 						}
 						secretsToContexts[key] = append(
 							secretsToContexts[key], ctxName,
@@ -709,7 +710,7 @@ func secretsRotateCmd() *cobra.Command {
 		Short:        "Rotate age recipients for a secrets file",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
+		PreRunE: func(_ *cobra.Command, _ []string) error {
 			if len(addKeys) == 0 && len(removeKeys) == 0 {
 				return fmt.Errorf("at least one of --add-key or --remove-key is required")
 			}
@@ -746,8 +747,8 @@ func configShowCmd() *cobra.Command {
 		Use:          "show",
 		Short:        "Print the config file contents",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath := config.ConfigFilePath()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			configPath := config.FilePath()
 			data, err := os.ReadFile(configPath)
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -769,8 +770,8 @@ func configEditCmd() *cobra.Command {
 		Use:          "edit",
 		Short:        "Open the config file in your editor",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath := config.ConfigFilePath()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			configPath := config.FilePath()
 			if _, err := os.Stat(configPath); os.IsNotExist(err) {
 				return fmt.Errorf("no config file found. Run `aide init` to create one")
 			}
@@ -797,7 +798,7 @@ func configEditCmd() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			if _, err := config.Load(config.ConfigDir(), cwd); err != nil {
+			if _, err := config.Load(config.Dir(), cwd); err != nil {
 				fmt.Fprintf(out, "Saved. Validation failed: %s\n", err)
 			} else {
 				fmt.Fprintln(out, "Saved. Validation: OK")
@@ -837,7 +838,7 @@ func agentsAddCmd() *cobra.Command {
 			if err != nil {
 				cwd = "."
 			}
-			cfg, loadErr := config.Load(config.ConfigDir(), cwd)
+			cfg, loadErr := config.Load(config.Dir(), cwd)
 			if loadErr != nil {
 				cfg = &config.Config{
 					Agents:   make(map[string]config.AgentDef),
@@ -885,7 +886,7 @@ func agentsRemoveCmd() *cobra.Command {
 			if err != nil {
 				cwd = "."
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -936,7 +937,7 @@ func agentsEditCmd() *cobra.Command {
 			if err != nil {
 				cwd = "."
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -967,14 +968,14 @@ func agentsListCmd() *cobra.Command {
 		Use:          "list",
 		Short:        "List configured and available agents",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
 				cwd = "."
 			}
 
 			out := cmd.OutOrStdout()
-			cfg, _ := config.Load(config.ConfigDir(), cwd)
+			cfg, _ := config.Load(config.Dir(), cwd)
 
 			configured := make(map[string]bool)
 
@@ -1078,7 +1079,7 @@ Examples:
 				matchPath = matchPattern
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				cfg = &config.Config{
 					Agents:   make(map[string]config.AgentDef),
@@ -1232,12 +1233,12 @@ func contextListCmd() *cobra.Command {
 		Use:          "list",
 		Short:        "List all configured contexts",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
 				cwd = "."
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -1294,7 +1295,7 @@ func contextAddCmd() *cobra.Command {
 		Use:          "add",
 		Short:        "Add a new context interactively",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			reader := bufio.NewReader(os.Stdin)
 			out := cmd.OutOrStdout()
 
@@ -1339,7 +1340,7 @@ func contextAddCmd() *cobra.Command {
 			}
 			secretsInput = strings.TrimSpace(secretsInput)
 
-			cfg, loadErr := config.Load(config.ConfigDir(), cwd)
+			cfg, loadErr := config.Load(config.Dir(), cwd)
 			if loadErr != nil {
 				cfg = &config.Config{
 					Agents:   make(map[string]config.AgentDef),
@@ -1387,7 +1388,7 @@ func contextAddMatchCmd() *cobra.Command {
 		Short:        "Add a match rule to the current context",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, name, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
 				return err
@@ -1441,7 +1442,7 @@ func contextRenameCmd() *cobra.Command {
 			if err != nil {
 				cwd = "."
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -1483,7 +1484,7 @@ func contextRemoveCmd() *cobra.Command {
 			if err != nil {
 				cwd = "."
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -1564,7 +1565,7 @@ func contextRemoveSecretCmd() *cobra.Command {
 		Short:        "Remove the secret from the current context",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
 				return err
@@ -1611,7 +1612,7 @@ If no context name is given, the CWD-matched context is used.`,
 			if err != nil {
 				cwd = "."
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -1690,7 +1691,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -1944,12 +1945,12 @@ func envListCmd() *cobra.Command {
 		Use:          "list",
 		Short:        "List environment variables for a context",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -2063,7 +2064,7 @@ func setupCmd() *cobra.Command {
 		Use:          "setup",
 		Short:        "Set up aide for the current directory (guided wizard)",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			reader := bufio.NewReader(os.Stdin)
 
@@ -2074,7 +2075,7 @@ func setupCmd() *cobra.Command {
 
 			fmt.Fprintf(out, "\nSetting up aide for %s\n", cwd)
 
-			cfg, _ := config.Load(config.ConfigDir(), cwd)
+			cfg, _ := config.Load(config.Dir(), cwd)
 			if cfg == nil {
 				cfg = &config.Config{
 					Agents:   make(map[string]config.AgentDef),
@@ -2428,7 +2429,7 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 			}
 		}
 
-		switch { //nolint:staticcheck
+		switch { //nolint:staticcheck // switch with no tag used for complex condition matching
 		case choice == skipIdx:
 			fmt.Fprintln(out, "  Skipping secrets.")
 		case choice == createIdx:
@@ -2471,11 +2472,12 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 			fmt.Fprintln(out, "  Could not discover age key; skipping env wiring.")
 		} else {
 			data, decErr := secrets.DecryptSecretsFile(secretsFilePath, identity)
-			if decErr != nil {
+			switch {
+			case decErr != nil:
 				fmt.Fprintf(out, "  Could not decrypt: %s\n  Skipping env wiring.\n", decErr)
-			} else if len(data) == 0 {
+			case len(data) == 0:
 				fmt.Fprintln(out, "  Secrets file has no keys; skipping env wiring.")
-			} else {
+			default:
 				keys := make([]string, 0, len(data))
 				for k := range data {
 					keys = append(keys, k)
@@ -2722,14 +2724,14 @@ func sandboxShowCmd() *cobra.Command {
 		Use:   "show",
 		Short: "Show effective sandbox policy for current/named context",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -2803,14 +2805,14 @@ func sandboxTestCmd() *cobra.Command {
 		Use:   "test",
 		Short: "Generate and print the platform-specific sandbox profile without launching the agent",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -2876,14 +2878,14 @@ func sandboxListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List named sandbox profiles",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -2940,7 +2942,7 @@ func sandboxCreateCmd() *cobra.Command {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				cfg = &config.Config{}
 			}
@@ -3051,7 +3053,7 @@ func sandboxEditCmd() *cobra.Command {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -3147,7 +3149,7 @@ func sandboxRemoveCmd() *cobra.Command {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			cfg, err := config.Load(config.ConfigDir(), cwd)
+			cfg, err := config.Load(config.Dir(), cwd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -3206,7 +3208,7 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 	if err != nil {
 		return nil, "", config.Context{}, fmt.Errorf("getting working directory: %w", err)
 	}
-	cfg, err := config.Load(config.ConfigDir(), cwd)
+	cfg, err := config.Load(config.Dir(), cwd)
 	if err != nil {
 		return nil, "", config.Context{}, fmt.Errorf("loading config: %w", err)
 	}
@@ -3304,7 +3306,7 @@ func sandboxResetCmd() *cobra.Command {
 		Use:          "reset",
 		Short:        "Reset sandbox to defaults for a context",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
 				return err

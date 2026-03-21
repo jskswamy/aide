@@ -39,7 +39,7 @@ var agentYoloFlags = map[string]string{
 // Launcher orchestrates the full agent launch flow.
 type Launcher struct {
 	Execer    Execer
-	ConfigDir string       // override for testing (default: config.ConfigDir())
+	ConfigDir string       // override for testing (default: config.Dir())
 	LookPath  LookPathFunc // override for testing (default: exec.LookPath)
 	Yolo      bool         // inject agent-specific skip-permissions flag
 	Stderr    io.Writer    // override for testing (default: os.Stderr)
@@ -58,7 +58,7 @@ func (l *Launcher) configDir() string {
 	if l.ConfigDir != "" {
 		return l.ConfigDir
 	}
-	return config.ConfigDir()
+	return config.Dir()
 }
 
 // Launch resolves context, decrypts secrets, resolves templates, creates

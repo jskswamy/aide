@@ -30,15 +30,15 @@ func configHome() string {
 
 // --- Parameterized variants (testable, no dependency on cached xdg values) ---
 
-// ConfigDirFrom returns the aide config directory under the given base.
+// DirFrom returns the aide config directory under the given base.
 // Production callers pass xdg.ConfigHome; tests pass a temp dir.
-func ConfigDirFrom(base string) string {
+func DirFrom(base string) string {
 	return filepath.Join(base, appName)
 }
 
 // SecretsDirFrom returns the secrets directory under the given base.
 func SecretsDirFrom(base string) string {
-	return filepath.Join(ConfigDirFrom(base), "secrets")
+	return filepath.Join(DirFrom(base), "secrets")
 }
 
 // RuntimeDirFrom returns a per-process ephemeral directory under the given base.
@@ -46,9 +46,9 @@ func RuntimeDirFrom(base string, pid int) string {
 	return filepath.Join(base, fmt.Sprintf("%s-%d", appName, pid))
 }
 
-// ConfigFilePathFrom returns the global config file path under the given base.
-func ConfigFilePathFrom(base string) string {
-	return filepath.Join(ConfigDirFrom(base), "config.yaml")
+// FilePathFrom returns the global config file path under the given base.
+func FilePathFrom(base string) string {
+	return filepath.Join(DirFrom(base), "config.yaml")
 }
 
 // ResolveSecretPathFrom resolves a secret name to an absolute path.
@@ -60,18 +60,18 @@ func ResolveSecretPathFrom(base, secret string) string {
 		return secret
 	}
 	if !strings.HasSuffix(secret, ".enc.yaml") {
-		secret = secret + ".enc.yaml"
+		secret += ".enc.yaml"
 	}
 	return filepath.Join(SecretsDirFrom(base), secret)
 }
 
 // --- Convenience wrappers (use adrg/xdg cached values) ---
 
-// ConfigDir returns the aide config directory.
+// Dir returns the aide config directory.
 // $XDG_CONFIG_HOME/aide/ (typically ~/.config/aide/)
 // Everything lives here: config.yaml and secrets/ (DD-6).
-func ConfigDir() string {
-	return ConfigDirFrom(configHome())
+func Dir() string {
+	return DirFrom(configHome())
 }
 
 // SecretsDir returns the directory for encrypted secrets files.
@@ -88,10 +88,10 @@ func RuntimeDir(pid int) string {
 	return RuntimeDirFrom(xdg.RuntimeDir, pid)
 }
 
-// ConfigFilePath returns the path to the global config file.
+// FilePath returns the path to the global config file.
 // $XDG_CONFIG_HOME/aide/config.yaml
-func ConfigFilePath() string {
-	return ConfigFilePathFrom(configHome())
+func FilePath() string {
+	return FilePathFrom(configHome())
 }
 
 // ProjectConfigFileName is the per-project override filename.

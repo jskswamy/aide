@@ -1,3 +1,4 @@
+// Package secrets handles age-based encryption and decryption of secret files.
 package secrets
 
 import (
@@ -11,6 +12,7 @@ import (
 // AgeKeySource describes where an age key was found.
 type AgeKeySource int
 
+// AgeKeySource values identify where an age key was discovered.
 const (
 	SourceYubiKey     AgeKeySource = iota
 	SourceEnvKey                        // SOPS_AGE_KEY

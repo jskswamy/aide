@@ -8,13 +8,47 @@ import (
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
+func TestGuard_NodeToolchain_Metadata(t *testing.T) {
+	g := modules.NodeToolchainGuard()
+
+	if g.Name() != "node-toolchain" {
+		t.Errorf("expected Name() = %q, got %q", "node-toolchain", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() == "" {
+		t.Error("expected non-empty Description()")
+	}
+}
+
+func TestGuard_NodeToolchain_Paths(t *testing.T) {
+	g := modules.NodeToolchainGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
+	output := renderTestRules(g.Rules(ctx))
+
+	paths := []string{
+		`(subpath "/Users/testuser/.npm")`,
+		`(subpath "/Users/testuser/.yarn")`,
+		`(subpath "/Users/testuser/.pnpm-store")`,
+		`(subpath "/Users/testuser/.nvm")`,
+		`(literal "/Users/testuser/.npmrc")`,
+		`(subpath "/Users/testuser/.cache/turbo")`,
+	}
+	for _, p := range paths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected output to contain %q", p)
+		}
+	}
+}
+
 func TestNodeToolchain(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	m := modules.NodeToolchain()
 	output := renderTestRules(m.Rules(ctx))
 
-	if m.Name() != "Node Toolchain" {
-		t.Errorf("expected name %q, got %q", "Node Toolchain", m.Name())
+	if m.Name() != "node-toolchain" {
+		t.Errorf("expected name %q, got %q", "node-toolchain", m.Name())
 	}
 
 	paths := []string{
@@ -37,13 +71,46 @@ func TestNodeToolchain(t *testing.T) {
 	}
 }
 
+func TestGuard_NixToolchain_Metadata(t *testing.T) {
+	g := modules.NixToolchainGuard()
+
+	if g.Name() != "nix-toolchain" {
+		t.Errorf("expected Name() = %q, got %q", "nix-toolchain", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() == "" {
+		t.Error("expected non-empty Description()")
+	}
+}
+
+func TestGuard_NixToolchain_Paths(t *testing.T) {
+	g := modules.NixToolchainGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
+	output := renderTestRules(g.Rules(ctx))
+
+	paths := []string{
+		`"/nix/store"`,
+		`"/nix/var"`,
+		`"/run/current-system"`,
+		`(subpath "/Users/testuser/.nix-profile")`,
+		`(subpath "/Users/testuser/.local/state/nix")`,
+	}
+	for _, p := range paths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected output to contain %q", p)
+		}
+	}
+}
+
 func TestNixToolchain(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	m := modules.NixToolchain()
 	output := renderTestRules(m.Rules(ctx))
 
-	if m.Name() != "Nix Toolchain" {
-		t.Errorf("expected name %q, got %q", "Nix Toolchain", m.Name())
+	if m.Name() != "nix-toolchain" {
+		t.Errorf("expected name %q, got %q", "nix-toolchain", m.Name())
 	}
 
 	paths := []string{
@@ -60,13 +127,51 @@ func TestNixToolchain(t *testing.T) {
 	}
 }
 
+func TestGuard_GitIntegration_Metadata(t *testing.T) {
+	g := modules.GitIntegrationGuard()
+
+	if g.Name() != "git-integration" {
+		t.Errorf("expected Name() = %q, got %q", "git-integration", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() == "" {
+		t.Error("expected non-empty Description()")
+	}
+}
+
+func TestGuard_GitIntegration_Paths(t *testing.T) {
+	g := modules.GitIntegrationGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
+	output := renderTestRules(g.Rules(ctx))
+
+	paths := []string{
+		`(prefix "/Users/testuser/.gitconfig")`,
+		`(prefix "/Users/testuser/.gitignore")`,
+		`(subpath "/Users/testuser/.config/git")`,
+		`(literal "/Users/testuser/.gitattributes")`,
+		`(literal "/Users/testuser/.ssh")`,
+	}
+	for _, p := range paths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected output to contain %q", p)
+		}
+	}
+
+	// Should be read-only - no file-write in output
+	if strings.Contains(output, "file-write") {
+		t.Error("expected git integration to be read-only (no file-write)")
+	}
+}
+
 func TestGitIntegration(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	m := modules.GitIntegration()
 	output := renderTestRules(m.Rules(ctx))
 
-	if m.Name() != "Git Integration" {
-		t.Errorf("expected name %q, got %q", "Git Integration", m.Name())
+	if m.Name() != "git-integration" {
+		t.Errorf("expected name %q, got %q", "git-integration", m.Name())
 	}
 
 	paths := []string{

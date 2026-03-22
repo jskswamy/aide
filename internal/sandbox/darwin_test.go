@@ -318,6 +318,47 @@ func TestSeatbeltProfile_PortFiltering_DNS(t *testing.T) {
 	}
 }
 
+func TestProfile_NoKeychainConflict(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// No deny rules should target Library/Keychains
+	lines := strings.Split(profile, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "deny") && strings.Contains(line, "Library/Keychains") {
+			t.Errorf("profile should not deny Library/Keychains (managed by keychain guard): %s", line)
+		}
+	}
+}
+
+func TestProfile_SSHAllowBeatsSubpathDeny(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(profile, "(deny file-read-data") || !strings.Contains(profile, ".ssh") {
+		t.Error("expected deny file-read-data rule covering .ssh directory")
+	}
+	if !strings.Contains(profile, "(allow file-read*") || !strings.Contains(profile, "known_hosts") {
+		t.Error("expected allow file-read* rule for known_hosts")
+	}
+}
+
+func TestProfile_NpmGuardOverridesToolchain(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy.Guards = append(policy.Guards, "npm")
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(profile, ".npmrc") {
+		t.Error("expected .npmrc in profile")
+	}
+}
+
 func TestDarwinSandbox_Apply_CleanEnv(t *testing.T) {
 	runtimeDir := t.TempDir()
 	cmd := exec.Command("/usr/bin/echo", "hello")

@@ -12,8 +12,22 @@ func systemRuntimeOutput() string {
 	ctx := &seatbelt.Context{
 		HomeDir: "/Users/testuser",
 	}
-	m := modules.SystemRuntime()
-	return renderTestRules(m.Rules(ctx))
+	g := modules.SystemRuntimeGuard()
+	return renderTestRules(g.Rules(ctx))
+}
+
+func TestGuard_SystemRuntime_Metadata(t *testing.T) {
+	g := modules.SystemRuntimeGuard()
+
+	if g.Name() != "system-runtime" {
+		t.Errorf("expected Name() = %q, got %q", "system-runtime", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() == "" {
+		t.Error("expected non-empty Description()")
+	}
 }
 
 func TestSystemRuntime_MachServices(t *testing.T) {

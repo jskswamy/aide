@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -24,12 +25,9 @@ func TestPolicyFromConfig_Nil_ReturnsDefaults(t *testing.T) {
 		t.Fatal("expected non-nil policy for nil config")
 	}
 
-	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
+	defaults := DefaultPolicy(projectRoot, runtimeDir, tempDir, nil)
 
-	// Verify writable matches defaults
-	assertSliceEqual(t, policy.Writable, defaults.Writable, "Writable")
-	assertSliceEqual(t, policy.Readable, defaults.Readable, "Readable")
-	assertSliceEqual(t, policy.Denied, defaults.Denied, "Denied")
+	assertSliceEqual(t, policy.Guards, defaults.Guards, "Guards")
 
 	if policy.Network != defaults.Network {
 		t.Errorf("expected Network=%q, got %q", defaults.Network, policy.Network)
@@ -145,58 +143,6 @@ func TestResolveSandboxRef_Inline(t *testing.T) {
 	}
 }
 
-func TestPolicyFromConfig_WritableOverride(t *testing.T) {
-	dir := t.TempDir()
-	cfg := &config.SandboxPolicy{
-		Writable: []string{dir},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(policy.Writable) != 1 || policy.Writable[0] != dir {
-		t.Errorf("expected Writable=[%s], got %v", dir, policy.Writable)
-	}
-
-	// Other fields should keep defaults
-	defaults := DefaultPolicy("/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
-	assertSliceEqual(t, policy.Readable, defaults.Readable, "Readable")
-	assertSliceEqual(t, policy.Denied, defaults.Denied, "Denied")
-}
-
-func TestPolicyFromConfig_ReadableOverride(t *testing.T) {
-	dir := t.TempDir()
-	cfg := &config.SandboxPolicy{
-		Readable: []string{dir},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(policy.Readable) != 1 || policy.Readable[0] != dir {
-		t.Errorf("expected Readable=[%s], got %v", dir, policy.Readable)
-	}
-}
-
-func TestPolicyFromConfig_DeniedOverride(t *testing.T) {
-	cfg := &config.SandboxPolicy{
-		Denied: []string{"~/.custom/denied_*"},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(policy.Denied) != 1 || policy.Denied[0] != "/home/user/.custom/denied_*" {
-		t.Errorf("expected Denied=[/home/user/.custom/denied_*], got %v", policy.Denied)
-	}
-}
-
 func TestPolicyFromConfig_NetworkOverride(t *testing.T) {
 	cfg := &config.SandboxPolicy{
 		Network: &config.NetworkPolicy{Mode: "none"},
@@ -242,48 +188,6 @@ func TestPolicyFromConfig_CleanEnvOverride(t *testing.T) {
 	}
 }
 
-func TestPolicyFromConfig_TemplateResolution(t *testing.T) {
-	projectRoot := t.TempDir()
-	runtimeDir := t.TempDir()
-	cfg := &config.SandboxPolicy{
-		Writable: []string{"{{ .project_root }}", "{{ .runtime_dir }}"},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, projectRoot, runtimeDir, "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	assertContains(t, policy.Writable, projectRoot, "Writable should contain resolved project_root")
-	assertContains(t, policy.Writable, runtimeDir, "Writable should contain resolved runtime_dir")
-}
-
-func TestPolicyFromConfig_TildeExpansion(t *testing.T) {
-	homeDir := t.TempDir()
-	subDir := homeDir + "/foo"
-	if err := os.MkdirAll(subDir, 0o755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	gitconfig := homeDir + "/.gitconfig"
-	f, err := os.Create(gitconfig)
-	if err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	_ = f.Close()
-
-	cfg := &config.SandboxPolicy{
-		Readable: []string{"~/.gitconfig", "~/foo"},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", homeDir, "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	assertContains(t, policy.Readable, gitconfig, "Readable should contain expanded ~/.gitconfig")
-	assertContains(t, policy.Readable, subDir, "Readable should contain expanded ~/foo")
-}
-
 func TestPolicyFromConfig_PartialOverride(t *testing.T) {
 	cfg := &config.SandboxPolicy{
 		Network: &config.NetworkPolicy{Mode: "none"},
@@ -299,17 +203,15 @@ func TestPolicyFromConfig_PartialOverride(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
+	defaults := DefaultPolicy(projectRoot, runtimeDir, tempDir, nil)
 
 	// Network should be overridden
 	if policy.Network != NetworkNone {
 		t.Errorf("expected Network=%q, got %q", NetworkNone, policy.Network)
 	}
 
-	// Everything else should be defaults
-	assertSliceEqual(t, policy.Writable, defaults.Writable, "Writable")
-	assertSliceEqual(t, policy.Readable, defaults.Readable, "Readable")
-	assertSliceEqual(t, policy.Denied, defaults.Denied, "Denied")
+	// Guards should be defaults
+	assertSliceEqual(t, policy.Guards, defaults.Guards, "Guards")
 	if policy.AllowSubprocess != defaults.AllowSubprocess {
 		t.Errorf("expected AllowSubprocess=%v, got %v", defaults.AllowSubprocess, policy.AllowSubprocess)
 	}
@@ -419,129 +321,52 @@ func TestValidateSandboxRef_KnownProfile(t *testing.T) {
 	}
 }
 
-func TestPolicyFromConfig_DeniedExtra_AppendsToDefaults(t *testing.T) {
-	projectRoot := "/tmp/proj"
-	runtimeDir := "/tmp/rt"
+func TestPolicyFromConfig_DeniedAndDeniedExtra(t *testing.T) {
 	homeDir := t.TempDir()
-	tempDir := "/tmp"
-
 	kubeDir := homeDir + "/.kube"
 	if err := os.MkdirAll(kubeDir, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
+	// DeniedExtra should append to defaults
 	cfg := &config.SandboxPolicy{
 		DeniedExtra: []string{"~/.kube"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, projectRoot, runtimeDir, homeDir, tempDir)
+	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", homeDir, "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
+	assertContains(t, policy.ExtraDenied, kubeDir, "ExtraDenied should contain extra entry ~/.kube")
 
-	// Should contain all defaults
-	for _, d := range defaults.Denied {
-		assertContains(t, policy.Denied, d, "Denied should contain default entry")
-	}
-	// Should also contain the extra entry (tilde-expanded)
-	assertContains(t, policy.Denied, kubeDir, "Denied should contain extra entry ~/.kube")
-
-	// Total length should be defaults + 1
-	if len(policy.Denied) != len(defaults.Denied)+1 {
-		t.Errorf("expected %d denied entries, got %d: %v", len(defaults.Denied)+1, len(policy.Denied), policy.Denied)
-	}
-}
-
-func TestPolicyFromConfig_DeniedOverride_ReplacesDefaults(t *testing.T) {
-	cfg := &config.SandboxPolicy{
+	// Denied override should replace
+	cfg2 := &config.SandboxPolicy{
 		Denied: []string{"~/.custom_denied_*"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy2, _, err := PolicyFromConfig(cfg2, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(policy.Denied) != 1 || policy.Denied[0] != "/home/user/.custom_denied_*" {
-		t.Errorf("expected Denied=[/home/user/.custom_denied_*], got %v", policy.Denied)
+	if len(policy2.ExtraDenied) != 1 || policy2.ExtraDenied[0] != "/home/user/.custom_denied_*" {
+		t.Errorf("expected ExtraDenied=[/home/user/.custom_denied_*], got %v", policy2.ExtraDenied)
 	}
-}
 
-func TestPolicyFromConfig_BothDeniedAndExtra_OverrideWins(t *testing.T) {
-	cfg := &config.SandboxPolicy{
+	// Both denied and denied_extra: denied wins
+	cfg3 := &config.SandboxPolicy{
 		Denied:      []string{"~/.custom_denied_*"},
 		DeniedExtra: []string{"~/.extra_denied_*"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy3, _, err := PolicyFromConfig(cfg3, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(policy.Denied) != 1 || policy.Denied[0] != "/home/user/.custom_denied_*" {
-		t.Errorf("expected Denied=[/home/user/.custom_denied_*] (override wins), got %v", policy.Denied)
-	}
-}
-
-func TestPolicyFromConfig_ReadableExtra_AppendsToDefaults(t *testing.T) {
-	projectRoot := "/tmp/proj"
-	runtimeDir := "/tmp/rt"
-	homeDir := "/home/user"
-	tempDir := "/tmp"
-
-	extraDir := t.TempDir()
-	cfg := &config.SandboxPolicy{
-		ReadableExtra: []string{extraDir},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, projectRoot, runtimeDir, homeDir, tempDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
-
-	// Should contain all defaults
-	for _, r := range defaults.Readable {
-		assertContains(t, policy.Readable, r, "Readable should contain default entry")
-	}
-	// Should also contain the extra entry
-	assertContains(t, policy.Readable, extraDir, "Readable should contain extra entry")
-
-	if len(policy.Readable) != len(defaults.Readable)+1 {
-		t.Errorf("expected %d readable entries, got %d: %v", len(defaults.Readable)+1, len(policy.Readable), policy.Readable)
-	}
-}
-
-func TestPolicyFromConfig_WritableExtra_AppendsToDefaults(t *testing.T) {
-	projectRoot := "/tmp/proj"
-	runtimeDir := "/tmp/rt"
-	homeDir := "/home/user"
-	tempDir := "/tmp"
-
-	extraDir := t.TempDir()
-	cfg := &config.SandboxPolicy{
-		WritableExtra: []string{extraDir},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, projectRoot, runtimeDir, homeDir, tempDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
-
-	// Should contain all defaults
-	for _, w := range defaults.Writable {
-		assertContains(t, policy.Writable, w, "Writable should contain default entry")
-	}
-	// Should also contain the extra entry
-	assertContains(t, policy.Writable, extraDir, "Writable should contain extra entry")
-
-	if len(policy.Writable) != len(defaults.Writable)+1 {
-		t.Errorf("expected %d writable entries, got %d: %v", len(defaults.Writable)+1, len(policy.Writable), policy.Writable)
+	if len(policy3.ExtraDenied) != 1 || policy3.ExtraDenied[0] != "/home/user/.custom_denied_*" {
+		t.Errorf("expected ExtraDenied=[/home/user/.custom_denied_*] (override wins), got %v", policy3.ExtraDenied)
 	}
 }
 
@@ -655,24 +480,6 @@ func TestValidateSandboxConfig_BroadWritable_Warning(t *testing.T) {
 	}
 }
 
-func TestPolicyFromConfig_SkipsNonExistentPaths(t *testing.T) {
-	cfg := &config.SandboxPolicy{
-		WritableExtra: []string{"/nonexistent/path/abc123"},
-	}
-	policy, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	for _, w := range policy.Writable {
-		if w == "/nonexistent/path/abc123" {
-			t.Error("non-existent path should have been filtered out")
-		}
-	}
-	if len(warnings) == 0 {
-		t.Error("expected warning for non-existent path")
-	}
-}
-
 func TestPolicyFromConfig_GlobsNotValidated(t *testing.T) {
 	cfg := &config.SandboxPolicy{
 		Denied: []string{"~/.ssh/id_*", "~/.config/{foo}"},
@@ -681,100 +488,188 @@ func TestPolicyFromConfig_GlobsNotValidated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(policy.Denied) != 2 {
-		t.Errorf("expected 2 denied paths (globs pass through), got %d", len(policy.Denied))
+	if len(policy.ExtraDenied) != 2 {
+		t.Errorf("expected 2 denied paths (globs pass through), got %d", len(policy.ExtraDenied))
 	}
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings for glob paths, got %v", warnings)
 	}
 }
 
-func TestPolicyFromConfig_ExistingPathsIncluded(t *testing.T) {
-	dir := t.TempDir()
+// --- Guard resolution tests ---
+
+func TestPolicyFromConfig_GuardsOverridesDefault(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		WritableExtra: []string{dir},
+		Guards: []string{"ssh-keys", "browsers"},
 	}
-	policy, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+
+	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
+	// Should contain always guards + listed guards
+	for _, g := range modules.AllGuards() {
+		if g.Type() == "always" {
+			assertContains(t, policy.Guards, g.Name(), "Guards should contain always guard "+g.Name())
+		}
+	}
+	assertContains(t, policy.Guards, "ssh-keys", "Guards should contain ssh-keys")
+	assertContains(t, policy.Guards, "browsers", "Guards should contain browsers")
+
+	// Should NOT contain default guards that weren't listed
+	defaults := modules.DefaultGuardNames()
+	for _, name := range defaults {
+		g, _ := modules.GuardByName(name)
+		if g.Type() == "default" && name != "ssh-keys" && name != "browsers" {
+			for _, gn := range policy.Guards {
+				if gn == name {
+					t.Errorf("Guards should not contain default guard %q when guards is set", name)
+				}
+			}
+		}
+	}
+}
+
+func TestPolicyFromConfig_GuardsExtraAdds(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		GuardsExtra: []string{"docker", "npm"},
+	}
+
+	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should contain all defaults + docker + npm
+	defaults := modules.DefaultGuardNames()
+	for _, name := range defaults {
+		assertContains(t, policy.Guards, name, "Guards should contain default guard "+name)
+	}
+	assertContains(t, policy.Guards, "docker", "Guards should contain docker")
+	assertContains(t, policy.Guards, "npm", "Guards should contain npm")
+}
+
+func TestPolicyFromConfig_UnguardRemoves(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Unguard: []string{"browsers"},
+	}
+
+	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, g := range policy.Guards {
+		if g == "browsers" {
+			t.Error("Guards should not contain browsers after unguard")
+		}
+	}
+}
+
+func TestPolicyFromConfig_UnguardAlways_Error(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Unguard: []string{"base"},
+	}
+
+	_, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	if err == nil {
+		t.Error("expected error when unguarding always guard, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot unguard") {
+		t.Errorf("expected 'cannot unguard' error, got: %v", err)
+	}
+}
+
+func TestPolicyFromConfig_GuardsAndGuardsExtraWarns(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Guards:      []string{"ssh-keys"},
+		GuardsExtra: []string{"docker"},
+	}
+
+	_, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
 	found := false
-	for _, w := range policy.Writable {
-		if w == dir {
+	for _, w := range warnings {
+		if strings.Contains(w, "guards") && strings.Contains(w, "guards_extra") {
 			found = true
+			break
 		}
 	}
 	if !found {
-		t.Errorf("expected %s in writable paths", dir)
-	}
-	if len(warnings) != 0 {
-		t.Errorf("expected no warnings, got %v", warnings)
+		t.Errorf("expected warning about guards + guards_extra, got: %v", warnings)
 	}
 }
 
-func TestPolicyFromConfig_MixedPaths(t *testing.T) {
-	existing := t.TempDir()
+func TestPolicyFromConfig_UnknownGuardName_Error(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		WritableExtra: []string{existing, "/nonexistent/xyz"},
-		DeniedExtra:   []string{"~/.ssh/id_*"},
+		Guards: []string{"nonexistent-guard"},
 	}
-	policy, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+
+	_, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	if err == nil {
+		t.Error("expected error for unknown guard name, got nil")
 	}
-	// existing should be in writable
-	foundExisting := false
-	foundNonexistent := false
-	for _, w := range policy.Writable {
-		if w == existing {
-			foundExisting = true
-		}
-		if w == "/nonexistent/xyz" {
-			foundNonexistent = true
-		}
-	}
-	if !foundExisting {
-		t.Error("existing path should be included")
-	}
-	if foundNonexistent {
-		t.Error("non-existent path should be filtered")
-	}
-	// glob in denied should pass through
-	foundGlob := false
-	for _, d := range policy.Denied {
-		if strings.Contains(d, "id_*") {
-			foundGlob = true
-		}
-	}
-	if !foundGlob {
-		t.Error("glob pattern should pass through")
-	}
-	if len(warnings) != 1 {
-		t.Errorf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	if !strings.Contains(err.Error(), "unknown guard name") {
+		t.Errorf("expected 'unknown guard name' error, got: %v", err)
 	}
 }
 
-func TestPolicyFromConfig_OnlyActiveBranch(t *testing.T) {
-	// When both Writable and WritableExtra are set, only Writable is used
-	existing := t.TempDir()
+func TestPolicyFromConfig_CloudMetaGuard(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		Writable:      []string{existing},
-		WritableExtra: []string{"/should/be/ignored"},
+		Guards: []string{"cloud"},
 	}
-	policy, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+
+	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, w := range policy.Writable {
-		if w == "/should/be/ignored" {
-			t.Error("writable_extra should be ignored when writable is set")
+
+	assertContains(t, policy.Guards, "cloud-aws", "cloud meta-guard should expand to cloud-aws")
+	assertContains(t, policy.Guards, "cloud-gcp", "cloud meta-guard should expand to cloud-gcp")
+	assertContains(t, policy.Guards, "cloud-azure", "cloud meta-guard should expand to cloud-azure")
+	assertContains(t, policy.Guards, "cloud-digitalocean", "cloud meta-guard should expand to cloud-digitalocean")
+	assertContains(t, policy.Guards, "cloud-oci", "cloud meta-guard should expand to cloud-oci")
+}
+
+func TestValidateSandboxConfig_UnknownGuardInValidation(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Guards: []string{"nonexistent"},
+	}
+	result := ValidateSandboxConfigDetailed(cfg)
+	if len(result.Errors) == 0 {
+		t.Error("expected validation error for unknown guard name")
+	}
+}
+
+func TestValidateSandboxConfig_UnguardAlwaysInValidation(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Unguard: []string{"base"},
+	}
+	result := ValidateSandboxConfigDetailed(cfg)
+	if len(result.Errors) == 0 {
+		t.Error("expected validation error for unguarding always guard")
+	}
+}
+
+func TestValidateSandboxConfig_BothGuardsAndGuardsExtra_Warning(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Guards:      []string{"ssh-keys"},
+		GuardsExtra: []string{"docker"},
+	}
+	result := ValidateSandboxConfigDetailed(cfg)
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "guards") && strings.Contains(w, "guards_extra") {
+			found = true
+			break
 		}
 	}
-	// No warning for /should/be/ignored since it was never processed
-	for _, w := range warnings {
-		if strings.Contains(w, "ignored") {
-			t.Error("should not warn about paths in ignored branch")
-		}
+	if !found {
+		t.Errorf("expected warning about guards + guards_extra, got: %v", result.Warnings)
 	}
 }
 

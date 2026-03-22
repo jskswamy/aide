@@ -9,26 +9,30 @@ import (
 	"text/template"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 // PolicyFromConfig builds a sandbox.Policy from a SandboxPolicy config and
 // the default policy. User-specified fields override defaults;
 // unspecified fields use defaults.
 //
-// Merge rules:
-//   - writable/readable/denied: if user specifies any entries, they REPLACE
-//     the default list (not append). This gives full control.
-//   - network/allow_subprocess/clean_env: if user specifies, overrides default.
-//   - cfg==nil -> returns DefaultPolicy unchanged.
+// Guard resolution logic:
+//   - No guards/guards_extra -> use default (always + default)
+//   - guards: set -> always guards + listed guards (replaces default set)
+//   - guards_extra: set -> default + extra
+//   - Both set -> warn, ignore guards_extra
+//   - Expand meta-guards (cloud -> 5 providers)
+//   - Unguard: remove listed guards. Cannot unguard "always" type -> error
+//   - Unknown guard name -> error
 //
 // Callers must resolve SandboxRef to SandboxPolicy before calling this function.
-// A disabled sandbox (sandbox: false) should not reach this function — the
+// A disabled sandbox (sandbox: false) should not reach this function -- the
 // caller should skip sandbox entirely.
 func PolicyFromConfig(
 	cfg *config.SandboxPolicy,
 	projectRoot, runtimeDir, homeDir, tempDir string,
 ) (*Policy, []string, error) {
-	defaults := DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir)
+	defaults := DefaultPolicy(projectRoot, runtimeDir, tempDir, nil)
 
 	if cfg == nil {
 		return &defaults, nil, nil
@@ -45,49 +49,29 @@ func PolicyFromConfig(
 
 	policy := defaults // copy
 
-	// Writable: override replaces defaults, extra appends to defaults
-	if len(cfg.Writable) > 0 {
-		w, err := ResolvePaths(cfg.Writable, templateVars)
-		if err != nil {
-			return nil, nil, err
-		}
-		policy.Writable = validateAndFilterPaths(w, &warnings)
-	} else if len(cfg.WritableExtra) > 0 {
-		extra, err := ResolvePaths(cfg.WritableExtra, templateVars)
-		if err != nil {
-			return nil, nil, err
-		}
-		policy.Writable = append(policy.Writable, validateAndFilterPaths(extra, &warnings)...)
+	// --- Guard resolution ---
+	resolvedGuards, guardWarnings, err := resolveGuards(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	warnings = append(warnings, guardWarnings...)
+	if resolvedGuards != nil {
+		policy.Guards = resolvedGuards
 	}
 
-	// Readable: override replaces defaults, extra appends to defaults
-	if len(cfg.Readable) > 0 {
-		r, err := ResolvePaths(cfg.Readable, templateVars)
-		if err != nil {
-			return nil, nil, err
-		}
-		policy.Readable = validateAndFilterPaths(r, &warnings)
-	} else if len(cfg.ReadableExtra) > 0 {
-		extra, err := ResolvePaths(cfg.ReadableExtra, templateVars)
-		if err != nil {
-			return nil, nil, err
-		}
-		policy.Readable = append(policy.Readable, validateAndFilterPaths(extra, &warnings)...)
-	}
-
-	// Denied: override replaces defaults, extra appends to defaults
+	// --- ExtraDenied from denied/denied_extra ---
 	if len(cfg.Denied) > 0 {
 		d, err := ResolvePaths(cfg.Denied, templateVars)
 		if err != nil {
 			return nil, nil, err
 		}
-		policy.Denied = validateAndFilterPaths(d, &warnings)
+		policy.ExtraDenied = validateAndFilterPaths(d, &warnings)
 	} else if len(cfg.DeniedExtra) > 0 {
 		extra, err := ResolvePaths(cfg.DeniedExtra, templateVars)
 		if err != nil {
 			return nil, nil, err
 		}
-		policy.Denied = append(policy.Denied, validateAndFilterPaths(extra, &warnings)...)
+		policy.ExtraDenied = append(policy.ExtraDenied, validateAndFilterPaths(extra, &warnings)...)
 	}
 
 	if cfg.Network != nil && cfg.Network.Mode != "" {
@@ -109,6 +93,125 @@ func PolicyFromConfig(
 	}
 
 	return &policy, warnings, nil
+}
+
+// resolveGuards resolves guard names from config fields.
+// Returns (nil, warnings, nil) if no guard config is specified (use defaults).
+func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
+	hasGuards := len(cfg.Guards) > 0
+	hasGuardsExtra := len(cfg.GuardsExtra) > 0
+	hasUnguard := len(cfg.Unguard) > 0
+
+	if !hasGuards && !hasGuardsExtra && !hasUnguard {
+		return nil, nil, nil // use defaults
+	}
+
+	var warnings []string
+	var guardNames []string
+
+	if hasGuards && hasGuardsExtra {
+		warnings = append(warnings,
+			"sandbox: both guards and guards_extra are set; guards_extra is ignored when guards is specified",
+		)
+	}
+
+	if hasGuards {
+		// Always guards + listed guards (replaces default set)
+		alwaysNames := alwaysGuardNames()
+		guardNames = append(guardNames, alwaysNames...)
+		for _, name := range cfg.Guards {
+			expanded := modules.ExpandGuardName(name)
+			for _, n := range expanded {
+				if !containsString(alwaysNames, n) {
+					guardNames = append(guardNames, n)
+				}
+			}
+		}
+	} else if hasGuardsExtra {
+		// Default + extra
+		guardNames = append(guardNames, modules.DefaultGuardNames()...)
+		for _, name := range cfg.GuardsExtra {
+			expanded := modules.ExpandGuardName(name)
+			guardNames = append(guardNames, expanded...)
+		}
+	} else {
+		// Only unguard specified -- start from defaults
+		guardNames = append(guardNames, modules.DefaultGuardNames()...)
+	}
+
+	// Validate all guard names exist
+	for _, name := range guardNames {
+		if _, ok := modules.GuardByName(name); !ok {
+			return nil, nil, fmt.Errorf("sandbox: unknown guard name %q", name)
+		}
+	}
+
+	// Apply unguard
+	if hasUnguard {
+		for _, name := range cfg.Unguard {
+			expanded := modules.ExpandGuardName(name)
+			for _, n := range expanded {
+				g, ok := modules.GuardByName(n)
+				if !ok {
+					return nil, nil, fmt.Errorf("sandbox: unknown guard name %q in unguard", n)
+				}
+				if g.Type() == "always" {
+					return nil, nil, fmt.Errorf("sandbox: cannot unguard %q (type %q is always-on)", n, g.Type())
+				}
+				guardNames = removeString(guardNames, n)
+			}
+		}
+	}
+
+	// Deduplicate while preserving order
+	guardNames = dedup(guardNames)
+
+	return guardNames, warnings, nil
+}
+
+// alwaysGuardNames returns names of all "always" type guards.
+func alwaysGuardNames() []string {
+	var names []string
+	for _, g := range modules.AllGuards() {
+		if g.Type() == "always" {
+			names = append(names, g.Name())
+		}
+	}
+	return names
+}
+
+// containsString checks if a string slice contains a value.
+func containsString(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// removeString removes all occurrences of s from slice.
+func removeString(slice []string, s string) []string {
+	var result []string
+	for _, v := range slice {
+		if v != s {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// dedup removes duplicates while preserving order.
+func dedup(slice []string) []string {
+	seen := make(map[string]bool, len(slice))
+	var result []string
+	for _, s := range slice {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // isGlobPattern reports whether path contains any glob metacharacters.
@@ -233,12 +336,61 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 		)
 	}
 
+	// Warn if both guards and guards_extra are set
+	if len(cfg.Guards) > 0 && len(cfg.GuardsExtra) > 0 {
+		result.Warnings = append(result.Warnings,
+			"sandbox: both guards and guards_extra are set; guards_extra is ignored when guards is specified",
+		)
+	}
+
 	// Warn if writable contains home dir (too broad)
 	for _, w := range cfg.Writable {
 		if w == "~" || w == "~/" || isHomeDirPath(w) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
 				"sandbox.writable: %q includes the entire home directory, which is very broad", w,
 			))
+		}
+	}
+
+	// Validate guard names
+	for _, name := range cfg.Guards {
+		expanded := modules.ExpandGuardName(name)
+		for _, n := range expanded {
+			if _, ok := modules.GuardByName(n); !ok {
+				result.Errors = append(result.Errors, fmt.Sprintf(
+					"sandbox.guards: unknown guard name %q", n,
+				))
+			}
+		}
+	}
+
+	for _, name := range cfg.GuardsExtra {
+		expanded := modules.ExpandGuardName(name)
+		for _, n := range expanded {
+			if _, ok := modules.GuardByName(n); !ok {
+				result.Errors = append(result.Errors, fmt.Sprintf(
+					"sandbox.guards_extra: unknown guard name %q", n,
+				))
+			}
+		}
+	}
+
+	// Validate unguard names and type restriction
+	for _, name := range cfg.Unguard {
+		expanded := modules.ExpandGuardName(name)
+		for _, n := range expanded {
+			g, ok := modules.GuardByName(n)
+			if !ok {
+				result.Errors = append(result.Errors, fmt.Sprintf(
+					"sandbox.unguard: unknown guard name %q", n,
+				))
+				continue
+			}
+			if g.Type() == "always" {
+				result.Errors = append(result.Errors, fmt.Sprintf(
+					"sandbox.unguard: cannot unguard %q (type %q is always-on)", n, g.Type(),
+				))
+			}
 		}
 	}
 
@@ -294,8 +446,8 @@ func ValidateSandboxRef(ref *config.SandboxRef, sandboxes map[string]config.Sand
 
 // ResolveSandboxRef resolves a SandboxRef into a *SandboxPolicy suitable for
 // passing to PolicyFromConfig. Returns:
-//   - (nil, false, nil) when ref is nil → use default policy
-//   - (nil, true, nil) when sandbox is disabled → skip sandbox entirely
+//   - (nil, false, nil) when ref is nil -> use default policy
+//   - (nil, true, nil) when sandbox is disabled -> skip sandbox entirely
 //   - (*SandboxPolicy, false, nil) when resolved to an inline or named profile
 //   - (nil, false, err) on error (e.g. unknown profile name)
 func ResolveSandboxRef(ref *config.SandboxRef, sandboxes map[string]config.SandboxPolicy) (*config.SandboxPolicy, bool, error) {

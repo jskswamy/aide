@@ -9,7 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "dev"
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 func main() {
 	var agentFlag string
@@ -54,6 +58,8 @@ agents on your PATH.`,
 			return l.Launch(cwd, agentFlag, args, cleanEnv, resolve)
 		},
 	}
+
+	rootCmd.SetVersionTemplate("aide " + version + " (commit: " + commit + ", built: " + date + ")\n")
 
 	rootCmd.Flags().StringVar(&agentFlag, "agent", "", "Override which agent to launch")
 	rootCmd.Flags().BoolVar(&cleanEnv, "clean-env", false, "Start agent with only essential environment variables")

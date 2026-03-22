@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
@@ -113,5 +114,68 @@ func TestNetworkWithPorts_OpenModeIgnoresPorts(t *testing.T) {
 	// Open mode should just emit (allow network*), ignoring port opts
 	if !strings.Contains(output, "(allow network*)") {
 		t.Error("expected (allow network*) for open mode")
+	}
+}
+
+func TestGuard_Network_Metadata(t *testing.T) {
+	g := modules.NetworkGuard()
+
+	if g.Name() != "network" {
+		t.Errorf("expected Name() = %q, got %q", "network", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() == "" {
+		t.Error("expected non-empty Description()")
+	}
+}
+
+func TestGuard_Network_Open(t *testing.T) {
+	g := modules.NetworkGuard()
+	ctx := &seatbelt.Context{Network: modules.NetworkOpen}
+	output := renderTestRules(g.Rules(ctx))
+
+	if !strings.Contains(output, "(allow network*)") {
+		t.Error("expected (allow network*) for NetworkOpen")
+	}
+}
+
+func TestGuard_Network_Outbound(t *testing.T) {
+	g := modules.NetworkGuard()
+	ctx := &seatbelt.Context{Network: modules.NetworkOutbound}
+	output := renderTestRules(g.Rules(ctx))
+
+	if !strings.Contains(output, "(allow network-outbound)") {
+		t.Error("expected (allow network-outbound) for NetworkOutbound")
+	}
+}
+
+func TestGuard_Network_None(t *testing.T) {
+	g := modules.NetworkGuard()
+	ctx := &seatbelt.Context{Network: modules.NetworkNone}
+	rules := g.Rules(ctx)
+
+	if len(rules) != 0 {
+		t.Errorf("expected no rules for NetworkNone, got %d", len(rules))
+	}
+}
+
+func TestGuard_Network_AllowPorts(t *testing.T) {
+	g := modules.NetworkGuard()
+	ctx := &seatbelt.Context{
+		Network:    modules.NetworkOutbound,
+		AllowPorts: []int{443, 53},
+	}
+	output := renderTestRules(g.Rules(ctx))
+
+	if !strings.Contains(output, "(deny network-outbound)") {
+		t.Error("expected deny network-outbound before allow rules")
+	}
+	if !strings.Contains(output, `(allow network-outbound (remote tcp "*:443"))`) {
+		t.Error("expected allow for TCP port 443")
+	}
+	if !strings.Contains(output, `(allow network-outbound (remote udp "*:53"))`) {
+		t.Error("expected allow for UDP port 53 (DNS)")
 	}
 }

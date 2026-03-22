@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 // AgentConfigResolver returns directories an agent needs write access to,
@@ -19,6 +22,20 @@ var agentConfigResolvers = map[string]AgentConfigResolver{
 	"goose":  gooseConfigDirs,
 	"amp":    ampConfigDirs,
 	"gemini": geminiConfigDirs,
+}
+
+// agentModuleResolvers maps agent base names to their seatbelt module factory.
+var agentModuleResolvers = map[string]func() seatbelt.Module{
+	"claude": modules.ClaudeAgent,
+}
+
+// ResolveAgentModule returns the seatbelt module for the named agent, or nil.
+func ResolveAgentModule(agentName string) seatbelt.Module {
+	base := filepath.Base(agentName)
+	if factory, ok := agentModuleResolvers[base]; ok {
+		return factory()
+	}
+	return nil
 }
 
 // ResolveAgentConfigDirs returns directories the named agent needs

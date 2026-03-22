@@ -4,6 +4,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 // Sandbox applies a security policy to a command before execution.
@@ -30,15 +33,23 @@ type Sandbox interface {
 
 // Policy describes the security boundary for an agent process.
 type Policy struct {
-	// Filesystem paths the agent may write to.
-	Writable []string
+	// Guards lists the active guard names (resolved from registry).
+	Guards []string
 
-	// Filesystem paths the agent may read (but not write).
-	Readable []string
+	// AgentModule is the agent-specific seatbelt module (e.g. ClaudeAgent).
+	AgentModule seatbelt.Module
 
-	// Filesystem paths the agent must not access at all.
-	// Denied rules take precedence over Writable/Readable.
-	Denied []string
+	// ProjectRoot is the git root (or cwd if not a repo).
+	ProjectRoot string
+
+	// RuntimeDir is the ephemeral $XDG_RUNTIME_DIR/aide-<pid>/ directory.
+	RuntimeDir string
+
+	// TempDir is the os.TempDir() result.
+	TempDir string
+
+	// Env is the environment variables passed to the agent.
+	Env []string
 
 	// Network mode: "outbound", "none", "unrestricted".
 	Network NetworkMode
@@ -48,6 +59,9 @@ type Policy struct {
 
 	// DenyPorts blocks outbound connections to these ports (blacklist).
 	DenyPorts []int
+
+	// ExtraDenied holds user-configured denied paths from config.
+	ExtraDenied []string
 
 	// Whether the agent may spawn child processes.
 	AllowSubprocess bool
@@ -70,35 +84,21 @@ const (
 )
 
 // DefaultPolicy returns the sandbox policy applied when no sandbox: block
-// exists in the context config (DD-15).
+// exists in the context config.
 //
 // Parameters:
 //
 //	projectRoot — git root (or cwd if not a repo)
 //	runtimeDir  — $XDG_RUNTIME_DIR/aide-<pid>/
-//	homeDir     — user's home directory (~)
 //	tempDir     — os.TempDir() result
-func DefaultPolicy(projectRoot, runtimeDir, homeDir, tempDir string) Policy {
+//	env         — environment variables for the agent
+func DefaultPolicy(projectRoot, runtimeDir, tempDir string, env []string) Policy {
 	return Policy{
-		Writable: []string{
-			projectRoot,
-			runtimeDir,
-			tempDir,
-		},
-		Readable: []string{
-			homeDir,
-			projectRoot,
-		},
-		Denied: []string{
-			filepath.Join(homeDir, ".ssh/id_*"),
-			filepath.Join(homeDir, ".aws/credentials"),
-			filepath.Join(homeDir, ".azure"),
-			filepath.Join(homeDir, ".config/gcloud"),
-			filepath.Join(homeDir, ".config/aide/secrets"),
-			filepath.Join(homeDir, "Library/Application Support/Google/Chrome"),
-			filepath.Join(homeDir, ".mozilla"),
-			filepath.Join(homeDir, "snap/chromium"),
-		},
+		Guards:          modules.DefaultGuardNames(),
+		ProjectRoot:     projectRoot,
+		RuntimeDir:      runtimeDir,
+		TempDir:         tempDir,
+		Env:             env,
 		Network:         NetworkOutbound,
 		AllowSubprocess: true,
 		CleanEnv:        false,
@@ -138,7 +138,6 @@ func expandGlobs(patterns []string) []string {
 	}
 	return result
 }
-
 
 // filterEnv returns only essential env vars when CleanEnv is true (DD-17).
 func filterEnv(env []string) []string {

@@ -32,9 +32,9 @@ func TestLinuxSandbox_ApplyBwrap_BasicArgs(t *testing.T) {
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo", "hello")
 	policy := Policy{
-		Writable:        []string{"/tmp/project"},
-		Readable:        []string{"/usr", "/etc"},
-		Denied:          []string{},
+		ProjectRoot:     "/tmp/project",
+		RuntimeDir:      "/tmp/rt",
+		TempDir:         "/tmp",
 		Network:         NetworkOutbound,
 		AllowSubprocess: true,
 		CleanEnv:        false,
@@ -59,11 +59,6 @@ func TestLinuxSandbox_ApplyBwrap_BasicArgs(t *testing.T) {
 	// Check writable bind
 	if !strings.Contains(args, "--bind /tmp/project /tmp/project") {
 		t.Errorf("missing --bind for writable path in: %s", args)
-	}
-
-	// Check readable ro-bind
-	if !strings.Contains(args, "--ro-bind /usr /usr") {
-		t.Errorf("missing --ro-bind for readable path in: %s", args)
 	}
 
 	// Check original command is after --
@@ -166,7 +161,7 @@ func TestLinuxSandbox_Apply_FallsBackGracefully(t *testing.T) {
 	// When neither Landlock nor bwrap is available, Apply should not error
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo", "test")
-	policy := DefaultPolicy("/tmp/proj", "/tmp/runtime", "/root", "/tmp")
+	policy := DefaultPolicy("/tmp/proj", "/tmp/runtime", "/tmp", nil)
 
 	// This test exercises the full Apply path.
 	// On systems with bwrap (our devcontainer), it will use bwrap.
@@ -182,8 +177,9 @@ func TestLandlock_PortFiltering_RewritesCmd(t *testing.T) {
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo", "hello")
 	policy := Policy{
-		Writable:        []string{"/tmp/project"},
-		Readable:        []string{"/usr"},
+		ProjectRoot:     "/tmp/project",
+		RuntimeDir:      "/tmp/rt",
+		TempDir:         "/tmp",
 		Network:         NetworkOutbound,
 		AllowPorts:      []int{443},
 		AllowSubprocess: true,
@@ -223,8 +219,9 @@ func TestLandlock_PortFiltering_DenyPorts(t *testing.T) {
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo", "hello")
 	policy := Policy{
-		Writable:        []string{"/tmp/project"},
-		Readable:        []string{"/usr"},
+		ProjectRoot:     "/tmp/project",
+		RuntimeDir:      "/tmp/rt",
+		TempDir:         "/tmp",
 		Network:         NetworkOutbound,
 		DenyPorts:       []int{22, 25},
 		AllowSubprocess: true,
@@ -252,8 +249,9 @@ func TestBwrap_PortFiltering_Warning(t *testing.T) {
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo", "hello")
 	policy := Policy{
-		Writable:        []string{"/tmp/project"},
-		Readable:        []string{"/usr"},
+		ProjectRoot:     "/tmp/project",
+		RuntimeDir:      "/tmp/rt",
+		TempDir:         "/tmp",
 		Network:         NetworkOutbound,
 		AllowPorts:      []int{443},
 		AllowSubprocess: true,

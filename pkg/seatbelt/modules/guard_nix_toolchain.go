@@ -1,4 +1,4 @@
-// Nix toolchain module for macOS Seatbelt profiles.
+// Nix toolchain guard for macOS Seatbelt profiles.
 //
 // Custom rules for Nix package manager paths.
 
@@ -6,14 +6,20 @@ package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 
-type nixToolchainModule struct{}
+type nixToolchainGuard struct{}
+
+// NixToolchainGuard returns a Guard with Nix package manager sandbox rules.
+func NixToolchainGuard() seatbelt.Guard { return &nixToolchainGuard{} }
 
 // NixToolchain returns a module with Nix package manager sandbox rules.
-func NixToolchain() seatbelt.Module { return &nixToolchainModule{} }
+// Deprecated: use NixToolchainGuard instead.
+func NixToolchain() seatbelt.Module { return &nixToolchainGuard{} }
 
-func (m *nixToolchainModule) Name() string { return "Nix Toolchain" }
+func (g *nixToolchainGuard) Name() string        { return "nix-toolchain" }
+func (g *nixToolchainGuard) Type() string        { return "always" }
+func (g *nixToolchainGuard) Description() string { return "Nix store, system paths, and user profile" }
 
-func (m *nixToolchainModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 
 	return []seatbelt.Rule{

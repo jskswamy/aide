@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 func TestGenerateSeatbeltProfile_DenyDefault(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkNone,
-		AllowSubprocess: false,
+		Guards:  modules.DefaultGuardNames(),
+		Network: NetworkNone,
 	}
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
@@ -30,9 +32,9 @@ func TestGenerateSeatbeltProfile_DenyDefault(t *testing.T) {
 func TestGenerateSeatbeltProfile_WritablePaths(t *testing.T) {
 	dir := t.TempDir()
 	policy := Policy{
-		Writable:        []string{dir},
-		Network:         NetworkNone,
-		AllowSubprocess: false,
+		Guards:      modules.DefaultGuardNames(),
+		ProjectRoot: dir,
+		Network:     NetworkNone,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -56,9 +58,9 @@ func TestGenerateSeatbeltProfile_DeniedPaths(t *testing.T) {
 		t.Fatalf("failed to create denied dir: %v", err)
 	}
 	policy := Policy{
-		Denied:          []string{denied},
-		Network:         NetworkNone,
-		AllowSubprocess: false,
+		Guards:      modules.DefaultGuardNames(),
+		ExtraDenied: []string{denied},
+		Network:     NetworkNone,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -77,8 +79,8 @@ func TestGenerateSeatbeltProfile_DeniedPaths(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_NetworkOutbound(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkOutbound,
-		AllowSubprocess: false,
+		Guards:  modules.DefaultGuardNames(),
+		Network: NetworkOutbound,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -94,8 +96,8 @@ func TestGenerateSeatbeltProfile_NetworkOutbound(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_NetworkNone(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkNone,
-		AllowSubprocess: false,
+		Guards:  modules.DefaultGuardNames(),
+		Network: NetworkNone,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -111,8 +113,8 @@ func TestGenerateSeatbeltProfile_NetworkNone(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_NetworkUnrestricted(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkUnrestricted,
-		AllowSubprocess: false,
+		Guards:  modules.DefaultGuardNames(),
+		Network: NetworkUnrestricted,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -126,53 +128,10 @@ func TestGenerateSeatbeltProfile_NetworkUnrestricted(t *testing.T) {
 	}
 }
 
-func TestGenerateSeatbeltProfile_NoSubprocess(t *testing.T) {
-	policy := Policy{
-		Network:         NetworkNone,
-		AllowSubprocess: false,
-	}
-
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// With deny-default + SystemRuntime, process-fork and process-exec are always
-	// allowed (SystemRuntime includes them). AllowSubprocess is handled at the
-	// consumer level, not in profile generation.
-	if !strings.Contains(profile, "(allow process-fork)") {
-		t.Error("profile should contain (allow process-fork) from SystemRuntime")
-	}
-	if !strings.Contains(profile, "(allow process-exec)") {
-		t.Error("profile should contain (allow process-exec) from SystemRuntime")
-	}
-}
-
-func TestGenerateSeatbeltProfile_WithSubprocess(t *testing.T) {
-	policy := Policy{
-		Network:         NetworkNone,
-		AllowSubprocess: true,
-	}
-
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Verify profile is valid with deny-default
-	if !strings.Contains(profile, "(deny default)") {
-		t.Error("profile should contain (deny default)")
-	}
-	// Process rules should be present from SystemRuntime
-	if !strings.Contains(profile, "(allow process-fork)") {
-		t.Error("profile should contain (allow process-fork) from SystemRuntime")
-	}
-}
-
 func TestGenerateSeatbeltProfile_SystemEssentials(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkNone,
-		AllowSubprocess: false,
+		Guards:  modules.DefaultGuardNames(),
+		Network: NetworkNone,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -205,9 +164,9 @@ func TestGenerateSeatbeltProfile_GlobExpansion(t *testing.T) {
 	}
 
 	policy := Policy{
-		Denied:          []string{filepath.Join(dir, "id_*")},
-		Network:         NetworkNone,
-		AllowSubprocess: false,
+		Guards:      modules.DefaultGuardNames(),
+		ExtraDenied: []string{filepath.Join(dir, "id_*")},
+		Network:     NetworkNone,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -227,6 +186,7 @@ func TestDarwinSandbox_Apply_RewritesCmd(t *testing.T) {
 	runtimeDir := t.TempDir()
 	cmd := exec.Command("/usr/bin/echo", "hello", "world")
 	policy := Policy{
+		Guards:          modules.DefaultGuardNames(),
 		Network:         NetworkNone,
 		AllowSubprocess: true,
 	}
@@ -281,9 +241,9 @@ func TestDarwinSandbox_Apply_RewritesCmd(t *testing.T) {
 
 func TestSeatbeltProfile_PortFiltering(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkOutbound,
-		AllowPorts:      []int{443, 53},
-		AllowSubprocess: false,
+		Guards:     modules.DefaultGuardNames(),
+		Network:    NetworkOutbound,
+		AllowPorts: []int{443, 53},
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -305,9 +265,9 @@ func TestSeatbeltProfile_PortFiltering(t *testing.T) {
 
 func TestSeatbeltProfile_DenyPorts(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkOutbound,
-		DenyPorts:       []int{8080},
-		AllowSubprocess: false,
+		Guards:    modules.DefaultGuardNames(),
+		Network:   NetworkOutbound,
+		DenyPorts: []int{8080},
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -322,8 +282,8 @@ func TestSeatbeltProfile_DenyPorts(t *testing.T) {
 
 func TestSeatbeltProfile_NoPortFiltering(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkOutbound,
-		AllowSubprocess: false,
+		Guards:  modules.DefaultGuardNames(),
+		Network: NetworkOutbound,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -340,9 +300,9 @@ func TestSeatbeltProfile_NoPortFiltering(t *testing.T) {
 
 func TestSeatbeltProfile_PortFiltering_DNS(t *testing.T) {
 	policy := Policy{
-		Network:         NetworkOutbound,
-		AllowPorts:      []int{53},
-		AllowSubprocess: false,
+		Guards:     modules.DefaultGuardNames(),
+		Network:    NetworkOutbound,
+		AllowPorts: []int{53},
 	}
 
 	profile, err := generateSeatbeltProfile(policy)
@@ -369,9 +329,9 @@ func TestDarwinSandbox_Apply_CleanEnv(t *testing.T) {
 		"TERM=xterm",
 	}
 	policy := Policy{
-		Network:         NetworkNone,
-		AllowSubprocess: false,
-		CleanEnv:        true,
+		Guards:   modules.DefaultGuardNames(),
+		Network:  NetworkNone,
+		CleanEnv: true,
 	}
 
 	s := &darwinSandbox{}

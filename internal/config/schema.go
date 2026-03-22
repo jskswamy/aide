@@ -12,6 +12,8 @@ type Config struct {
 	Contexts       map[string]Context         `yaml:"contexts,omitempty"`
 	DefaultContext string                     `yaml:"default_context,omitempty"`
 	Sandboxes      map[string]SandboxPolicy   `yaml:"sandboxes,omitempty"`
+	CustomGuards   map[string]CustomGuard     `yaml:"custom_guards,omitempty"`
+	GuardTypes     map[string]GuardType       `yaml:"guard_types,omitempty"`
 	Preferences    *Preferences               `yaml:"preferences,omitempty"`
 
 	// --- Minimal (flat) format fields ---
@@ -116,6 +118,11 @@ type SandboxPolicy struct {
 	Network         *NetworkPolicy `yaml:"network,omitempty"`
 	AllowSubprocess *bool          `yaml:"allow_subprocess,omitempty"`
 	CleanEnv        *bool          `yaml:"clean_env,omitempty"`
+
+	// Guard configuration
+	Guards      []string `yaml:"guards,omitempty"`
+	GuardsExtra []string `yaml:"guards_extra,omitempty"`
+	Unguard     []string `yaml:"unguard,omitempty"`
 }
 
 // UnmarshalYAML handles both `sandbox: false` (bool) and `sandbox: { ... }` (map).
@@ -189,6 +196,21 @@ func (s *SandboxRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	s.Inline = &sp
 	return nil
+}
+
+// CustomGuard defines a user-specified guard in the config file.
+type CustomGuard struct {
+	Type        string   `yaml:"type,omitempty"`
+	Description string   `yaml:"description,omitempty"`
+	Paths       []string `yaml:"paths"`
+	EnvOverride string   `yaml:"env_override,omitempty"`
+	Allowed     []string `yaml:"allowed,omitempty"`
+}
+
+// GuardType defines a custom guard type with behavior and description.
+type GuardType struct {
+	Behavior    string `yaml:"behavior"`
+	Description string `yaml:"description"`
 }
 
 // ProjectOverride holds per-project override data from .aide.yaml.

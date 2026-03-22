@@ -61,44 +61,46 @@ func (d *darwinSandbox) GenerateProfile(policy Policy) (string, error) {
 }
 
 // generateSeatbeltProfile builds a Seatbelt .sb profile string from a Policy
-// by composing modules from the pkg/seatbelt library.
+// by composing modules from the guard registry.
 func generateSeatbeltProfile(policy Policy) (string, error) {
 	homeDir, _ := os.UserHomeDir()
 
-	p := seatbelt.New(homeDir).
-		Use(
-			modules.Base(),
-			modules.SystemRuntime(),
-			networkModule(policy),
-			modules.Filesystem(modules.FilesystemConfig{
-				Writable: policy.Writable,
-				Readable: policy.Readable,
-				Denied:   policy.Denied,
-			}),
-			modules.NodeToolchain(),
-			modules.NixToolchain(),
-			modules.GitIntegration(),
-			modules.KeychainIntegration(),
-			modules.ClaudeAgent(),
-		)
-
-	return p.Render()
-}
-
-// networkModule maps the sandbox package's NetworkMode to a seatbelt network module.
-func networkModule(policy Policy) seatbelt.Module {
+	// Map sandbox.NetworkMode (string) to seatbelt.NetworkMode (int)
+	var netMode seatbelt.NetworkMode
 	switch policy.Network {
 	case NetworkNone:
-		return modules.Network(modules.NetworkNone)
+		netMode = seatbelt.NetworkNone
 	case NetworkOutbound:
-		if len(policy.AllowPorts) > 0 || len(policy.DenyPorts) > 0 {
-			return modules.NetworkWithPorts(modules.NetworkOutbound, modules.PortOpts{
-				AllowPorts: policy.AllowPorts,
-				DenyPorts:  policy.DenyPorts,
-			})
-		}
-		return modules.Network(modules.NetworkOutbound)
+		netMode = seatbelt.NetworkOutbound
 	default:
-		return modules.Network(modules.NetworkOpen)
+		netMode = seatbelt.NetworkOpen
 	}
+
+	// Resolve active guards from names
+	guardModules := modules.ResolveActiveGuards(policy.Guards)
+
+	// Create profile with context
+	p := seatbelt.New(homeDir).
+		WithContext(func(ctx *seatbelt.Context) {
+			ctx.ProjectRoot = policy.ProjectRoot
+			ctx.TempDir = policy.TempDir
+			ctx.RuntimeDir = policy.RuntimeDir
+			ctx.Env = policy.Env
+			ctx.Network = netMode
+			ctx.AllowPorts = policy.AllowPorts
+			ctx.DenyPorts = policy.DenyPorts
+			ctx.ExtraDenied = policy.ExtraDenied
+		})
+
+	// Use each guard module
+	for _, g := range guardModules {
+		p.Use(g)
+	}
+
+	// Use agent module if set
+	if policy.AgentModule != nil {
+		p.Use(policy.AgentModule)
+	}
+
+	return p.Render()
 }

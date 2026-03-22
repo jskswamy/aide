@@ -14,17 +14,58 @@ type Module interface {
 	Rules(ctx *Context) []Rule
 }
 
+// Guard is a Module with metadata for the guard system.
+type Guard interface {
+	Module
+	// Type returns the guard type: "always", "default", or "opt-in".
+	Type() string
+	// Description returns a human-readable description shown in CLI output.
+	Description() string
+}
+
+// NetworkMode controls the level of network access.
+type NetworkMode int
+
+const (
+	// NetworkOpen allows all network traffic (inbound + outbound).
+	NetworkOpen NetworkMode = iota
+	// NetworkOutbound allows outbound connections only.
+	NetworkOutbound
+	// NetworkNone denies all network traffic (default-deny covers it).
+	NetworkNone
+)
+
 // Context provides runtime information to modules.
 type Context struct {
 	HomeDir     string
 	ProjectRoot string
 	TempDir     string
 	RuntimeDir  string
+	Env         []string    // for env var overrides (AWS_CONFIG_FILE, KUBECONFIG, etc.)
+	GOOS        string      // for OS-specific paths ("darwin", "linux")
+
+	// Fields consumed by specific always-guards
+	Network     NetworkMode // consumed by network guard
+	AllowPorts  []int       // consumed by network guard
+	DenyPorts   []int       // consumed by network guard
+	ExtraDenied []string    // consumed by filesystem guard (user-configured denied: paths)
 }
 
 // HomePath returns homeDir joined with a relative path.
 func (c *Context) HomePath(rel string) string {
 	return filepath.Join(c.HomeDir, rel)
+}
+
+// EnvLookup searches ctx.Env for a KEY=VALUE entry and returns the value.
+// Returns ("", false) if not found. Guards use this instead of os.Getenv().
+func (c *Context) EnvLookup(key string) (string, bool) {
+	prefix := key + "="
+	for _, e := range c.Env {
+		if strings.HasPrefix(e, prefix) {
+			return e[len(prefix):], true
+		}
+	}
+	return "", false
 }
 
 // Rule represents a Seatbelt rule or comment block.

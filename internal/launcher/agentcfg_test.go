@@ -182,6 +182,24 @@ func TestAmpConfigDirs_Defaults(t *testing.T) {
 	}
 }
 
+// --- Gemini ---
+
+func TestGeminiConfigDirs_EnvOverride(t *testing.T) {
+	env := []string{"GEMINI_HOME=/custom/gemini"}
+	dirs := geminiConfigDirs(env, "/home/user")
+	if len(dirs) != 1 || dirs[0] != "/custom/gemini" {
+		t.Errorf("expected [/custom/gemini], got %v", dirs)
+	}
+}
+
+func TestGeminiConfigDirs_Default(t *testing.T) {
+	homeDir := t.TempDir()
+	dirs := geminiConfigDirs(nil, homeDir)
+	if len(dirs) != 1 {
+		t.Errorf("expected 1 dir, got %d: %v", len(dirs), dirs)
+	}
+}
+
 // --- ResolveAgentConfigDirs ---
 
 func TestResolveAgentConfigDirs_UnknownAgent(t *testing.T) {

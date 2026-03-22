@@ -191,4 +191,4 @@ Available modules: `Base`, `SystemRuntime`, `Network`, `Filesystem`, `NodeToolch
 
 ## Attribution
 
-The Seatbelt rules in `pkg/seatbelt` (system runtime operations, Mach service lookups, toolchain paths, integration profiles) are ported from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) by Eugene Goldin. agent-safehouse provides composable Seatbelt policy profiles for AI coding agents and has validated profiles for 14 agents.
+The Seatbelt rules in `pkg/seatbelt` are ported as a Go library from the shell scripts in [agent-safehouse](https://github.com/eugene1g/agent-safehouse) by Eugene Goldin. agent-safehouse provides composable Seatbelt policy profiles for AI coding agents and has validated profiles for 14 agents. The Go port makes these rules available as a library for Go applications building sandbox support.

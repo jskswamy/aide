@@ -18,6 +18,7 @@ var agentConfigResolvers = map[string]AgentConfigResolver{
 	"aider":  aiderConfigDirs,
 	"goose":  gooseConfigDirs,
 	"amp":    ampConfigDirs,
+	"gemini": geminiConfigDirs,
 }
 
 // ResolveAgentConfigDirs returns directories the named agent needs
@@ -87,6 +88,16 @@ func ampConfigDirs(env []string, homeDir string) []string {
 		filepath.Join(homeDir, ".amp"),
 		filepath.Join(homeDir, ".config", "amp"),
 	)
+}
+
+// geminiConfigDirs returns Gemini CLI's config directories.
+// Env override: GEMINI_HOME
+// Default: ~/.gemini
+func geminiConfigDirs(env []string, homeDir string) []string {
+	if dir := envLookup(env, "GEMINI_HOME"); dir != "" {
+		return []string{dir}
+	}
+	return defaultDirs(homeDir, filepath.Join(homeDir, ".gemini"))
 }
 
 // envLookup finds a key in a KEY=VALUE slice.

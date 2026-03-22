@@ -34,6 +34,7 @@ func (s *SyscallExecer) Exec(binary string, args []string, env []string) error {
 var agentYoloFlags = map[string]string{
 	"claude": "--dangerously-skip-permissions",
 	"codex":  "--full-auto",
+	"gemini": "--yolo",
 }
 
 // Launcher orchestrates the full agent launch flow.

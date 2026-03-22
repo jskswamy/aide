@@ -80,7 +80,7 @@ preferences:
 
 ## Agent Definitions
 
-The `agents:` block maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only — credentials and environment variables belong on contexts.
+The `agents:` block maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only. Credentials and environment variables belong on contexts.
 
 Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aider`, `goose`, `amp`.
 
@@ -88,11 +88,11 @@ Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aide
 
 ## Context Fields
 
-- `match:` — list of path or remote rules that activate the context. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against git remote URL). `remote_name:` defaults to `origin`.
-- `agent:` — agent name; must exist in `agents:`.
-- `secret:` — secret file name resolved under `~/.config/aide/secrets/`.
-- `env:` — environment variables passed to the agent; supports Go template syntax for secret injection.
-- `sandbox:` — accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
+- `match:`: list of path or remote rules that activate the context. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against git remote URL). `remote_name:` defaults to `origin`.
+- `agent:`: agent name; must exist in `agents:`.
+- `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
+- `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
+- `sandbox:`: accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
 
 ```yaml
 sandbox:
@@ -108,9 +108,9 @@ sandbox:
 
 The top-level `preferences:` block controls the startup display.
 
-- `show_info:` (bool, default `true`) — show the startup banner before launching the agent.
-- `info_style:` (`compact` | `boxed` | `clean`, default `compact`) — banner style.
-- `info_detail:` (`normal` | `detailed`, default `normal`) — banner verbosity.
+- `show_info:` (bool, default `true`). Show the startup banner before launching the agent.
+- `info_style:` (`compact` | `boxed` | `clean`, default `compact`). Banner style.
+- `info_detail:` (`normal` | `detailed`, default `normal`). Banner verbosity.
 
 Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 

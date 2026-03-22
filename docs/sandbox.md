@@ -162,3 +162,33 @@ aide sandbox test --context myproject
 ```
 
 `aide sandbox show` prints the merged policy (defaults + profile + inline + extra fields). `aide sandbox test` outputs the raw Seatbelt `.sb` profile on macOS or the equivalent Landlock/bwrap configuration on Linux, which is useful for confirming that paths resolve correctly before running an agent.
+
+## Using the Seatbelt Library
+
+The macOS sandbox implementation lives in `pkg/seatbelt`, a standalone Go library. You can import it into your own projects to build Seatbelt profiles without using aide's CLI.
+
+```go
+import (
+    "github.com/jskswamy/aide/pkg/seatbelt"
+    "github.com/jskswamy/aide/pkg/seatbelt/modules"
+)
+
+profile := seatbelt.New(homeDir).Use(
+    modules.Base(),
+    modules.SystemRuntime(),
+    modules.Network(modules.NetworkOpen),
+    modules.Filesystem(modules.FilesystemConfig{
+        Writable: []string{projectRoot, tmpDir},
+        Denied:   []string{"~/.ssh/id_*"},
+    }),
+    modules.NodeToolchain(),
+    modules.ClaudeAgent(),
+)
+sbText, err := profile.Render()
+```
+
+Available modules: `Base`, `SystemRuntime`, `Network`, `Filesystem`, `NodeToolchain`, `NixToolchain`, `GitIntegration`, `KeychainIntegration`, `ClaudeAgent`.
+
+## Attribution
+
+The Seatbelt rules in `pkg/seatbelt` (system runtime operations, Mach service lookups, toolchain paths, integration profiles) are ported from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) by Eugene Goldin. agent-safehouse provides composable Seatbelt policy profiles for AI coding agents and has validated profiles for 14 agents.

@@ -111,7 +111,7 @@ Agents run inside an OS-native sandbox by default. You define the boundary once;
 | Network | Outbound allowed |
 | Subprocesses | Allowed |
 
-Customize per-context or disable entirely. See [docs/sandbox.md](docs/sandbox.md).
+Customize per-context or disable entirely. The macOS Seatbelt rules are ported from [agent-safehouse](https://github.com/eugene1g/agent-safehouse). The `pkg/seatbelt` library is reusable in your own Go projects. See [docs/sandbox.md](docs/sandbox.md).
 
 ## Secrets
 

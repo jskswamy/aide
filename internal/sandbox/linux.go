@@ -33,7 +33,7 @@ func (l *LinuxSandbox) Apply(cmd *exec.Cmd, policy Policy, runtimeDir string) er
 	if bwrapPath, err := exec.LookPath("bwrap"); err == nil {
 		return l.applyBwrap(cmd, policy, bwrapPath)
 	}
-	// Neither available — log warning, proceed unsandboxed
+	// Neither available -- log warning, proceed unsandboxed
 	log.Println("warning: sandboxing unavailable: kernel lacks Landlock and bwrap not on PATH")
 	return nil
 }
@@ -51,6 +51,39 @@ func landlockAvailable() bool {
 		}
 	}
 	return false
+}
+
+// linuxWritable derives writable paths from the guard-based Policy.
+func linuxWritable(policy Policy) []string {
+	var paths []string
+	if policy.ProjectRoot != "" {
+		paths = append(paths, policy.ProjectRoot)
+	}
+	if policy.RuntimeDir != "" {
+		paths = append(paths, policy.RuntimeDir)
+	}
+	if policy.TempDir != "" {
+		paths = append(paths, policy.TempDir)
+	}
+	return paths
+}
+
+// linuxReadable derives readable paths from the guard-based Policy.
+func linuxReadable(policy Policy) []string {
+	homeDir, _ := os.UserHomeDir()
+	var paths []string
+	if homeDir != "" {
+		paths = append(paths, homeDir)
+	}
+	if policy.ProjectRoot != "" {
+		paths = append(paths, policy.ProjectRoot)
+	}
+	return paths
+}
+
+// linuxDenied derives denied paths from the guard-based Policy.
+func linuxDenied(policy Policy) []string {
+	return policy.ExtraDenied
 }
 
 // applyLandlock uses the re-exec pattern to apply Landlock in a child process.
@@ -103,14 +136,13 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 
 	// Build Landlock rules using high-level helpers.
 	// Landlock is default-deny: only explicitly allowed paths are accessible.
-	// Denied paths are implicitly blocked by not appearing in allow lists.
 	var rules []landlock.Rule
 
-	for _, p := range policy.Writable {
+	for _, p := range linuxWritable(policy) {
 		rules = append(rules, landlock.RWDirs(p))
 	}
 
-	for _, p := range policy.Readable {
+	for _, p := range linuxReadable(policy) {
 		rules = append(rules, landlock.RODirs(p))
 	}
 
@@ -142,6 +174,10 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 	var b strings.Builder
 
+	writable := linuxWritable(policy)
+	readable := linuxReadable(policy)
+	denied := linuxDenied(policy)
+
 	b.WriteString("# Linux Sandbox Profile\n")
 	if landlockAvailable() {
 		b.WriteString("# Backend: Landlock\n\n")
@@ -152,22 +188,22 @@ func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 	}
 
 	b.WriteString("## Writable paths\n")
-	for _, p := range policy.Writable {
+	for _, p := range writable {
 		fmt.Fprintf(&b, "  %s\n", p)
 	}
 
 	b.WriteString("\n## Readable paths\n")
-	for _, p := range policy.Readable {
+	for _, p := range readable {
 		fmt.Fprintf(&b, "  %s\n", p)
 	}
 
-	deniedPaths := expandGlobs(policy.Denied)
+	deniedPaths := expandGlobs(denied)
 	if len(deniedPaths) > 0 {
 		b.WriteString("\n## Denied paths\n")
 		for _, p := range deniedPaths {
 			fmt.Fprintf(&b, "  %s\n", p)
 		}
-		if len(deniedPaths) != len(policy.Denied) {
+		if len(deniedPaths) != len(denied) {
 			b.WriteString("\n  # (expanded from globs in denied list)\n")
 		}
 	}
@@ -198,13 +234,17 @@ func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string) error {
 	var bwrapArgs []string
 
+	writable := linuxWritable(policy)
+	readable := linuxReadable(policy)
+	denied := linuxDenied(policy)
+
 	// Writable paths: --bind src src
-	for _, p := range policy.Writable {
+	for _, p := range writable {
 		bwrapArgs = append(bwrapArgs, "--bind", p, p)
 	}
 
 	// Readable paths: --ro-bind src src
-	for _, p := range policy.Readable {
+	for _, p := range readable {
 		bwrapArgs = append(bwrapArgs, "--ro-bind", p, p)
 	}
 
@@ -225,7 +265,7 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 	}
 
 	// Denied paths: mask with empty tmpfs
-	for _, p := range expandGlobs(policy.Denied) {
+	for _, p := range expandGlobs(denied) {
 		if info, err := os.Stat(p); err == nil && info.IsDir() {
 			bwrapArgs = append(bwrapArgs, "--tmpfs", p)
 		}
@@ -237,7 +277,7 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		bwrapArgs = append(bwrapArgs, "--unshare-net")
 	}
 
-	// Port-level filtering is not supported by bwrap — log a warning
+	// Port-level filtering is not supported by bwrap -- log a warning
 	if len(policy.AllowPorts) > 0 || len(policy.DenyPorts) > 0 {
 		log.Println("warning: Port-level filtering not supported by bwrap; using mode-only network policy")
 	}

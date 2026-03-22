@@ -289,10 +289,9 @@ func whichCmd() *cobra.Command {
 				policy, pathWarnings, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, aidectx.ProjectRoot(cwd), "/tmp/aide-preview", homeDir, tempDir)
 				if policyErr == nil && policy != nil {
 					si := &ui.SandboxInfo{
-						Network:       string(policy.Network),
-						WritableCount: len(policy.Writable),
-						ReadableCount: len(policy.Readable),
-						Denied:        policy.Denied,
+						Network:    string(policy.Network),
+						GuardCount: len(policy.Guards),
+						Denied:     policy.ExtraDenied,
 					}
 					if len(policy.AllowPorts) > 0 {
 						portStrs := make([]string, len(policy.AllowPorts))
@@ -304,8 +303,7 @@ func whichCmd() *cobra.Command {
 						si.Ports = "all"
 					}
 					if resolve {
-						si.Writable = policy.Writable
-						si.Readable = policy.Readable
+						si.Guards = policy.Guards
 					}
 					data.Sandbox = si
 					data.Warnings = append(data.Warnings, pathWarnings...)
@@ -2787,9 +2785,8 @@ func sandboxShowCmd() *cobra.Command {
 				}
 			}
 			fmt.Fprintf(out, "Effective sandbox policy (%s):\n", source)
-			fmt.Fprintf(out, "  Writable:   %s\n", strings.Join(policy.Writable, ", "))
-			fmt.Fprintf(out, "  Readable:   %s\n", strings.Join(policy.Readable, ", "))
-			fmt.Fprintf(out, "  Denied:     %s\n", strings.Join(policy.Denied, ", "))
+			fmt.Fprintf(out, "  Guards:     %s\n", strings.Join(policy.Guards, ", "))
+			fmt.Fprintf(out, "  Denied:     %s\n", strings.Join(policy.ExtraDenied, ", "))
 			fmt.Fprintf(out, "  Network:    %s\n", policy.Network)
 			return nil
 		},

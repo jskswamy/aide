@@ -130,12 +130,14 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	// Best-effort cleanup of stale runtime dirs from previous runs.
 	_ = CleanStale()
 
-	homeDir, _ := os.UserHomeDir()
 	tempDir := os.TempDir()
 
-	policy := sandbox.DefaultPolicy(projectRoot, rtDir.Path(), homeDir, tempDir)
-	agentDirs := ResolveAgentConfigDirs(name, os.Environ(), homeDir)
-	policy.Writable = append(policy.Writable, agentDirs...)
+	policy := sandbox.DefaultPolicy(projectRoot, rtDir.Path(), tempDir, os.Environ())
+	policy.AgentModule = ResolveAgentModule(name)
+	// Agent config dirs are now handled by the agent module in the seatbelt profile.
+	// For completeness, resolve them but they are encoded in the module itself.
+	homeDir, _ := os.UserHomeDir()
+	_ = ResolveAgentConfigDirs(name, os.Environ(), homeDir)
 
 	cmd := &exec.Cmd{
 		Path: binary,
@@ -153,11 +155,10 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 		AgentName: name,
 		AgentPath: binary,
 		Sandbox: &ui.SandboxInfo{
-			Network:       string(policy.Network),
-			Ports:         "all",
-			WritableCount: len(policy.Writable),
-			ReadableCount: len(policy.Readable),
-			Denied:        policy.Denied,
+			Network:    string(policy.Network),
+			Ports:      "all",
+			GuardCount: len(policy.Guards),
+			Denied:     policy.ExtraDenied,
 		},
 	}
 	ui.RenderBanner(l.stderr(), "compact", bannerData)

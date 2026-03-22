@@ -201,9 +201,8 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			return fmt.Errorf("building sandbox policy: %w", err)
 		}
 		if policy != nil {
-			// 12b. Add agent-specific writable dirs to sandbox policy
-			agentDirs := ResolveAgentConfigDirs(agentName, env, homeDir)
-			policy.Writable = append(policy.Writable, agentDirs...)
+			// 12b. Set agent module for sandbox profile
+			policy.AgentModule = ResolveAgentModule(agentName)
 
 			cmd := &exec.Cmd{
 				Path: binary,
@@ -397,9 +396,8 @@ func (l *Launcher) buildBannerData(
 		if policy != nil {
 			si := &ui.SandboxInfo{
 				Network:       string(policy.Network),
-				WritableCount: len(policy.Writable),
-				ReadableCount: len(policy.Readable),
-				Denied:        policy.Denied,
+				GuardCount:    len(policy.Guards),
+				Denied:        policy.ExtraDenied,
 			}
 			if len(policy.AllowPorts) > 0 {
 				portStrs := make([]string, len(policy.AllowPorts))
@@ -411,8 +409,7 @@ func (l *Launcher) buildBannerData(
 				si.Ports = "all"
 			}
 			if prefs.InfoDetail == "detailed" {
-				si.Writable = policy.Writable
-				si.Readable = policy.Readable
+				si.Guards = policy.Guards
 			}
 			data.Sandbox = si
 		}

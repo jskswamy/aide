@@ -33,14 +33,12 @@ type BannerData struct {
 
 // SandboxInfo describes sandbox configuration for display.
 type SandboxInfo struct {
-	Disabled      bool
-	Network       string
-	Ports         string   // "all" or "443, 53"
-	WritableCount int
-	ReadableCount int
-	Denied        []string // always listed
-	Writable      []string // nil = show count, populated = list paths
-	Readable      []string // nil = show count, populated = list paths
+	Disabled   bool
+	Network    string
+	Ports      string   // "all" or "443, 53"
+	GuardCount int
+	Denied     []string // user-configured extra denied paths
+	Guards     []string // nil = show count, populated = list names
 }
 
 // RenderBanner renders the banner using the given style. Valid styles are
@@ -117,19 +115,16 @@ func sandboxDeniedLine(info *SandboxInfo) string {
 	return "denied: " + strings.Join(info.Denied, ", ")
 }
 
-// sandboxCountsLine returns writable/readable path info.
+// sandboxCountsLine returns guard info.
 func sandboxCountsLine(info *SandboxInfo) string {
 	if info == nil {
 		return ""
 	}
-	if info.Writable != nil {
-		// detailed mode — list paths
-		return fmt.Sprintf("writable: %s · readable: %s",
-			strings.Join(info.Writable, ", "),
-			strings.Join(info.Readable, ", "))
+	if info.Guards != nil {
+		// detailed mode -- list guard names
+		return fmt.Sprintf("guards: %s", strings.Join(info.Guards, ", "))
 	}
-	return fmt.Sprintf("writable: %d paths · readable: %d paths",
-		info.WritableCount, info.ReadableCount)
+	return fmt.Sprintf("guards: %d active", info.GuardCount)
 }
 
 // RenderCompact renders the compact (default) banner style.

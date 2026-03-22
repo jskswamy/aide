@@ -1,0 +1,174 @@
+package modules_test
+
+import (
+	"testing"
+
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+)
+
+func TestRegistry_AllGuards(t *testing.T) {
+	guards := modules.AllGuards()
+	if len(guards) != 25 {
+		t.Errorf("expected 25 guards, got %d", len(guards))
+	}
+
+	// Verify each guard has a non-empty name and type.
+	for _, g := range guards {
+		if g.Name() == "" {
+			t.Error("guard with empty name found")
+		}
+		if g.Type() == "" {
+			t.Errorf("guard %q has empty type", g.Name())
+		}
+	}
+}
+
+func TestRegistry_GuardByName(t *testing.T) {
+	g, ok := modules.GuardByName("ssh-keys")
+	if !ok {
+		t.Fatal("expected to find guard ssh-keys")
+	}
+	if g.Name() != "ssh-keys" {
+		t.Errorf("expected name %q, got %q", "ssh-keys", g.Name())
+	}
+
+	_, ok = modules.GuardByName("does-not-exist")
+	if ok {
+		t.Error("expected not found for unknown guard name")
+	}
+}
+
+func TestRegistry_GuardsByType(t *testing.T) {
+	always := modules.GuardsByType("always")
+	if len(always) != 8 {
+		t.Errorf("expected 8 always guards, got %d", len(always))
+	}
+	for _, g := range always {
+		if g.Type() != "always" {
+			t.Errorf("guard %q has type %q, expected always", g.Name(), g.Type())
+		}
+	}
+
+	defaults := modules.GuardsByType("default")
+	if len(defaults) != 12 {
+		t.Errorf("expected 12 default guards, got %d", len(defaults))
+	}
+	for _, g := range defaults {
+		if g.Type() != "default" {
+			t.Errorf("guard %q has type %q, expected default", g.Name(), g.Type())
+		}
+	}
+
+	optIn := modules.GuardsByType("opt-in")
+	if len(optIn) != 5 {
+		t.Errorf("expected 5 opt-in guards, got %d", len(optIn))
+	}
+	for _, g := range optIn {
+		if g.Type() != "opt-in" {
+			t.Errorf("guard %q has type %q, expected opt-in", g.Name(), g.Type())
+		}
+	}
+}
+
+func TestRegistry_ExpandGuardName_Cloud(t *testing.T) {
+	names := modules.ExpandGuardName("cloud")
+	if len(names) != 5 {
+		t.Errorf("expected 5 cloud guard names, got %d", len(names))
+	}
+	want := map[string]bool{
+		"cloud-aws":          true,
+		"cloud-gcp":          true,
+		"cloud-azure":        true,
+		"cloud-digitalocean": true,
+		"cloud-oci":          true,
+	}
+	for _, n := range names {
+		if !want[n] {
+			t.Errorf("unexpected cloud guard name %q", n)
+		}
+		delete(want, n)
+	}
+	for n := range want {
+		t.Errorf("missing cloud guard name %q", n)
+	}
+}
+
+func TestRegistry_ExpandGuardName_AllDefault(t *testing.T) {
+	names := modules.ExpandGuardName("all-default")
+	defaults := modules.GuardsByType("default")
+	if len(names) != len(defaults) {
+		t.Errorf("expected %d names for all-default, got %d", len(defaults), len(names))
+	}
+	wantSet := make(map[string]bool, len(defaults))
+	for _, g := range defaults {
+		wantSet[g.Name()] = true
+	}
+	for _, n := range names {
+		if !wantSet[n] {
+			t.Errorf("unexpected name in all-default expansion: %q", n)
+		}
+	}
+}
+
+func TestRegistry_ExpandGuardName_Regular(t *testing.T) {
+	names := modules.ExpandGuardName("ssh-keys")
+	if len(names) != 1 || names[0] != "ssh-keys" {
+		t.Errorf("expected [\"ssh-keys\"], got %v", names)
+	}
+}
+
+func TestRegistry_DefaultGuardNames(t *testing.T) {
+	names := modules.DefaultGuardNames()
+
+	// Should include always and default guards.
+	always := modules.GuardsByType("always")
+	defaults := modules.GuardsByType("default")
+	expected := len(always) + len(defaults)
+	if len(names) != expected {
+		t.Errorf("expected %d default guard names, got %d", expected, len(names))
+	}
+
+	// Should not include opt-in guards.
+	optIn := modules.GuardsByType("opt-in")
+	optInSet := make(map[string]bool, len(optIn))
+	for _, g := range optIn {
+		optInSet[g.Name()] = true
+	}
+	for _, n := range names {
+		if optInSet[n] {
+			t.Errorf("opt-in guard %q should not be in DefaultGuardNames", n)
+		}
+	}
+}
+
+func TestRegistry_ResolveActiveGuards(t *testing.T) {
+	names := []string{"docker", "base", "ssh-keys"}
+	guards := modules.ResolveActiveGuards(names)
+
+	if len(guards) != 3 {
+		t.Fatalf("expected 3 guards, got %d", len(guards))
+	}
+
+	// Should be ordered: always (base) → default (ssh-keys) → opt-in (docker)
+	if guards[0].Name() != "base" {
+		t.Errorf("expected guards[0] = base (always), got %q", guards[0].Name())
+	}
+	if guards[1].Name() != "ssh-keys" {
+		t.Errorf("expected guards[1] = ssh-keys (default), got %q", guards[1].Name())
+	}
+	if guards[2].Name() != "docker" {
+		t.Errorf("expected guards[2] = docker (opt-in), got %q", guards[2].Name())
+	}
+}
+
+func TestRegistry_ResolveActiveGuards_SkipsUnknown(t *testing.T) {
+	names := []string{"unknown-guard", "base", "another-unknown"}
+	guards := modules.ResolveActiveGuards(names)
+
+	if len(guards) != 1 {
+		t.Fatalf("expected 1 guard (only base), got %d", len(guards))
+	}
+	if guards[0].Name() != "base" {
+		t.Errorf("expected guards[0] = base, got %q", guards[0].Name())
+	}
+}

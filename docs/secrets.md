@@ -4,7 +4,7 @@
 
 aide stores API keys and other credentials as YAML files encrypted with [sops](https://github.com/getsops/sops) using [age](https://age-encryption.org/) encryption. Each secret file lives at `~/.config/aide/secrets/<name>.enc.yaml`.
 
-When aide launches, it decrypts the required secret file in-process using the sops Go library. The sops CLI is not required at runtime.
+When aide launches, it decrypts the required secret file in-process using the sops Go library. aide does not require the sops CLI at runtime.
 
 Reference a secret from a context config using the `secret` field:
 
@@ -29,7 +29,7 @@ aide tries the following sources in order and uses the first one it finds:
 aide secrets create personal --age-key age1abc...
 ```
 
-aide opens `$EDITOR` with a YAML template. After you save and close the editor, aide encrypts the file and writes it to the secrets directory. The plaintext is held in a temp file during the editing session and removed immediately after re-encryption.
+aide opens `$EDITOR` with a YAML template. After you save and close the editor, aide encrypts the file and writes it to the secrets directory. aide holds the plaintext in a temp file during the editing session and removes it immediately after re-encryption.
 
 The `--age-key` flag sets the recipient for encryption. To encrypt for multiple recipients, create with one key and then add more via `aide secrets rotate personal --add-key age1...`.
 
@@ -69,14 +69,14 @@ Remove a recipient (for example, when revoking access):
 aide secrets rotate personal --remove-key age1oldkey...
 ```
 
-Rotation re-encrypts the secret for the updated recipient set. The plaintext is decrypted in-process and re-encrypted immediately; it is not written to persistent disk at any point during rotation.
+Rotation re-encrypts the secret for the updated recipient set. aide decrypts the plaintext in-process and re-encrypts immediately, never writing it to persistent disk.
 
 ## Security Guarantees
 
-- Temp files used during editing are removed immediately after re-encryption.
-- Decrypted values live in process memory and are passed to subprocesses as environment variables. They die with the process.
-- The runtime directory is cleaned up by signal handlers on normal and abnormal exit.
-- Any stale runtime directories from previous crashed sessions are removed on the next launch.
+- aide removes temp files immediately after re-encryption.
+- Decrypted values live in process memory and pass to subprocesses as environment variables. They die with the process.
+- Signal handlers clean up the runtime directory on normal and abnormal exit.
+- aide removes stale runtime directories from previous crashed sessions on the next launch.
 
 ## CI and Docker
 

@@ -116,8 +116,8 @@ aide env remove AWS_REGION --context work
 ## Clean Env Mode
 
 Enable with `--clean-env` at launch or `clean_env: true` in the sandbox config.
-The agent starts with only aide-injected vars. Standard vars (`PATH`, `HOME`,
-`SHELL`) are preserved. All other inherited shell environment is stripped:
+The agent starts with only aide-injected vars. aide preserves standard vars (`PATH`, `HOME`,
+`SHELL`) and strips all other inherited shell environment:
 
 ```yaml
 contexts:

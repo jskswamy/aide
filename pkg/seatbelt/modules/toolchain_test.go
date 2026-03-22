@@ -90,13 +90,49 @@ func TestGitIntegration(t *testing.T) {
 	}
 }
 
+func TestGuard_Keychain_Metadata(t *testing.T) {
+	g := modules.KeychainGuard()
+
+	if g.Name() != "keychain" {
+		t.Errorf("expected Name() = %q, got %q", "keychain", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() == "" {
+		t.Error("expected non-empty Description()")
+	}
+}
+
+func TestGuard_Keychain_AllowRules(t *testing.T) {
+	g := modules.KeychainGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
+	output := renderTestRules(g.Rules(ctx))
+
+	paths := []string{
+		`(subpath "/Users/testuser/Library/Keychains")`,
+		`(literal "/Users/testuser/Library/Preferences/com.apple.security.plist")`,
+		`(literal "/Library/Preferences/com.apple.security.plist")`,
+		`(literal "/Library/Keychains/System.keychain")`,
+		"com.apple.SecurityServer",
+		"com.apple.secd",
+		"com.apple.trustd",
+		"com.apple.AppleDatabaseChanged",
+	}
+	for _, p := range paths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected output to contain %q", p)
+		}
+	}
+}
+
 func TestKeychainIntegration(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	m := modules.KeychainIntegration()
 	output := renderTestRules(m.Rules(ctx))
 
-	if m.Name() != "Keychain Integration" {
-		t.Errorf("expected name %q, got %q", "Keychain Integration", m.Name())
+	if m.Name() != "keychain" {
+		t.Errorf("expected name %q, got %q", "keychain", m.Name())
 	}
 
 	// Home keychain paths

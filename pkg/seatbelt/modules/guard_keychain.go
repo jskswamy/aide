@@ -1,4 +1,4 @@
-// Keychain integration module for macOS Seatbelt profiles.
+// Keychain integration guard for macOS Seatbelt profiles.
 //
 // Rules ported from agent-safehouse by Eugene Goldin:
 // https://github.com/eugene1g/agent-safehouse
@@ -8,14 +8,20 @@ package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 
-type keychainIntegrationModule struct{}
+type keychainGuard struct{}
+
+// KeychainGuard returns a Guard with macOS Keychain sandbox rules.
+func KeychainGuard() seatbelt.Guard { return &keychainGuard{} }
 
 // KeychainIntegration returns a module with macOS Keychain sandbox rules.
-func KeychainIntegration() seatbelt.Module { return &keychainIntegrationModule{} }
+// Deprecated: use KeychainGuard instead.
+func KeychainIntegration() seatbelt.Module { return &keychainGuard{} }
 
-func (m *keychainIntegrationModule) Name() string { return "Keychain Integration" }
+func (g *keychainGuard) Name() string        { return "keychain" }
+func (g *keychainGuard) Type() string        { return "always" }
+func (g *keychainGuard) Description() string { return "macOS Keychain read/write and security Mach services" }
 
-func (m *keychainIntegrationModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 
 	return []seatbelt.Rule{

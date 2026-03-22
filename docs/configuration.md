@@ -82,7 +82,7 @@ preferences:
 
 The `agents:` block maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only. Credentials and environment variables belong on contexts.
 
-Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aider`, `goose`, `amp`.
+Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aider`, `goose`, `amp`, `gemini`.
 
 ---
 

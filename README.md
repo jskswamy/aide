@@ -46,7 +46,7 @@ No config file required. If one agent exists on PATH with its API key in the env
 2. aide checks the git remote URL and directory path against your config.
 3. It finds the matching context: agent, credentials, and sandbox policy.
 4. Secrets decrypt in-process via the sops Go library. Nothing hits disk.
-5. aide applies an OS-native sandbox (macOS Seatbelt, Linux Landlock or bubblewrap).
+5. aide applies an OS-native sandbox (macOS Seatbelt). Linux sandbox support is planned but not yet implemented.
 6. aide execs the agent with the resolved environment.
 
 No config file? aide detects your agent on PATH and launches it directly.
@@ -97,7 +97,7 @@ contexts:
 default_context: personal
 ```
 
-Contexts match by git remote URL patterns and directory path globs. The most specific match wins. `default_context` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.
+Contexts match git remote URL patterns and directory path globs. The most specific match wins. `default_context` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.
 
 ## Sandbox
 
@@ -111,7 +111,7 @@ Agents run inside an OS-native sandbox by default. You define the boundary once;
 | Network | Outbound allowed |
 | Subprocesses | Allowed |
 
-Customize per-context or disable entirely. The macOS Seatbelt rules are ported as a Go library from the shell scripts in [agent-safehouse](https://github.com/eugene1g/agent-safehouse). The `pkg/seatbelt` library is reusable in your own Go projects. See [docs/sandbox.md](docs/sandbox.md).
+Customize per-context or disable entirely. The macOS Seatbelt rules port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library. The `pkg/seatbelt` library is reusable in your own Go projects. See [docs/sandbox.md](docs/sandbox.md).
 
 ## Secrets
 
@@ -153,7 +153,7 @@ RUN aide --agent claude -- -p "run tests"
 
 ## Supported Agents
 
-Claude, Codex, Aider, Goose, Amp. Any binary on PATH works as an agent target.
+Claude, Codex, Aider, Goose, Amp, Gemini. Any binary on PATH works as an agent target.
 
 ## Development
 

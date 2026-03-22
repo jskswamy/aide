@@ -76,7 +76,7 @@ sandbox:
     - /tmp/build
 ```
 
-Env variables merge additively; the project override wins on key conflicts. All other fields replace when set.
+Env variables merge additively; the project override wins on key conflicts. All other fields replace the matched value when set.
 
 ## Managing Contexts
 

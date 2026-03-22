@@ -14,7 +14,7 @@ If no `sandbox:` block appears in your config, aide applies a default policy aut
 |------------------|----------------------------------------------|
 | Writable         | Project root, runtime dir, temp dirs         |
 | Readable         | Home directory, system binaries              |
-| Denied           | `~/.ssh/id_*`, `~/.aws`, browser data        |
+| Denied           | `~/.ssh/id_*`, `~/.aws/credentials`, `~/.azure`, `~/.config/gcloud`, `~/.config/aide/secrets`, browser data |
 | Network          | Outbound allowed                             |
 | Subprocesses     | Allowed                                      |
 
@@ -27,8 +27,9 @@ aide auto-detects known agent config directories and adds them to the writable l
 | Claude | `CLAUDE_CONFIG_DIR` | `~/.claude`                           |
 | Codex  | `CODEX_HOME`        | `~/.codex`                            |
 | Aider  | (none)              | `~/.aider`                            |
-| Goose  | `GOOSE_PATH_ROOT`   | `~/.config/goose` (+ XDG dirs)        |
-| Amp    | `AMP_HOME`          | `~/.amp`                              |
+| Goose  | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
+| Amp    | `AMP_HOME`          | `~/.amp`, `~/.config/amp`             |
+| Gemini | `GEMINI_HOME`       | `~/.gemini`                           |
 
 ## Customizing Per-Context
 
@@ -142,10 +143,9 @@ contexts:
 | Platform           | Mechanism                              | Notes                                         |
 |--------------------|----------------------------------------|-----------------------------------------------|
 | macOS              | `sandbox-exec` (Seatbelt)             | Generates a `.sb` profile dynamically at run time |
-| Linux 5.13+        | Landlock (`go-landlock`)              | Native Go, no CGo required                    |
-| Linux (older)      | bubblewrap (`bwrap`)                  | Requires `bwrap` on `PATH`                    |
+| Linux              | —                                      | Planned, not yet implemented                  |
 
-aide selects the mechanism automatically based on the platform and kernel version. No configuration required.
+Currently only macOS is supported. Linux sandbox support (e.g. Landlock, bubblewrap) is planned but not yet implemented.
 
 ## Debugging
 
@@ -161,7 +161,7 @@ aide sandbox test
 aide sandbox test --context myproject
 ```
 
-`aide sandbox show` prints the merged policy (defaults + profile + inline + extra fields). `aide sandbox test` outputs the raw Seatbelt `.sb` profile on macOS or the equivalent Landlock/bwrap configuration on Linux, which is useful for confirming that paths resolve correctly before running an agent.
+`aide sandbox show` prints the merged policy (defaults + profile + inline + extra fields). `aide sandbox test` outputs the raw Seatbelt `.sb` profile on macOS, which is useful for confirming that paths resolve correctly before running an agent.
 
 ## Using the Seatbelt Library
 
@@ -191,4 +191,4 @@ Available modules: `Base`, `SystemRuntime`, `Network`, `Filesystem`, `NodeToolch
 
 ## Attribution
 
-The Seatbelt rules in `pkg/seatbelt` are ported as a Go library from the shell scripts in [agent-safehouse](https://github.com/eugene1g/agent-safehouse) by Eugene Goldin. agent-safehouse provides composable Seatbelt policy profiles for AI coding agents and has validated profiles for 14 agents. The Go port makes these rules available as a library for Go applications building sandbox support.
+The Seatbelt rules in `pkg/seatbelt` port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library by Eugene Goldin. agent-safehouse provides composable Seatbelt policy profiles for AI coding agents and has validated profiles for 14 agents. The Go port makes these rules available as a library for Go applications building sandbox support.

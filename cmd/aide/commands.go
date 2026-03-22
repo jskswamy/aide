@@ -20,6 +20,7 @@ import (
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/ui"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 	"github.com/spf13/cobra"
 )
 
@@ -2681,6 +2682,10 @@ func sandboxCmd() *cobra.Command {
 	cmd.AddCommand(sandboxResetCmd())
 	cmd.AddCommand(sandboxPortsCmd())
 	cmd.AddCommand(sandboxNetworkCmd())
+	cmd.AddCommand(sandboxGuardsCmd())
+	cmd.AddCommand(sandboxGuardCmd())
+	cmd.AddCommand(sandboxUnguardCmd())
+	cmd.AddCommand(sandboxTypesCmd())
 	return cmd
 }
 
@@ -3356,4 +3361,121 @@ func sandboxPortsCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
 	return cmd
+}
+
+func sandboxGuardsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "guards",
+		Short:        "List all guards with type, status, and paths",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			guards := modules.AllGuards()
+			activeSet := make(map[string]bool)
+			for _, n := range modules.DefaultGuardNames() {
+				activeSet[n] = true
+			}
+			fmt.Fprintf(out, "%-20s %-12s %-10s %s\n", "GUARD", "TYPE", "STATUS", "DESCRIPTION")
+			for _, g := range guards {
+				status := "inactive"
+				if activeSet[g.Name()] {
+					status = "active"
+				}
+				fmt.Fprintf(out, "%-20s %-12s %-10s %s\n", g.Name(), g.Type(), status, g.Description())
+			}
+			return nil
+		},
+	}
+}
+
+func sandboxGuardCmd() *cobra.Command {
+	var contextName string
+	cmd := &cobra.Command{
+		Use:          "guard <name>",
+		Short:        "Add a guard to guards_extra for a context's sandbox",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if _, ok := modules.GuardByName(name); !ok {
+				return fmt.Errorf("unknown guard %q (run 'aide sandbox guards' to list available guards)", name)
+			}
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+			sp := ensureInlineSandbox(&ctx)
+			for _, existing := range sp.GuardsExtra {
+				if existing == name {
+					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already in guards_extra for context %q\n", name, ctxName)
+					return nil
+				}
+			}
+			sp.GuardsExtra = append(sp.GuardsExtra, name)
+			cfg.Contexts[ctxName] = ctx
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Added guard %q to guards_extra for context %q\n", name, ctxName)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	return cmd
+}
+
+func sandboxUnguardCmd() *cobra.Command {
+	var contextName string
+	cmd := &cobra.Command{
+		Use:          "unguard <name>",
+		Short:        "Disable a guard for a context's sandbox",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			g, ok := modules.GuardByName(name)
+			if !ok {
+				return fmt.Errorf("unknown guard %q (run 'aide sandbox guards' to list available guards)", name)
+			}
+			if g.Type() == "always" {
+				return fmt.Errorf("guard %q is an always-active guard and cannot be unguarded", name)
+			}
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+			sp := ensureInlineSandbox(&ctx)
+			for _, existing := range sp.Unguard {
+				if existing == name {
+					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already in unguard list for context %q\n", name, ctxName)
+					return nil
+				}
+			}
+			sp.Unguard = append(sp.Unguard, name)
+			cfg.Contexts[ctxName] = ctx
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Added guard %q to unguard list for context %q\n", name, ctxName)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	return cmd
+}
+
+func sandboxTypesCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "types",
+		Short:        "List built-in guard types with their default state and description",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "%-12s %-10s %s\n", "TYPE", "DEFAULT", "DESCRIPTION")
+			fmt.Fprintf(out, "%-12s %-10s %s\n", "always", "on", "Always active; cannot be disabled")
+			fmt.Fprintf(out, "%-12s %-10s %s\n", "default", "on", "Active by default; can be disabled with unguard")
+			fmt.Fprintf(out, "%-12s %-10s %s\n", "opt-in", "off", "Inactive by default; enable with guard")
+			return nil
+		},
+	}
 }

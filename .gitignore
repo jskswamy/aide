@@ -4,6 +4,7 @@
 *.db
 .beads/.beads-credential-key
 .claude/
+!.claude/commands/
 
 # Git worktrees
 .worktrees/

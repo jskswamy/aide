@@ -10,7 +10,7 @@ If one agent is on PATH with its API key in the environment, `aide` launches it 
 ```
 $ aide
 Detected agent: claude (/usr/local/bin/claude)
-No config file found — launching with environment credentials.
+No config file found. Launching with environment credentials.
 ```
 
 If multiple agents are on PATH, aide cannot pick automatically. Use `--agent`:
@@ -32,7 +32,7 @@ Setting up aide for /home/user/work/myproject
 Detected agents on PATH: claude, codex
 Agent (default: claude):
 Context name (default: myproject):
-Match rule — path glob or remote URL?
+Match rule (path glob or remote URL)?
   [1] Path: /home/user/work/myproject
   [2] Enter a glob pattern
   [3] Enter a git remote pattern

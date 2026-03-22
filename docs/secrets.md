@@ -18,10 +18,10 @@ aide appends `.enc.yaml` automatically and resolves the full path under the secr
 
 aide tries the following sources in order and uses the first one it finds:
 
-1. **YubiKey** via `age-plugin-yubikey` — hardware-bound key, requires the plugin binary on `$PATH`
-2. **`$SOPS_AGE_KEY`** — inline key material, useful for CI environments
-3. **`$SOPS_AGE_KEY_FILE`** — path to a key file at a custom location
-4. **`$XDG_CONFIG_HOME/sops/age/keys.txt`** — the sops default key file (typically `~/.config/sops/age/keys.txt`)
+1. **YubiKey** via `age-plugin-yubikey` (hardware-bound key, requires the plugin binary on `$PATH`)
+2. **`$SOPS_AGE_KEY`**: inline key material, useful for CI environments
+3. **`$SOPS_AGE_KEY_FILE`**: path to a key file at a custom location
+4. **`$XDG_CONFIG_HOME/sops/age/keys.txt`**: the sops default key file (typically `~/.config/sops/age/keys.txt`)
 
 ## Creating Secrets
 

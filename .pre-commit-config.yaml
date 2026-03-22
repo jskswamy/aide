@@ -9,6 +9,16 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
+  # Documentation slop detector
+  - repo: local
+    hooks:
+      - id: doc-slop-check
+        name: check docs for slop words
+        entry: scripts/check-doc-slop.sh
+        language: script
+        types: [markdown]
+        pass_filenames: false
+
   # Go linting
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.1.6

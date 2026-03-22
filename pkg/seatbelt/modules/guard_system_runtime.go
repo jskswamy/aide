@@ -1,4 +1,4 @@
-// System runtime module for macOS Seatbelt profiles.
+// System runtime guard for macOS Seatbelt profiles.
 //
 // Rules ported from agent-safehouse by Eugene Goldin:
 // https://github.com/eugene1g/agent-safehouse
@@ -8,14 +8,20 @@ package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 
-type systemRuntimeModule struct{}
+type systemRuntimeGuard struct{}
+
+// SystemRuntimeGuard returns a Guard with macOS system runtime rules.
+func SystemRuntimeGuard() seatbelt.Guard { return &systemRuntimeGuard{} }
 
 // SystemRuntime returns a module with macOS system runtime rules.
-func SystemRuntime() seatbelt.Module { return &systemRuntimeModule{} }
+// Deprecated: use SystemRuntimeGuard instead.
+func SystemRuntime() seatbelt.Module { return &systemRuntimeGuard{} }
 
-func (m *systemRuntimeModule) Name() string { return "System Runtime" }
+func (g *systemRuntimeGuard) Name() string        { return "system-runtime" }
+func (g *systemRuntimeGuard) Type() string        { return "always" }
+func (g *systemRuntimeGuard) Description() string { return "macOS system runtime paths, devices, and Mach services" }
 
-func (m *systemRuntimeModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 
 	return []seatbelt.Rule{

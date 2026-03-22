@@ -19,8 +19,8 @@ func renderTestRules(rules []seatbelt.Rule) string {
 
 func TestBase_DenyDefault(t *testing.T) {
 	m := modules.Base()
-	if m.Name() != "Base" {
-		t.Errorf("expected Name() = %q, got %q", "Base", m.Name())
+	if m.Name() != "base" {
+		t.Errorf("expected Name() = %q, got %q", "base", m.Name())
 	}
 
 	output := renderTestRules(m.Rules(nil))
@@ -30,5 +30,27 @@ func TestBase_DenyDefault(t *testing.T) {
 	}
 	if !strings.Contains(output, "(deny default)") {
 		t.Error("expected output to contain (deny default)")
+	}
+}
+
+func TestGuard_Base(t *testing.T) {
+	g := modules.BaseGuard()
+
+	if g.Name() != "base" {
+		t.Errorf("expected Name() = %q, got %q", "base", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() != "(version 1), (deny default)" {
+		t.Errorf("expected Description() = %q, got %q", "(version 1), (deny default)", g.Description())
+	}
+
+	output := renderTestRules(g.Rules(nil))
+	if !strings.Contains(output, "(version 1)") {
+		t.Error("expected rules to contain (version 1)")
+	}
+	if !strings.Contains(output, "(deny default)") {
+		t.Error("expected rules to contain (deny default)")
 	}
 }

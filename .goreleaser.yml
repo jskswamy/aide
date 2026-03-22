@@ -1,0 +1,36 @@
+version: 2
+
+builds:
+  - binary: aide
+    main: ./cmd/aide
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "aide_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "sha256sums.txt"
+
+changelog:
+  sort: asc
+
+snapshot:
+  version_template: "{{ .Version }}-next"
+
+release:
+  github:
+    owner: jskswamy
+    name: aide

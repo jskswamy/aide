@@ -1,5 +1,6 @@
 //go:build linux
 
+// Package sandbox implements OS-native sandboxing for agent processes.
 package sandbox
 
 import (
@@ -152,44 +153,43 @@ func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 
 	b.WriteString("## Writable paths\n")
 	for _, p := range policy.Writable {
-		b.WriteString(fmt.Sprintf("  %s\n", p))
+		fmt.Fprintf(&b, "  %s\n", p)
 	}
 
 	b.WriteString("\n## Readable paths\n")
 	for _, p := range policy.Readable {
-		b.WriteString(fmt.Sprintf("  %s\n", p))
+		fmt.Fprintf(&b, "  %s\n", p)
 	}
 
 	deniedPaths := expandGlobs(policy.Denied)
 	if len(deniedPaths) > 0 {
 		b.WriteString("\n## Denied paths\n")
 		for _, p := range deniedPaths {
-			b.WriteString(fmt.Sprintf("  %s\n", p))
+			fmt.Fprintf(&b, "  %s\n", p)
 		}
-		// Show glob expansions
 		if len(deniedPaths) != len(policy.Denied) {
 			b.WriteString("\n  # (expanded from globs in denied list)\n")
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("\n## Network: %s\n", policy.Network))
+	fmt.Fprintf(&b, "\n## Network: %s\n", policy.Network)
 	if len(policy.AllowPorts) > 0 {
 		b.WriteString("  Allow ports:")
 		for _, port := range policy.AllowPorts {
-			b.WriteString(fmt.Sprintf(" %d", port))
+			fmt.Fprintf(&b, " %d", port)
 		}
 		b.WriteString("\n")
 	}
 	if len(policy.DenyPorts) > 0 {
 		b.WriteString("  Deny ports:")
 		for _, port := range policy.DenyPorts {
-			b.WriteString(fmt.Sprintf(" %d", port))
+			fmt.Fprintf(&b, " %d", port)
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString(fmt.Sprintf("\n## Allow subprocess: %v\n", policy.AllowSubprocess))
-	b.WriteString(fmt.Sprintf("## Clean env: %v\n", policy.CleanEnv))
+	fmt.Fprintf(&b, "\n## Allow subprocess: %v\n", policy.AllowSubprocess)
+	fmt.Fprintf(&b, "## Clean env: %v\n", policy.CleanEnv)
 
 	return b.String(), nil
 }

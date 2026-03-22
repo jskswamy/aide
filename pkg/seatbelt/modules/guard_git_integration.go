@@ -1,4 +1,4 @@
-// Git integration module for macOS Seatbelt profiles.
+// Git integration guard for macOS Seatbelt profiles.
 //
 // Rules ported from agent-safehouse by Eugene Goldin:
 // https://github.com/eugene1g/agent-safehouse
@@ -8,14 +8,20 @@ package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 
-type gitIntegrationModule struct{}
+type gitIntegrationGuard struct{}
+
+// GitIntegrationGuard returns a Guard with Git configuration read-only sandbox rules.
+func GitIntegrationGuard() seatbelt.Guard { return &gitIntegrationGuard{} }
 
 // GitIntegration returns a module with Git configuration read-only sandbox rules.
-func GitIntegration() seatbelt.Module { return &gitIntegrationModule{} }
+// Deprecated: use GitIntegrationGuard instead.
+func GitIntegration() seatbelt.Module { return &gitIntegrationGuard{} }
 
-func (m *gitIntegrationModule) Name() string { return "Git Integration" }
+func (g *gitIntegrationGuard) Name() string        { return "git-integration" }
+func (g *gitIntegrationGuard) Type() string        { return "always" }
+func (g *gitIntegrationGuard) Description() string { return "Git config and SSH keys (read-only)" }
 
-func (m *gitIntegrationModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 
 	return []seatbelt.Rule{

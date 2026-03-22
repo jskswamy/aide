@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
@@ -152,5 +153,61 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 	}
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny block")
+	}
+}
+
+func TestGuard_Filesystem_Metadata(t *testing.T) {
+	g := modules.FilesystemGuard()
+
+	if g.Name() != "filesystem" {
+		t.Errorf("expected Name() = %q, got %q", "filesystem", g.Name())
+	}
+	if g.Type() != "always" {
+		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
+	}
+	if g.Description() == "" {
+		t.Error("expected non-empty Description()")
+	}
+}
+
+func TestGuard_Filesystem_CtxPaths(t *testing.T) {
+	tmp := t.TempDir()
+	project := filepath.Join(tmp, "project")
+	home := filepath.Join(tmp, "home")
+	runtime := filepath.Join(tmp, "runtime")
+	denied := filepath.Join(tmp, "secret.key")
+
+	for _, d := range []string{project, home, runtime} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(denied, []byte("key"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	g := modules.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		ProjectRoot: project,
+		HomeDir:     home,
+		RuntimeDir:  runtime,
+		ExtraDenied: []string{denied},
+	}
+	output := renderTestRules(g.Rules(ctx))
+
+	if !strings.Contains(output, "(allow file-read* file-write*") {
+		t.Error("expected writable block for ProjectRoot/RuntimeDir")
+	}
+	if !strings.Contains(output, `(subpath "`+project+`")`) {
+		t.Errorf("expected ProjectRoot %s in output", project)
+	}
+	if !strings.Contains(output, "(allow file-read*") {
+		t.Error("expected readable block for HomeDir")
+	}
+	if !strings.Contains(output, "(deny file-read-data") {
+		t.Error("expected deny block for ExtraDenied")
+	}
+	if !strings.Contains(output, `(literal "`+denied+`")`) {
+		t.Errorf("expected denied path %s in output", denied)
 	}
 }

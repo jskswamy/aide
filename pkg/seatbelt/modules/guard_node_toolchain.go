@@ -1,4 +1,4 @@
-// Node toolchain module for macOS Seatbelt profiles.
+// Node toolchain guard for macOS Seatbelt profiles.
 //
 // Rules ported from agent-safehouse by Eugene Goldin:
 // https://github.com/eugene1g/agent-safehouse
@@ -8,14 +8,20 @@ package modules
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 
-type nodeToolchainModule struct{}
+type nodeToolchainGuard struct{}
+
+// NodeToolchainGuard returns a Guard with Node.js ecosystem sandbox rules.
+func NodeToolchainGuard() seatbelt.Guard { return &nodeToolchainGuard{} }
 
 // NodeToolchain returns a module with Node.js ecosystem sandbox rules.
-func NodeToolchain() seatbelt.Module { return &nodeToolchainModule{} }
+// Deprecated: use NodeToolchainGuard instead.
+func NodeToolchain() seatbelt.Module { return &nodeToolchainGuard{} }
 
-func (m *nodeToolchainModule) Name() string { return "Node Toolchain" }
+func (g *nodeToolchainGuard) Name() string        { return "node-toolchain" }
+func (g *nodeToolchainGuard) Type() string        { return "always" }
+func (g *nodeToolchainGuard) Description() string { return "Node.js, npm, yarn, pnpm, and browser testing tool paths" }
 
-func (m *nodeToolchainModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 
 	return []seatbelt.Rule{

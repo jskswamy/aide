@@ -1,23 +1,86 @@
 # aide
 
-One command. Right agent. Right credentials. Every project.
+Stop babysitting your agent.
+
+One command. Any agent. Sandboxed, reproducible, zero decision fatigue.
+
+---
+
+You planned the work. You know what needs to happen. But instead of letting your agent execute, you're stuck evaluating every file read, every shell command, every network call. That's not autonomy — that's babysitting with extra steps.
+
+aide fixes three things:
+
+### Sandbox — stop choosing between scary and exhausting
+
+Without aide, you either skip all permissions and hope for the best:
+
+```bash
+claude --dangerously-skip-permissions  # what could go wrong?
+```
+
+Or you click "allow" on every. single. action. File read? Allow. Shell command? Allow. Network call? Allow. Two hundred times a session.
+
+With aide, the agent runs inside OS-native guardrails. 20 guards active by default — no config, no prompts:
+
+```bash
+aide    # agent launches sandboxed automatically
+aide sandbox guards   # see exactly what's blocked
+```
+
+```
+Protected              Guards
+─────────────────────  ──────────────────────────────────────────────────
+SSH private keys       Blocks ~/.ssh (allows known_hosts and config)
+Cloud credentials      AWS, GCP, Azure, DigitalOcean, Oracle Cloud
+Infrastructure         Kubernetes, Terraform, Vault tokens
+Browser data           Cookies, passwords, history (all browsers)
+Password managers      1Password, Bitwarden, pass, gopass, GPG keys
+```
+
+Your agent can read your code, run your tests, hit the network — but it physically cannot touch your SSH keys, cloud credentials, or browser data.
+
+### Unified UX — one command, any agent
+
+Without aide, every agent is its own world:
+
+```bash
+claude                                          # Anthropic API key
+CLAUDE_CODE_USE_BEDROCK=1 AWS_PROFILE=work claude  # or Bedrock?
+codex --provider anthropic                      # different CLI entirely
+aider --model claude-3.5-sonnet                 # yet another interface
+```
+
+Different CLIs. Different config formats. Different env vars. Switch agents, rewire everything.
+
+With aide, you configure once and forget:
 
 ```bash
 cd ~/work/project && aide    # Claude with work Bedrock credentials
-cd ~/oss/repo && aide        # Codex with personal OpenAI key
-cd ~/scratch && aide         # Auto-detects agent on PATH, zero config
+cd ~/oss/repo && aide        # Aider with personal Anthropic key
+cd ~/scratch && aide         # auto-detects agent on PATH, zero config
 ```
 
-## Scenarios
+Same command everywhere. aide resolves the right agent, credentials, and sandbox from your project directory.
 
-**Personal vs work credentials.**
-You use Claude with AWS Bedrock at work and a personal Anthropic API key at home. Today that means juggling `CLAUDE_CONFIG_DIR`, wrapper scripts, or separate shell profiles. aide resolves the right credentials from the project directory. You run `aide` and get the correct key every time.
+### Reproducibility — secrets that don't leak
 
-**Agent access to sensitive files.**
-Coding agents run with your full user permissions. They can read `~/.ssh`, `~/.aws`, browser cookies. aide sandboxes the agent with 20 guards active by default. SSH keys, cloud credentials, browser data, and password stores are blocked. No configuration required, no per-action approval prompts.
+Without aide:
 
-**Team shares API keys.**
-Someone commits a `.env`. Encrypted storage with per-person age keys prevents this. Each team member holds their own private key. Secrets decrypt in-process at launch and never exist as plaintext on disk.
+```bash
+# The classic footgun
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
+git add -A && git commit -m "update config"  # oops
+```
+
+API keys in `.env` files. Wrapper scripts with hardcoded tokens. A new machine means an hour of setup.
+
+With aide, secrets are encrypted at rest and never exist as plaintext on disk:
+
+```bash
+aide secrets create personal --age-key age1abc...   # encrypted with your key
+```
+
+Config and encrypted secrets live in git. Clone your config on a new machine and you're done. No shared secrets, no plaintext on disk.
 
 ## Quick Start
 
@@ -42,22 +105,22 @@ cd aide && make build   # Binary at ./bin/aide
 Four commands to know:
 
 ```bash
-aide                    # Resolve context and launch the agent
-aide --agent claude     # Override agent selection
+aide                    # Resolve context and launch the agent (sandboxed)
 aide setup              # Interactive first-time configuration
+aide --agent codex      # Override agent selection
 aide sandbox guards     # See what the sandbox protects
 ```
 
-No config file required. If one agent exists on PATH with its API key in the environment, `aide` launches it directly.
+No config file required. If one agent exists on PATH with its API key in the environment, `aide` launches it sandboxed — zero setup.
 
 ## How It Works
 
-1. Run `aide` in a project directory.
-2. aide checks the git remote URL and directory path against your config.
-3. It finds the matching context: agent, credentials, and sandbox policy.
+1. Run `aide` in any project directory.
+2. aide matches the git remote URL and directory path against your config.
+3. It resolves the context: agent, credentials, and sandbox policy.
 4. Secrets decrypt in-process via the sops Go library. Nothing hits disk.
-5. aide applies 20 guards via macOS Seatbelt, blocking access to SSH keys, cloud credentials, browser data, and password stores. Linux sandbox support is planned.
-6. aide execs the agent with the resolved environment.
+5. aide applies 20 guards via macOS Seatbelt, blocking access to sensitive data. Linux sandbox support (Landlock) is planned.
+6. aide execs the agent with the resolved environment inside the sandbox.
 
 No config file? aide detects your agent on PATH and launches it directly.
 
@@ -91,18 +154,18 @@ contexts:
   personal:
     match:
       - remote: "github.com/myuser/*"
-    agent: claude
-    secret: personal
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-
-  oss:
-    match:
-      - remote: "github.com/*"
     agent: codex
     secret: personal
     env:
       OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
+
+  oss:
+    match:
+      - remote: "github.com/*"
+    agent: aider
+    secret: personal
+    env:
+      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 
 default_context: personal
 ```
@@ -149,10 +212,9 @@ Secrets are sops-encrypted YAML files using age keys. aide handles the full life
 ```bash
 aide secrets create personal --age-key age1abc...   # Create (opens $EDITOR)
 aide secrets edit personal                           # Decrypt, edit, re-encrypt
-aide secrets rotate personal --add-key age1def...    # Add a recipient
 ```
 
-Multiple recipients per file support laptop, desktop, YubiKey, and CI access without sharing private keys. See [docs/secrets.md](docs/secrets.md).
+Secrets decrypt in-process at launch and never exist as plaintext on disk. See [docs/secrets.md](docs/secrets.md).
 
 ## Reproducibility
 
@@ -164,13 +226,6 @@ git init && git add -A && git commit -m "aide config"
 ```
 
 Encrypted secrets are safe to commit. Only holders of the age private key can decrypt.
-
-**Team shared config:**
-
-```bash
-git clone git@github.com:team/aide-config.git ~/.config/aide
-aide secrets rotate work --add-key $(age-keygen -y key.txt)
-```
 
 **Docker / CI:**
 

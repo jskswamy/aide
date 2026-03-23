@@ -650,6 +650,27 @@ func TestProfile_ClaudeAgentAllowsSurvive(t *testing.T) {
 	}
 }
 
+func TestSeatbeltProfile_CustomClaudeConfigDir(t *testing.T) {
+	env := []string{"CLAUDE_CONFIG_DIR=/Users/testuser/.claude-work"}
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", env)
+	policy.AgentModule = modules.ClaudeAgent()
+
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The custom config dir should appear as a subpath rule
+	if !strings.Contains(profile, `(subpath "/Users/testuser/.claude-work")`) {
+		t.Error("profile should contain custom CLAUDE_CONFIG_DIR as subpath rule")
+	}
+
+	// Runtime paths should still be present regardless of CLAUDE_CONFIG_DIR
+	if !strings.Contains(profile, ".cache/claude") {
+		t.Error("profile should still contain .cache/claude runtime path")
+	}
+}
+
 func TestDarwinSandbox_Apply_CleanEnv(t *testing.T) {
 	runtimeDir := t.TempDir()
 	cmd := exec.Command("/usr/bin/echo", "hello")

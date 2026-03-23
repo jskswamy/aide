@@ -20,16 +20,16 @@ func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	return []seatbelt.Rule{
 		// Nix store and system paths (read-only)
-		seatbelt.Section("Nix store and system paths"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionSetup("Nix store and system paths"),
+		seatbelt.SetupRule(`(allow file-read*
     (subpath "/nix/store")
     (subpath "/nix/var")
     (subpath "/run/current-system")
 )`),
 
 		// Nix user paths
-		seatbelt.Section("Nix user paths"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("Nix user paths"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".nix-profile") + `
     ` + seatbelt.HomeSubpath(home, ".local/state/nix") + `
     ` + seatbelt.HomeSubpath(home, ".cache/nix") + `

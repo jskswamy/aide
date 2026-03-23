@@ -23,8 +23,8 @@ func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 
 	return []seatbelt.Rule{
-		seatbelt.Section("Git configuration (read-only)"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionSetup("Git configuration (read-only)"),
+		seatbelt.SetupRule(`(allow file-read*
     ` + seatbelt.HomePrefix(home, ".gitconfig") + `
     ` + seatbelt.HomePrefix(home, ".gitignore") + `
     ` + seatbelt.HomeSubpath(home, ".config/git") + `

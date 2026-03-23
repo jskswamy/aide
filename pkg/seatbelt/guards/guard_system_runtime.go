@@ -24,8 +24,8 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	return []seatbelt.Rule{
 		// 1. System binary paths
-		seatbelt.Section("System binary paths"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionSetup("System binary paths"),
+		seatbelt.SetupRule(`(allow file-read*
     (subpath "/usr")
     (subpath "/bin")
     (subpath "/sbin")
@@ -43,17 +43,17 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 2. Root filesystem traversal
-		seatbelt.Section("Root filesystem traversal"),
-		seatbelt.Raw(`(allow file-read-data
+		seatbelt.SectionSetup("Root filesystem traversal"),
+		seatbelt.SetupRule(`(allow file-read-data
     (literal "/")
 )`),
 
 		// 3. Metadata traversal
-		seatbelt.Section("Metadata traversal"),
+		seatbelt.SectionSetup("Metadata traversal"),
 		// Git requires stat() on parent directories up to / for its
 		// safe.directory ownership check. /Users is needed on macOS
 		// so git can walk /Users → /Users/<user> → ... → repo root.
-		seatbelt.Raw(`(allow file-read-metadata
+		seatbelt.SetupRule(`(allow file-read-metadata
     (literal "/")
     (literal "/Users")
     (subpath "/System")
@@ -61,8 +61,8 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 3. Private/etc paths
-		seatbelt.Section("Private/etc paths"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionSetup("Private/etc paths"),
+		seatbelt.SetupRule(`(allow file-read*
     (literal "/private")
     (literal "/private/var")
     (subpath "/private/var/db/timezone")
@@ -83,8 +83,8 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 4. Home metadata traversal
-		seatbelt.Section("Home metadata traversal"),
-		seatbelt.Raw(`(allow file-read-metadata
+		seatbelt.SectionSetup("Home metadata traversal"),
+		seatbelt.SetupRule(`(allow file-read-metadata
     (literal "/home")
     (literal "/private/etc")
     (subpath "/dev")
@@ -95,8 +95,8 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 5. User preferences
-		seatbelt.Section("User preferences"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionSetup("User preferences"),
+		seatbelt.SetupRule(`(allow file-read*
     ` + seatbelt.HomePrefix(home, "Library/Preferences/.GlobalPreferences") + `
     ` + seatbelt.HomePrefix(home, "Library/Preferences/com.apple.GlobalPreferences") + `
     ` + seatbelt.HomeSubpath(home, "Library/Preferences/ByHost") + `
@@ -107,18 +107,18 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 6. Process rules
-		seatbelt.Section("Process rules"),
-		seatbelt.Allow("process-exec"),
-		seatbelt.Allow("process-fork"),
-		seatbelt.Allow("sysctl-read"),
-		seatbelt.Raw("(allow process-info* (target same-sandbox))"),
-		seatbelt.Raw("(allow signal (target same-sandbox))"),
-		seatbelt.Raw("(allow mach-priv-task-port (target same-sandbox))"),
-		seatbelt.Allow("pseudo-tty"),
+		seatbelt.SectionSetup("Process rules"),
+		seatbelt.SetupRule("(allow process-exec)"),
+		seatbelt.SetupRule("(allow process-fork)"),
+		seatbelt.SetupRule("(allow sysctl-read)"),
+		seatbelt.SetupRule("(allow process-info* (target same-sandbox))"),
+		seatbelt.SetupRule("(allow signal (target same-sandbox))"),
+		seatbelt.SetupRule("(allow mach-priv-task-port (target same-sandbox))"),
+		seatbelt.SetupRule("(allow pseudo-tty)"),
 
 		// 7. Temp dirs
-		seatbelt.Section("Temp dirs"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("Temp dirs"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     (subpath "/tmp")
     (subpath "/private/tmp")
     (subpath "/var/folders")
@@ -126,15 +126,15 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 8. Launchd listener deny
-		seatbelt.Section("Launchd listener deny"),
-		seatbelt.Raw(`(deny file-read* file-write*
+		seatbelt.SectionSetup("Launchd listener deny"),
+		seatbelt.SetupRule(`(deny file-read* file-write*
     (regex #"^/private/tmp/com\.apple\.launchd\.[^/]+/Listeners$")
     (regex #"^/tmp/com\.apple\.launchd\.[^/]+/Listeners$")
 )`),
 
 		// 9. Device nodes (read-write)
-		seatbelt.Section("Device nodes"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("Device nodes"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     (subpath "/dev/fd")
     (literal "/dev/stdout")
     (literal "/dev/stderr")
@@ -148,8 +148,8 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 10. Read-only devices
-		seatbelt.Section("Read-only devices"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionSetup("Read-only devices"),
+		seatbelt.SetupRule(`(allow file-read*
     (literal "/dev/zero")
     (literal "/dev/autofs_nowait")
     (literal "/dev/dtracehelper")
@@ -158,8 +158,8 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 11. File ioctl
-		seatbelt.Section("File ioctl"),
-		seatbelt.Raw(`(allow file-ioctl
+		seatbelt.SectionSetup("File ioctl"),
+		seatbelt.SetupRule(`(allow file-ioctl
     (literal "/dev/dtracehelper")
     (literal "/dev/tty")
     (literal "/dev/ptmx")
@@ -169,8 +169,8 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 12. Mach services
-		seatbelt.Section("Mach services"),
-		seatbelt.Raw(`(allow mach-lookup
+		seatbelt.SectionSetup("Mach services"),
+		seatbelt.SetupRule(`(allow mach-lookup
     (global-name "com.apple.system.notification_center")
     (global-name "com.apple.system.opendirectoryd.libinfo")
     (global-name "com.apple.logd")
@@ -189,12 +189,12 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// 13. System socket
-		seatbelt.Section("System socket"),
-		seatbelt.Allow("system-socket"),
+		seatbelt.SectionSetup("System socket"),
+		seatbelt.SetupRule("(allow system-socket)"),
 
 		// 14. IPC shared memory
-		seatbelt.Section("IPC shared memory"),
-		seatbelt.Raw(`(allow ipc-posix-shm-read-data
+		seatbelt.SectionSetup("IPC shared memory"),
+		seatbelt.SetupRule(`(allow ipc-posix-shm-read-data
     (ipc-posix-name "apple.shm.notification_center")
 )`),
 	}

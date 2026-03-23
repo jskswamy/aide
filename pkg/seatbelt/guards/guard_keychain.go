@@ -24,23 +24,23 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	return []seatbelt.Rule{
 		// User keychain (read-write)
-		seatbelt.Section("User keychain"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("User keychain"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, "Library/Keychains") + `
     ` + seatbelt.HomeLiteral(home, "Library/Preferences/com.apple.security.plist") + `
 )`),
 
 		// System keychain (read-only)
-		seatbelt.Section("System keychain"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionSetup("System keychain"),
+		seatbelt.SetupRule(`(allow file-read*
     (literal "/Library/Preferences/com.apple.security.plist")
     (literal "/Library/Keychains/System.keychain")
     (subpath "/private/var/db/mds")
 )`),
 
 		// Keychain metadata traversal
-		seatbelt.Section("Keychain metadata traversal"),
-		seatbelt.Raw(`(allow file-read-metadata
+		seatbelt.SectionSetup("Keychain metadata traversal"),
+		seatbelt.SetupRule(`(allow file-read-metadata
     ` + seatbelt.HomeLiteral(home, "Library") + `
     ` + seatbelt.HomeLiteral(home, "Library/Keychains") + `
     (literal "/Library")
@@ -48,8 +48,8 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Security Mach services
-		seatbelt.Section("Security Mach services"),
-		seatbelt.Raw(`(allow mach-lookup
+		seatbelt.SectionSetup("Security Mach services"),
+		seatbelt.SetupRule(`(allow mach-lookup
     (global-name "com.apple.SecurityServer")
     (global-name "com.apple.security.agent")
     (global-name "com.apple.securityd.xpc")
@@ -59,8 +59,8 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Security IPC shared memory
-		seatbelt.Section("Security IPC shared memory"),
-		seatbelt.Raw(`(allow ipc-posix-shm-read-data ipc-posix-shm-write-create ipc-posix-shm-write-data
+		seatbelt.SectionSetup("Security IPC shared memory"),
+		seatbelt.SetupRule(`(allow ipc-posix-shm-read-data ipc-posix-shm-write-create ipc-posix-shm-write-data
     (ipc-posix-name "com.apple.AppleDatabaseChanged")
 )`),
 	}

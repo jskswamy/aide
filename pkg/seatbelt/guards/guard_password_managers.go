@@ -3,7 +3,7 @@
 // Protects password manager data directories from being read or written.
 // Note: macOS Keychain (Library/Keychains) is managed by the keychain guard.
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

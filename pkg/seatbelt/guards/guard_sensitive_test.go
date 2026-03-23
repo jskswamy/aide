@@ -1,17 +1,17 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 // --- docker ---
 
 func TestGuard_Docker_Metadata(t *testing.T) {
-	g := modules.DockerGuard()
+	g := guards.DockerGuard()
 	if g.Name() != "docker" {
 		t.Errorf("expected Name() = %q, got %q", "docker", g.Name())
 	}
@@ -24,7 +24,7 @@ func TestGuard_Docker_Metadata(t *testing.T) {
 }
 
 func TestGuard_Docker_DefaultPath(t *testing.T) {
-	g := modules.DockerGuard()
+	g := guards.DockerGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -34,7 +34,7 @@ func TestGuard_Docker_DefaultPath(t *testing.T) {
 }
 
 func TestGuard_Docker_EnvOverride(t *testing.T) {
-	g := modules.DockerGuard()
+	g := guards.DockerGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"DOCKER_CONFIG=/custom/docker"},
@@ -52,7 +52,7 @@ func TestGuard_Docker_EnvOverride(t *testing.T) {
 // --- github-cli ---
 
 func TestGuard_GithubCLI_Metadata(t *testing.T) {
-	g := modules.GithubCLIGuard()
+	g := guards.GithubCLIGuard()
 	if g.Name() != "github-cli" {
 		t.Errorf("expected Name() = %q, got %q", "github-cli", g.Name())
 	}
@@ -62,7 +62,7 @@ func TestGuard_GithubCLI_Metadata(t *testing.T) {
 }
 
 func TestGuard_GithubCLI_Path(t *testing.T) {
-	g := modules.GithubCLIGuard()
+	g := guards.GithubCLIGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -74,7 +74,7 @@ func TestGuard_GithubCLI_Path(t *testing.T) {
 // --- npm ---
 
 func TestGuard_NPM_Metadata(t *testing.T) {
-	g := modules.NPMGuard()
+	g := guards.NPMGuard()
 	if g.Name() != "npm" {
 		t.Errorf("expected Name() = %q, got %q", "npm", g.Name())
 	}
@@ -84,7 +84,7 @@ func TestGuard_NPM_Metadata(t *testing.T) {
 }
 
 func TestGuard_NPM_Paths(t *testing.T) {
-	g := modules.NPMGuard()
+	g := guards.NPMGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -101,7 +101,7 @@ func TestGuard_NPM_Paths(t *testing.T) {
 // --- netrc ---
 
 func TestGuard_Netrc_Metadata(t *testing.T) {
-	g := modules.NetrcGuard()
+	g := guards.NetrcGuard()
 	if g.Name() != "netrc" {
 		t.Errorf("expected Name() = %q, got %q", "netrc", g.Name())
 	}
@@ -111,7 +111,7 @@ func TestGuard_Netrc_Metadata(t *testing.T) {
 }
 
 func TestGuard_Netrc_Path(t *testing.T) {
-	g := modules.NetrcGuard()
+	g := guards.NetrcGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -123,7 +123,7 @@ func TestGuard_Netrc_Path(t *testing.T) {
 // --- vercel ---
 
 func TestGuard_Vercel_Metadata(t *testing.T) {
-	g := modules.VercelGuard()
+	g := guards.VercelGuard()
 	if g.Name() != "vercel" {
 		t.Errorf("expected Name() = %q, got %q", "vercel", g.Name())
 	}
@@ -133,7 +133,7 @@ func TestGuard_Vercel_Metadata(t *testing.T) {
 }
 
 func TestGuard_Vercel_Path(t *testing.T) {
-	g := modules.VercelGuard()
+	g := guards.VercelGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 

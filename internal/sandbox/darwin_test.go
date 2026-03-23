@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestGenerateSeatbeltProfile_DenyDefault(t *testing.T) {
 	policy := Policy{
-		Guards:  modules.DefaultGuardNames(),
+		Guards:  guards.DefaultGuardNames(),
 		Network: NetworkNone,
 	}
 	profile, err := generateSeatbeltProfile(policy)
@@ -32,7 +32,7 @@ func TestGenerateSeatbeltProfile_DenyDefault(t *testing.T) {
 func TestGenerateSeatbeltProfile_WritablePaths(t *testing.T) {
 	dir := t.TempDir()
 	policy := Policy{
-		Guards:      modules.DefaultGuardNames(),
+		Guards:      guards.DefaultGuardNames(),
 		ProjectRoot: dir,
 		Network:     NetworkNone,
 	}
@@ -58,7 +58,7 @@ func TestGenerateSeatbeltProfile_DeniedPaths(t *testing.T) {
 		t.Fatalf("failed to create denied dir: %v", err)
 	}
 	policy := Policy{
-		Guards:      modules.DefaultGuardNames(),
+		Guards:      guards.DefaultGuardNames(),
 		ExtraDenied: []string{denied},
 		Network:     NetworkNone,
 	}
@@ -79,7 +79,7 @@ func TestGenerateSeatbeltProfile_DeniedPaths(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_NetworkOutbound(t *testing.T) {
 	policy := Policy{
-		Guards:  modules.DefaultGuardNames(),
+		Guards:  guards.DefaultGuardNames(),
 		Network: NetworkOutbound,
 	}
 
@@ -96,7 +96,7 @@ func TestGenerateSeatbeltProfile_NetworkOutbound(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_NetworkNone(t *testing.T) {
 	policy := Policy{
-		Guards:  modules.DefaultGuardNames(),
+		Guards:  guards.DefaultGuardNames(),
 		Network: NetworkNone,
 	}
 
@@ -113,7 +113,7 @@ func TestGenerateSeatbeltProfile_NetworkNone(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_NetworkUnrestricted(t *testing.T) {
 	policy := Policy{
-		Guards:  modules.DefaultGuardNames(),
+		Guards:  guards.DefaultGuardNames(),
 		Network: NetworkUnrestricted,
 	}
 
@@ -130,7 +130,7 @@ func TestGenerateSeatbeltProfile_NetworkUnrestricted(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_SystemEssentials(t *testing.T) {
 	policy := Policy{
-		Guards:  modules.DefaultGuardNames(),
+		Guards:  guards.DefaultGuardNames(),
 		Network: NetworkNone,
 	}
 
@@ -164,7 +164,7 @@ func TestGenerateSeatbeltProfile_GlobExpansion(t *testing.T) {
 	}
 
 	policy := Policy{
-		Guards:      modules.DefaultGuardNames(),
+		Guards:      guards.DefaultGuardNames(),
 		ExtraDenied: []string{filepath.Join(dir, "id_*")},
 		Network:     NetworkNone,
 	}
@@ -186,7 +186,7 @@ func TestDarwinSandbox_Apply_RewritesCmd(t *testing.T) {
 	runtimeDir := t.TempDir()
 	cmd := exec.Command("/usr/bin/echo", "hello", "world")
 	policy := Policy{
-		Guards:          modules.DefaultGuardNames(),
+		Guards:          guards.DefaultGuardNames(),
 		Network:         NetworkNone,
 		AllowSubprocess: true,
 	}
@@ -241,7 +241,7 @@ func TestDarwinSandbox_Apply_RewritesCmd(t *testing.T) {
 
 func TestSeatbeltProfile_PortFiltering(t *testing.T) {
 	policy := Policy{
-		Guards:     modules.DefaultGuardNames(),
+		Guards:     guards.DefaultGuardNames(),
 		Network:    NetworkOutbound,
 		AllowPorts: []int{443, 53},
 	}
@@ -265,7 +265,7 @@ func TestSeatbeltProfile_PortFiltering(t *testing.T) {
 
 func TestSeatbeltProfile_DenyPorts(t *testing.T) {
 	policy := Policy{
-		Guards:    modules.DefaultGuardNames(),
+		Guards:    guards.DefaultGuardNames(),
 		Network:   NetworkOutbound,
 		DenyPorts: []int{8080},
 	}
@@ -282,7 +282,7 @@ func TestSeatbeltProfile_DenyPorts(t *testing.T) {
 
 func TestSeatbeltProfile_NoPortFiltering(t *testing.T) {
 	policy := Policy{
-		Guards:  modules.DefaultGuardNames(),
+		Guards:  guards.DefaultGuardNames(),
 		Network: NetworkOutbound,
 	}
 
@@ -300,7 +300,7 @@ func TestSeatbeltProfile_NoPortFiltering(t *testing.T) {
 
 func TestSeatbeltProfile_PortFiltering_DNS(t *testing.T) {
 	policy := Policy{
-		Guards:     modules.DefaultGuardNames(),
+		Guards:     guards.DefaultGuardNames(),
 		Network:    NetworkOutbound,
 		AllowPorts: []int{53},
 	}
@@ -370,7 +370,7 @@ func TestDarwinSandbox_Apply_CleanEnv(t *testing.T) {
 		"TERM=xterm",
 	}
 	policy := Policy{
-		Guards:   modules.DefaultGuardNames(),
+		Guards:   guards.DefaultGuardNames(),
 		Network:  NetworkNone,
 		CleanEnv: true,
 	}

@@ -20,7 +20,7 @@ import (
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/ui"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 	"github.com/spf13/cobra"
 )
 
@@ -3370,13 +3370,13 @@ func sandboxGuardsCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			guards := modules.AllGuards()
+			allGuards := guards.AllGuards()
 			activeSet := make(map[string]bool)
-			for _, n := range modules.DefaultGuardNames() {
+			for _, n := range guards.DefaultGuardNames() {
 				activeSet[n] = true
 			}
 			fmt.Fprintf(out, "%-20s %-12s %-10s %s\n", "GUARD", "TYPE", "STATUS", "DESCRIPTION")
-			for _, g := range guards {
+			for _, g := range allGuards {
 				status := "inactive"
 				if activeSet[g.Name()] {
 					status = "active"
@@ -3397,7 +3397,7 @@ func sandboxGuardCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if _, ok := modules.GuardByName(name); !ok {
+			if _, ok := guards.GuardByName(name); !ok {
 				return fmt.Errorf("unknown guard %q (run 'aide sandbox guards' to list available guards)", name)
 			}
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
@@ -3433,7 +3433,7 @@ func sandboxUnguardCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			g, ok := modules.GuardByName(name)
+			g, ok := guards.GuardByName(name)
 			if !ok {
 				return fmt.Errorf("unknown guard %q (run 'aide sandbox guards' to list available guards)", name)
 			}

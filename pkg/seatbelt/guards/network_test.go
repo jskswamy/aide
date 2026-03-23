@@ -1,15 +1,15 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestNetwork_Open(t *testing.T) {
-	m := modules.Network(modules.NetworkOpen)
+	m := guards.Network(guards.NetworkOpen)
 	if m.Name() != "Network" {
 		t.Errorf("expected Name() = %q, got %q", "Network", m.Name())
 	}
@@ -22,7 +22,7 @@ func TestNetwork_Open(t *testing.T) {
 }
 
 func TestNetwork_Outbound(t *testing.T) {
-	m := modules.Network(modules.NetworkOutbound)
+	m := guards.Network(guards.NetworkOutbound)
 	output := renderTestRules(m.Rules(nil))
 
 	if !strings.Contains(output, "(allow network-outbound)") {
@@ -34,7 +34,7 @@ func TestNetwork_Outbound(t *testing.T) {
 }
 
 func TestNetwork_None(t *testing.T) {
-	m := modules.Network(modules.NetworkNone)
+	m := guards.Network(guards.NetworkNone)
 	rules := m.Rules(nil)
 
 	if len(rules) != 0 {
@@ -43,7 +43,7 @@ func TestNetwork_None(t *testing.T) {
 }
 
 func TestNetworkWithPorts_AllowPorts(t *testing.T) {
-	m := modules.NetworkWithPorts(modules.NetworkOutbound, modules.PortOpts{
+	m := guards.NetworkWithPorts(guards.NetworkOutbound, guards.PortOpts{
 		AllowPorts: []int{443, 53, 80},
 	})
 	output := renderTestRules(m.Rules(nil))
@@ -71,7 +71,7 @@ func TestNetworkWithPorts_AllowPorts(t *testing.T) {
 }
 
 func TestNetworkWithPorts_DenyPorts(t *testing.T) {
-	m := modules.NetworkWithPorts(modules.NetworkOutbound, modules.PortOpts{
+	m := guards.NetworkWithPorts(guards.NetworkOutbound, guards.PortOpts{
 		DenyPorts: []int{22, 25},
 	})
 	output := renderTestRules(m.Rules(nil))
@@ -90,7 +90,7 @@ func TestNetworkWithPorts_DenyPorts(t *testing.T) {
 }
 
 func TestNetworkWithPorts_AllowTakesPrecedence(t *testing.T) {
-	m := modules.NetworkWithPorts(modules.NetworkOutbound, modules.PortOpts{
+	m := guards.NetworkWithPorts(guards.NetworkOutbound, guards.PortOpts{
 		AllowPorts: []int{443},
 		DenyPorts:  []int{22}, // should be ignored
 	})
@@ -106,7 +106,7 @@ func TestNetworkWithPorts_AllowTakesPrecedence(t *testing.T) {
 }
 
 func TestNetworkWithPorts_OpenModeIgnoresPorts(t *testing.T) {
-	m := modules.NetworkWithPorts(modules.NetworkOpen, modules.PortOpts{
+	m := guards.NetworkWithPorts(guards.NetworkOpen, guards.PortOpts{
 		AllowPorts: []int{443},
 	})
 	output := renderTestRules(m.Rules(nil))
@@ -118,7 +118,7 @@ func TestNetworkWithPorts_OpenModeIgnoresPorts(t *testing.T) {
 }
 
 func TestGuard_Network_Metadata(t *testing.T) {
-	g := modules.NetworkGuard()
+	g := guards.NetworkGuard()
 
 	if g.Name() != "network" {
 		t.Errorf("expected Name() = %q, got %q", "network", g.Name())
@@ -132,8 +132,8 @@ func TestGuard_Network_Metadata(t *testing.T) {
 }
 
 func TestGuard_Network_Open(t *testing.T) {
-	g := modules.NetworkGuard()
-	ctx := &seatbelt.Context{Network: modules.NetworkOpen}
+	g := guards.NetworkGuard()
+	ctx := &seatbelt.Context{Network: guards.NetworkOpen}
 	output := renderTestRules(g.Rules(ctx))
 
 	if !strings.Contains(output, "(allow network*)") {
@@ -142,8 +142,8 @@ func TestGuard_Network_Open(t *testing.T) {
 }
 
 func TestGuard_Network_Outbound(t *testing.T) {
-	g := modules.NetworkGuard()
-	ctx := &seatbelt.Context{Network: modules.NetworkOutbound}
+	g := guards.NetworkGuard()
+	ctx := &seatbelt.Context{Network: guards.NetworkOutbound}
 	output := renderTestRules(g.Rules(ctx))
 
 	if !strings.Contains(output, "(allow network-outbound)") {
@@ -152,8 +152,8 @@ func TestGuard_Network_Outbound(t *testing.T) {
 }
 
 func TestGuard_Network_None(t *testing.T) {
-	g := modules.NetworkGuard()
-	ctx := &seatbelt.Context{Network: modules.NetworkNone}
+	g := guards.NetworkGuard()
+	ctx := &seatbelt.Context{Network: guards.NetworkNone}
 	rules := g.Rules(ctx)
 
 	if len(rules) != 0 {
@@ -162,9 +162,9 @@ func TestGuard_Network_None(t *testing.T) {
 }
 
 func TestGuard_Network_AllowPorts(t *testing.T) {
-	g := modules.NetworkGuard()
+	g := guards.NetworkGuard()
 	ctx := &seatbelt.Context{
-		Network:    modules.NetworkOutbound,
+		Network:    guards.NetworkOutbound,
 		AllowPorts: []int{443, 53},
 	}
 	output := renderTestRules(g.Rules(ctx))

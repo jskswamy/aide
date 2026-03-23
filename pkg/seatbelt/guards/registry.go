@@ -2,7 +2,7 @@
 //
 // Provides lookup, filtering, and expansion for all built-in guards.
 
-package modules
+package guards
 
 import (
 	"github.com/jskswamy/aide/pkg/seatbelt"

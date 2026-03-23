@@ -1,17 +1,17 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 // --- cloud-aws ---
 
 func TestGuard_CloudAWS_Metadata(t *testing.T) {
-	g := modules.CloudAWSGuard()
+	g := guards.CloudAWSGuard()
 	if g.Name() != "cloud-aws" {
 		t.Errorf("expected Name() = %q, got %q", "cloud-aws", g.Name())
 	}
@@ -21,7 +21,7 @@ func TestGuard_CloudAWS_Metadata(t *testing.T) {
 }
 
 func TestGuard_CloudAWS_DefaultPaths(t *testing.T) {
-	g := modules.CloudAWSGuard()
+	g := guards.CloudAWSGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -38,7 +38,7 @@ func TestGuard_CloudAWS_DefaultPaths(t *testing.T) {
 }
 
 func TestGuard_CloudAWS_EnvOverrideCredentials(t *testing.T) {
-	g := modules.CloudAWSGuard()
+	g := guards.CloudAWSGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"AWS_SHARED_CREDENTIALS_FILE=/custom/creds"},
@@ -51,7 +51,7 @@ func TestGuard_CloudAWS_EnvOverrideCredentials(t *testing.T) {
 }
 
 func TestGuard_CloudAWS_EnvOverrideConfig(t *testing.T) {
-	g := modules.CloudAWSGuard()
+	g := guards.CloudAWSGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"AWS_CONFIG_FILE=/custom/config"},
@@ -66,7 +66,7 @@ func TestGuard_CloudAWS_EnvOverrideConfig(t *testing.T) {
 // --- cloud-gcp ---
 
 func TestGuard_CloudGCP_Metadata(t *testing.T) {
-	g := modules.CloudGCPGuard()
+	g := guards.CloudGCPGuard()
 	if g.Name() != "cloud-gcp" {
 		t.Errorf("expected Name() = %q, got %q", "cloud-gcp", g.Name())
 	}
@@ -76,7 +76,7 @@ func TestGuard_CloudGCP_Metadata(t *testing.T) {
 }
 
 func TestGuard_CloudGCP_DefaultPaths(t *testing.T) {
-	g := modules.CloudGCPGuard()
+	g := guards.CloudGCPGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -86,7 +86,7 @@ func TestGuard_CloudGCP_DefaultPaths(t *testing.T) {
 }
 
 func TestGuard_CloudGCP_EnvOverride(t *testing.T) {
-	g := modules.CloudGCPGuard()
+	g := guards.CloudGCPGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"CLOUDSDK_CONFIG=/custom/gcloud"},
@@ -99,7 +99,7 @@ func TestGuard_CloudGCP_EnvOverride(t *testing.T) {
 }
 
 func TestGuard_CloudGCP_ApplicationCredentials(t *testing.T) {
-	g := modules.CloudGCPGuard()
+	g := guards.CloudGCPGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json"},
@@ -114,7 +114,7 @@ func TestGuard_CloudGCP_ApplicationCredentials(t *testing.T) {
 // --- cloud-azure ---
 
 func TestGuard_CloudAzure_Metadata(t *testing.T) {
-	g := modules.CloudAzureGuard()
+	g := guards.CloudAzureGuard()
 	if g.Name() != "cloud-azure" {
 		t.Errorf("expected Name() = %q, got %q", "cloud-azure", g.Name())
 	}
@@ -124,7 +124,7 @@ func TestGuard_CloudAzure_Metadata(t *testing.T) {
 }
 
 func TestGuard_CloudAzure_DefaultPaths(t *testing.T) {
-	g := modules.CloudAzureGuard()
+	g := guards.CloudAzureGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -134,7 +134,7 @@ func TestGuard_CloudAzure_DefaultPaths(t *testing.T) {
 }
 
 func TestGuard_CloudAzure_EnvOverride(t *testing.T) {
-	g := modules.CloudAzureGuard()
+	g := guards.CloudAzureGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"AZURE_CONFIG_DIR=/custom/azure"},
@@ -149,7 +149,7 @@ func TestGuard_CloudAzure_EnvOverride(t *testing.T) {
 // --- cloud-digitalocean ---
 
 func TestGuard_CloudDigitalOcean_Metadata(t *testing.T) {
-	g := modules.CloudDigitalOceanGuard()
+	g := guards.CloudDigitalOceanGuard()
 	if g.Name() != "cloud-digitalocean" {
 		t.Errorf("expected Name() = %q, got %q", "cloud-digitalocean", g.Name())
 	}
@@ -159,7 +159,7 @@ func TestGuard_CloudDigitalOcean_Metadata(t *testing.T) {
 }
 
 func TestGuard_CloudDigitalOcean_DefaultPaths(t *testing.T) {
-	g := modules.CloudDigitalOceanGuard()
+	g := guards.CloudDigitalOceanGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -171,7 +171,7 @@ func TestGuard_CloudDigitalOcean_DefaultPaths(t *testing.T) {
 // --- cloud-oci ---
 
 func TestGuard_CloudOCI_Metadata(t *testing.T) {
-	g := modules.CloudOCIGuard()
+	g := guards.CloudOCIGuard()
 	if g.Name() != "cloud-oci" {
 		t.Errorf("expected Name() = %q, got %q", "cloud-oci", g.Name())
 	}
@@ -181,7 +181,7 @@ func TestGuard_CloudOCI_Metadata(t *testing.T) {
 }
 
 func TestGuard_CloudOCI_DefaultPaths(t *testing.T) {
-	g := modules.CloudOCIGuard()
+	g := guards.CloudOCIGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -191,7 +191,7 @@ func TestGuard_CloudOCI_DefaultPaths(t *testing.T) {
 }
 
 func TestGuard_CloudOCI_EnvOverride(t *testing.T) {
-	g := modules.CloudOCIGuard()
+	g := guards.CloudOCIGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"OCI_CLI_CONFIG_FILE=/custom/oci/config"},
@@ -206,7 +206,7 @@ func TestGuard_CloudOCI_EnvOverride(t *testing.T) {
 // --- kubernetes ---
 
 func TestGuard_Kubernetes_Metadata(t *testing.T) {
-	g := modules.KubernetesGuard()
+	g := guards.KubernetesGuard()
 	if g.Name() != "kubernetes" {
 		t.Errorf("expected Name() = %q, got %q", "kubernetes", g.Name())
 	}
@@ -216,7 +216,7 @@ func TestGuard_Kubernetes_Metadata(t *testing.T) {
 }
 
 func TestGuard_Kubernetes_DefaultPaths(t *testing.T) {
-	g := modules.KubernetesGuard()
+	g := guards.KubernetesGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -226,7 +226,7 @@ func TestGuard_Kubernetes_DefaultPaths(t *testing.T) {
 }
 
 func TestGuard_Kubernetes_KubeconfigColonSplit(t *testing.T) {
-	g := modules.KubernetesGuard()
+	g := guards.KubernetesGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"KUBECONFIG=/path/a:/path/b:/path/c"},
@@ -247,7 +247,7 @@ func TestGuard_Kubernetes_KubeconfigColonSplit(t *testing.T) {
 // --- terraform ---
 
 func TestGuard_Terraform_Metadata(t *testing.T) {
-	g := modules.TerraformGuard()
+	g := guards.TerraformGuard()
 	if g.Name() != "terraform" {
 		t.Errorf("expected Name() = %q, got %q", "terraform", g.Name())
 	}
@@ -257,7 +257,7 @@ func TestGuard_Terraform_Metadata(t *testing.T) {
 }
 
 func TestGuard_Terraform_DefaultPaths(t *testing.T) {
-	g := modules.TerraformGuard()
+	g := guards.TerraformGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -272,7 +272,7 @@ func TestGuard_Terraform_DefaultPaths(t *testing.T) {
 }
 
 func TestGuard_Terraform_EnvOverride(t *testing.T) {
-	g := modules.TerraformGuard()
+	g := guards.TerraformGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"TF_CLI_CONFIG_FILE=/custom/terraform.rc"},
@@ -287,7 +287,7 @@ func TestGuard_Terraform_EnvOverride(t *testing.T) {
 // --- vault ---
 
 func TestGuard_Vault_Metadata(t *testing.T) {
-	g := modules.VaultGuard()
+	g := guards.VaultGuard()
 	if g.Name() != "vault" {
 		t.Errorf("expected Name() = %q, got %q", "vault", g.Name())
 	}
@@ -297,7 +297,7 @@ func TestGuard_Vault_Metadata(t *testing.T) {
 }
 
 func TestGuard_Vault_DefaultPaths(t *testing.T) {
-	g := modules.VaultGuard()
+	g := guards.VaultGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -307,7 +307,7 @@ func TestGuard_Vault_DefaultPaths(t *testing.T) {
 }
 
 func TestGuard_Vault_EnvOverride(t *testing.T) {
-	g := modules.VaultGuard()
+	g := guards.VaultGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		Env:     []string{"VAULT_TOKEN_FILE=/custom/vault-token"},
@@ -322,7 +322,7 @@ func TestGuard_Vault_EnvOverride(t *testing.T) {
 // --- CloudGuardNames ---
 
 func TestCloudGuardNames(t *testing.T) {
-	names := modules.CloudGuardNames()
+	names := guards.CloudGuardNames()
 	want := []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci", "kubernetes", "terraform", "vault"}
 	if len(names) != len(want) {
 		t.Errorf("expected %d guard names, got %d: %v", len(want), len(names), names)

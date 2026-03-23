@@ -3,7 +3,7 @@
 // Controls network access with three modes: open, outbound-only, and none.
 // Supports port-level filtering for outbound connections.
 
-package modules
+package guards
 
 import (
 	"fmt"

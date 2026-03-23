@@ -1,13 +1,13 @@
-package modules_test
+package guards_test
 
 import (
 	"testing"
 
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestRegistry_AllGuards(t *testing.T) {
-	guards := modules.AllGuards()
+	guards := guards.AllGuards()
 	if len(guards) != 25 {
 		t.Errorf("expected 25 guards, got %d", len(guards))
 	}
@@ -24,7 +24,7 @@ func TestRegistry_AllGuards(t *testing.T) {
 }
 
 func TestRegistry_GuardByName(t *testing.T) {
-	g, ok := modules.GuardByName("ssh-keys")
+	g, ok := guards.GuardByName("ssh-keys")
 	if !ok {
 		t.Fatal("expected to find guard ssh-keys")
 	}
@@ -32,14 +32,14 @@ func TestRegistry_GuardByName(t *testing.T) {
 		t.Errorf("expected name %q, got %q", "ssh-keys", g.Name())
 	}
 
-	_, ok = modules.GuardByName("does-not-exist")
+	_, ok = guards.GuardByName("does-not-exist")
 	if ok {
 		t.Error("expected not found for unknown guard name")
 	}
 }
 
 func TestRegistry_GuardsByType(t *testing.T) {
-	always := modules.GuardsByType("always")
+	always := guards.GuardsByType("always")
 	if len(always) != 8 {
 		t.Errorf("expected 8 always guards, got %d", len(always))
 	}
@@ -49,7 +49,7 @@ func TestRegistry_GuardsByType(t *testing.T) {
 		}
 	}
 
-	defaults := modules.GuardsByType("default")
+	defaults := guards.GuardsByType("default")
 	if len(defaults) != 12 {
 		t.Errorf("expected 12 default guards, got %d", len(defaults))
 	}
@@ -59,7 +59,7 @@ func TestRegistry_GuardsByType(t *testing.T) {
 		}
 	}
 
-	optIn := modules.GuardsByType("opt-in")
+	optIn := guards.GuardsByType("opt-in")
 	if len(optIn) != 5 {
 		t.Errorf("expected 5 opt-in guards, got %d", len(optIn))
 	}
@@ -71,7 +71,7 @@ func TestRegistry_GuardsByType(t *testing.T) {
 }
 
 func TestRegistry_ExpandGuardName_Cloud(t *testing.T) {
-	names := modules.ExpandGuardName("cloud")
+	names := guards.ExpandGuardName("cloud")
 	if len(names) != 5 {
 		t.Errorf("expected 5 cloud guard names, got %d", len(names))
 	}
@@ -94,8 +94,8 @@ func TestRegistry_ExpandGuardName_Cloud(t *testing.T) {
 }
 
 func TestRegistry_ExpandGuardName_AllDefault(t *testing.T) {
-	names := modules.ExpandGuardName("all-default")
-	defaults := modules.GuardsByType("default")
+	names := guards.ExpandGuardName("all-default")
+	defaults := guards.GuardsByType("default")
 	if len(names) != len(defaults) {
 		t.Errorf("expected %d names for all-default, got %d", len(defaults), len(names))
 	}
@@ -111,25 +111,25 @@ func TestRegistry_ExpandGuardName_AllDefault(t *testing.T) {
 }
 
 func TestRegistry_ExpandGuardName_Regular(t *testing.T) {
-	names := modules.ExpandGuardName("ssh-keys")
+	names := guards.ExpandGuardName("ssh-keys")
 	if len(names) != 1 || names[0] != "ssh-keys" {
 		t.Errorf("expected [\"ssh-keys\"], got %v", names)
 	}
 }
 
 func TestRegistry_DefaultGuardNames(t *testing.T) {
-	names := modules.DefaultGuardNames()
+	names := guards.DefaultGuardNames()
 
 	// Should include always and default guards.
-	always := modules.GuardsByType("always")
-	defaults := modules.GuardsByType("default")
+	always := guards.GuardsByType("always")
+	defaults := guards.GuardsByType("default")
 	expected := len(always) + len(defaults)
 	if len(names) != expected {
 		t.Errorf("expected %d default guard names, got %d", expected, len(names))
 	}
 
 	// Should not include opt-in guards.
-	optIn := modules.GuardsByType("opt-in")
+	optIn := guards.GuardsByType("opt-in")
 	optInSet := make(map[string]bool, len(optIn))
 	for _, g := range optIn {
 		optInSet[g.Name()] = true
@@ -143,7 +143,7 @@ func TestRegistry_DefaultGuardNames(t *testing.T) {
 
 func TestRegistry_ResolveActiveGuards(t *testing.T) {
 	names := []string{"docker", "base", "ssh-keys"}
-	guards := modules.ResolveActiveGuards(names)
+	guards := guards.ResolveActiveGuards(names)
 
 	if len(guards) != 3 {
 		t.Fatalf("expected 3 guards, got %d", len(guards))
@@ -163,7 +163,7 @@ func TestRegistry_ResolveActiveGuards(t *testing.T) {
 
 func TestRegistry_ResolveActiveGuards_SkipsUnknown(t *testing.T) {
 	names := []string{"unknown-guard", "base", "another-unknown"}
-	guards := modules.ResolveActiveGuards(names)
+	guards := guards.ResolveActiveGuards(names)
 
 	if len(guards) != 1 {
 		t.Fatalf("expected 1 guard (only base), got %d", len(guards))

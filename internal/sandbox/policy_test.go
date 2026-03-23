@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -509,7 +509,7 @@ func TestPolicyFromConfig_GuardsOverridesDefault(t *testing.T) {
 	}
 
 	// Should contain always guards + listed guards
-	for _, g := range modules.AllGuards() {
+	for _, g := range guards.AllGuards() {
 		if g.Type() == "always" {
 			assertContains(t, policy.Guards, g.Name(), "Guards should contain always guard "+g.Name())
 		}
@@ -518,9 +518,9 @@ func TestPolicyFromConfig_GuardsOverridesDefault(t *testing.T) {
 	assertContains(t, policy.Guards, "browsers", "Guards should contain browsers")
 
 	// Should NOT contain default guards that weren't listed
-	defaults := modules.DefaultGuardNames()
+	defaults := guards.DefaultGuardNames()
 	for _, name := range defaults {
-		g, _ := modules.GuardByName(name)
+		g, _ := guards.GuardByName(name)
 		if g.Type() == "default" && name != "ssh-keys" && name != "browsers" {
 			for _, gn := range policy.Guards {
 				if gn == name {
@@ -542,7 +542,7 @@ func TestPolicyFromConfig_GuardsExtraAdds(t *testing.T) {
 	}
 
 	// Should contain all defaults + docker + npm
-	defaults := modules.DefaultGuardNames()
+	defaults := guards.DefaultGuardNames()
 	for _, name := range defaults {
 		assertContains(t, policy.Guards, name, "Guards should contain default guard "+name)
 	}

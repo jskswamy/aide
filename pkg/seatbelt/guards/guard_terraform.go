@@ -2,7 +2,7 @@
 //
 // Protects Terraform credential files from leakage.
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

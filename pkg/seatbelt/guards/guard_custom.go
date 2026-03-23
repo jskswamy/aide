@@ -3,7 +3,7 @@
 // NewCustomGuard builds a Guard from user-supplied configuration, allowing
 // projects to protect arbitrary paths without writing Go code.
 
-package modules
+package guards
 
 import (
 	"fmt"

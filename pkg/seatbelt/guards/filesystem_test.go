@@ -1,4 +1,4 @@
-package modules_test
+package guards_test
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestFilesystem_WritablePaths(t *testing.T) {
@@ -21,7 +21,7 @@ func TestFilesystem_WritablePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := modules.Filesystem(modules.FilesystemConfig{
+	m := guards.Filesystem(guards.FilesystemConfig{
 		Writable: []string{dir1, dir2},
 	})
 
@@ -49,7 +49,7 @@ func TestFilesystem_ReadablePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := modules.Filesystem(modules.FilesystemConfig{
+	m := guards.Filesystem(guards.FilesystemConfig{
 		Readable: []string{dir1},
 	})
 
@@ -78,7 +78,7 @@ func TestFilesystem_DeniedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := modules.Filesystem(modules.FilesystemConfig{
+	m := guards.Filesystem(guards.FilesystemConfig{
 		Denied: []string{file1},
 	})
 
@@ -105,7 +105,7 @@ func TestFilesystem_GlobExpansion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := modules.Filesystem(modules.FilesystemConfig{
+	m := guards.Filesystem(guards.FilesystemConfig{
 		Denied: []string{filepath.Join(tmp, "*.env")},
 	})
 
@@ -134,7 +134,7 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := modules.Filesystem(modules.FilesystemConfig{
+	m := guards.Filesystem(guards.FilesystemConfig{
 		Writable: []string{wdir},
 		Readable: []string{rdir},
 		Denied:   []string{denied},
@@ -157,7 +157,7 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 }
 
 func TestGuard_Filesystem_Metadata(t *testing.T) {
-	g := modules.FilesystemGuard()
+	g := guards.FilesystemGuard()
 
 	if g.Name() != "filesystem" {
 		t.Errorf("expected Name() = %q, got %q", "filesystem", g.Name())
@@ -186,7 +186,7 @@ func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	g := modules.FilesystemGuard()
+	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{
 		ProjectRoot: project,
 		HomeDir:     home,

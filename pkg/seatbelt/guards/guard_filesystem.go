@@ -3,7 +3,7 @@
 // Controls file system access with writable, readable, and denied paths.
 // Denied paths support glob expansion.
 
-package modules
+package guards
 
 import (
 	"fmt"

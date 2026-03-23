@@ -2,7 +2,7 @@
 //
 // Protects HashiCorp Vault token files from leakage.
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

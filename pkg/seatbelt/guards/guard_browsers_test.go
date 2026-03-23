@@ -1,15 +1,15 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestGuard_Browsers_Metadata(t *testing.T) {
-	g := modules.BrowsersGuard()
+	g := guards.BrowsersGuard()
 	if g.Name() != "browsers" {
 		t.Errorf("expected Name() = %q, got %q", "browsers", g.Name())
 	}
@@ -22,7 +22,7 @@ func TestGuard_Browsers_Metadata(t *testing.T) {
 }
 
 func TestGuard_Browsers_DarwinPaths(t *testing.T) {
-	g := modules.BrowsersGuard()
+	g := guards.BrowsersGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/Users/testuser",
 		GOOS:    "darwin",
@@ -59,7 +59,7 @@ func TestGuard_Browsers_DarwinPaths(t *testing.T) {
 }
 
 func TestGuard_Browsers_LinuxPaths(t *testing.T) {
-	g := modules.BrowsersGuard()
+	g := guards.BrowsersGuard()
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/testuser",
 		GOOS:    "linux",

@@ -1,11 +1,11 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func renderTestRules(rules []seatbelt.Rule) string {
@@ -18,7 +18,7 @@ func renderTestRules(rules []seatbelt.Rule) string {
 }
 
 func TestBase_DenyDefault(t *testing.T) {
-	m := modules.Base()
+	m := guards.Base()
 	if m.Name() != "base" {
 		t.Errorf("expected Name() = %q, got %q", "base", m.Name())
 	}
@@ -34,7 +34,7 @@ func TestBase_DenyDefault(t *testing.T) {
 }
 
 func TestGuard_Base(t *testing.T) {
-	g := modules.BaseGuard()
+	g := guards.BaseGuard()
 
 	if g.Name() != "base" {
 		t.Errorf("expected Name() = %q, got %q", "base", g.Name())

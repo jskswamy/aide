@@ -9,7 +9,7 @@ import (
 	"text/template"
 
 	"github.com/jskswamy/aide/internal/config"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 // PolicyFromConfig builds a sandbox.Policy from a SandboxPolicy config and
@@ -120,7 +120,7 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 		alwaysNames := alwaysGuardNames()
 		guardNames = append(guardNames, alwaysNames...)
 		for _, name := range cfg.Guards {
-			expanded := modules.ExpandGuardName(name)
+			expanded := guards.ExpandGuardName(name)
 			for _, n := range expanded {
 				if !containsString(alwaysNames, n) {
 					guardNames = append(guardNames, n)
@@ -129,19 +129,19 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 		}
 	} else if hasGuardsExtra {
 		// Default + extra
-		guardNames = append(guardNames, modules.DefaultGuardNames()...)
+		guardNames = append(guardNames, guards.DefaultGuardNames()...)
 		for _, name := range cfg.GuardsExtra {
-			expanded := modules.ExpandGuardName(name)
+			expanded := guards.ExpandGuardName(name)
 			guardNames = append(guardNames, expanded...)
 		}
 	} else {
 		// Only unguard specified -- start from defaults
-		guardNames = append(guardNames, modules.DefaultGuardNames()...)
+		guardNames = append(guardNames, guards.DefaultGuardNames()...)
 	}
 
 	// Validate all guard names exist
 	for _, name := range guardNames {
-		if _, ok := modules.GuardByName(name); !ok {
+		if _, ok := guards.GuardByName(name); !ok {
 			return nil, nil, fmt.Errorf("sandbox: unknown guard name %q", name)
 		}
 	}
@@ -149,9 +149,9 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 	// Apply unguard
 	if hasUnguard {
 		for _, name := range cfg.Unguard {
-			expanded := modules.ExpandGuardName(name)
+			expanded := guards.ExpandGuardName(name)
 			for _, n := range expanded {
-				g, ok := modules.GuardByName(n)
+				g, ok := guards.GuardByName(n)
 				if !ok {
 					return nil, nil, fmt.Errorf("sandbox: unknown guard name %q in unguard", n)
 				}
@@ -172,7 +172,7 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 // alwaysGuardNames returns names of all "always" type guards.
 func alwaysGuardNames() []string {
 	var names []string
-	for _, g := range modules.AllGuards() {
+	for _, g := range guards.AllGuards() {
 		if g.Type() == "always" {
 			names = append(names, g.Name())
 		}
@@ -354,9 +354,9 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 
 	// Validate guard names
 	for _, name := range cfg.Guards {
-		expanded := modules.ExpandGuardName(name)
+		expanded := guards.ExpandGuardName(name)
 		for _, n := range expanded {
-			if _, ok := modules.GuardByName(n); !ok {
+			if _, ok := guards.GuardByName(n); !ok {
 				result.Errors = append(result.Errors, fmt.Sprintf(
 					"sandbox.guards: unknown guard name %q", n,
 				))
@@ -365,9 +365,9 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 	}
 
 	for _, name := range cfg.GuardsExtra {
-		expanded := modules.ExpandGuardName(name)
+		expanded := guards.ExpandGuardName(name)
 		for _, n := range expanded {
-			if _, ok := modules.GuardByName(n); !ok {
+			if _, ok := guards.GuardByName(n); !ok {
 				result.Errors = append(result.Errors, fmt.Sprintf(
 					"sandbox.guards_extra: unknown guard name %q", n,
 				))
@@ -377,9 +377,9 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 
 	// Validate unguard names and type restriction
 	for _, name := range cfg.Unguard {
-		expanded := modules.ExpandGuardName(name)
+		expanded := guards.ExpandGuardName(name)
 		for _, n := range expanded {
-			g, ok := modules.GuardByName(n)
+			g, ok := guards.GuardByName(n)
 			if !ok {
 				result.Errors = append(result.Errors, fmt.Sprintf(
 					"sandbox.unguard: unknown guard name %q", n,

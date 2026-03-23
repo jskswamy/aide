@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 // NewSandbox returns a darwinSandbox on macOS.
@@ -77,7 +77,7 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 	}
 
 	// Resolve active guards from names
-	guardModules := modules.ResolveActiveGuards(policy.Guards)
+	guardModules := guards.ResolveActiveGuards(policy.Guards)
 
 	// Create profile with context
 	p := seatbelt.New(homeDir).

@@ -157,6 +157,21 @@ type SandboxRef struct {
 	Inline *SandboxPolicy `yaml:"inline,omitempty"`
 }
 
+// MarshalYAML flattens the SandboxRef for clean YAML output.
+// Inline policies are serialized directly (no "inline:" wrapper).
+func (r SandboxRef) MarshalYAML() (interface{}, error) {
+	if r.Disabled {
+		return false, nil
+	}
+	if r.ProfileName != "" {
+		return map[string]string{"profile": r.ProfileName}, nil
+	}
+	if r.Inline != nil {
+		return r.Inline, nil
+	}
+	return nil, nil
+}
+
 // UnmarshalYAML handles multiple forms:
 //   - `sandbox: false` (bool) — disables sandbox
 //   - `sandbox: "profile-name"` (string) — references a named profile

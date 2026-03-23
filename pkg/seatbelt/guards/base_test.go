@@ -26,8 +26,8 @@ func TestGuard_Base(t *testing.T) {
 	if g.Type() != "always" {
 		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
 	}
-	if g.Description() != "(version 1), (deny default)" {
-		t.Errorf("expected Description() = %q, got %q", "(version 1), (deny default)", g.Description())
+	if g.Description() != "Sandbox foundation — blocks all access unless explicitly allowed" {
+		t.Errorf("expected Description() = %q, got %q", "Sandbox foundation — blocks all access unless explicitly allowed", g.Description())
 	}
 
 	output := renderTestRules(g.Rules(nil))

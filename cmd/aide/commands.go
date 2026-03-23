@@ -3366,7 +3366,7 @@ func sandboxPortsCmd() *cobra.Command {
 func sandboxGuardsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "guards",
-		Short:        "List all guards with type, status, and paths",
+		Short:        "List all guards with type, status, and description",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
@@ -3392,7 +3392,7 @@ func sandboxGuardCmd() *cobra.Command {
 	var contextName string
 	cmd := &cobra.Command{
 		Use:          "guard <name>",
-		Short:        "Add a guard to guards_extra for a context's sandbox",
+		Short:        "Enable an additional guard for a context's sandbox",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -3407,7 +3407,7 @@ func sandboxGuardCmd() *cobra.Command {
 			sp := ensureInlineSandbox(&ctx)
 			for _, existing := range sp.GuardsExtra {
 				if existing == name {
-					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already in guards_extra for context %q\n", name, ctxName)
+					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already enabled for context %q\n", name, ctxName)
 					return nil
 				}
 			}
@@ -3416,7 +3416,7 @@ func sandboxGuardCmd() *cobra.Command {
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added guard %q to guards_extra for context %q\n", name, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q enabled for context %q\n", name, ctxName)
 			return nil
 		},
 	}
@@ -3438,7 +3438,7 @@ func sandboxUnguardCmd() *cobra.Command {
 				return fmt.Errorf("unknown guard %q (run 'aide sandbox guards' to list available guards)", name)
 			}
 			if g.Type() == "always" {
-				return fmt.Errorf("guard %q is an always-active guard and cannot be unguarded", name)
+				return fmt.Errorf("guard %q is an always-active guard and cannot be disabled", name)
 			}
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
@@ -3447,7 +3447,7 @@ func sandboxUnguardCmd() *cobra.Command {
 			sp := ensureInlineSandbox(&ctx)
 			for _, existing := range sp.Unguard {
 				if existing == name {
-					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already in unguard list for context %q\n", name, ctxName)
+					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already disabled for context %q\n", name, ctxName)
 					return nil
 				}
 			}
@@ -3456,7 +3456,7 @@ func sandboxUnguardCmd() *cobra.Command {
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added guard %q to unguard list for context %q\n", name, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q disabled for context %q\n", name, ctxName)
 			return nil
 		},
 	}
@@ -3471,7 +3471,7 @@ func sandboxTypesCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "%-12s %-10s %s\n", "TYPE", "DEFAULT", "DESCRIPTION")
+			fmt.Fprintf(out, "%-12s %-10s %s\n", "TYPE", "STATE", "DESCRIPTION")
 			fmt.Fprintf(out, "%-12s %-10s %s\n", "always", "on", "Always active; cannot be disabled")
 			fmt.Fprintf(out, "%-12s %-10s %s\n", "default", "on", "Active by default; can be disabled with unguard")
 			fmt.Fprintf(out, "%-12s %-10s %s\n", "opt-in", "off", "Inactive by default; enable with guard")

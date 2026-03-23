@@ -39,6 +39,7 @@ type SandboxInfo struct {
 	GuardCount int
 	Denied     []string // user-configured extra denied paths
 	Guards     []string // nil = show count, populated = list names
+	Protecting []string // resources being protected (e.g. "AWS credentials", "SSH keys")
 }
 
 // RenderBanner renders the banner using the given style. Valid styles are
@@ -127,6 +128,14 @@ func sandboxCountsLine(info *SandboxInfo) string {
 	return fmt.Sprintf("guards: %d active", info.GuardCount)
 }
 
+// sandboxProtectingLine returns the protecting resources line.
+func sandboxProtectingLine(info *SandboxInfo) string {
+	if info == nil || len(info.Protecting) == 0 {
+		return ""
+	}
+	return "protecting: " + strings.Join(info.Protecting, ", ")
+}
+
 // RenderCompact renders the compact (default) banner style.
 func RenderCompact(w io.Writer, data *BannerData) {
 	agent := agentDisplay(data)
@@ -154,19 +163,22 @@ func RenderCompact(w io.Writer, data *BannerData) {
 	}
 
 	if data.Sandbox != nil {
-		fmt.Fprintf(w, "   🛡️  sandbox: %s\n", sandboxSummary(data.Sandbox))
+		fmt.Fprintf(w, "   🛡 Sandbox   %s\n", sandboxSummary(data.Sandbox))
 		if !data.Sandbox.Disabled {
 			if dl := sandboxDeniedLine(data.Sandbox); dl != "" {
-				fmt.Fprintf(w, "      %s\n", dl)
+				fmt.Fprintf(w, "              %s\n", dl)
 			}
 			if cl := sandboxCountsLine(data.Sandbox); cl != "" {
-				fmt.Fprintf(w, "      %s\n", cl)
+				fmt.Fprintf(w, "              %s\n", cl)
+			}
+			if pl := sandboxProtectingLine(data.Sandbox); pl != "" {
+				fmt.Fprintf(w, "              %s\n", pl)
 			}
 		}
 	}
 
 	for _, w2 := range data.Warnings {
-		yellow.Fprintf(w, "      ⚠ %s\n", w2)
+		yellow.Fprintf(w, "              ⚠ %s\n", w2)
 	}
 }
 
@@ -208,7 +220,7 @@ func RenderBoxed(w io.Writer, data *BannerData) {
 	}
 
 	if data.Sandbox != nil {
-		fmt.Fprintf(w, "│ 🛡️  ")
+		fmt.Fprintf(w, "│ 🛡 ")
 		cyan.Fprintf(w, "Sandbox   ")
 		fmt.Fprintf(w, "%s\n", sandboxSummary(data.Sandbox))
 		if !data.Sandbox.Disabled {
@@ -217,6 +229,9 @@ func RenderBoxed(w io.Writer, data *BannerData) {
 			}
 			if cl := sandboxCountsLine(data.Sandbox); cl != "" {
 				fmt.Fprintf(w, "│              %s\n", cl)
+			}
+			if pl := sandboxProtectingLine(data.Sandbox); pl != "" {
+				fmt.Fprintf(w, "│              %s\n", pl)
 			}
 		}
 	}
@@ -274,6 +289,9 @@ func RenderClean(w io.Writer, data *BannerData) {
 			}
 			if cl := sandboxCountsLine(data.Sandbox); cl != "" {
 				fmt.Fprintf(w, "            %s\n", cl)
+			}
+			if pl := sandboxProtectingLine(data.Sandbox); pl != "" {
+				fmt.Fprintf(w, "            %s\n", pl)
 			}
 		}
 	}

@@ -15,7 +15,9 @@ func GitIntegrationGuard() seatbelt.Guard { return &gitIntegrationGuard{} }
 
 func (g *gitIntegrationGuard) Name() string        { return "git-integration" }
 func (g *gitIntegrationGuard) Type() string        { return "always" }
-func (g *gitIntegrationGuard) Description() string { return "Git config and SSH keys (read-only)" }
+func (g *gitIntegrationGuard) Description() string {
+	return "Git config and SSH host verification (read-only)"
+}
 
 func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir

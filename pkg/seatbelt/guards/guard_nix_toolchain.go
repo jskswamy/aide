@@ -13,7 +13,7 @@ func NixToolchainGuard() seatbelt.Guard { return &nixToolchainGuard{} }
 
 func (g *nixToolchainGuard) Name() string        { return "nix-toolchain" }
 func (g *nixToolchainGuard) Type() string        { return "always" }
-func (g *nixToolchainGuard) Description() string { return "Nix store, system paths, and user profile" }
+func (g *nixToolchainGuard) Description() string { return "Nix store and profile access" }
 
 func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir

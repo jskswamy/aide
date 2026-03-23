@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
@@ -26,6 +27,31 @@ func TestDenyFile(t *testing.T) {
 	output := rules[0].String() + rules[1].String()
 	if !strings.Contains(output, `(literal "/home/user/.vault-token")`) {
 		t.Error("DenyFile should use literal")
+	}
+}
+
+func TestDenyDir_Intent(t *testing.T) {
+	rules := guards.DenyDir("/home/.ssh")
+	for _, r := range rules {
+		if r.Intent() != seatbelt.Restrict {
+			t.Errorf("DenyDir should produce Restrict intent, got %d", r.Intent())
+		}
+	}
+}
+
+func TestDenyFile_Intent(t *testing.T) {
+	rules := guards.DenyFile("/home/.vault-token")
+	for _, r := range rules {
+		if r.Intent() != seatbelt.Restrict {
+			t.Errorf("DenyFile should produce Restrict intent, got %d", r.Intent())
+		}
+	}
+}
+
+func TestAllowReadFile_Intent(t *testing.T) {
+	r := guards.AllowReadFile("/home/.ssh/known_hosts")
+	if r.Intent() != seatbelt.Grant {
+		t.Errorf("AllowReadFile should produce Grant intent, got %d", r.Intent())
 	}
 }
 

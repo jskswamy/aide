@@ -65,17 +65,6 @@ func (d *darwinSandbox) GenerateProfile(policy Policy) (string, error) {
 func generateSeatbeltProfile(policy Policy) (string, error) {
 	homeDir, _ := os.UserHomeDir()
 
-	// Map sandbox.NetworkMode (string) to seatbelt.NetworkMode (int)
-	var netMode seatbelt.NetworkMode
-	switch policy.Network {
-	case NetworkNone:
-		netMode = seatbelt.NetworkNone
-	case NetworkOutbound:
-		netMode = seatbelt.NetworkOutbound
-	default:
-		netMode = seatbelt.NetworkOpen
-	}
-
 	// Resolve active guards from names
 	guardModules := guards.ResolveActiveGuards(policy.Guards)
 
@@ -86,7 +75,7 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 			ctx.TempDir = policy.TempDir
 			ctx.RuntimeDir = policy.RuntimeDir
 			ctx.Env = policy.Env
-			ctx.Network = netMode
+			ctx.Network = string(policy.Network) // both are strings
 			ctx.AllowPorts = policy.AllowPorts
 			ctx.DenyPorts = policy.DenyPorts
 			ctx.ExtraDenied = policy.ExtraDenied

@@ -3234,6 +3234,10 @@ func ensureInlineSandbox(ctx *config.Context) *config.SandboxPolicy {
 	if ctx.Sandbox == nil {
 		ctx.Sandbox = &config.SandboxRef{Inline: &config.SandboxPolicy{}}
 	}
+	// Clear disabled flag — user is actively configuring the sandbox
+	ctx.Sandbox.Disabled = false
+	// Clear profile name — switching to inline config
+	ctx.Sandbox.ProfileName = ""
 	if ctx.Sandbox.Inline == nil {
 		ctx.Sandbox.Inline = &config.SandboxPolicy{}
 	}

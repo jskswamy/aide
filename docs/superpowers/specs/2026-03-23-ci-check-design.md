@@ -105,14 +105,13 @@ RESULT: NOT READY TO PUSH (build failed)
 
 ## Prerequisites
 
-The command requires these tools installed locally:
+All required tools are provided by the nix devshell (`nix develop`):
 
-- `golangci-lint` (included in the nix devshell)
-- `gosec` (`go install github.com/securego/gosec/v2/cmd/gosec@latest`)
-- `govulncheck` (`go install golang.org/x/vuln/cmd/govulncheck@latest`)
+- `go`, `golangci-lint`, `gosec` — from nixpkgs
+- `govulncheck` — installed via `go install` in the shell hook
 
-The command prompt must check tool availability before running
-and report which tools are missing with install instructions.
+The command prompt must verify tool availability before running
+and report any missing tools with a reminder to enter the devshell.
 
 ## Command Implementation
 

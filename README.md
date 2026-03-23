@@ -22,6 +22,15 @@ Someone commits a `.env`. Encrypted storage with per-person age keys prevents th
 ## Quick Start
 
 ```bash
+# Install latest release (macOS)
+curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | sh
+
+# Install to a specific directory
+curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | INSTALL_DIR=/usr/local/bin sudo sh
+
+# Install a specific version
+curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | VERSION=v0.1.0 sh
+
 # Install from source
 go install github.com/jskswamy/aide/cmd/aide@latest
 

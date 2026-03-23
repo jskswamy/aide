@@ -21,7 +21,9 @@ func FilesystemGuard() seatbelt.Guard { return &filesystemGuard{} }
 
 func (g *filesystemGuard) Name() string        { return "filesystem" }
 func (g *filesystemGuard) Type() string        { return "always" }
-func (g *filesystemGuard) Description() string { return "project and home filesystem access" }
+func (g *filesystemGuard) Description() string {
+	return "Project directory (read-write) and home directory (read-only) access"
+}
 
 func (g *filesystemGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	if ctx == nil {

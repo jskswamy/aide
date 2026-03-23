@@ -19,7 +19,7 @@ func NetworkGuard() seatbelt.Guard { return &networkGuard{} }
 
 func (g *networkGuard) Name() string        { return "network" }
 func (g *networkGuard) Type() string        { return "always" }
-func (g *networkGuard) Description() string { return "network access control (open/outbound/none)" }
+func (g *networkGuard) Description() string { return "Network access for agent operation" }
 
 func (g *networkGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	if ctx == nil {

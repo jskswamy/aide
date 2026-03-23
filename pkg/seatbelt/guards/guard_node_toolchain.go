@@ -15,7 +15,9 @@ func NodeToolchainGuard() seatbelt.Guard { return &nodeToolchainGuard{} }
 
 func (g *nodeToolchainGuard) Name() string        { return "node-toolchain" }
 func (g *nodeToolchainGuard) Type() string        { return "always" }
-func (g *nodeToolchainGuard) Description() string { return "Node.js, npm, yarn, pnpm, and browser testing tool paths" }
+func (g *nodeToolchainGuard) Description() string {
+	return "Node.js package managers and build tool access"
+}
 
 func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir

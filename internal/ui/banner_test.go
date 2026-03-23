@@ -38,7 +38,7 @@ func TestRenderCompact(t *testing.T) {
 	var buf bytes.Buffer
 	RenderCompact(&buf, fullBannerData())
 	out := buf.String()
-	for _, want := range []string{"aide", "work", "claude", "secret:", "env:", "sandbox:", "denied:", "guards:"} {
+	for _, want := range []string{"aide", "work", "claude", "secret:", "env:", "Sandbox", "denied:", "guards:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("compact output missing %q", want)
 		}

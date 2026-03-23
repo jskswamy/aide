@@ -10,7 +10,9 @@ func BaseGuard() seatbelt.Guard { return &baseGuard{} }
 
 func (g *baseGuard) Name() string        { return "base" }
 func (g *baseGuard) Type() string        { return "always" }
-func (g *baseGuard) Description() string { return "(version 1), (deny default)" }
+func (g *baseGuard) Description() string {
+	return "Sandbox foundation — blocks all access unless explicitly allowed"
+}
 
 func (g *baseGuard) Rules(_ *seatbelt.Context) []seatbelt.Rule {
 	return []seatbelt.Rule{

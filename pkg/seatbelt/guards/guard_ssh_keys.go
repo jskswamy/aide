@@ -15,7 +15,9 @@ func SSHKeysGuard() seatbelt.Guard { return &sshKeysGuard{} }
 
 func (g *sshKeysGuard) Name() string        { return "ssh-keys" }
 func (g *sshKeysGuard) Type() string        { return "default" }
-func (g *sshKeysGuard) Description() string { return "SSH keys directory (deny) with known_hosts+config allow" }
+func (g *sshKeysGuard) Description() string {
+	return "Blocks access to SSH private keys; allows known_hosts and config"
+}
 
 func (g *sshKeysGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir

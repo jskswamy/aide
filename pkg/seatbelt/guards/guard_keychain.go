@@ -15,7 +15,9 @@ func KeychainGuard() seatbelt.Guard { return &keychainGuard{} }
 
 func (g *keychainGuard) Name() string        { return "keychain" }
 func (g *keychainGuard) Type() string        { return "always" }
-func (g *keychainGuard) Description() string { return "macOS Keychain read/write and security Mach services" }
+func (g *keychainGuard) Description() string {
+	return "macOS Keychain access for authentication and certificates"
+}
 
 func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir

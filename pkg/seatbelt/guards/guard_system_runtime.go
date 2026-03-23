@@ -15,7 +15,9 @@ func SystemRuntimeGuard() seatbelt.Guard { return &systemRuntimeGuard{} }
 
 func (g *systemRuntimeGuard) Name() string        { return "system-runtime" }
 func (g *systemRuntimeGuard) Type() string        { return "always" }
-func (g *systemRuntimeGuard) Description() string { return "macOS system runtime paths, devices, and Mach services" }
+func (g *systemRuntimeGuard) Description() string {
+	return "System binaries, devices, and OS services for agent operation"
+}
 
 func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir

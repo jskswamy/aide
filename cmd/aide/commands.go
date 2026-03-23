@@ -3364,17 +3364,41 @@ func sandboxPortsCmd() *cobra.Command {
 }
 
 func sandboxGuardsCmd() *cobra.Command {
-	return &cobra.Command{
+	var contextName string
+	cmd := &cobra.Command{
 		Use:          "guards",
 		Short:        "List all guards with type, status, and description",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			allGuards := guards.AllGuards()
-			activeSet := make(map[string]bool)
-			for _, n := range guards.DefaultGuardNames() {
+
+			// Resolve the active set from the current context config
+			var activeNames []string
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err == nil {
+				_ = ctxName
+				var sandboxCfg *config.SandboxPolicy
+				if ctx.Sandbox != nil && !ctx.Sandbox.Disabled {
+					if ctx.Sandbox.Inline != nil {
+						sandboxCfg = ctx.Sandbox.Inline
+					} else if ctx.Sandbox.ProfileName != "" {
+						if sp, ok := cfg.Sandboxes[ctx.Sandbox.ProfileName]; ok {
+							sandboxCfg = &sp
+						}
+					}
+				}
+				activeNames = sandbox.EffectiveGuards(sandboxCfg)
+			} else {
+				// Fall back to defaults if config cannot be loaded
+				activeNames = guards.DefaultGuardNames()
+			}
+
+			activeSet := make(map[string]bool, len(activeNames))
+			for _, n := range activeNames {
 				activeSet[n] = true
 			}
+
 			fmt.Fprintf(out, "%-20s %-12s %-10s %s\n", "GUARD", "TYPE", "STATUS", "DESCRIPTION")
 			for _, g := range allGuards {
 				status := "inactive"
@@ -3386,6 +3410,8 @@ func sandboxGuardsCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	return cmd
 }
 
 func sandboxGuardCmd() *cobra.Command {
@@ -3397,24 +3423,28 @@ func sandboxGuardCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if _, ok := guards.GuardByName(name); !ok {
-				return fmt.Errorf("unknown guard %q (run 'aide sandbox guards' to list available guards)", name)
-			}
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
 				return err
 			}
-			sp := ensureInlineSandbox(&ctx)
-			for _, existing := range sp.GuardsExtra {
-				if existing == name {
-					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already enabled for context %q\n", name, ctxName)
-					return nil
-				}
+			// Reject named profile references — user must edit the profile directly
+			if ctx.Sandbox != nil && !ctx.Sandbox.Disabled && ctx.Sandbox.Inline == nil && ctx.Sandbox.ProfileName != "" {
+				return fmt.Errorf("context %q uses a named sandbox profile %q; modify the profile directly", ctxName, ctx.Sandbox.ProfileName)
 			}
-			sp.GuardsExtra = append(sp.GuardsExtra, name)
+			sp := ensureInlineSandbox(&ctx)
+			r := sandbox.EnableGuard(sp, name)
+			for _, w := range r.Warnings {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+			}
+			if !r.OK() {
+				return fmt.Errorf("%s", r.Errors[0])
+			}
 			cfg.Contexts[ctxName] = ctx
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
+			}
+			if len(r.Warnings) > 0 {
+				return nil
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q enabled for context %q\n", name, ctxName)
 			return nil
@@ -3433,28 +3463,28 @@ func sandboxUnguardCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			g, ok := guards.GuardByName(name)
-			if !ok {
-				return fmt.Errorf("unknown guard %q (run 'aide sandbox guards' to list available guards)", name)
-			}
-			if g.Type() == "always" {
-				return fmt.Errorf("guard %q is an always-active guard and cannot be disabled", name)
-			}
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
 				return err
 			}
-			sp := ensureInlineSandbox(&ctx)
-			for _, existing := range sp.Unguard {
-				if existing == name {
-					fmt.Fprintf(cmd.OutOrStdout(), "Guard %q is already disabled for context %q\n", name, ctxName)
-					return nil
-				}
+			// Reject named profile references — user must edit the profile directly
+			if ctx.Sandbox != nil && !ctx.Sandbox.Disabled && ctx.Sandbox.Inline == nil && ctx.Sandbox.ProfileName != "" {
+				return fmt.Errorf("context %q uses a named sandbox profile %q; modify the profile directly", ctxName, ctx.Sandbox.ProfileName)
 			}
-			sp.Unguard = append(sp.Unguard, name)
+			sp := ensureInlineSandbox(&ctx)
+			r := sandbox.DisableGuard(sp, name)
+			for _, w := range r.Warnings {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+			}
+			if !r.OK() {
+				return fmt.Errorf("%s", r.Errors[0])
+			}
 			cfg.Contexts[ctxName] = ctx
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
+			}
+			if len(r.Warnings) > 0 {
+				return nil
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q disabled for context %q\n", name, ctxName)
 			return nil

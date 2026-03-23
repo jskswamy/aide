@@ -16,15 +16,16 @@
 //
 // # Usage
 //
-//	profile := seatbelt.New(homeDir).Use(
-//	    modules.Base(),
-//	    modules.SystemRuntime(),
-//	    modules.Network(modules.NetworkOpen),
-//	    modules.Filesystem(modules.FilesystemConfig{
-//	        Writable: []string{projectRoot, tmpDir},
-//	        Denied:   []string{"~/.ssh/id_*"},
-//	    }),
-//	    modules.ClaudeAgent(),
-//	)
+//	profile := seatbelt.New(homeDir).
+//	    WithContext(func(ctx *seatbelt.Context) {
+//	        ctx.ProjectRoot = projectRoot
+//	        ctx.Network = "outbound"
+//	    }).
+//	    Use(
+//	        guards.BaseGuard(),
+//	        guards.SystemRuntimeGuard(),
+//	        guards.NetworkGuard(),
+//	        guards.FilesystemGuard(),
+//	    )
 //	sbText, err := profile.Render()
 package seatbelt

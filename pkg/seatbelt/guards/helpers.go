@@ -10,22 +10,22 @@ import (
 // DenyDir denies read+write to a directory tree using (subpath ...).
 func DenyDir(path string) []seatbelt.Rule {
 	return []seatbelt.Rule{
-		seatbelt.Raw(fmt.Sprintf(`(deny file-read-data (subpath "%s"))`, path)),
-		seatbelt.Raw(fmt.Sprintf(`(deny file-write* (subpath "%s"))`, path)),
+		seatbelt.RestrictRule(fmt.Sprintf(`(deny file-read-data (subpath "%s"))`, path)),
+		seatbelt.RestrictRule(fmt.Sprintf(`(deny file-write* (subpath "%s"))`, path)),
 	}
 }
 
 // DenyFile denies read+write to a single file using (literal ...).
 func DenyFile(path string) []seatbelt.Rule {
 	return []seatbelt.Rule{
-		seatbelt.Raw(fmt.Sprintf(`(deny file-read-data (literal "%s"))`, path)),
-		seatbelt.Raw(fmt.Sprintf(`(deny file-write* (literal "%s"))`, path)),
+		seatbelt.RestrictRule(fmt.Sprintf(`(deny file-read-data (literal "%s"))`, path)),
+		seatbelt.RestrictRule(fmt.Sprintf(`(deny file-write* (literal "%s"))`, path)),
 	}
 }
 
 // AllowReadFile allows reading a single file using (literal ...).
 func AllowReadFile(path string) seatbelt.Rule {
-	return seatbelt.Raw(fmt.Sprintf(`(allow file-read* (literal "%s"))`, path))
+	return seatbelt.GrantRule(fmt.Sprintf(`(allow file-read* (literal "%s"))`, path))
 }
 
 // EnvOverridePath returns the env var value if set and non-empty, otherwise the

@@ -161,13 +161,14 @@ func TestLinuxSandbox_Apply_FallsBackGracefully(t *testing.T) {
 	// When neither Landlock nor bwrap is available, Apply should not error
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo", "test")
-	policy := DefaultPolicy("/tmp/proj", "/tmp/runtime", "/tmp", nil)
+	runtimeDir := t.TempDir()
+	policy := DefaultPolicy("/tmp/proj", runtimeDir, "/tmp", nil)
 
 	// This test exercises the full Apply path.
 	// On systems with bwrap (our devcontainer), it will use bwrap.
 	// On systems with Landlock, it will use Landlock.
 	// Either way, it should not error.
-	err := s.Apply(cmd, policy, "/tmp/runtime")
+	err := s.Apply(cmd, policy, runtimeDir)
 	if err != nil {
 		t.Fatalf("Apply should not error: %v", err)
 	}

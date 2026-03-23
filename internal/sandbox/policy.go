@@ -116,7 +116,8 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 		)
 	}
 
-	if hasGuards {
+	switch {
+	case hasGuards:
 		// Always guards + listed guards (replaces default set)
 		alwaysNames := alwaysGuardNames()
 		guardNames = append(guardNames, alwaysNames...)
@@ -128,14 +129,14 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 				}
 			}
 		}
-	} else if hasGuardsExtra {
+	case hasGuardsExtra:
 		// Default + extra
 		guardNames = append(guardNames, guards.DefaultGuardNames()...)
 		for _, name := range cfg.GuardsExtra {
 			expanded := guards.ExpandGuardName(name)
 			guardNames = append(guardNames, expanded...)
 		}
-	} else {
+	default:
 		// Only unguard specified -- start from defaults
 		guardNames = append(guardNames, guards.DefaultGuardNames()...)
 	}

@@ -16,7 +16,7 @@ func (g *baseGuard) Description() string {
 
 func (g *baseGuard) Rules(_ *seatbelt.Context) []seatbelt.Rule {
 	return []seatbelt.Rule{
-		seatbelt.Raw("(version 1)"),
-		seatbelt.Raw("(deny default)"),
+		seatbelt.SetupRule("(version 1)"),
+		seatbelt.SetupRule("(deny default)"),
 	}
 }

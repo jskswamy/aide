@@ -24,15 +24,15 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	return []seatbelt.Rule{
 		// Node version managers
-		seatbelt.Section("Node version managers"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("Node version managers"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".nvm") + `
     ` + seatbelt.HomeSubpath(home, ".fnm") + `
 )`),
 
 		// npm
-		seatbelt.Section("npm"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("npm"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".npm") + `
     ` + seatbelt.HomeSubpath(home, ".config/npm") + `
     ` + seatbelt.HomeSubpath(home, ".cache/npm") + `
@@ -45,8 +45,8 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// pnpm
-		seatbelt.Section("pnpm"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("pnpm"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".config/pnpm") + `
     ` + seatbelt.HomeSubpath(home, ".pnpm-state") + `
     ` + seatbelt.HomeSubpath(home, ".pnpm-store") + `
@@ -58,8 +58,8 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// yarn
-		seatbelt.Section("yarn"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("yarn"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".yarn") + `
     ` + seatbelt.HomeLiteral(home, ".yarnrc") + `
     ` + seatbelt.HomeLiteral(home, ".yarnrc.yml") + `
@@ -69,15 +69,15 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// corepack
-		seatbelt.Section("corepack"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("corepack"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".cache/node/corepack") + `
     ` + seatbelt.HomeSubpath(home, "Library/Caches/node/corepack") + `
 )`),
 
 		// Browser testing and tools
-		seatbelt.Section("Browser testing and tools"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("Browser testing and tools"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, "Library/Caches/ms-playwright") + `
     ` + seatbelt.HomeSubpath(home, "Library/Caches/Cypress") + `
     ` + seatbelt.HomeSubpath(home, ".cache/puppeteer") + `
@@ -85,8 +85,8 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Prisma
-		seatbelt.Section("Prisma"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("Prisma"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".cache/prisma") + `
     ` + seatbelt.HomeSubpath(home, "Library/Caches/prisma-nodejs") + `
     ` + seatbelt.HomeSubpath(home, "Library/Caches/checkpoint-nodejs") + `
@@ -94,8 +94,8 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Turborepo
-		seatbelt.Section("Turborepo"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionSetup("Turborepo"),
+		seatbelt.SetupRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".cache/turbo") + `
     ` + seatbelt.HomeSubpath(home, "Library/Caches/turbo") + `
     ` + seatbelt.HomeSubpath(home, "Library/Application Support/turborepo") + `

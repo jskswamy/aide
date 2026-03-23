@@ -17,7 +17,7 @@ func (g *terraformGuard) Description() string { return "Blocks access to Terrafo
 
 func (g *terraformGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("Terraform credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("Terraform credentials"))
 
 	if cliConfig, ok := ctx.EnvLookup("TF_CLI_CONFIG_FILE"); ok && cliConfig != "" {
 		rules = append(rules, DenyFile(cliConfig)...)

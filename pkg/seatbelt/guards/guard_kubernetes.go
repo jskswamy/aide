@@ -17,7 +17,7 @@ func (g *kubernetesGuard) Description() string { return "Blocks access to Kubern
 
 func (g *kubernetesGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("Kubernetes credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("Kubernetes credentials"))
 
 	// KUBECONFIG is colon-separated; each path is denied individually
 	if kubeconfig, ok := ctx.EnvLookup("KUBECONFIG"); ok && kubeconfig != "" {

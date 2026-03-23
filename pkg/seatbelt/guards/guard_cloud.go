@@ -24,7 +24,7 @@ func (g *cloudAWSGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	configPath := EnvOverridePath(ctx, "AWS_CONFIG_FILE", ".aws/config")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("AWS credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("AWS credentials"))
 	rules = append(rules, DenyFile(credsPath)...)
 	rules = append(rules, DenyFile(configPath)...)
 	// SSO cache and CLI cache are always denied by subpath
@@ -48,7 +48,7 @@ func (g *cloudGCPGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	gcloudPath := EnvOverridePath(ctx, "CLOUDSDK_CONFIG", ".config/gcloud")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("GCP credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("GCP credentials"))
 	rules = append(rules, DenyDir(gcloudPath)...)
 
 	// GOOGLE_APPLICATION_CREDENTIALS points to a single file
@@ -73,7 +73,7 @@ func (g *cloudAzureGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	azurePath := EnvOverridePath(ctx, "AZURE_CONFIG_DIR", ".azure")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("Azure credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("Azure credentials"))
 	rules = append(rules, DenyDir(azurePath)...)
 	return rules
 }
@@ -91,7 +91,7 @@ func (g *cloudDigitalOceanGuard) Description() string { return "Blocks access to
 
 func (g *cloudDigitalOceanGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("DigitalOcean credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("DigitalOcean credentials"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/doctl"))...)
 	return rules
 }
@@ -109,7 +109,7 @@ func (g *cloudOCIGuard) Description() string { return "Blocks access to Oracle C
 
 func (g *cloudOCIGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("OCI credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("OCI credentials"))
 
 	// OCI_CLI_CONFIG_FILE points to a single file; the default ~/.oci is a directory.
 	if ociFile, ok := ctx.EnvLookup("OCI_CLI_CONFIG_FILE"); ok && ociFile != "" {

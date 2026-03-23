@@ -20,7 +20,7 @@ func (g *browsersGuard) Description() string {
 
 func (g *browsersGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("Browser profiles"))
+	rules = append(rules, seatbelt.SectionRestrict("Browser profiles"))
 
 	switch ctx.GOOS {
 	case "linux":

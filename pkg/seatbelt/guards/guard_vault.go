@@ -19,7 +19,7 @@ func (g *vaultGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	tokenPath := EnvOverridePath(ctx, "VAULT_TOKEN_FILE", ".vault-token")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("Vault credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("Vault credentials"))
 	rules = append(rules, DenyFile(tokenPath)...)
 	return rules
 }

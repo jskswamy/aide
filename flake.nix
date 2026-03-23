@@ -24,6 +24,9 @@
           ];
 
           shellHook = ''
+            # Export GOROOT so Go works outside the devshell (e.g. Claude Code sandbox)
+            export GOROOT="${pkgs.go}/share/go"
+
             # Auto-install git hooks (one-time)
             _sentinel=".git/hooks/.aide-dev-setup-done"
             if [ ! -f "$_sentinel" ] && [ -d .git ] && [ -f .pre-commit-config.yaml ]; then

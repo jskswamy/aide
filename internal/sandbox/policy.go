@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
@@ -270,16 +271,10 @@ func resolvePathTemplate(tmplStr string, vars map[string]string) (string, error)
 	return buf.String(), nil
 }
 
-// ValidationResult holds the results of a detailed sandbox config validation.
-type ValidationResult struct {
-	Errors   []string
-	Warnings []string
-}
-
 // ValidateSandboxConfigDetailed validates a SandboxPolicy configuration,
 // returning both errors and warnings.
-func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
-	var result ValidationResult
+func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) *seatbelt.ValidationResult {
+	result := &seatbelt.ValidationResult{}
 	if cfg == nil {
 		return result
 	}
@@ -290,65 +285,49 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 			"outbound": true, "none": true, "unrestricted": true, "": true,
 		}
 		if !validNetworkModes[cfg.Network.Mode] {
-			result.Errors = append(result.Errors, fmt.Sprintf(
-				"sandbox.network: invalid value %q, must be one of: outbound, none, unrestricted",
-				cfg.Network.Mode,
-			))
+			result.AddError("sandbox.network: invalid value %q, must be one of: outbound, none, unrestricted",
+				cfg.Network.Mode)
 		}
 
 		// Validate port numbers in AllowPorts
 		for _, port := range cfg.Network.AllowPorts {
 			if port < 1 || port > 65535 {
-				result.Errors = append(result.Errors, fmt.Sprintf(
-					"sandbox.network.allow_ports: invalid port %d, must be 1-65535", port,
-				))
+				result.AddError("sandbox.network.allow_ports: invalid port %d, must be 1-65535", port)
 			}
 		}
 
 		// Validate port numbers in DenyPorts
 		for _, port := range cfg.Network.DenyPorts {
 			if port < 1 || port > 65535 {
-				result.Errors = append(result.Errors, fmt.Sprintf(
-					"sandbox.network.deny_ports: invalid port %d, must be 1-65535", port,
-				))
+				result.AddError("sandbox.network.deny_ports: invalid port %d, must be 1-65535", port)
 			}
 		}
 	}
 
 	// Warn if both denied and denied_extra are set (extra is ignored when override is present)
 	if len(cfg.Denied) > 0 && len(cfg.DeniedExtra) > 0 {
-		result.Warnings = append(result.Warnings,
-			"sandbox: both denied and denied_extra are set; denied_extra is ignored when denied is specified",
-		)
+		result.AddWarning("sandbox: both denied and denied_extra are set; denied_extra is ignored when denied is specified")
 	}
 
 	// Warn if both writable and writable_extra are set
 	if len(cfg.Writable) > 0 && len(cfg.WritableExtra) > 0 {
-		result.Warnings = append(result.Warnings,
-			"sandbox: both writable and writable_extra are set; writable_extra is ignored when writable is specified",
-		)
+		result.AddWarning("sandbox: both writable and writable_extra are set; writable_extra is ignored when writable is specified")
 	}
 
 	// Warn if both readable and readable_extra are set
 	if len(cfg.Readable) > 0 && len(cfg.ReadableExtra) > 0 {
-		result.Warnings = append(result.Warnings,
-			"sandbox: both readable and readable_extra are set; readable_extra is ignored when readable is specified",
-		)
+		result.AddWarning("sandbox: both readable and readable_extra are set; readable_extra is ignored when readable is specified")
 	}
 
 	// Warn if both guards and guards_extra are set
 	if len(cfg.Guards) > 0 && len(cfg.GuardsExtra) > 0 {
-		result.Warnings = append(result.Warnings,
-			"sandbox: both guards and guards_extra are set; guards_extra is ignored when guards is specified",
-		)
+		result.AddWarning("sandbox: both guards and guards_extra are set; guards_extra is ignored when guards is specified")
 	}
 
 	// Warn if writable contains home dir (too broad)
 	for _, w := range cfg.Writable {
 		if w == "~" || w == "~/" || isHomeDirPath(w) {
-			result.Warnings = append(result.Warnings, fmt.Sprintf(
-				"sandbox.writable: %q includes the entire home directory, which is very broad", w,
-			))
+			result.AddWarning("sandbox.writable: %q includes the entire home directory, which is very broad", w)
 		}
 	}
 
@@ -357,9 +336,7 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 		expanded := guards.ExpandGuardName(name)
 		for _, n := range expanded {
 			if _, ok := guards.GuardByName(n); !ok {
-				result.Errors = append(result.Errors, fmt.Sprintf(
-					"sandbox.guards: unknown guard name %q", n,
-				))
+				result.AddError("sandbox.guards: unknown guard name %q", n)
 			}
 		}
 	}
@@ -368,9 +345,7 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 		expanded := guards.ExpandGuardName(name)
 		for _, n := range expanded {
 			if _, ok := guards.GuardByName(n); !ok {
-				result.Errors = append(result.Errors, fmt.Sprintf(
-					"sandbox.guards_extra: unknown guard name %q", n,
-				))
+				result.AddError("sandbox.guards_extra: unknown guard name %q", n)
 			}
 		}
 	}
@@ -381,15 +356,11 @@ func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) ValidationResult {
 		for _, n := range expanded {
 			g, ok := guards.GuardByName(n)
 			if !ok {
-				result.Errors = append(result.Errors, fmt.Sprintf(
-					"sandbox.unguard: unknown guard name %q", n,
-				))
+				result.AddError("sandbox.unguard: unknown guard name %q", n)
 				continue
 			}
 			if g.Type() == "always" {
-				result.Errors = append(result.Errors, fmt.Sprintf(
-					"sandbox.unguard: cannot unguard %q (type %q is always-on)", n, g.Type(),
-				))
+				result.AddError("sandbox.unguard: cannot unguard %q (type %q is always-on)", n, g.Type())
 			}
 		}
 	}
@@ -412,11 +383,7 @@ func isHomeDirPath(path string) bool {
 // Returns the first error found, or nil. For detailed results including
 // warnings, use ValidateSandboxConfigDetailed.
 func ValidateSandboxConfig(cfg *config.SandboxPolicy) error {
-	result := ValidateSandboxConfigDetailed(cfg)
-	if len(result.Errors) > 0 {
-		return fmt.Errorf("%s", result.Errors[0])
-	}
-	return nil
+	return ValidateSandboxConfigDetailed(cfg).Err()
 }
 
 // ValidateSandboxRef validates a SandboxRef, checking that profile references

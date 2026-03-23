@@ -56,6 +56,19 @@ func (c *Context) EnvLookup(key string) (string, bool) {
 	return "", false
 }
 
+// Validate checks that required Context fields are set.
+// Returns a ValidationResult with errors for missing required fields.
+func (c *Context) Validate() *ValidationResult {
+	r := &ValidationResult{}
+	if c.HomeDir == "" {
+		r.AddError("context: HomeDir is required for guard path resolution")
+	}
+	if c.GOOS == "" {
+		r.AddError("context: GOOS is required for OS-aware guards")
+	}
+	return r
+}
+
 // Rule represents a Seatbelt rule or comment block.
 type Rule struct {
 	comment string

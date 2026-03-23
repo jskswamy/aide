@@ -20,13 +20,6 @@ func renderRules(rules []Rule) string {
 	return b.String()
 }
 
-// renderModule renders a module with a section header.
-func renderModule(m Module, ctx *Context) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "\n;; === %s ===\n", m.Name())
-	b.WriteString(renderRules(m.Rules(ctx)))
-	return b.String()
-}
 
 // taggedRule pairs a rule with its source module name for rendering.
 type taggedRule struct {

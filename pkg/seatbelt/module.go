@@ -74,6 +74,8 @@ func (c *Context) Validate() *ValidationResult {
 // Seatbelt uses last-rule-wins, so higher intent values take precedence.
 type RuleIntent int
 
+// RuleIntent values determine rendering order. Seatbelt uses last-rule-wins,
+// so higher values take precedence.
 const (
 	Setup    RuleIntent = 100 // infrastructure allows + refinement denies
 	Restrict RuleIntent = 200 // block sensitive paths

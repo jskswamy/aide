@@ -24,24 +24,24 @@ func (g *sshKeysGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	return []seatbelt.Rule{
 		// Deny all reads/writes to .ssh via subpath — catches private keys
-		seatbelt.Section("SSH keys (deny)"),
-		seatbelt.Raw(`(deny file-read-data
+		seatbelt.SectionRestrict("SSH keys (deny)"),
+		seatbelt.RestrictRule(`(deny file-read-data
     ` + seatbelt.HomeSubpath(home, ".ssh") + `
 )`),
-		seatbelt.Raw(`(deny file-write*
+		seatbelt.RestrictRule(`(deny file-write*
     ` + seatbelt.HomeSubpath(home, ".ssh") + `
 )`),
 
 		// Allow known_hosts and config via literal — beats subpath deny
-		seatbelt.Section("SSH known_hosts and config (allow)"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionGrant("SSH known_hosts and config (allow)"),
+		seatbelt.GrantRule(`(allow file-read*
     ` + seatbelt.HomeLiteral(home, ".ssh/known_hosts") + `
     ` + seatbelt.HomeLiteral(home, ".ssh/config") + `
 )`),
 
 		// Allow directory listing of .ssh (metadata only)
-		seatbelt.Section("SSH directory listing (metadata)"),
-		seatbelt.Raw(`(allow file-read-metadata
+		seatbelt.SectionGrant("SSH directory listing (metadata)"),
+		seatbelt.GrantRule(`(allow file-read-metadata
     ` + seatbelt.HomeLiteral(home, ".ssh") + `
 )`),
 	}

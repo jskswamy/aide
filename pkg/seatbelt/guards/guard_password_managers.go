@@ -22,25 +22,28 @@ func (g *passwordManagersGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
 
 	// 1Password CLI
-	rules = append(rules, seatbelt.Section("1Password CLI"))
+	rules = append(rules, seatbelt.SectionRestrict("1Password CLI"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/op"))...)
 	rules = append(rules, DenyDir(ctx.HomePath(".op"))...)
 
 	// Bitwarden CLI
-	rules = append(rules, seatbelt.Section("Bitwarden CLI"))
+	rules = append(rules, seatbelt.SectionRestrict("Bitwarden CLI"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/Bitwarden CLI"))...)
 
 	// pass (standard unix password manager)
-	rules = append(rules, seatbelt.Section("pass"))
+	rules = append(rules, seatbelt.SectionRestrict("pass"))
 	rules = append(rules, DenyDir(ctx.HomePath(".password-store"))...)
 
 	// gopass
-	rules = append(rules, seatbelt.Section("gopass"))
+	rules = append(rules, seatbelt.SectionRestrict("gopass"))
 	rules = append(rules, DenyDir(ctx.HomePath(".local/share/gopass"))...)
 
 	// GPG private keys (used by pass/gopass and general signing)
-	rules = append(rules, seatbelt.Section("GPG private keys"))
-	rules = append(rules, DenyDir(ctx.HomePath(".gnupg"))...)
+	// Only block private key material — public keyring and trustdb are
+	// needed for GPG commit signing to work.
+	rules = append(rules, seatbelt.SectionRestrict("GPG private keys"))
+	rules = append(rules, DenyDir(ctx.HomePath(".gnupg/private-keys-v1.d"))...)
+	rules = append(rules, DenyFile(ctx.HomePath(".gnupg/secring.gpg"))...)
 
 	return rules
 }
@@ -58,7 +61,7 @@ func (g *aideSecretsGuard) Description() string { return "Blocks access to aide'
 
 func (g *aideSecretsGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("aide secrets"))
+	rules = append(rules, seatbelt.SectionRestrict("aide secrets"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/aide/secrets"))...)
 	return rules
 }

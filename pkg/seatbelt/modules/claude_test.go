@@ -46,15 +46,13 @@ func TestClaudeAgent_DefaultConfigDirs(t *testing.T) {
 	rules := ClaudeAgent().Rules(ctx)
 	got := rulesToString(rules)
 
-	// Default config dirs should be present.
-	defaults := []string{
-		filepath.Join("/home/user", ".cache", "claude"),
+	// Default config dirs (affected by CLAUDE_CONFIG_DIR).
+	configDirs := []string{
 		filepath.Join("/home/user", ".claude"),
 		filepath.Join("/home/user", ".config", "claude"),
-		filepath.Join("/home/user", ".local", "state", "claude"),
-		filepath.Join("/home/user", ".local", "share", "claude"),
+		filepath.Join("/home/user", "Library", "Application Support", "Claude"),
 	}
-	for _, d := range defaults {
+	for _, d := range configDirs {
 		if !strings.Contains(got, d) {
 			t.Errorf("expected default config dir %s in rules", d)
 		}
@@ -70,11 +68,14 @@ func TestClaudeAgent_NonConfigPathsAlwaysPresent(t *testing.T) {
 	rules := ClaudeAgent().Rules(ctx)
 	got := rulesToString(rules)
 
-	// Non-config paths that should always be present.
+	// Non-config paths that should always be present (runtime data + managed config).
 	nonConfig := []string{
 		".local/bin/claude",
+		".cache/claude",
 		".claude.json",
 		".claude.lock",
+		".local/state/claude",
+		".local/share/claude",
 		".mcp.json",
 		"Library/Application Support/Claude/claude_desktop_config.json",
 		"Library/Application Support/ClaudeCode",

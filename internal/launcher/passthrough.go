@@ -134,10 +134,6 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 
 	policy := sandbox.DefaultPolicy(projectRoot, rtDir.Path(), tempDir, os.Environ())
 	policy.AgentModule = ResolveAgentModule(name)
-	// Agent config dirs are now handled by the agent module in the seatbelt profile.
-	// For completeness, resolve them but they are encoded in the module itself.
-	homeDir, _ := os.UserHomeDir()
-	_ = ResolveAgentConfigDirs(name, os.Environ(), homeDir)
 
 	cmd := &exec.Cmd{
 		Path: binary,

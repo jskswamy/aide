@@ -23,18 +23,6 @@ type Guard interface {
 	Description() string
 }
 
-// NetworkMode controls the level of network access.
-type NetworkMode int
-
-const (
-	// NetworkOpen allows all network traffic (inbound + outbound).
-	NetworkOpen NetworkMode = iota
-	// NetworkOutbound allows outbound connections only.
-	NetworkOutbound
-	// NetworkNone denies all network traffic (default-deny covers it).
-	NetworkNone
-)
-
 // Context provides runtime information to modules.
 type Context struct {
 	HomeDir     string
@@ -45,10 +33,10 @@ type Context struct {
 	GOOS        string      // for OS-specific paths ("darwin", "linux")
 
 	// Fields consumed by specific always-guards
-	Network     NetworkMode // consumed by network guard
-	AllowPorts  []int       // consumed by network guard
-	DenyPorts   []int       // consumed by network guard
-	ExtraDenied []string    // consumed by filesystem guard (user-configured denied: paths)
+	Network     string   // consumed by network guard: "outbound", "none", "unrestricted", or ""
+	AllowPorts  []int    // consumed by network guard
+	DenyPorts   []int    // consumed by network guard
+	ExtraDenied []string // consumed by filesystem guard (user-configured denied: paths)
 }
 
 // HomePath returns homeDir joined with a relative path.

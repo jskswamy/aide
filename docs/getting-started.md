@@ -33,9 +33,9 @@ Detected agents on PATH: claude, codex
 Agent (default: claude):
 Context name (default: myproject):
 Match rule (path glob or remote URL)?
-  [1] Path: /home/user/work/myproject
-  [2] Enter a glob pattern
-  [3] Enter a git remote pattern
+  [1] This folder (/home/user/work/myproject)
+  [2] A folder path or pattern
+  [3] By git repository URL
 Select [1]:
 
 Set up secrets? (y/N): y

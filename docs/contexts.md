@@ -135,7 +135,7 @@ aide context set-default personal
 ```
 $ aide which
 Context:  work
-Reason:   path glob match: ~/work/*
+Matched:  path glob match: ~/work/*
 Agent:    claude
 Secret:   work
 ```
@@ -145,7 +145,7 @@ Secret:   work
 ```
 $ aide which --resolve
 Context:  work
-Reason:   path glob match: ~/work/*
+Matched:  path glob match: ~/work/*
 Agent:    claude (/usr/local/bin/claude)
 Secret:   work  [keys: ANTHROPIC_API_KEY]
 Env:

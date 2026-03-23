@@ -31,7 +31,7 @@ aide auto-detects known agent config directories and adds them to the writable l
 
 | Agent  | Env Override        | Default Path                          |
 |--------|---------------------|---------------------------------------|
-| Claude | `CLAUDE_CONFIG_DIR` | `~/.claude`                           |
+| Claude | `CLAUDE_CONFIG_DIR` | `~/.claude`, `~/.config/claude`, `~/Library/Application Support/Claude` |
 | Codex  | `CODEX_HOME`        | `~/.codex`                            |
 | Aider  | (none)              | `~/.aider`                            |
 | Goose  | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
@@ -204,4 +204,4 @@ Available guard constructors: `guards.AllGuards()` returns all registered guards
 
 ## Attribution
 
-The Seatbelt rules in `pkg/seatbelt` port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library by Eugene Goldin. agent-safehouse provides composable Seatbelt policy profiles for AI coding agents and has validated profiles for 14 agents. The Go port makes these rules available as a library for Go applications building sandbox support.
+The Seatbelt rules in `pkg/seatbelt` port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library by Eugene Goldin. agent-safehouse provides composable Seatbelt policy profiles for AI coding agents and has validated profiles for 14 agents. The Go port makes these rules available as a library for Go applications that embed sandbox enforcement.

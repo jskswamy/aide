@@ -39,7 +39,7 @@ The `--age-key` flag sets the recipient for encryption. To encrypt for multiple 
 aide secrets edit personal
 ```
 
-aide decrypts the secret to a tmpfs temp file, opens `$EDITOR`, and re-encrypts the result when you close the editor. After re-encryption, aide displays a diff of added and removed keys so you can confirm the changes.
+aide decrypts the secret to a temporary file, opens `$EDITOR`, and re-encrypts the result when you close the editor. After re-encryption, aide displays a diff of added and removed keys so you can confirm the changes.
 
 ## Listing and Inspecting
 
@@ -74,7 +74,7 @@ Rotation re-encrypts the secret for the updated recipient set. aide decrypts the
 ## Security Guarantees
 
 - aide removes temp files immediately after re-encryption.
-- Decrypted values live in process memory and pass to subprocesses as environment variables. They die with the process.
+- Decrypted values exist only in the process's memory and environment. They are not written to disk and do not persist after the process exits.
 - Signal handlers clean up the runtime directory on normal and abnormal exit.
 - aide removes stale runtime directories from previous crashed sessions on the next launch.
 

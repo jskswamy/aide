@@ -78,7 +78,7 @@ func TestRenderBanner_UnknownStyle(t *testing.T) {
 	}
 }
 
-func TestRenderBanner_WithWarnings(t *testing.T) {
+func TestRenderBanner_WithWarnings(_ *testing.T) {
 	var buf bytes.Buffer
 	RenderCompact(&buf, fullBannerData())
 	out := buf.String()

@@ -1,4 +1,4 @@
-// Package modules provides composable Seatbelt profile building blocks.
+// Package guards provides composable Seatbelt profile building blocks.
 package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"

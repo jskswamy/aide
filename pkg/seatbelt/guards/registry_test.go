@@ -172,3 +172,17 @@ func TestRegistry_ResolveActiveGuards_SkipsUnknown(t *testing.T) {
 		t.Errorf("expected guards[0] = base, got %q", guards[0].Name())
 	}
 }
+
+func TestRegistry_ResolveActiveGuards_Deduplication(t *testing.T) {
+	result := guards.ResolveActiveGuards([]string{"ssh-keys", "base", "ssh-keys", "base"})
+	if len(result) != 2 {
+		t.Errorf("expected 2 unique guards after dedup, got %d", len(result))
+	}
+}
+
+func TestRegistry_ExpandGuardName_Unknown(t *testing.T) {
+	names := guards.ExpandGuardName("totally-unknown")
+	if len(names) != 1 || names[0] != "totally-unknown" {
+		t.Errorf("expected unknown name passed through, got %v", names)
+	}
+}

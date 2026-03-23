@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
@@ -356,6 +357,73 @@ func TestProfile_NpmGuardOverridesToolchain(t *testing.T) {
 	}
 	if !strings.Contains(profile, ".npmrc") {
 		t.Error("expected .npmrc in profile")
+	}
+}
+
+func TestGenerateSeatbeltProfile_EmptyGuards_Error(t *testing.T) {
+	policy := Policy{Guards: []string{}, Network: "none"}
+	_, err := generateSeatbeltProfile(policy)
+	if err == nil {
+		t.Error("expected error for empty Guards list (no base guard)")
+	}
+}
+
+func TestGenerateSeatbeltProfile_AlwaysGuardsOnly(t *testing.T) {
+	// Only always-type guards, no default/opt-in
+	var names []string
+	for _, g := range guards.GuardsByType("always") {
+		names = append(names, g.Name())
+	}
+	policy := Policy{Guards: names, Network: "none"}
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(profile, "(version 1)") {
+		t.Error("always-guards-only should contain (version 1)")
+	}
+	if !strings.Contains(profile, "(deny default)") {
+		t.Error("always-guards-only should contain (deny default)")
+	}
+}
+
+func TestProfile_RoundTrip_UnguardSSHKeys(t *testing.T) {
+	cfg := &config.SandboxPolicy{Unguard: []string{"ssh-keys"}}
+	homeDir, _ := os.UserHomeDir()
+	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", homeDir, "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	profile, err := generateSeatbeltProfile(*policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The ssh-keys guard emits a multiline raw block:
+	//   (deny file-read-data
+	//       (subpath "<home>/.ssh")
+	//   )
+	// Check for the specific subpath deny rule targeting .ssh.
+	sshDenySubpath := "(subpath \"" + homeDir + "/.ssh\")"
+	sshDenyPresent := strings.Contains(profile, "(deny file-read-data\n") &&
+		strings.Contains(profile, sshDenySubpath)
+	if sshDenyPresent {
+		t.Error("unguarding ssh-keys should remove .ssh deny from profile")
+	}
+}
+
+func TestProfile_RoundTrip_GuardDocker(t *testing.T) {
+	cfg := &config.SandboxPolicy{GuardsExtra: []string{"docker"}}
+	homeDir, _ := os.UserHomeDir()
+	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", homeDir, "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	profile, err := generateSeatbeltProfile(*policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(profile, ".docker") {
+		t.Error("enabling docker guard should add .docker deny to profile")
 	}
 }
 

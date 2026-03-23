@@ -117,6 +117,16 @@ func TestGuard_CustomValidation_AlwaysType(t *testing.T) {
 	}
 }
 
+func TestGuard_CustomValidation_EmptyPaths(t *testing.T) {
+	r := guards.ValidateCustomGuard("my-guard", guards.CustomGuardConfig{
+		Type:        "default",
+		Description: "no paths",
+	})
+	if r.OK() {
+		t.Error("expected error when no paths provided")
+	}
+}
+
 func TestGuard_CustomValidation_BuiltinNameCollision(t *testing.T) {
 	cfg := guards.CustomGuardConfig{
 		Type:        "default",

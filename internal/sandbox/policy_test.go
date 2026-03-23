@@ -673,6 +673,55 @@ func TestValidateSandboxConfig_BothGuardsAndGuardsExtra_Warning(t *testing.T) {
 	}
 }
 
+func TestPolicyFromConfig_GuardsExtraCloudMetaGuard(t *testing.T) {
+	cfg := &config.SandboxPolicy{GuardsExtra: []string{"cloud"}}
+	policy, _, err := PolicyFromConfig(cfg, "/proj", "/rt", "/home/user", "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	guardSet := make(map[string]bool)
+	for _, g := range policy.Guards {
+		guardSet[g] = true
+	}
+	for _, want := range []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci"} {
+		if !guardSet[want] {
+			t.Errorf("cloud meta-guard in guards_extra should expand to include %q", want)
+		}
+	}
+}
+
+func TestPolicyFromConfig_UnguardCloudMetaGuard(t *testing.T) {
+	cfg := &config.SandboxPolicy{Unguard: []string{"cloud"}}
+	policy, _, err := PolicyFromConfig(cfg, "/proj", "/rt", "/home/user", "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, name := range []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci"} {
+		for _, g := range policy.Guards {
+			if g == name {
+				t.Errorf("cloud meta-guard in unguard should remove %q", name)
+			}
+		}
+	}
+}
+
+func TestPolicyFromConfig_DuplicateGuardNames(t *testing.T) {
+	cfg := &config.SandboxPolicy{Guards: []string{"ssh-keys", "ssh-keys"}}
+	policy, _, err := PolicyFromConfig(cfg, "/proj", "/rt", "/home/user", "/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	count := 0
+	for _, g := range policy.Guards {
+		if g == "ssh-keys" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected ssh-keys once after dedup, got %d", count)
+	}
+}
+
 // helper
 func assertSliceEqual(t *testing.T, got, want []string, name string) {
 	t.Helper()

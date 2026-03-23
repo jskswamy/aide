@@ -69,3 +69,11 @@ func TestContextValidate_EmptyGOOS(t *testing.T) {
 		t.Error("expected error for empty GOOS")
 	}
 }
+
+func TestEnvLookup_DuplicateKeys_FirstWins(t *testing.T) {
+	ctx := &Context{Env: []string{"KEY=first", "KEY=second"}}
+	val, ok := ctx.EnvLookup("KEY")
+	if !ok || val != "first" {
+		t.Errorf("expected first-match 'first', got %q ok=%v", val, ok)
+	}
+}

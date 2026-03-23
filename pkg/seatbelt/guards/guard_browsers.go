@@ -14,7 +14,9 @@ func BrowsersGuard() seatbelt.Guard { return &browsersGuard{} }
 
 func (g *browsersGuard) Name() string        { return "browsers" }
 func (g *browsersGuard) Type() string        { return "default" }
-func (g *browsersGuard) Description() string { return "Browser profile directories (cookies, passwords, history)" }
+func (g *browsersGuard) Description() string {
+	return "Blocks access to browser data (cookies, passwords, history)"
+}
 
 func (g *browsersGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
@@ -46,15 +48,7 @@ func (g *browsersGuard) darwinRules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	var rules []seatbelt.Rule
 	for _, b := range browsers {
-		p := appSupport + "/" + b
-		rules = append(rules,
-			seatbelt.Raw(`(deny file-read-data
-    `+`(subpath "`+p+`")`+`
-)`),
-			seatbelt.Raw(`(deny file-write*
-    `+`(subpath "`+p+`")`+`
-)`),
-		)
+		rules = append(rules, DenyDir(appSupport+"/"+b)...)
 	}
 	return rules
 }
@@ -79,15 +73,7 @@ func (g *browsersGuard) linuxRules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	var rules []seatbelt.Rule
 	for _, b := range browsers {
-		p := b.base + "/" + b.name
-		rules = append(rules,
-			seatbelt.Raw(`(deny file-read-data
-    `+`(subpath "`+p+`")`+`
-)`),
-			seatbelt.Raw(`(deny file-write*
-    `+`(subpath "`+p+`")`+`
-)`),
-		)
+		rules = append(rules, DenyDir(b.base+"/"+b.name)...)
 	}
 	return rules
 }

@@ -76,18 +76,6 @@ func GuardsByType(typ string) []seatbelt.Guard {
 	return out
 }
 
-// cloudGuardNamesOnly returns just the five cloud provider guard names
-// (excludes kubernetes, terraform, vault which are in CloudGuardNames()).
-func cloudGuardNamesOnly() []string {
-	return []string{
-		"cloud-aws",
-		"cloud-gcp",
-		"cloud-azure",
-		"cloud-digitalocean",
-		"cloud-oci",
-	}
-}
-
 // ExpandGuardName expands meta-guard names:
 //   - "cloud"       → the 5 cloud provider guard names
 //   - "all-default" → all guards with type "default"
@@ -95,7 +83,7 @@ func cloudGuardNamesOnly() []string {
 func ExpandGuardName(name string) []string {
 	switch name {
 	case "cloud":
-		return cloudGuardNamesOnly()
+		return CloudGuardNames()
 	case "all-default":
 		var names []string
 		for _, g := range builtinGuards {

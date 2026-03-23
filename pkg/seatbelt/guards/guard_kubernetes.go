@@ -13,7 +13,7 @@ func KubernetesGuard() seatbelt.Guard { return &kubernetesGuard{} }
 
 func (g *kubernetesGuard) Name() string        { return "kubernetes" }
 func (g *kubernetesGuard) Type() string        { return "default" }
-func (g *kubernetesGuard) Description() string { return "Kubernetes kubeconfig files" }
+func (g *kubernetesGuard) Description() string { return "Blocks access to Kubernetes config" }
 
 func (g *kubernetesGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
@@ -21,14 +21,12 @@ func (g *kubernetesGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	// KUBECONFIG is colon-separated; each path is denied individually
 	if kubeconfig, ok := ctx.EnvLookup("KUBECONFIG"); ok && kubeconfig != "" {
-		for _, p := range splitColonPaths(kubeconfig) {
-			if p != "" {
-				rules = append(rules, denyLiteralRuleForPath(p)...)
-			}
+		for _, p := range SplitColonPaths(kubeconfig) {
+			rules = append(rules, DenyFile(p)...)
 		}
 		return rules
 	}
 
-	rules = append(rules, denyLiteralRuleForPath(ctx.HomePath(".kube/config"))...)
+	rules = append(rules, DenyFile(ctx.HomePath(".kube/config"))...)
 	return rules
 }

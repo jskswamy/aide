@@ -28,7 +28,12 @@ func TestLinuxSandbox_ViaContainer(t *testing.T) {
 		t.Skip("SKIP_CONTAINER_TESTS set")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Disable Ryuk reaper — it has socket mount issues with Colima
+	// and other non-default Docker socket paths. Cleanup is handled
+	// by the deferred Terminate call.
+	t.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	root := projectRoot(t)

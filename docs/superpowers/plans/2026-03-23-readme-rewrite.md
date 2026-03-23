@@ -1,3 +1,27 @@
+# README Rewrite Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rewrite README.md to lead with the "stop babysitting your agent" framing, using before/after contrast around three pillars (sandbox, unified UX, reproducibility).
+
+**Architecture:** Single file rewrite of `README.md`. All existing content preserved, reorganized into 9 sections per spec. New content: tagline, problem statement, before/after blocks.
+
+**Tech Stack:** Markdown
+
+**Spec:** `docs/superpowers/specs/2026-03-23-readme-rewrite-design.md`
+
+---
+
+### Task 1: Write the new README
+
+**Files:**
+- Modify: `README.md`
+
+The README follows the 9-section structure from the spec. Below is the complete content to write.
+
+- [ ] **Step 1: Replace README.md with the rewritten content**
+
+```markdown
 # aide
 
 Stop babysitting your agent.
@@ -10,77 +34,23 @@ You planned the work. You know what needs to happen. But instead of letting your
 
 aide fixes three things:
 
-### Sandbox — stop choosing between scary and exhausting
+### Sandbox
 
-Without aide, you either skip all permissions and hope for the best:
+| Without aide | With aide |
+|-------------|-----------|
+| Skip all permissions and pray nothing touches your SSH keys. Or click "allow" 200 times per session. | 20 OS-native guards active by default. SSH keys, cloud credentials, browser data, password stores — blocked. The agent runs free inside guardrails. No prompts, no prayer. |
 
-```bash
-claude --dangerously-skip-permissions  # what could go wrong?
-```
+### Unified UX
 
-Or you click "allow" on every. single. action. File read? Allow. Shell command? Allow. Network call? Allow. Two hundred times a session.
+| Without aide | With aide |
+|-------------|-----------|
+| Each agent has its own CLI, config format, env vars. Switching agents means rewiring your workflow. | `aide` resolves the right agent, credentials, and sandbox from your project directory. One command, every project. Swap agents without changing how you work. |
 
-With aide, the agent runs inside OS-native guardrails. 20 guards active by default — no config, no prompts:
+### Reproducibility
 
-```bash
-aide    # agent launches sandboxed automatically
-aide sandbox guards   # see exactly what's blocked
-```
-
-```
-Protected              Guards
-─────────────────────  ──────────────────────────────────────────────────
-SSH private keys       Blocks ~/.ssh (allows known_hosts and config)
-Cloud credentials      AWS, GCP, Azure, DigitalOcean, Oracle Cloud
-Infrastructure         Kubernetes, Terraform, Vault tokens
-Browser data           Cookies, passwords, history (all browsers)
-Password managers      1Password, Bitwarden, pass, gopass, GPG keys
-```
-
-Your agent can read your code, run your tests, hit the network — but it physically cannot touch your SSH keys, cloud credentials, or browser data.
-
-### Unified UX — one command, any agent
-
-Without aide, every agent is its own world:
-
-```bash
-claude                                          # Anthropic API key
-CLAUDE_CODE_USE_BEDROCK=1 AWS_PROFILE=work claude  # or Bedrock?
-codex --provider anthropic                      # different CLI entirely
-aider --model claude-3.5-sonnet                 # yet another interface
-```
-
-Different CLIs. Different config formats. Different env vars. Switch agents, rewire everything.
-
-With aide, you configure once and forget:
-
-```bash
-cd ~/work/project && aide    # Claude with work Bedrock credentials
-cd ~/oss/repo && aide        # Aider with personal Anthropic key
-cd ~/scratch && aide         # auto-detects agent on PATH, zero config
-```
-
-Same command everywhere. aide resolves the right agent, credentials, and sandbox from your project directory.
-
-### Reproducibility — secrets that don't leak
-
-Without aide:
-
-```bash
-# The classic footgun
-echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
-git add -A && git commit -m "update config"  # oops
-```
-
-API keys in `.env` files. Wrapper scripts with hardcoded tokens. A new machine means an hour of setup.
-
-With aide, secrets are encrypted at rest and never exist as plaintext on disk:
-
-```bash
-aide secrets create personal --age-key age1abc...   # encrypted with your key
-```
-
-Config and encrypted secrets live in git. Clone your config on a new machine and you're done. No shared secrets, no plaintext on disk.
+| Without aide | With aide |
+|-------------|-----------|
+| API keys in `.env` files, shell profiles, wrapper scripts. One bad commit and they're leaked. New machine means hours of setup. | Secrets are sops-encrypted with age keys. Config and encrypted secrets live in git. `git clone` your config on a new machine and you're done. |
 
 ## Quick Start
 
@@ -263,3 +233,30 @@ make lint                   # Run golangci-lint
 ## License
 
 [MIT](LICENSE)
+```
+
+Key changes from current README:
+- **New hook**: "Stop babysitting your agent" tagline
+- **New problem statement**: Decision fatigue paragraph
+- **New before/after blocks**: Three pillars with table format
+- **Scenarios section dissolved**: Content absorbed into before/after blocks
+- **Multi-context example rotates agents**: work=claude, personal=codex, oss=aider (was claude/claude/codex)
+- **Quick start shows codex**: `aide --agent codex` instead of `aide --agent claude`
+- **How It Works trimmed**: Focused on sandbox flow, added Landlock mention
+- **Everything else preserved**: Install options, config, sandbox table, secrets, reproducibility, dev, docs, license
+
+- [ ] **Step 2: Review the written file**
+
+Read back `README.md` and verify:
+1. All 9 sections present in order (hook, problem, before/after, quick start, how it works, config, sandbox, secrets, reproducibility, agents, dev, docs, license)
+2. No content from current README was lost
+3. Before/after tables render correctly in markdown
+4. At least 2 different agents shown in examples
+5. No AI hype language
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add README.md
+/commit rewrite README with decision-fatigue framing and before/after pillars
+```

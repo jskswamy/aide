@@ -11,6 +11,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 func TestGenerateSeatbeltProfile_DenyDefault(t *testing.T) {
@@ -424,6 +425,228 @@ func TestProfile_RoundTrip_GuardDocker(t *testing.T) {
 	}
 	if !strings.Contains(profile, ".docker") {
 		t.Error("enabling docker guard should add .docker deny to profile")
+	}
+}
+
+// ruleBlockType returns "allow" or "deny" for a top-level seatbelt rule line,
+// or "" if the line is not a top-level rule opener. Top-level rules start at
+// column 0 with "(allow" or "(deny".
+func ruleBlockType(line string) string {
+	if strings.HasPrefix(line, "(allow") {
+		return "allow"
+	}
+	if strings.HasPrefix(line, "(deny") {
+		return "deny"
+	}
+	return ""
+}
+
+// scanBlockContext walks profile lines and tracks block type (allow/deny).
+// It calls fn(lineIndex, line, blockType, blockStartLine) for every line.
+// blockType is the current top-level block type ("allow", "deny", or "").
+// blockStartLine is the line index where the current block opened.
+func scanBlockContext(lines []string, fn func(i int, line, blockType string, blockStart int)) {
+	blockType := ""
+	blockStart := 0
+	for i, line := range lines {
+		bt := ruleBlockType(line)
+		if bt != "" {
+			blockType = bt
+			blockStart = i
+			// Single-line top-level rule: "(deny ..." ending with ")" on same line
+			if strings.HasSuffix(strings.TrimRight(line, " \t"), ")") {
+				fn(i, line, blockType, blockStart)
+				blockType = ""
+				continue
+			}
+		} else if line == ")" {
+			blockType = ""
+		}
+		fn(i, line, blockType, blockStart)
+	}
+}
+
+func TestProfile_IntentOrdering(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find positions of key rules from different intents
+	setupPos := strings.Index(profile, "(deny default)")          // Setup intent (base)
+	restrictPos := strings.Index(profile, `(deny file-read-data`) // Restrict intent (credential guard)
+
+	// Find the LAST occurrence of allow file-read* (which should be a Grant rule)
+	lastAllow := strings.LastIndex(profile, `(allow file-read*`)
+
+	if setupPos == -1 {
+		t.Fatal("expected Setup rule (deny default) in profile")
+	}
+	if restrictPos == -1 {
+		t.Fatal("expected Restrict rule (deny file-read-data) in profile")
+	}
+
+	// Setup should appear before Restrict
+	if setupPos > restrictPos {
+		t.Error("Setup rules should appear before Restrict rules in profile")
+	}
+
+	// Restrict should appear before the last Grant
+	if restrictPos > lastAllow {
+		t.Error("Restrict rules should appear before Grant rules in profile")
+	}
+}
+
+func TestProfile_SSHKnownHostsSurvives(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the ssh deny (Restrict) and known_hosts allow (Grant).
+	// Rules are multiline: "(deny file-read-data" then "(subpath .../.ssh)" on the next line.
+	// We track block context so we can find the block that contains each path.
+	sshDenyBlock := -1
+	knownHostsAllowBlock := -1
+
+	lines := strings.Split(profile, "\n")
+	scanBlockContext(lines, func(i int, line, blockType string, blockStart int) {
+		if strings.Contains(line, `.ssh"`) && blockType == "deny" && sshDenyBlock == -1 {
+			sshDenyBlock = blockStart
+		}
+		if strings.Contains(line, `known_hosts"`) && blockType == "allow" {
+			knownHostsAllowBlock = blockStart
+		}
+	})
+
+	if sshDenyBlock == -1 {
+		t.Fatal("expected SSH deny rule in profile")
+	}
+	if knownHostsAllowBlock == -1 {
+		t.Fatal("expected known_hosts allow rule in profile")
+	}
+
+	// Grant (allow known_hosts) must come AFTER Restrict (deny .ssh)
+	// With last-rule-wins, this means known_hosts is readable
+	if knownHostsAllowBlock < sshDenyBlock {
+		t.Errorf("known_hosts allow (block at line %d) must appear AFTER .ssh deny (block at line %d) for last-rule-wins", knownHostsAllowBlock, sshDenyBlock)
+	}
+}
+
+func TestProfile_NpmOptInOverridesNodeToolchain(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy.Guards = append(policy.Guards, "npm")
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find node-toolchain's .npmrc allow (Setup) and npm guard's .npmrc deny (Restrict).
+	// The allow is inside a multiline allow block; the deny is a single-line deny rule.
+	npmAllowBlock := -1
+	npmDenyBlock := -1
+
+	lines := strings.Split(profile, "\n")
+	scanBlockContext(lines, func(i int, line, blockType string, blockStart int) {
+		if strings.Contains(line, `.npmrc"`) {
+			if blockType == "allow" {
+				npmAllowBlock = blockStart
+			}
+			if blockType == "deny" {
+				npmDenyBlock = blockStart
+			}
+		}
+	})
+
+	if npmAllowBlock == -1 {
+		t.Fatal("expected node-toolchain .npmrc allow in profile")
+	}
+	if npmDenyBlock == -1 {
+		t.Fatal("expected npm guard .npmrc deny in profile")
+	}
+
+	// Restrict (npm deny) must come AFTER Setup (node-toolchain allow)
+	// With last-rule-wins, this means .npmrc is blocked when npm guard is active
+	if npmDenyBlock < npmAllowBlock {
+		t.Errorf("npm deny (block at line %d) must appear AFTER node-toolchain allow (block at line %d) for last-rule-wins", npmDenyBlock, npmAllowBlock)
+	}
+}
+
+func TestProfile_GPGPublicKeyringNotDenied(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The password-managers guard should deny only private keys
+	if !strings.Contains(profile, "private-keys-v1.d") {
+		t.Error("expected deny for .gnupg/private-keys-v1.d")
+	}
+	if !strings.Contains(profile, "secring.gpg") {
+		t.Error("expected deny for .gnupg/secring.gpg")
+	}
+
+	// Should NOT deny the entire .gnupg directory
+	lines := strings.Split(profile, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "deny") && strings.Contains(line, `.gnupg"`) && !strings.Contains(line, "private-keys") && !strings.Contains(line, "secring") {
+			t.Errorf("should not deny entire .gnupg directory, found: %s", strings.TrimSpace(line))
+		}
+	}
+}
+
+func TestProfile_KeychainNotDenied(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	lines := strings.Split(profile, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "deny") && strings.Contains(line, "Library/Keychains") {
+			t.Errorf("no guard should deny Library/Keychains, found: %s", strings.TrimSpace(line))
+		}
+	}
+}
+
+func TestProfile_ClaudeAgentAllowsSurvive(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	// Set agent module to ClaudeAgent
+	policy.AgentModule = modules.ClaudeAgent()
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the last Restrict rule and any Claude allow rule.
+	// Claude allow rules are multiline; find the block that contains .claude paths.
+	lastRestrictLine := -1
+	claudeAllowBlock := -1
+
+	lines := strings.Split(profile, "\n")
+	scanBlockContext(lines, func(i int, line, blockType string, blockStart int) {
+		if strings.Contains(line, "deny file-read-data") || strings.Contains(line, "deny file-write*") {
+			lastRestrictLine = i
+		}
+		if strings.Contains(line, ".claude") && blockType == "allow" {
+			claudeAllowBlock = blockStart
+		}
+	})
+
+	if claudeAllowBlock == -1 {
+		t.Fatal("expected Claude allow rule in profile")
+	}
+	if lastRestrictLine == -1 {
+		t.Fatal("expected at least one Restrict rule in profile")
+	}
+
+	// Claude allows (Grant) must appear after all Restrict denies
+	if claudeAllowBlock < lastRestrictLine {
+		t.Errorf("Claude allow (block at line %d) must appear AFTER last Restrict deny (line %d)", claudeAllowBlock, lastRestrictLine)
 	}
 }
 

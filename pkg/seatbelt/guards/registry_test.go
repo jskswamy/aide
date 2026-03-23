@@ -39,7 +39,7 @@ func TestRegistry_GuardByName(t *testing.T) {
 }
 
 func TestRegistry_GuardsByType(t *testing.T) {
-	always := guards.GuardsByType("always")
+	always := guards.ByType("always")
 	if len(always) != 8 {
 		t.Errorf("expected 8 always guards, got %d", len(always))
 	}
@@ -49,7 +49,7 @@ func TestRegistry_GuardsByType(t *testing.T) {
 		}
 	}
 
-	defaults := guards.GuardsByType("default")
+	defaults := guards.ByType("default")
 	if len(defaults) != 12 {
 		t.Errorf("expected 12 default guards, got %d", len(defaults))
 	}
@@ -59,7 +59,7 @@ func TestRegistry_GuardsByType(t *testing.T) {
 		}
 	}
 
-	optIn := guards.GuardsByType("opt-in")
+	optIn := guards.ByType("opt-in")
 	if len(optIn) != 5 {
 		t.Errorf("expected 5 opt-in guards, got %d", len(optIn))
 	}
@@ -95,7 +95,7 @@ func TestRegistry_ExpandGuardName_Cloud(t *testing.T) {
 
 func TestRegistry_ExpandGuardName_AllDefault(t *testing.T) {
 	names := guards.ExpandGuardName("all-default")
-	defaults := guards.GuardsByType("default")
+	defaults := guards.ByType("default")
 	if len(names) != len(defaults) {
 		t.Errorf("expected %d names for all-default, got %d", len(defaults), len(names))
 	}
@@ -121,15 +121,15 @@ func TestRegistry_DefaultGuardNames(t *testing.T) {
 	names := guards.DefaultGuardNames()
 
 	// Should include always and default guards.
-	always := guards.GuardsByType("always")
-	defaults := guards.GuardsByType("default")
+	always := guards.ByType("always")
+	defaults := guards.ByType("default")
 	expected := len(always) + len(defaults)
 	if len(names) != expected {
 		t.Errorf("expected %d default guard names, got %d", expected, len(names))
 	}
 
 	// Should not include opt-in guards.
-	optIn := guards.GuardsByType("opt-in")
+	optIn := guards.ByType("opt-in")
 	optInSet := make(map[string]bool, len(optIn))
 	for _, g := range optIn {
 		optInSet[g.Name()] = true

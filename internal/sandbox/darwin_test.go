@@ -371,7 +371,7 @@ func TestGenerateSeatbeltProfile_EmptyGuards_Error(t *testing.T) {
 func TestGenerateSeatbeltProfile_AlwaysGuardsOnly(t *testing.T) {
 	// Only always-type guards, no default/opt-in
 	var names []string
-	for _, g := range guards.GuardsByType("always") {
+	for _, g := range guards.ByType("always") {
 		names = append(names, g.Name())
 	}
 	policy := Policy{Guards: names, Network: "none"}

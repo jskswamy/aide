@@ -65,8 +65,8 @@ func GuardByName(name string) (seatbelt.Guard, bool) {
 	return nil, false
 }
 
-// GuardsByType returns all guards whose Type() equals typ.
-func GuardsByType(typ string) []seatbelt.Guard {
+// ByType returns all guards whose Type() equals typ.
+func ByType(typ string) []seatbelt.Guard {
 	var out []seatbelt.Guard
 	for _, g := range builtinGuards {
 		if g.Type() == typ {

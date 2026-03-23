@@ -177,12 +177,12 @@ func (r SandboxRef) MarshalYAML() (interface{}, error) {
 //   - `sandbox: "profile-name"` (string) — references a named profile
 //   - `sandbox: { profile: "name" }` — references a named profile via mapping
 //   - `sandbox: { writable: [...], network: ... }` — inline policy (SandboxPolicy fields)
-func (s *SandboxRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (r *SandboxRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Try bool first
 	var b bool
 	if err := unmarshal(&b); err == nil {
 		if !b {
-			s.Disabled = true
+			r.Disabled = true
 			return nil
 		}
 		return fmt.Errorf("sandbox: expected false, a string, or a mapping, got true")
@@ -191,7 +191,7 @@ func (s *SandboxRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Try string (profile name)
 	var str string
 	if err := unmarshal(&str); err == nil {
-		s.ProfileName = str
+		r.ProfileName = str
 		return nil
 	}
 
@@ -199,7 +199,7 @@ func (s *SandboxRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type alias SandboxRef
 	var ref alias
 	if err := unmarshal(&ref); err == nil && (ref.ProfileName != "" || ref.Inline != nil) {
-		*s = SandboxRef(ref)
+		*r = SandboxRef(ref)
 		return nil
 	}
 
@@ -209,7 +209,7 @@ func (s *SandboxRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&sp); err != nil {
 		return fmt.Errorf("sandbox: cannot decode as ref or inline policy: %w", err)
 	}
-	s.Inline = &sp
+	r.Inline = &sp
 	return nil
 }
 

@@ -50,7 +50,8 @@ func writeMinimalConfig(t *testing.T, configDir string, content string) {
 
 // unwrapSandbox extracts the inner binary and args from a sandbox-wrapped exec.
 // On darwin: sandbox-exec -f <profile> <binary> <args...>
-// On linux:  bwrap <bwrap-args...> -- <binary> <args...>
+// On linux (bwrap):    bwrap <bwrap-args...> -- <binary> <args...>
+// On linux (landlock): <aide> __sandbox-apply <policy> -- <binary> <args...>
 // If not sandboxed, it returns the values as-is.
 func unwrapSandbox(t *testing.T, binary string, args []string) (innerBinary string, innerArgs []string) {
 	t.Helper()
@@ -70,6 +71,15 @@ func unwrapSandbox(t *testing.T, binary string, args []string) (innerBinary stri
 			}
 		}
 		t.Fatalf("bwrap args missing -- separator: %v", args)
+	}
+	// Check for Landlock re-exec pattern: <aide> __sandbox-apply <policy> -- <binary> <args...>
+	if len(args) >= 4 && args[1] == "__sandbox-apply" {
+		for i, a := range args {
+			if a == "--" && i+1 < len(args) {
+				return args[i+1], args[i+1:]
+			}
+		}
+		t.Fatalf("landlock args missing -- separator: %v", args)
 	}
 	return binary, args
 }

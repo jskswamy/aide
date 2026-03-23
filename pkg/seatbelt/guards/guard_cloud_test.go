@@ -319,6 +319,23 @@ func TestGuard_Vault_EnvOverride(t *testing.T) {
 	}
 }
 
+func TestGuard_Kubernetes_EmptySegments(t *testing.T) {
+	g := guards.KubernetesGuard()
+	ctx := &seatbelt.Context{
+		HomeDir: "/Users/testuser",
+		Env:     []string{"KUBECONFIG=/path/a::/path/b:"},
+	}
+	output := renderTestRules(g.Rules(ctx))
+	if strings.Contains(output, `""`) {
+		t.Error("empty KUBECONFIG segment should not produce empty path rule")
+	}
+	for _, want := range []string{"/path/a", "/path/b"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("expected %q in output", want)
+		}
+	}
+}
+
 // --- CloudGuardNames ---
 
 func TestCloudGuardNames(t *testing.T) {

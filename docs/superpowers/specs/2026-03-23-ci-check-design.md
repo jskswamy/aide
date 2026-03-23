@@ -1,7 +1,7 @@
 # CI Check Command Design
 
 **Date:** 2026-03-23
-**Status:** Draft
+**Status:** Superseded by preflight-suite-design
 **Type:** Project-specific Claude Code command
 
 ## Problem

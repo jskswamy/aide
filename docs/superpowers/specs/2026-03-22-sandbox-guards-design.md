@@ -52,10 +52,10 @@ type Context struct {
     GOOS        string       // for OS-specific paths ("darwin", "linux")
 
     // Fields consumed by specific always-guards
-    Network     NetworkMode  // consumed by network guard
-    AllowPorts  []int        // consumed by network guard
-    DenyPorts   []int        // consumed by network guard
-    ExtraDenied []string     // consumed by filesystem guard (user-configured denied: paths)
+    Network     string   // consumed by network guard: "outbound", "none", "unrestricted", or ""
+    AllowPorts  []int    // consumed by network guard
+    DenyPorts   []int    // consumed by network guard
+    ExtraDenied []string // consumed by filesystem guard (user-configured denied: paths)
 }
 
 // EnvLookup searches ctx.Env for a KEY=VALUE entry and returns the value.
@@ -187,23 +187,28 @@ contexts:
       unguard: [browsers]                  # remove from active set
       denied: [/custom/secret]             # explicit path deny → filesystem guard
       denied_extra: [/another/secret]      # extend explicit denies
-      network: outbound
-      allow_ports: [443, 80]
-      deny_ports: [22]
+      network:
+        mode: outbound
+        allow_ports: [443, 80]
+        deny_ports: [22]
       clean_env: false
 ```
 
 ```go
+type NetworkPolicy struct {
+    Mode       string `yaml:"mode,omitempty"`
+    AllowPorts []int  `yaml:"allow_ports,omitempty"`
+    DenyPorts  []int  `yaml:"deny_ports,omitempty"`
+}
+
 type SandboxPolicy struct {
-    Guards      []string `yaml:"guards,omitempty"`
-    GuardsExtra []string `yaml:"guards_extra,omitempty"`
-    Unguard     []string `yaml:"unguard,omitempty"`
-    Denied      []string `yaml:"denied,omitempty"`
-    DeniedExtra []string `yaml:"denied_extra,omitempty"`
-    Network     string   `yaml:"network,omitempty"`
-    AllowPorts  []int    `yaml:"allow_ports,omitempty"`
-    DenyPorts   []int    `yaml:"deny_ports,omitempty"`
-    CleanEnv    *bool    `yaml:"clean_env,omitempty"`
+    Guards      []string       `yaml:"guards,omitempty"`
+    GuardsExtra []string       `yaml:"guards_extra,omitempty"`
+    Unguard     []string       `yaml:"unguard,omitempty"`
+    Denied      []string       `yaml:"denied,omitempty"`
+    DeniedExtra []string       `yaml:"denied_extra,omitempty"`
+    Network     *NetworkPolicy `yaml:"network,omitempty"` // accepts string or {mode, allow_ports, deny_ports}
+    CleanEnv    *bool          `yaml:"clean_env,omitempty"`
 }
 ```
 
@@ -360,7 +365,7 @@ contexts:
 `aide sandbox guards` output with custom types:
 
 ```
-GUARD              TYPE           STATUS    PATHS
+GUARD              TYPE           STATUS    DESCRIPTION
 ...
 audit-logs         compliance     active    ~/.config/audit (custom)
 compliance-certs   compliance     active    ~/.internal/certs (custom)
@@ -454,7 +459,7 @@ The profile builder copies Policy fields into Context before rendering. Guards r
 ```go
 func DefaultPolicy(projectRoot, runtimeDir, tempDir string, env []string) Policy {
     return Policy{
-        Guards:          modules.DefaultGuardNames(),
+        Guards:          guards.DefaultGuardNames(),
         ProjectRoot:     projectRoot,
         RuntimeDir:      runtimeDir,
         TempDir:         tempDir,
@@ -474,7 +479,7 @@ The profile builder in `darwin.go` composes the profile from active guards:
 func generateSeatbeltProfile(policy Policy) (string, error) {
     homeDir, _ := os.UserHomeDir()
 
-    activeGuards := modules.ResolveActiveGuards(policy.Guards)
+    activeGuards := guards.ResolveActiveGuards(policy.Guards)
 
     p := seatbelt.New(homeDir).
         WithContext(func(c *seatbelt.Context) {
@@ -507,7 +512,7 @@ Guards render in type order: `always` first, then `default`, then `opt-in`. With
 ### Guard Registry
 
 ```go
-// pkg/seatbelt/modules/registry.go
+// pkg/seatbelt/guards/registry.go
 
 func AllGuards() []Guard
 func GuardByName(name string) (Guard, bool)
@@ -520,23 +525,24 @@ func ResolveActiveGuards(names []string) []Guard  // look up and order guards by
 ### CLI
 
 ```bash
-aide sandbox guards                          # List all guards with type, status, paths
+aide sandbox guards                          # List all guards with type, status, description
 aide sandbox guard cloud-aws                 # Add to guards_extra for CWD context
 aide sandbox guard cloud-aws --context work  # Target specific context
 aide sandbox unguard browsers                # Add to unguard for CWD context
 aide sandbox unguard browsers --context work # Target specific context
 aide sandbox types                           # List all types
-aide sandbox types show default              # Show guards in a type
-aide sandbox types add compliance \
-  --behavior default \
-  --description "Audit logs and compliance certs"
-aide sandbox types remove compliance         # Remove custom type only
+# Not yet implemented:
+# aide sandbox types show default
+# aide sandbox types add compliance --behavior default --description "..."
+# aide sandbox types remove compliance
 ```
+
+Note: `aide sandbox guard` and `aide sandbox unguard` accept only concrete guard names, not meta-guards like `cloud` or `all-default`. Meta-guard expansion only works in config file fields (`guards:`, `guards_extra:`, `unguard:`). Passing a meta-guard name to the CLI commands will produce an error.
 
 `aide sandbox guards` output:
 
 ```
-GUARD              TYPE        STATUS    PATHS
+GUARD              TYPE        STATUS    DESCRIPTION
 base               always      active    (deny default), (version 1)
 system-runtime     always      active    /usr, /bin, /System/Library, ...
 network            always      active    outbound
@@ -624,7 +630,7 @@ compliance  active     Audit logs and compliance certificates. (custom, behavior
 
 ### Implementation Structure
 
-Each guard is a Go file in `pkg/seatbelt/modules/`:
+Each guard is a Go file in `pkg/seatbelt/guards/`:
 
 | File | Guards |
 |------|--------|
@@ -653,13 +659,13 @@ Each guard is a Go file in `pkg/seatbelt/modules/`:
 | File | Change |
 |------|--------|
 | `pkg/seatbelt/module.go` | Add `Guard` interface, extend `Context` with `Env`/`GOOS` |
-| `pkg/seatbelt/modules/guard_*.go` | New: all guard modules (absorb existing module files) |
-| `pkg/seatbelt/modules/registry.go` | New: guard registry |
+| `pkg/seatbelt/guards/guard_*.go` | New: all guard modules (absorb existing module files) |
+| `pkg/seatbelt/guards/registry.go` | New: guard registry |
 | `internal/sandbox/sandbox.go` | Simplified Policy struct, simplified DefaultPolicy |
 | `internal/sandbox/darwin.go` | Profile composition from guards |
 | `internal/sandbox/policy.go` | PolicyFromConfig resolves guard selection |
-| `internal/config/schema.go` | SandboxPolicy with guard fields, CustomGuard/GuardType structs |
+| `internal/config/schema.go` | SandboxPolicy with guard fields, NetworkPolicy struct, CustomGuard/GuardType structs |
 | `cmd/aide/commands.go` | guard/unguard/types CLI subcommands |
 | `internal/launcher/launcher.go` | Updated DefaultPolicy call |
 | `internal/launcher/passthrough.go` | Updated DefaultPolicy call |
-| **Removed** | `pkg/seatbelt/modules/base.go`, `system.go`, `network.go`, `filesystem.go`, `keychain.go`, `node.go`, `nix.go`, `git.go` (absorbed into guard files) |
+| **Removed** | `pkg/seatbelt/modules/base.go`, `system.go`, `network.go`, `filesystem.go`, `keychain.go`, `node.go`, `nix.go`, `git.go` (absorbed into guard files in `pkg/seatbelt/guards/`) |

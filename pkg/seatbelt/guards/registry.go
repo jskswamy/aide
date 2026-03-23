@@ -123,7 +123,8 @@ func typeOrder(typ string) int {
 }
 
 // ResolveActiveGuards looks up guards by name and returns them ordered by type
-// (always → default → opt-in). Unknown names are silently skipped.
+// (always → default → opt-in). Unknown names are silently skipped — callers
+// should validate names before calling this function.
 // Within each type bucket the original order of names is preserved (stable
 // insertion sort).
 func ResolveActiveGuards(names []string) []seatbelt.Guard {

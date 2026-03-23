@@ -231,7 +231,7 @@ Linux sandboxing via bwrap works correctly. Key findings:
 - bwrap mount order matters: system mounts (`--tmpfs /tmp`) must come before user binds so user paths overlay correctly
 - Docker containers need `--privileged` for bwrap namespace creation
 - Landlock (kernel 5.13+) is the preferred backend; bwrap is the fallback
-- Integration tests pass in the devcontainer with `--privileged`
+- Integration tests pass in privileged containers (testcontainers)
 
 ## Files Modified
 

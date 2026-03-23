@@ -165,7 +165,7 @@ func TestLinuxSandbox_Apply_FallsBackGracefully(t *testing.T) {
 	policy := DefaultPolicy("/tmp/proj", runtimeDir, "/tmp", nil)
 
 	// This test exercises the full Apply path.
-	// On systems with bwrap (our devcontainer), it will use bwrap.
+	// On systems with bwrap, it will use bwrap.
 	// On systems with Landlock, it will use Landlock.
 	// Either way, it should not error.
 	err := s.Apply(cmd, policy, runtimeDir)

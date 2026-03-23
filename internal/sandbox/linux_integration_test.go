@@ -12,7 +12,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 )
 
-// These tests require bwrap to be available (e.g. in the devcontainer).
+// These tests require bwrap to be available.
 // Run with: go test -tags integration ./internal/sandbox/ -v
 
 func skipIfNoBwrap(t *testing.T) {

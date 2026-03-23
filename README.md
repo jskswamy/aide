@@ -14,7 +14,7 @@ cd ~/scratch && aide         # Auto-detects agent on PATH, zero config
 You use Claude with AWS Bedrock at work and a personal Anthropic API key at home. Today that means juggling `CLAUDE_CONFIG_DIR`, wrapper scripts, or separate shell profiles. aide resolves the right credentials from the project directory. You run `aide` and get the correct key every time.
 
 **Agent access to sensitive files.**
-Coding agents run with your full user permissions. They can read `~/.ssh`, `~/.aws`, browser cookies. aide applies an OS-native sandbox before exec, constraining filesystem and network access to a declared policy. No per-action approval prompts.
+Coding agents run with your full user permissions. They can read `~/.ssh`, `~/.aws`, browser cookies. aide sandboxes the agent with 20 guards active by default. SSH keys, cloud credentials, browser data, and password stores are blocked. No configuration required, no per-action approval prompts.
 
 **Team shares API keys.**
 Someone commits a `.env`. Encrypted storage with per-person age keys prevents this. Each team member holds their own private key. Secrets decrypt in-process at launch and never exist as plaintext on disk.
@@ -30,12 +30,13 @@ git clone https://github.com/jskswamy/aide.git
 cd aide && make build   # Binary at ./bin/aide
 ```
 
-Three commands to know:
+Four commands to know:
 
 ```bash
 aide                    # Resolve context and launch the agent
 aide --agent claude     # Override agent selection
 aide setup              # Interactive first-time configuration
+aide sandbox guards     # See what the sandbox protects
 ```
 
 No config file required. If one agent exists on PATH with its API key in the environment, `aide` launches it directly.
@@ -46,7 +47,7 @@ No config file required. If one agent exists on PATH with its API key in the env
 2. aide checks the git remote URL and directory path against your config.
 3. It finds the matching context: agent, credentials, and sandbox policy.
 4. Secrets decrypt in-process via the sops Go library. Nothing hits disk.
-5. aide applies an OS-native sandbox (macOS Seatbelt). Linux sandbox support is planned but not yet implemented.
+5. aide applies 20 guards via macOS Seatbelt, blocking access to SSH keys, cloud credentials, browser data, and password stores. Linux sandbox support is planned.
 6. aide execs the agent with the resolved environment.
 
 No config file? aide detects your agent on PATH and launches it directly.
@@ -101,11 +102,36 @@ Contexts match git remote URL patterns and directory path globs. The most specif
 
 ## Sandbox
 
-Agents run inside an OS-native sandbox by default. You define the boundary once; the agent operates freely within it. No per-action permission prompts.
+Agents run inside an OS-native sandbox by default. No per-action permission prompts.
 
-aide applies 20 guards by default: 8 infrastructure guards (filesystem, network, keychain, toolchains) and 12 credential guards (SSH keys, cloud providers, browsers, password managers). Run `aide sandbox guards` to see the full list.
+### What the sandbox protects
 
-Customize per-context or disable entirely. The macOS Seatbelt rules port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library. The `pkg/seatbelt` library is reusable in your own Go projects. See [docs/sandbox.md](docs/sandbox.md).
+aide blocks access to sensitive data by default:
+
+| Protected | Guards |
+|-----------|--------|
+| SSH private keys | Blocks `~/.ssh` (allows `known_hosts` and `config` for git) |
+| Cloud credentials | AWS, GCP, Azure, DigitalOcean, Oracle Cloud |
+| Infrastructure | Kubernetes config, Terraform credentials, Vault tokens |
+| Browser data | Cookies, passwords, history (Chrome, Firefox, Safari, etc.) |
+| Password managers | 1Password, Bitwarden, pass, gopass, GPG private keys |
+
+The agent can still use macOS Keychain for its own authentication, read git config, and access Node.js/Nix toolchains. These are always-on guards that provide controlled access.
+
+Need Docker or GitHub CLI credentials in the sandbox? Enable them:
+
+```bash
+aide sandbox guard docker
+aide sandbox guard github-cli
+```
+
+Don't need browser protection? Disable it:
+
+```bash
+aide sandbox unguard browsers
+```
+
+The macOS Seatbelt rules port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library. The `pkg/seatbelt` library is reusable in your own Go projects. See [docs/sandbox.md](docs/sandbox.md).
 
 ## Secrets
 

@@ -1,6 +1,6 @@
 package seatbelt
 
-import "strings"
+import "sort"
 
 // Profile composes Seatbelt modules into a complete .sb profile.
 type Profile struct {
@@ -28,13 +28,22 @@ func (p *Profile) WithContext(fn func(*Context)) *Profile {
 }
 
 // Render generates the Seatbelt .sb profile string.
+// Rules from all modules are collected, stable-sorted by intent, then rendered.
+// This ensures Setup(100) rules appear first, Restrict(200) second, Grant(300) last,
+// leveraging Seatbelt's last-rule-wins semantics.
 func (p *Profile) Render() (string, error) {
 	if len(p.modules) == 0 {
 		return "", nil
 	}
-	var b strings.Builder
+	var allRules []taggedRule
 	for _, m := range p.modules {
-		b.WriteString(renderModule(m, &p.ctx))
+		rules := m.Rules(&p.ctx)
+		for _, r := range rules {
+			allRules = append(allRules, taggedRule{module: m.Name(), rule: r})
+		}
 	}
-	return b.String(), nil
+	sort.SliceStable(allRules, func(i, j int) bool {
+		return allRules[i].rule.intent < allRules[j].rule.intent
+	})
+	return renderTaggedRules(allRules), nil
 }

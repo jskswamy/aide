@@ -201,7 +201,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			return fmt.Errorf("building sandbox policy: %w", err)
 		}
 		if policy != nil {
-			// 12b. Set agent module for sandbox profile
+			// 12b. Propagate merged env so modules can inspect env vars.
+			policy.Env = env
+			// 12c. Set agent module for sandbox profile
 			policy.AgentModule = ResolveAgentModule(agentName)
 
 			cmd := &exec.Cmd{

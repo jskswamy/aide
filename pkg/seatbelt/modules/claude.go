@@ -22,23 +22,25 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 
 	// Config directories respect CLAUDE_CONFIG_DIR env var override.
+	// When set, only the override path is granted. When unset, all defaults.
 	configDirs := resolveConfigDirs(ctx, "CLAUDE_CONFIG_DIR", []string{
-		filepath.Join(home, ".cache", "claude"),
 		filepath.Join(home, ".claude"),
 		filepath.Join(home, ".config", "claude"),
-		filepath.Join(home, ".local", "state", "claude"),
-		filepath.Join(home, ".local", "share", "claude"),
+		filepath.Join(home, "Library", "Application Support", "Claude"),
 	})
 
 	rules := configDirRules("Claude", configDirs)
 
-	// Non-config paths: always present regardless of env override.
+	// Runtime data paths: always present regardless of CLAUDE_CONFIG_DIR.
 	rules = append(rules,
 		seatbelt.SectionGrant("Claude user data"),
 		seatbelt.GrantRule(`(allow file-read* file-write*
     `+seatbelt.HomePrefix(home, ".local/bin/claude")+`
+    `+seatbelt.HomeSubpath(home, ".cache/claude")+`
     `+seatbelt.HomePrefix(home, ".claude.json")+`
     `+seatbelt.HomeLiteral(home, ".claude.lock")+`
+    `+seatbelt.HomeSubpath(home, ".local/state/claude")+`
+    `+seatbelt.HomeSubpath(home, ".local/share/claude")+`
     `+seatbelt.HomeLiteral(home, ".mcp.json")+`
 )`),
 

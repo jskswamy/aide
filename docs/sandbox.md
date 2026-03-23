@@ -8,15 +8,22 @@ aide defines the security boundary once, upfront. The agent runs freely inside i
 
 ## On by Default
 
-If no `sandbox:` block appears in your config, aide applies a default policy automatically.
+If no `sandbox:` block appears in your config, aide applies a default policy automatically using guards.
 
-| Category         | Default                                      |
-|------------------|----------------------------------------------|
-| Writable         | Project root, runtime dir, temp dirs         |
-| Readable         | Home directory, system binaries              |
-| Denied           | `~/.ssh/id_*`, `~/.aws/credentials`, `~/.azure`, `~/.config/gcloud`, `~/.config/aide/secrets`, browser data |
-| Network          | Outbound allowed                             |
-| Subprocesses     | Allowed                                      |
+aide applies a sandbox with 20 active guards by default:
+
+- **8 always guards:** `base`, `system-runtime`, `network`, `filesystem`, `keychain`,
+  `node-toolchain`, `nix-toolchain`, `git-integration`
+- **12 default guards:** `ssh-keys`, `cloud-aws`, `cloud-gcp`, `cloud-azure`,
+  `cloud-digitalocean`, `cloud-oci`, `kubernetes`, `terraform`, `vault`, `browsers`,
+  `password-managers`, `aide-secrets`
+
+Run `aide sandbox guards` to see all guards and their status.
+
+| Category     | Default                  |
+|--------------|--------------------------|
+| Network      | Outbound allowed         |
+| Subprocesses | Allowed                  |
 
 ## Agent Config Directories
 
@@ -33,23 +40,25 @@ aide auto-detects known agent config directories and adds them to the writable l
 
 ## Customizing Per-Context
 
-Define an inline sandbox policy inside a named context block in your config file.
+Use guards to control what the agent can access:
 
 ```yaml
 contexts:
-  myproject:
+  work:
     sandbox:
-      writable:
-        - "{{ .project_root }}"
-        - "{{ .runtime_dir }}"
-      readable:
-        - /usr/local/share/certs
-      denied:
-        - ~/.gnupg
-      network: outbound
-      allow_subprocess: true
-      clean_env: false
+      guards_extra: [docker]      # enable additional guards
+      unguard: [browsers]         # disable default guards
 ```
+
+### Guard configuration fields
+
+| Field | Purpose |
+|-------|---------|
+| `guards` | Override: use ONLY these guards (plus always guards) |
+| `guards_extra` | Extend: add guards to the default set |
+| `unguard` | Disable: remove guards from the active set |
+| `denied` | Explicit path denies (for one-off paths) |
+| `denied_extra` | Extend explicit denies without replacing defaults |
 
 **Template variables**
 
@@ -58,31 +67,37 @@ contexts:
 | `{{ .project_root }}` | Absolute path of the project directory  |
 | `{{ .runtime_dir }}`  | Agent runtime/state directory           |
 
-**`_extra` suffixes**
+**Network configuration**
 
-Use `_extra` suffixes to extend the default policy rather than replace it. aide merges the extra list with the defaults.
+Network can be set as a simple string or a structured block with port filtering:
 
 ```yaml
 sandbox:
-  writable_extra:
-    - /mnt/shared/data
-  readable_extra:
-    - /etc/myapp
-  denied_extra:
-    - ~/.netrc
+  network: outbound
+
+# or with port filtering:
+sandbox:
+  network:
+    mode: outbound
+    allow_ports: [443, 80]
+    deny_ports: [22]
 ```
 
-## Quick CLI Adjustments
+## Guard Commands
+
+```bash
+aide sandbox guards                    # List all guards with status
+aide sandbox guard docker              # Enable a guard
+aide sandbox unguard browsers          # Disable a guard
+aide sandbox types                     # List guard types
+aide sandbox test                      # Preview generated sandbox profile
+```
 
 All commands accept `--context <name>` to target a specific context.
 
+## Quick CLI Adjustments
+
 ```sh
-# Add a path as readable
-aide sandbox allow <path>
-
-# Add a path as writable
-aide sandbox allow --write <path>
-
 # Add a path to the deny list
 aide sandbox deny <path>
 
@@ -98,8 +113,6 @@ aide sandbox network unrestricted
 aide sandbox reset
 ```
 
-CLI adjustments write to the `_extra` fields of the relevant context, leaving the base policy intact.
-
 ## Named Profiles
 
 Named profiles let you define a sandbox policy once and reference it by name across multiple contexts.
@@ -109,10 +122,7 @@ Named profiles let you define a sandbox policy once and reference it by name acr
 ```sh
 aide sandbox create <name>
 aide sandbox edit <name> \
-  --add-writable /data \
-  --add-readable /etc/ssl \
   --add-denied ~/.gnupg \
-  --remove-writable /tmp \
   --network outbound
 aide sandbox remove <name>
 aide sandbox list
@@ -126,7 +136,7 @@ contexts:
     sandbox: strict
 ```
 
-aide loads the `strict` profile and applies it to the `secure` context. Inline `_extra` fields still work alongside a named profile.
+aide loads the `strict` profile and applies it to the `secure` context.
 
 ## Disabling Sandbox
 
@@ -170,24 +180,27 @@ The macOS sandbox implementation lives in `pkg/seatbelt`, a standalone Go librar
 ```go
 import (
     "github.com/jskswamy/aide/pkg/seatbelt"
-    "github.com/jskswamy/aide/pkg/seatbelt/modules"
+    "github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
-profile := seatbelt.New(homeDir).Use(
-    modules.Base(),
-    modules.SystemRuntime(),
-    modules.Network(modules.NetworkOpen),
-    modules.Filesystem(modules.FilesystemConfig{
-        Writable: []string{projectRoot, tmpDir},
-        Denied:   []string{"~/.ssh/id_*"},
-    }),
-    modules.NodeToolchain(),
-    modules.ClaudeAgent(),
-)
-sbText, err := profile.Render()
+// Get all default guards
+activeGuards := guards.ResolveActiveGuards(guards.DefaultGuardNames())
+
+p := seatbelt.New(homeDir).
+    WithContext(func(c *seatbelt.Context) {
+        c.ProjectRoot = projectRoot
+        c.GOOS = runtime.GOOS
+        c.Network = "outbound"
+    })
+
+for _, g := range activeGuards {
+    p.Use(g)
+}
+
+profile, err := p.Render()
 ```
 
-Available modules: `Base`, `SystemRuntime`, `Network`, `Filesystem`, `NodeToolchain`, `NixToolchain`, `GitIntegration`, `KeychainIntegration`, `ClaudeAgent`.
+Available guard constructors: `guards.AllGuards()` returns all registered guards. Individual constructors follow the pattern `guards.BaseGuard()`, `guards.SSHKeysGuard()`, `guards.CloudAWSGuard()`, etc.
 
 ## Attribution
 

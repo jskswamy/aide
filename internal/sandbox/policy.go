@@ -273,6 +273,11 @@ func resolvePathTemplate(tmplStr string, vars map[string]string) (string, error)
 
 // ValidateSandboxConfigDetailed validates a SandboxPolicy configuration,
 // returning both errors and warnings.
+//
+// Note: writable, readable, writable_extra, and readable_extra fields on
+// SandboxPolicy are retained for backward compatibility with existing configs
+// that predate the guard system. They are validated here but are not used in
+// guard-based profile generation (guards handle path access control instead).
 func ValidateSandboxConfigDetailed(cfg *config.SandboxPolicy) *seatbelt.ValidationResult {
 	result := &seatbelt.ValidationResult{}
 	if cfg == nil {

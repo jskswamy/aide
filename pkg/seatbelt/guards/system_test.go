@@ -1,23 +1,23 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func systemRuntimeOutput() string {
 	ctx := &seatbelt.Context{
 		HomeDir: "/Users/testuser",
 	}
-	g := modules.SystemRuntimeGuard()
+	g := guards.SystemRuntimeGuard()
 	return renderTestRules(g.Rules(ctx))
 }
 
 func TestGuard_SystemRuntime_Metadata(t *testing.T) {
-	g := modules.SystemRuntimeGuard()
+	g := guards.SystemRuntimeGuard()
 
 	if g.Name() != "system-runtime" {
 		t.Errorf("expected Name() = %q, got %q", "system-runtime", g.Name())

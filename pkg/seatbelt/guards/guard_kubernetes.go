@@ -2,7 +2,7 @@
 //
 // Protects kubeconfig files from credential leakage.
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

@@ -4,13 +4,13 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestDefaultPolicy_GuardNames(t *testing.T) {
 	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
 
-	expected := modules.DefaultGuardNames()
+	expected := guards.DefaultGuardNames()
 	if len(policy.Guards) != len(expected) {
 		t.Fatalf("expected %d guards, got %d: %v", len(expected), len(policy.Guards), policy.Guards)
 	}

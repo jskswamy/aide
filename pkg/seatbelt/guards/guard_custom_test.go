@@ -1,20 +1,20 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestGuard_Custom_Basic(t *testing.T) {
-	cfg := modules.CustomGuardConfig{
+	cfg := guards.CustomGuardConfig{
 		Type:        "default",
 		Description: "My custom secrets dir",
 		Paths:       []string{"~/.my-tool"},
 	}
-	g := modules.NewCustomGuard("my-tool", cfg)
+	g := guards.NewCustomGuard("my-tool", cfg)
 
 	if g.Name() != "my-tool" {
 		t.Errorf("expected name %q, got %q", "my-tool", g.Name())
@@ -42,13 +42,13 @@ func TestGuard_Custom_Basic(t *testing.T) {
 }
 
 func TestGuard_Custom_EnvOverride(t *testing.T) {
-	cfg := modules.CustomGuardConfig{
+	cfg := guards.CustomGuardConfig{
 		Type:        "opt-in",
 		Description: "Custom tool with env override",
 		Paths:       []string{"~/.default-path"},
 		EnvOverride: "MY_TOOL_CONFIG",
 	}
-	g := modules.NewCustomGuard("my-env-tool", cfg)
+	g := guards.NewCustomGuard("my-env-tool", cfg)
 
 	// When env var is set, use it instead of default path.
 	ctx := &seatbelt.Context{
@@ -67,13 +67,13 @@ func TestGuard_Custom_EnvOverride(t *testing.T) {
 }
 
 func TestGuard_Custom_AllowedPaths(t *testing.T) {
-	cfg := modules.CustomGuardConfig{
+	cfg := guards.CustomGuardConfig{
 		Type:        "default",
 		Description: "Custom with allowed file",
 		Paths:       []string{"~/.secrets-dir"},
 		Allowed:     []string{"~/.secrets-dir/public.txt"},
 	}
-	g := modules.NewCustomGuard("my-secrets", cfg)
+	g := guards.NewCustomGuard("my-secrets", cfg)
 
 	ctx := &seatbelt.Context{HomeDir: "/home/user"}
 	rules := g.Rules(ctx)
@@ -93,42 +93,42 @@ func TestGuard_Custom_AllowedPaths(t *testing.T) {
 }
 
 func TestGuard_CustomValidation_EnvOverrideMultiPath(t *testing.T) {
-	cfg := modules.CustomGuardConfig{
+	cfg := guards.CustomGuardConfig{
 		Type:        "default",
 		Description: "Multi-path with env override",
 		Paths:       []string{"~/.path1", "~/.path2"},
 		EnvOverride: "MY_ENV",
 	}
-	err := modules.ValidateCustomGuard("multi-path", cfg)
+	err := guards.ValidateCustomGuard("multi-path", cfg)
 	if err == nil {
 		t.Error("expected error for EnvOverride with multiple paths")
 	}
 }
 
 func TestGuard_CustomValidation_AlwaysType(t *testing.T) {
-	cfg := modules.CustomGuardConfig{
+	cfg := guards.CustomGuardConfig{
 		Type:        "always",
 		Description: "Invalid always type",
 		Paths:       []string{"~/.some-path"},
 	}
-	err := modules.ValidateCustomGuard("my-always-guard", cfg)
+	err := guards.ValidateCustomGuard("my-always-guard", cfg)
 	if err == nil {
 		t.Error("expected error for always type on custom guard")
 	}
 }
 
 func TestGuard_CustomValidation_BuiltinNameCollision(t *testing.T) {
-	cfg := modules.CustomGuardConfig{
+	cfg := guards.CustomGuardConfig{
 		Type:        "default",
 		Description: "Collides with built-in",
 		Paths:       []string{"~/.some-path"},
 	}
-	err := modules.ValidateCustomGuard("base", cfg)
+	err := guards.ValidateCustomGuard("base", cfg)
 	if err == nil {
 		t.Error("expected error for built-in name collision")
 	}
 
-	err = modules.ValidateCustomGuard("docker", cfg)
+	err = guards.ValidateCustomGuard("docker", cfg)
 	if err == nil {
 		t.Error("expected error for built-in name collision (docker)")
 	}

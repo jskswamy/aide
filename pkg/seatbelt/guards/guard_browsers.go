@@ -3,7 +3,7 @@
 // Protects browser profile directories (cookies, passwords, history)
 // from being read or written by sandboxed processes.
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

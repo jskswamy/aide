@@ -2,7 +2,7 @@
 //
 // Custom rules for Nix package manager paths.
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

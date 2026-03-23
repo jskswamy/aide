@@ -1,15 +1,15 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestGuard_PasswordManagers_Metadata(t *testing.T) {
-	g := modules.PasswordManagersGuard()
+	g := guards.PasswordManagersGuard()
 	if g.Name() != "password-managers" {
 		t.Errorf("expected Name() = %q, got %q", "password-managers", g.Name())
 	}
@@ -22,7 +22,7 @@ func TestGuard_PasswordManagers_Metadata(t *testing.T) {
 }
 
 func TestGuard_PasswordManagers_AllPaths(t *testing.T) {
-	g := modules.PasswordManagersGuard()
+	g := guards.PasswordManagersGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -48,7 +48,7 @@ func TestGuard_PasswordManagers_AllPaths(t *testing.T) {
 
 func TestGuard_PasswordManagers_NoKeychain(t *testing.T) {
 	// CRITICAL: Library/Keychains is managed by the keychain guard, not here
-	g := modules.PasswordManagersGuard()
+	g := guards.PasswordManagersGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -58,7 +58,7 @@ func TestGuard_PasswordManagers_NoKeychain(t *testing.T) {
 }
 
 func TestGuard_AideSecrets_Metadata(t *testing.T) {
-	g := modules.AideSecretsGuard()
+	g := guards.AideSecretsGuard()
 	if g.Name() != "aide-secrets" {
 		t.Errorf("expected Name() = %q, got %q", "aide-secrets", g.Name())
 	}
@@ -71,7 +71,7 @@ func TestGuard_AideSecrets_Metadata(t *testing.T) {
 }
 
 func TestGuard_AideSecrets_Path(t *testing.T) {
-	g := modules.AideSecretsGuard()
+	g := guards.AideSecretsGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 

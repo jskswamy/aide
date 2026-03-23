@@ -3,7 +3,7 @@
 // These guards are opt-in because they protect credentials that some tools
 // legitimately need to access (e.g. docker daemon, GitHub CLI auth).
 
-package modules
+package guards
 
 import (
 	"path/filepath"

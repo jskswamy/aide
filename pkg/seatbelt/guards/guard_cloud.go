@@ -2,7 +2,7 @@
 //
 // Protects credentials for AWS, GCP, Azure, DigitalOcean, and OCI.
 
-package modules
+package guards
 
 import (
 	"path/filepath"

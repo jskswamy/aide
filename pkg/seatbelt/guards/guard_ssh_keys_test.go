@@ -1,15 +1,15 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 func TestGuard_SSHKeys_Metadata(t *testing.T) {
-	g := modules.SSHKeysGuard()
+	g := guards.SSHKeysGuard()
 
 	if g.Name() != "ssh-keys" {
 		t.Errorf("expected Name() = %q, got %q", "ssh-keys", g.Name())
@@ -23,7 +23,7 @@ func TestGuard_SSHKeys_Metadata(t *testing.T) {
 }
 
 func TestGuard_SSHKeys_DenyRulesUseSubpath(t *testing.T) {
-	g := modules.SSHKeysGuard()
+	g := guards.SSHKeysGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -40,7 +40,7 @@ func TestGuard_SSHKeys_DenyRulesUseSubpath(t *testing.T) {
 }
 
 func TestGuard_SSHKeys_AllowRulesUseLiteral(t *testing.T) {
-	g := modules.SSHKeysGuard()
+	g := guards.SSHKeysGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -57,7 +57,7 @@ func TestGuard_SSHKeys_AllowRulesUseLiteral(t *testing.T) {
 }
 
 func TestGuard_SSHKeys_MetadataAllowPresent(t *testing.T) {
-	g := modules.SSHKeysGuard()
+	g := guards.SSHKeysGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 

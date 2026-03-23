@@ -4,7 +4,7 @@
 // https://github.com/eugene1g/agent-safehouse
 // Source: profiles/10-system-runtime.sb
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

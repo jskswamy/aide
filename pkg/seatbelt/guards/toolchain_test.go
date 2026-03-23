@@ -1,15 +1,16 @@
-package modules_test
+package guards_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 func TestGuard_NodeToolchain_Metadata(t *testing.T) {
-	g := modules.NodeToolchainGuard()
+	g := guards.NodeToolchainGuard()
 
 	if g.Name() != "node-toolchain" {
 		t.Errorf("expected Name() = %q, got %q", "node-toolchain", g.Name())
@@ -23,7 +24,7 @@ func TestGuard_NodeToolchain_Metadata(t *testing.T) {
 }
 
 func TestGuard_NodeToolchain_Paths(t *testing.T) {
-	g := modules.NodeToolchainGuard()
+	g := guards.NodeToolchainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -44,7 +45,7 @@ func TestGuard_NodeToolchain_Paths(t *testing.T) {
 
 func TestNodeToolchain(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	m := modules.NodeToolchain()
+	m := guards.NodeToolchain()
 	output := renderTestRules(m.Rules(ctx))
 
 	if m.Name() != "node-toolchain" {
@@ -72,7 +73,7 @@ func TestNodeToolchain(t *testing.T) {
 }
 
 func TestGuard_NixToolchain_Metadata(t *testing.T) {
-	g := modules.NixToolchainGuard()
+	g := guards.NixToolchainGuard()
 
 	if g.Name() != "nix-toolchain" {
 		t.Errorf("expected Name() = %q, got %q", "nix-toolchain", g.Name())
@@ -86,7 +87,7 @@ func TestGuard_NixToolchain_Metadata(t *testing.T) {
 }
 
 func TestGuard_NixToolchain_Paths(t *testing.T) {
-	g := modules.NixToolchainGuard()
+	g := guards.NixToolchainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -106,7 +107,7 @@ func TestGuard_NixToolchain_Paths(t *testing.T) {
 
 func TestNixToolchain(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	m := modules.NixToolchain()
+	m := guards.NixToolchain()
 	output := renderTestRules(m.Rules(ctx))
 
 	if m.Name() != "nix-toolchain" {
@@ -128,7 +129,7 @@ func TestNixToolchain(t *testing.T) {
 }
 
 func TestGuard_GitIntegration_Metadata(t *testing.T) {
-	g := modules.GitIntegrationGuard()
+	g := guards.GitIntegrationGuard()
 
 	if g.Name() != "git-integration" {
 		t.Errorf("expected Name() = %q, got %q", "git-integration", g.Name())
@@ -142,7 +143,7 @@ func TestGuard_GitIntegration_Metadata(t *testing.T) {
 }
 
 func TestGuard_GitIntegration_Paths(t *testing.T) {
-	g := modules.GitIntegrationGuard()
+	g := guards.GitIntegrationGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -167,7 +168,7 @@ func TestGuard_GitIntegration_Paths(t *testing.T) {
 
 func TestGitIntegration(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	m := modules.GitIntegration()
+	m := guards.GitIntegration()
 	output := renderTestRules(m.Rules(ctx))
 
 	if m.Name() != "git-integration" {
@@ -196,7 +197,7 @@ func TestGitIntegration(t *testing.T) {
 }
 
 func TestGuard_Keychain_Metadata(t *testing.T) {
-	g := modules.KeychainGuard()
+	g := guards.KeychainGuard()
 
 	if g.Name() != "keychain" {
 		t.Errorf("expected Name() = %q, got %q", "keychain", g.Name())
@@ -210,7 +211,7 @@ func TestGuard_Keychain_Metadata(t *testing.T) {
 }
 
 func TestGuard_Keychain_AllowRules(t *testing.T) {
-	g := modules.KeychainGuard()
+	g := guards.KeychainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	output := renderTestRules(g.Rules(ctx))
 
@@ -233,7 +234,7 @@ func TestGuard_Keychain_AllowRules(t *testing.T) {
 
 func TestKeychainIntegration(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	m := modules.KeychainIntegration()
+	m := guards.KeychainIntegration()
 	output := renderTestRules(m.Rules(ctx))
 
 	if m.Name() != "keychain" {

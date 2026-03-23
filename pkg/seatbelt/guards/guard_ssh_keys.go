@@ -3,7 +3,7 @@
 // Protects private SSH keys from read and write access while allowing
 // known_hosts and config files which are generally safe to read.
 
-package modules
+package guards
 
 import "github.com/jskswamy/aide/pkg/seatbelt"
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 // Sandbox applies a security policy to a command before execution.
@@ -94,7 +94,7 @@ const (
 //	env         — environment variables for the agent
 func DefaultPolicy(projectRoot, runtimeDir, tempDir string, env []string) Policy {
 	return Policy{
-		Guards:          modules.DefaultGuardNames(),
+		Guards:          guards.DefaultGuardNames(),
 		ProjectRoot:     projectRoot,
 		RuntimeDir:      runtimeDir,
 		TempDir:         tempDir,

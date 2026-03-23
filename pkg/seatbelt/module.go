@@ -69,35 +69,72 @@ func (c *Context) Validate() *ValidationResult {
 	return r
 }
 
+// RuleIntent determines a rule's position in the rendered profile.
+// The renderer stable-sorts rules by intent: lower values appear first.
+// Seatbelt uses last-rule-wins, so higher intent values take precedence.
+type RuleIntent int
+
+const (
+	Setup    RuleIntent = 100 // infrastructure allows + refinement denies
+	Restrict RuleIntent = 200 // block sensitive paths
+	Grant    RuleIntent = 300 // re-allow within restricted paths
+)
+
 // Rule represents a Seatbelt rule or comment block.
 type Rule struct {
+	intent  RuleIntent
 	comment string
 	lines   string
 }
 
 // Allow creates an (allow <operation>) rule.
 func Allow(operation string) Rule {
-	return Rule{lines: "(allow " + operation + ")"}
+	return Rule{intent: Setup, lines: "(allow " + operation + ")"}
 }
 
 // Deny creates a (deny <operation>) rule.
 func Deny(operation string) Rule {
-	return Rule{lines: "(deny " + operation + ")"}
+	return Rule{intent: Setup, lines: "(deny " + operation + ")"}
 }
 
 // Comment creates a ;; comment line.
 func Comment(text string) Rule {
-	return Rule{comment: text}
+	return Rule{intent: Setup, comment: text}
 }
 
 // Section creates a ;; --- section header --- comment.
 func Section(name string) Rule {
-	return Rule{comment: "--- " + name + " ---"}
+	return Rule{intent: Setup, comment: "--- " + name + " ---"}
 }
 
 // Raw creates a rule from raw Seatbelt text (may be multi-line).
 func Raw(text string) Rule {
-	return Rule{lines: text}
+	return Rule{intent: Setup, lines: text}
+}
+
+// SetupRule creates a rule with Setup intent (infrastructure allows + refinement denies).
+func SetupRule(text string) Rule { return Rule{intent: Setup, lines: text} }
+
+// RestrictRule creates a rule with Restrict intent (block sensitive paths).
+func RestrictRule(text string) Rule { return Rule{intent: Restrict, lines: text} }
+
+// GrantRule creates a rule with Grant intent (re-allow within restricted paths).
+func GrantRule(text string) Rule { return Rule{intent: Grant, lines: text} }
+
+// SectionSetup creates a section header comment with Setup intent.
+func SectionSetup(name string) Rule { return Rule{intent: Setup, comment: "--- " + name + " ---"} }
+
+// SectionRestrict creates a section header comment with Restrict intent.
+func SectionRestrict(name string) Rule {
+	return Rule{intent: Restrict, comment: "--- " + name + " ---"}
+}
+
+// SectionGrant creates a section header comment with Grant intent.
+func SectionGrant(name string) Rule { return Rule{intent: Grant, comment: "--- " + name + " ---"} }
+
+// Intent returns the rule's intent, which determines sort order in the rendered profile.
+func (r Rule) Intent() RuleIntent {
+	return r.intent
 }
 
 // String returns the rendered text of a single rule.

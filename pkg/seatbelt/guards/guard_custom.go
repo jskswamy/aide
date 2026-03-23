@@ -50,10 +50,10 @@ func (g *customGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	// Deny rules for each path.
 	for _, p := range paths {
 		rules = append(rules,
-			seatbelt.Raw(`(deny file-read-data
+			seatbelt.RestrictRule(`(deny file-read-data
     `+`(subpath "`+p+`")`+`
 )`),
-			seatbelt.Raw(`(deny file-write*
+			seatbelt.RestrictRule(`(deny file-write*
     `+`(subpath "`+p+`")`+`
 )`),
 		)
@@ -63,7 +63,7 @@ func (g *customGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	for _, a := range g.cfg.Allowed {
 		expanded := expandHome(ctx, a)
 		rules = append(rules,
-			seatbelt.Raw(`(allow file-read*
+			seatbelt.GrantRule(`(allow file-read*
     `+`(literal "`+filepath.Clean(expanded)+`")`+`
 )`),
 		)

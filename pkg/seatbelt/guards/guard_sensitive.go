@@ -33,7 +33,7 @@ func (g *dockerGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	configFile := filepath.Join(configDir, "config.json")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("Docker credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("Docker credentials"))
 	rules = append(rules, DenyFile(configFile)...)
 	return rules
 }
@@ -51,7 +51,7 @@ func (g *githubCLIGuard) Description() string { return "Blocks access to GitHub 
 
 func (g *githubCLIGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("GitHub CLI credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("GitHub CLI credentials"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/gh"))...)
 	return rules
 }
@@ -69,7 +69,7 @@ func (g *npmGuard) Description() string { return "Blocks access to npm and yarn 
 
 func (g *npmGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("npm/yarn credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("npm/yarn credentials"))
 	rules = append(rules, DenyFile(ctx.HomePath(".npmrc"))...)
 	rules = append(rules, DenyFile(ctx.HomePath(".yarnrc"))...)
 	return rules
@@ -88,7 +88,7 @@ func (g *netrcGuard) Description() string { return "Blocks access to netrc crede
 
 func (g *netrcGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("netrc credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("netrc credentials"))
 	rules = append(rules, DenyFile(ctx.HomePath(".netrc"))...)
 	return rules
 }
@@ -106,7 +106,7 @@ func (g *vercelGuard) Description() string { return "Blocks access to Vercel CLI
 
 func (g *vercelGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.Section("Vercel credentials"))
+	rules = append(rules, seatbelt.SectionRestrict("Vercel credentials"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/vercel"))...)
 	return rules
 }

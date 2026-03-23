@@ -19,8 +19,8 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	return []seatbelt.Rule{
 		// Claude user data (read-write)
-		seatbelt.Section("Claude user data"),
-		seatbelt.Raw(`(allow file-read* file-write*
+		seatbelt.SectionGrant("Claude user data"),
+		seatbelt.GrantRule(`(allow file-read* file-write*
     ` + seatbelt.HomePrefix(home, ".local/bin/claude") + `
     ` + seatbelt.HomeSubpath(home, ".cache/claude") + `
     ` + seatbelt.HomeSubpath(home, ".claude") + `
@@ -33,8 +33,8 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Claude managed configuration (read-only)
-		seatbelt.Section("Claude managed configuration"),
-		seatbelt.Raw(`(allow file-read*
+		seatbelt.SectionGrant("Claude managed configuration"),
+		seatbelt.GrantRule(`(allow file-read*
     ` + seatbelt.HomePrefix(home, ".claude.json.") + `
     ` + seatbelt.HomeLiteral(home, "Library/Application Support/Claude/claude_desktop_config.json") + `
     (subpath "/Library/Application Support/ClaudeCode/.claude")

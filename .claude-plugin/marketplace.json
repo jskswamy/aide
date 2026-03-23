@@ -1,0 +1,15 @@
+{
+  "name": "aide-plugins",
+  "owner": {
+    "name": "jskswamy",
+    "email": "jskswamy@users.noreply.github.com"
+  },
+  "plugins": [
+    {
+      "name": "aide",
+      "source": "./plugins/claude-code",
+      "description": "Diagnostic assistant for the aide CLI — manages contexts, sandbox, secrets, and agents conversationally",
+      "version": "0.1.0"
+    }
+  ]
+}

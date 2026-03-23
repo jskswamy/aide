@@ -69,6 +69,7 @@ func TestGuard_NixToolchain_Paths(t *testing.T) {
 		`"/run/current-system"`,
 		`(subpath "/Users/testuser/.nix-profile")`,
 		`(subpath "/Users/testuser/.local/state/nix")`,
+		`(subpath "/Users/testuser/.cache/nix")`,
 	}
 	for _, p := range paths {
 		if !strings.Contains(output, p) {

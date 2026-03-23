@@ -32,6 +32,7 @@ func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 		seatbelt.Raw(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".nix-profile") + `
     ` + seatbelt.HomeSubpath(home, ".local/state/nix") + `
+    ` + seatbelt.HomeSubpath(home, ".cache/nix") + `
 )`),
 	}
 }

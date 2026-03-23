@@ -18,6 +18,7 @@
           buildInputs = [
             pkgs.go
             pkgs.golangci-lint
+            pkgs.gosec
             pkgs.gitleaks
             stable.pre-commit
           ];
@@ -30,6 +31,13 @@
               pre-commit install --hook-type pre-push --allow-missing-config -q 2>/dev/null
               touch "$_sentinel" 2>/dev/null
             fi
+
+            # Install Go tools not available in nixpkgs
+            if ! command -v govulncheck &>/dev/null; then
+              echo "Installing govulncheck..."
+              go install golang.org/x/vuln/cmd/govulncheck@latest 2>/dev/null
+            fi
+
             echo "aide dev environment ready (Go $(go version | awk '{print $3}' | sed 's/go//'))"
           '';
         };

@@ -79,8 +79,8 @@ The seven commands (each wrapped with the pattern above):
 Checks #2 and #5 run their tools targeting linux/amd64, catching issues
 in platform-specific files (e.g., linux.go) that are invisible on macOS.
 Govulncheck does not need a linux variant (platform-independent).
-Tests currently run native-only; cross-platform test execution via
-testcontainers is a future improvement.
+The test step includes linux sandbox tests via testcontainers when
+Docker is available (see linux_container_test.go).
 
 Launch all six Bash calls in a single response. Do not wait for one to
 finish before starting the next.

@@ -8,10 +8,6 @@ type baseGuard struct{}
 // BaseGuard returns a Guard that emits the Seatbelt version and default-deny policy.
 func BaseGuard() seatbelt.Guard { return &baseGuard{} }
 
-// Base returns a module that emits the Seatbelt version and default-deny policy.
-// Deprecated: use BaseGuard instead.
-func Base() seatbelt.Module { return &baseGuard{} }
-
 func (g *baseGuard) Name() string        { return "base" }
 func (g *baseGuard) Type() string        { return "always" }
 func (g *baseGuard) Description() string { return "(version 1), (deny default)" }

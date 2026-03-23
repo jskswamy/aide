@@ -13,10 +13,6 @@ type systemRuntimeGuard struct{}
 // SystemRuntimeGuard returns a Guard with macOS system runtime rules.
 func SystemRuntimeGuard() seatbelt.Guard { return &systemRuntimeGuard{} }
 
-// SystemRuntime returns a module with macOS system runtime rules.
-// Deprecated: use SystemRuntimeGuard instead.
-func SystemRuntime() seatbelt.Module { return &systemRuntimeGuard{} }
-
 func (g *systemRuntimeGuard) Name() string        { return "system-runtime" }
 func (g *systemRuntimeGuard) Type() string        { return "always" }
 func (g *systemRuntimeGuard) Description() string { return "macOS system runtime paths, devices, and Mach services" }

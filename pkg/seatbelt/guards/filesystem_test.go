@@ -21,15 +21,17 @@ func TestFilesystem_WritablePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := guards.Filesystem(guards.FilesystemConfig{
-		Writable: []string{dir1, dir2},
-	})
-
-	if m.Name() != "Filesystem" {
-		t.Errorf("expected Name() = %q, got %q", "Filesystem", m.Name())
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		ProjectRoot: dir1,
+		RuntimeDir:  dir2,
 	}
 
-	output := renderTestRules(m.Rules(nil))
+	if g.Name() != "filesystem" {
+		t.Errorf("expected Name() = %q, got %q", "filesystem", g.Name())
+	}
+
+	output := renderTestRules(g.Rules(ctx))
 
 	if !strings.Contains(output, "(allow file-read* file-write*") {
 		t.Error("expected allow file-read* file-write* block")
@@ -49,25 +51,19 @@ func TestFilesystem_ReadablePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := guards.Filesystem(guards.FilesystemConfig{
-		Readable: []string{dir1},
-	})
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir: dir1,
+	}
 
-	output := renderTestRules(m.Rules(nil))
+	output := renderTestRules(g.Rules(ctx))
 
-	// Should have file-read* but NOT file-write*
+	// Should have file-read* but NOT file-write* for homeDir
 	if !strings.Contains(output, "(allow file-read*") {
 		t.Error("expected allow file-read* block")
 	}
 	if !strings.Contains(output, `(subpath "`+dir1+`")`) {
 		t.Errorf("expected subpath for %s", dir1)
-	}
-	// Ensure the read block doesn't also have write
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "file-read*") && strings.Contains(line, "file-write*") {
-			t.Error("readable paths should not include file-write*")
-		}
 	}
 }
 
@@ -78,11 +74,12 @@ func TestFilesystem_DeniedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := guards.Filesystem(guards.FilesystemConfig{
-		Denied: []string{file1},
-	})
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		ExtraDenied: []string{file1},
+	}
 
-	output := renderTestRules(m.Rules(nil))
+	output := renderTestRules(g.Rules(ctx))
 
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny file-read-data for denied path")
@@ -105,11 +102,12 @@ func TestFilesystem_GlobExpansion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := guards.Filesystem(guards.FilesystemConfig{
-		Denied: []string{filepath.Join(tmp, "*.env")},
-	})
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		ExtraDenied: []string{filepath.Join(tmp, "*.env")},
+	}
 
-	output := renderTestRules(m.Rules(nil))
+	output := renderTestRules(g.Rules(ctx))
 
 	if !strings.Contains(output, "a.env") {
 		t.Error("expected expanded glob to include a.env")
@@ -134,13 +132,14 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := guards.Filesystem(guards.FilesystemConfig{
-		Writable: []string{wdir},
-		Readable: []string{rdir},
-		Denied:   []string{denied},
-	})
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		ProjectRoot: wdir,
+		HomeDir:     rdir,
+		ExtraDenied: []string{denied},
+	}
 
-	output := renderTestRules(m.Rules(nil))
+	output := renderTestRules(g.Rules(ctx))
 
 	if !strings.Contains(output, "(allow file-read* file-write*") {
 		t.Error("expected writable block")

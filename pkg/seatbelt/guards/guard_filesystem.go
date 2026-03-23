@@ -12,17 +12,6 @@ import (
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
-// FilesystemConfig specifies filesystem access rules.
-type FilesystemConfig struct {
-	// Writable paths get read+write access.
-	Writable []string
-	// Readable paths get read-only access.
-	Readable []string
-	// Denied paths are blocked for both read and write.
-	// Supports glob patterns.
-	Denied []string
-}
-
 // filesystemGuard reads paths from ctx fields.
 type filesystemGuard struct{}
 
@@ -53,41 +42,20 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 		writable = append(writable, ctx.TempDir)
 	}
 
-	cfg := FilesystemConfig{
-		Writable: writable,
-		Readable: readable,
-		Denied:   ctx.ExtraDenied,
-	}
-	return filesystemRules(cfg)
+	return filesystemRules(writable, readable, ctx.ExtraDenied)
 }
 
-// filesystemModule is the backward-compat wrapper.
-type filesystemModule struct {
-	cfg FilesystemConfig
-}
-
-// Filesystem returns a module that controls filesystem access.
-func Filesystem(cfg FilesystemConfig) seatbelt.Module {
-	return &filesystemModule{cfg: cfg}
-}
-
-func (m *filesystemModule) Name() string { return "Filesystem" }
-
-func (m *filesystemModule) Rules(_ *seatbelt.Context) []seatbelt.Rule {
-	return filesystemRules(m.cfg)
-}
-
-func filesystemRules(cfg FilesystemConfig) []seatbelt.Rule {
+func filesystemRules(writable, readable, denied []string) []seatbelt.Rule {
 	var rules []seatbelt.Rule
 
-	if len(cfg.Writable) > 0 {
-		rules = append(rules, seatbelt.Raw(fmt.Sprintf("(allow file-read* file-write*\n    %s)", buildRequireAny(cfg.Writable))))
+	if len(writable) > 0 {
+		rules = append(rules, seatbelt.Raw(fmt.Sprintf("(allow file-read* file-write*\n    %s)", buildRequireAny(writable))))
 	}
-	if len(cfg.Readable) > 0 {
-		rules = append(rules, seatbelt.Raw(fmt.Sprintf("(allow file-read*\n    %s)", buildRequireAny(cfg.Readable))))
+	if len(readable) > 0 {
+		rules = append(rules, seatbelt.Raw(fmt.Sprintf("(allow file-read*\n    %s)", buildRequireAny(readable))))
 	}
-	if len(cfg.Denied) > 0 {
-		expanded := seatbelt.ExpandGlobs(cfg.Denied)
+	if len(denied) > 0 {
+		expanded := seatbelt.ExpandGlobs(denied)
 		for _, p := range expanded {
 			expr := seatbelt.Path(p)
 			rules = append(rules,

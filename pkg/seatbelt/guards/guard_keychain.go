@@ -13,10 +13,6 @@ type keychainGuard struct{}
 // KeychainGuard returns a Guard with macOS Keychain sandbox rules.
 func KeychainGuard() seatbelt.Guard { return &keychainGuard{} }
 
-// KeychainIntegration returns a module with macOS Keychain sandbox rules.
-// Deprecated: use KeychainGuard instead.
-func KeychainIntegration() seatbelt.Module { return &keychainGuard{} }
-
 func (g *keychainGuard) Name() string        { return "keychain" }
 func (g *keychainGuard) Type() string        { return "always" }
 func (g *keychainGuard) Description() string { return "macOS Keychain read/write and security Mach services" }

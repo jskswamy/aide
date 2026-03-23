@@ -13,10 +13,6 @@ type gitIntegrationGuard struct{}
 // GitIntegrationGuard returns a Guard with Git configuration read-only sandbox rules.
 func GitIntegrationGuard() seatbelt.Guard { return &gitIntegrationGuard{} }
 
-// GitIntegration returns a module with Git configuration read-only sandbox rules.
-// Deprecated: use GitIntegrationGuard instead.
-func GitIntegration() seatbelt.Module { return &gitIntegrationGuard{} }
-
 func (g *gitIntegrationGuard) Name() string        { return "git-integration" }
 func (g *gitIntegrationGuard) Type() string        { return "always" }
 func (g *gitIntegrationGuard) Description() string { return "Git config and SSH keys (read-only)" }

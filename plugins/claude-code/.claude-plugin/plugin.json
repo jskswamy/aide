@@ -1,0 +1,10 @@
+{
+  "name": "aide",
+  "version": "0.1.0",
+  "description": "Diagnostic assistant for the aide CLI — manages contexts, sandbox, secrets, and agents conversationally",
+  "author": {
+    "name": "jskswamy",
+    "email": "jskswamy@users.noreply.github.com"
+  },
+  "keywords": ["aide", "sandbox", "context", "secrets", "agents", "diagnostic"]
+}

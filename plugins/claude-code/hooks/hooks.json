@@ -1,0 +1,16 @@
+{
+  "description": "aide plugin hooks — SessionStart diagnostic check",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.md"
+          }
+        ]
+      }
+    ]
+  }
+}

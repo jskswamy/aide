@@ -512,7 +512,7 @@ func TestProfile_SSHKnownHostsSurvives(t *testing.T) {
 	knownHostsAllowBlock := -1
 
 	lines := strings.Split(profile, "\n")
-	scanBlockContext(lines, func(i int, line, blockType string, blockStart int) {
+	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
 		if strings.Contains(line, `.ssh"`) && blockType == "deny" && sshDenyBlock == -1 {
 			sshDenyBlock = blockStart
 		}
@@ -549,7 +549,7 @@ func TestProfile_NpmOptInOverridesNodeToolchain(t *testing.T) {
 	npmDenyBlock := -1
 
 	lines := strings.Split(profile, "\n")
-	scanBlockContext(lines, func(i int, line, blockType string, blockStart int) {
+	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
 		if strings.Contains(line, `.npmrc"`) {
 			if blockType == "allow" {
 				npmAllowBlock = blockStart

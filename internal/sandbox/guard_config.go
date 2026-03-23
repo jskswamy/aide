@@ -47,12 +47,35 @@ func EnableGuard(cfg *config.SandboxPolicy, name string) *seatbelt.ValidationRes
 		}
 	}
 
-	// Add to the right field based on config state
+	// Clean up Unguard entries that block this guard (including meta-guard expansion)
+	var newUnguard []string
+	for _, u := range cfg.Unguard {
+		expanded := guards.ExpandGuardName(u)
+		if containsString(expanded, name) {
+			// This entry (or its expansion) covers our target — keep the others
+			for _, e := range expanded {
+				if e != name {
+					newUnguard = append(newUnguard, e)
+				}
+			}
+		} else {
+			newUnguard = append(newUnguard, u)
+		}
+	}
+	cfg.Unguard = newUnguard
+
+	// After unguard cleanup, check if guard is now active (default guard case)
+	nowActive := EffectiveGuards(cfg)
+	for _, a := range nowActive {
+		if a == name {
+			return r // removing from unguard was sufficient
+		}
+	}
+
+	// Still not active — add to the right field
 	if len(cfg.Guards) > 0 {
-		// guards: is set (override mode) — append to guards:
 		cfg.Guards = append(cfg.Guards, name)
 	} else {
-		// No guards: set — append to guards_extra:
 		cfg.GuardsExtra = append(cfg.GuardsExtra, name)
 	}
 

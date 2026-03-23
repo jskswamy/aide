@@ -103,13 +103,7 @@ Contexts match git remote URL patterns and directory path globs. The most specif
 
 Agents run inside an OS-native sandbox by default. You define the boundary once; the agent operates freely within it. No per-action permission prompts.
 
-| Access | Paths |
-|--------|-------|
-| Writable | Project root, runtime dir, temp dirs |
-| Readable | Home directory, system binaries |
-| Denied | SSH private keys, cloud credentials, browser data |
-| Network | Outbound allowed |
-| Subprocesses | Allowed |
+aide applies 20 guards by default: 8 infrastructure guards (filesystem, network, keychain, toolchains) and 12 credential guards (SSH keys, cloud providers, browsers, password managers). Run `aide sandbox guards` to see the full list.
 
 Customize per-context or disable entirely. The macOS Seatbelt rules port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library. The `pkg/seatbelt` library is reusable in your own Go projects. See [docs/sandbox.md](docs/sandbox.md).
 
@@ -146,6 +140,7 @@ aide secrets rotate work --add-key $(age-keygen -y key.txt)
 **Docker / CI:**
 
 ```dockerfile
+# Requires the agent binary (e.g. claude) to be installed and on PATH.
 COPY aide-config/ /root/.config/aide/
 ENV SOPS_AGE_KEY=AGE-SECRET-KEY-1...
 RUN aide --agent claude -- -p "run tests"

@@ -3,19 +3,25 @@ version: 2
 builds:
   - binary: aide
     main: ./cmd/aide
+    env:
+      - CGO_ENABLED=0
     goos:
       - darwin
     goarch:
       - amd64
       - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.ShortCommit}}
-      - -X main.date={{.Date}}
+      - -X main.date={{.CommitDate}}
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: "aide_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -65,28 +66,37 @@ func (d *darwinSandbox) GenerateProfile(policy Policy) (string, error) {
 func generateSeatbeltProfile(policy Policy) (string, error) {
 	homeDir, _ := os.UserHomeDir()
 
-	// Resolve active guards from names
-	guardModules := guards.ResolveActiveGuards(policy.Guards)
+	// Safety: ensure base guard is present
+	hasBase := false
+	for _, name := range policy.Guards {
+		if name == "base" {
+			hasBase = true
+			break
+		}
+	}
+	if !hasBase {
+		return "", fmt.Errorf("guard 'base' is required but not in Guards list")
+	}
 
-	// Create profile with context
+	activeGuards := guards.ResolveActiveGuards(policy.Guards)
+
 	p := seatbelt.New(homeDir).
-		WithContext(func(ctx *seatbelt.Context) {
-			ctx.ProjectRoot = policy.ProjectRoot
-			ctx.TempDir = policy.TempDir
-			ctx.RuntimeDir = policy.RuntimeDir
-			ctx.Env = policy.Env
-			ctx.Network = string(policy.Network) // both are strings
-			ctx.AllowPorts = policy.AllowPorts
-			ctx.DenyPorts = policy.DenyPorts
-			ctx.ExtraDenied = policy.ExtraDenied
+		WithContext(func(c *seatbelt.Context) {
+			c.ProjectRoot = policy.ProjectRoot
+			c.TempDir = policy.TempDir
+			c.RuntimeDir = policy.RuntimeDir
+			c.Env = policy.Env
+			c.GOOS = runtime.GOOS // FIX C1: always set GOOS
+			c.Network = string(policy.Network)
+			c.AllowPorts = policy.AllowPorts
+			c.DenyPorts = policy.DenyPorts
+			c.ExtraDenied = policy.ExtraDenied
 		})
 
-	// Use each guard module
-	for _, g := range guardModules {
+	for _, g := range activeGuards {
 		p.Use(g)
 	}
 
-	// Use agent module if set
 	if policy.AgentModule != nil {
 		p.Use(policy.AgentModule)
 	}

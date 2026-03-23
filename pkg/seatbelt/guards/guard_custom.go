@@ -6,7 +6,6 @@
 package guards
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -102,23 +101,20 @@ func expandHome(ctx *seatbelt.Context, p string) string {
 }
 
 // ValidateCustomGuard checks the configuration for common mistakes.
-// It returns a non-nil error if any constraint is violated.
-func ValidateCustomGuard(name string, cfg CustomGuardConfig) error {
+// Returns a ValidationResult; check result.OK() to determine if validation passed.
+func ValidateCustomGuard(name string, cfg CustomGuardConfig) *seatbelt.ValidationResult {
+	r := &seatbelt.ValidationResult{}
 	if cfg.Type == "always" {
-		return fmt.Errorf("custom guard %q: type \"always\" is not allowed for custom guards", name)
+		r.AddError("custom guard %q cannot use type \"always\"", name)
 	}
-
-	if _, builtin := GuardByName(name); builtin {
-		return fmt.Errorf("custom guard %q: name collides with a built-in guard", name)
+	if _, ok := GuardByName(name); ok {
+		r.AddError("custom guard %q conflicts with built-in guard", name)
 	}
-
-	if cfg.EnvOverride != "" && len(cfg.Paths) > 1 {
-		return fmt.Errorf("custom guard %q: EnvOverride cannot be used with multiple paths", name)
+	if cfg.EnvOverride != "" && len(cfg.Paths) != 1 {
+		r.AddError("custom guard %q: env_override requires exactly one path, got %d", name, len(cfg.Paths))
 	}
-
 	if len(cfg.Paths) == 0 {
-		return fmt.Errorf("custom guard %q: at least one path is required", name)
+		r.AddError("custom guard %q: at least one path is required", name)
 	}
-
-	return nil
+	return r
 }

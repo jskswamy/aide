@@ -45,3 +45,27 @@ func TestEnvLookup_NilEnv(t *testing.T) {
 		t.Error("expected EnvLookup to return false with nil Env")
 	}
 }
+
+func TestContextValidate_Valid(t *testing.T) {
+	ctx := &Context{HomeDir: "/home/user", GOOS: "darwin"}
+	r := ctx.Validate()
+	if !r.OK() {
+		t.Errorf("expected OK, got errors: %v", r.Errors)
+	}
+}
+
+func TestContextValidate_EmptyHomeDir(t *testing.T) {
+	ctx := &Context{GOOS: "darwin"}
+	r := ctx.Validate()
+	if r.OK() {
+		t.Error("expected error for empty HomeDir")
+	}
+}
+
+func TestContextValidate_EmptyGOOS(t *testing.T) {
+	ctx := &Context{HomeDir: "/home/user"}
+	r := ctx.Validate()
+	if r.OK() {
+		t.Error("expected error for empty GOOS")
+	}
+}

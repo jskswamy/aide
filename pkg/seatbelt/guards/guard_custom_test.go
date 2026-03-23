@@ -99,8 +99,8 @@ func TestGuard_CustomValidation_EnvOverrideMultiPath(t *testing.T) {
 		Paths:       []string{"~/.path1", "~/.path2"},
 		EnvOverride: "MY_ENV",
 	}
-	err := guards.ValidateCustomGuard("multi-path", cfg)
-	if err == nil {
+	result := guards.ValidateCustomGuard("multi-path", cfg)
+	if result.OK() {
 		t.Error("expected error for EnvOverride with multiple paths")
 	}
 }
@@ -111,8 +111,8 @@ func TestGuard_CustomValidation_AlwaysType(t *testing.T) {
 		Description: "Invalid always type",
 		Paths:       []string{"~/.some-path"},
 	}
-	err := guards.ValidateCustomGuard("my-always-guard", cfg)
-	if err == nil {
+	result := guards.ValidateCustomGuard("my-always-guard", cfg)
+	if result.OK() {
 		t.Error("expected error for always type on custom guard")
 	}
 }
@@ -123,13 +123,13 @@ func TestGuard_CustomValidation_BuiltinNameCollision(t *testing.T) {
 		Description: "Collides with built-in",
 		Paths:       []string{"~/.some-path"},
 	}
-	err := guards.ValidateCustomGuard("base", cfg)
-	if err == nil {
+	result := guards.ValidateCustomGuard("base", cfg)
+	if result.OK() {
 		t.Error("expected error for built-in name collision")
 	}
 
-	err = guards.ValidateCustomGuard("docker", cfg)
-	if err == nil {
+	result = guards.ValidateCustomGuard("docker", cfg)
+	if result.OK() {
 		t.Error("expected error for built-in name collision (docker)")
 	}
 }

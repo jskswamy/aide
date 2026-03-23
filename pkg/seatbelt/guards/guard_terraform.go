@@ -13,19 +13,19 @@ func TerraformGuard() seatbelt.Guard { return &terraformGuard{} }
 
 func (g *terraformGuard) Name() string        { return "terraform" }
 func (g *terraformGuard) Type() string        { return "default" }
-func (g *terraformGuard) Description() string { return "Terraform credential and config files" }
+func (g *terraformGuard) Description() string { return "Blocks access to Terraform credentials" }
 
 func (g *terraformGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	var rules []seatbelt.Rule
 	rules = append(rules, seatbelt.Section("Terraform credentials"))
 
 	if cliConfig, ok := ctx.EnvLookup("TF_CLI_CONFIG_FILE"); ok && cliConfig != "" {
-		rules = append(rules, denyLiteralRuleForPath(cliConfig)...)
+		rules = append(rules, DenyFile(cliConfig)...)
 		return rules
 	}
 
 	// Default credential locations
-	rules = append(rules, denyLiteralRuleForPath(ctx.HomePath(".terraform.d/credentials.tfrc.json"))...)
-	rules = append(rules, denyLiteralRuleForPath(ctx.HomePath(".terraformrc"))...)
+	rules = append(rules, DenyFile(ctx.HomePath(".terraform.d/credentials.tfrc.json"))...)
+	rules = append(rules, DenyFile(ctx.HomePath(".terraformrc"))...)
 	return rules
 }

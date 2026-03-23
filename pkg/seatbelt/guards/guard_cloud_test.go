@@ -323,7 +323,7 @@ func TestGuard_Vault_EnvOverride(t *testing.T) {
 
 func TestCloudGuardNames(t *testing.T) {
 	names := guards.CloudGuardNames()
-	want := []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci", "kubernetes", "terraform", "vault"}
+	want := []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci"}
 	if len(names) != len(want) {
 		t.Errorf("expected %d guard names, got %d: %v", len(want), len(names), names)
 		return

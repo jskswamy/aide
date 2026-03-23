@@ -78,7 +78,7 @@ func (g *customGuard) resolvePaths(ctx *seatbelt.Context) []string {
 	// If EnvOverride is set and the env var resolves to a single path, use it.
 	if g.cfg.EnvOverride != "" {
 		if v, ok := ctx.EnvLookup(g.cfg.EnvOverride); ok && v != "" {
-			parts := splitColonPaths(v)
+			parts := SplitColonPaths(v)
 			if len(parts) == 1 {
 				return parts
 			}

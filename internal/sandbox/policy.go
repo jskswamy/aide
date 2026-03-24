@@ -75,6 +75,36 @@ func PolicyFromConfig(
 		policy.ExtraDenied = append(policy.ExtraDenied, validateAndFilterPaths(extra, &warnings)...)
 	}
 
+	// --- ExtraWritable from writable/writable_extra ---
+	if len(cfg.Writable) > 0 {
+		w, err := ResolvePaths(cfg.Writable, templateVars)
+		if err != nil {
+			return nil, nil, err
+		}
+		policy.ExtraWritable = validateAndFilterPaths(w, &warnings)
+	} else if len(cfg.WritableExtra) > 0 {
+		extra, err := ResolvePaths(cfg.WritableExtra, templateVars)
+		if err != nil {
+			return nil, nil, err
+		}
+		policy.ExtraWritable = validateAndFilterPaths(extra, &warnings)
+	}
+
+	// --- ExtraReadable from readable/readable_extra ---
+	if len(cfg.Readable) > 0 {
+		r, err := ResolvePaths(cfg.Readable, templateVars)
+		if err != nil {
+			return nil, nil, err
+		}
+		policy.ExtraReadable = validateAndFilterPaths(r, &warnings)
+	} else if len(cfg.ReadableExtra) > 0 {
+		extra, err := ResolvePaths(cfg.ReadableExtra, templateVars)
+		if err != nil {
+			return nil, nil, err
+		}
+		policy.ExtraReadable = validateAndFilterPaths(extra, &warnings)
+	}
+
 	if cfg.Network != nil && cfg.Network.Mode != "" {
 		policy.Network = NetworkMode(cfg.Network.Mode)
 	}

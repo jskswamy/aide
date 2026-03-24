@@ -160,6 +160,39 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 	}
 }
 
+func TestFilesystemGuard_ExtraWritable(t *testing.T) {
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:       "/Users/testuser",
+		ProjectRoot:   "/project",
+		ExtraWritable: []string{"/custom/writable"},
+	}
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	if !strings.Contains(output, `"/custom/writable"`) {
+		t.Error("expected /custom/writable in filesystem guard output")
+	}
+	if !strings.Contains(output, "file-write*") {
+		t.Error("expected file-write* rule for writable path")
+	}
+}
+
+func TestFilesystemGuard_ExtraReadable(t *testing.T) {
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:       "/Users/testuser",
+		ProjectRoot:   "/project",
+		ExtraReadable: []string{"/custom/readable"},
+	}
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	if !strings.Contains(output, `"/custom/readable"`) {
+		t.Error("expected /custom/readable in filesystem guard output")
+	}
+}
+
 func TestGuard_Filesystem_Metadata(t *testing.T) {
 	g := guards.FilesystemGuard()
 

@@ -414,18 +414,24 @@ func TestProfile_RoundTrip_UnguardSSHKeys(t *testing.T) {
 }
 
 func TestProfile_RoundTrip_GuardDocker(t *testing.T) {
-	cfg := &config.SandboxPolicy{GuardsExtra: []string{"docker"}}
+	// Docker is now a default guard. It only emits rules when
+	// ~/.docker/config.json exists. Verify it's in the guard list.
 	homeDir, _ := os.UserHomeDir()
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", homeDir, "/tmp")
+	dockerConfig := filepath.Join(homeDir, ".docker", "config.json")
+
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	profile, err := generateSeatbeltProfile(*policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(profile, ".docker") {
-		t.Error("enabling docker guard should add .docker deny to profile")
+
+	if _, statErr := os.Stat(dockerConfig); statErr == nil {
+		if !strings.Contains(profile, ".docker") {
+			t.Error("docker guard (now default) should add .docker deny when config exists")
+		}
+	} else {
+		// Docker config doesn't exist — guard skips, no rules emitted
+		t.Logf("~/.docker/config.json not found, docker guard skipped (expected)")
 	}
 }
 

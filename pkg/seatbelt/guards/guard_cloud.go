@@ -19,18 +19,18 @@ func (g *cloudAWSGuard) Name() string        { return "cloud-aws" }
 func (g *cloudAWSGuard) Type() string        { return "default" }
 func (g *cloudAWSGuard) Description() string { return "Blocks access to AWS credentials and config" }
 
-func (g *cloudAWSGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *cloudAWSGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	credsPath := EnvOverridePath(ctx, "AWS_SHARED_CREDENTIALS_FILE", ".aws/credentials")
 	configPath := EnvOverridePath(ctx, "AWS_CONFIG_FILE", ".aws/config")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("AWS credentials"))
+	rules = append(rules, seatbelt.SectionDeny("AWS credentials"))
 	rules = append(rules, DenyFile(credsPath)...)
 	rules = append(rules, DenyFile(configPath)...)
 	// SSO cache and CLI cache are always denied by subpath
 	rules = append(rules, DenyDir(ctx.HomePath(".aws/sso/cache"))...)
 	rules = append(rules, DenyDir(ctx.HomePath(".aws/cli/cache"))...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- cloud-gcp ---
@@ -44,18 +44,18 @@ func (g *cloudGCPGuard) Name() string        { return "cloud-gcp" }
 func (g *cloudGCPGuard) Type() string        { return "default" }
 func (g *cloudGCPGuard) Description() string { return "Blocks access to GCP credentials and config" }
 
-func (g *cloudGCPGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *cloudGCPGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	gcloudPath := EnvOverridePath(ctx, "CLOUDSDK_CONFIG", ".config/gcloud")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("GCP credentials"))
+	rules = append(rules, seatbelt.SectionDeny("GCP credentials"))
 	rules = append(rules, DenyDir(gcloudPath)...)
 
 	// GOOGLE_APPLICATION_CREDENTIALS points to a single file
 	if saPath, ok := ctx.EnvLookup("GOOGLE_APPLICATION_CREDENTIALS"); ok && saPath != "" {
 		rules = append(rules, DenyFile(saPath)...)
 	}
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- cloud-azure ---
@@ -69,13 +69,13 @@ func (g *cloudAzureGuard) Name() string        { return "cloud-azure" }
 func (g *cloudAzureGuard) Type() string        { return "default" }
 func (g *cloudAzureGuard) Description() string { return "Blocks access to Azure CLI credentials" }
 
-func (g *cloudAzureGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *cloudAzureGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	azurePath := EnvOverridePath(ctx, "AZURE_CONFIG_DIR", ".azure")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("Azure credentials"))
+	rules = append(rules, seatbelt.SectionDeny("Azure credentials"))
 	rules = append(rules, DenyDir(azurePath)...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- cloud-digitalocean ---
@@ -89,11 +89,11 @@ func (g *cloudDigitalOceanGuard) Name() string        { return "cloud-digitaloce
 func (g *cloudDigitalOceanGuard) Type() string        { return "default" }
 func (g *cloudDigitalOceanGuard) Description() string { return "Blocks access to DigitalOcean CLI credentials" }
 
-func (g *cloudDigitalOceanGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *cloudDigitalOceanGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("DigitalOcean credentials"))
+	rules = append(rules, seatbelt.SectionDeny("DigitalOcean credentials"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/doctl"))...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- cloud-oci ---
@@ -107,9 +107,9 @@ func (g *cloudOCIGuard) Name() string        { return "cloud-oci" }
 func (g *cloudOCIGuard) Type() string        { return "default" }
 func (g *cloudOCIGuard) Description() string { return "Blocks access to Oracle Cloud CLI credentials" }
 
-func (g *cloudOCIGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *cloudOCIGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("OCI credentials"))
+	rules = append(rules, seatbelt.SectionDeny("OCI credentials"))
 
 	// OCI_CLI_CONFIG_FILE points to a single file; the default ~/.oci is a directory.
 	if ociFile, ok := ctx.EnvLookup("OCI_CLI_CONFIG_FILE"); ok && ociFile != "" {
@@ -117,5 +117,5 @@ func (g *cloudOCIGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	} else {
 		rules = append(rules, DenyDir(ctx.HomePath(".oci"))...)
 	}
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }

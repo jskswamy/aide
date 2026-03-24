@@ -22,7 +22,7 @@ func (g *dockerGuard) Name() string        { return "docker" }
 func (g *dockerGuard) Type() string        { return "opt-in" }
 func (g *dockerGuard) Description() string { return "Blocks access to Docker registry credentials" }
 
-func (g *dockerGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *dockerGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	// DOCKER_CONFIG points to the directory; config.json is always inside it.
 	var configDir string
 	if v, ok := ctx.EnvLookup("DOCKER_CONFIG"); ok && v != "" {
@@ -33,9 +33,9 @@ func (g *dockerGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 	configFile := filepath.Join(configDir, "config.json")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("Docker credentials"))
+	rules = append(rules, seatbelt.SectionDeny("Docker credentials"))
 	rules = append(rules, DenyFile(configFile)...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- github-cli ---
@@ -49,11 +49,11 @@ func (g *githubCLIGuard) Name() string        { return "github-cli" }
 func (g *githubCLIGuard) Type() string        { return "opt-in" }
 func (g *githubCLIGuard) Description() string { return "Blocks access to GitHub CLI credentials" }
 
-func (g *githubCLIGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *githubCLIGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("GitHub CLI credentials"))
+	rules = append(rules, seatbelt.SectionDeny("GitHub CLI credentials"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/gh"))...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- npm ---
@@ -67,12 +67,12 @@ func (g *npmGuard) Name() string        { return "npm" }
 func (g *npmGuard) Type() string        { return "opt-in" }
 func (g *npmGuard) Description() string { return "Blocks access to npm and yarn auth tokens" }
 
-func (g *npmGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *npmGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("npm/yarn credentials"))
+	rules = append(rules, seatbelt.SectionDeny("npm/yarn credentials"))
 	rules = append(rules, DenyFile(ctx.HomePath(".npmrc"))...)
 	rules = append(rules, DenyFile(ctx.HomePath(".yarnrc"))...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- netrc ---
@@ -86,11 +86,11 @@ func (g *netrcGuard) Name() string        { return "netrc" }
 func (g *netrcGuard) Type() string        { return "opt-in" }
 func (g *netrcGuard) Description() string { return "Blocks access to netrc credentials" }
 
-func (g *netrcGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *netrcGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("netrc credentials"))
+	rules = append(rules, seatbelt.SectionDeny("netrc credentials"))
 	rules = append(rules, DenyFile(ctx.HomePath(".netrc"))...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // --- vercel ---
@@ -104,9 +104,9 @@ func (g *vercelGuard) Name() string        { return "vercel" }
 func (g *vercelGuard) Type() string        { return "opt-in" }
 func (g *vercelGuard) Description() string { return "Blocks access to Vercel CLI credentials" }
 
-func (g *vercelGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *vercelGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("Vercel credentials"))
+	rules = append(rules, seatbelt.SectionDeny("Vercel credentials"))
 	rules = append(rules, DenyDir(ctx.HomePath(".config/vercel"))...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }

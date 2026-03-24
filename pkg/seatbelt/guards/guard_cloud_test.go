@@ -23,7 +23,7 @@ func TestGuard_CloudAWS_Metadata(t *testing.T) {
 func TestGuard_CloudAWS_DefaultPaths(t *testing.T) {
 	g := guards.CloudAWSGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	for _, want := range []string{
 		"/home/testuser/.aws/credentials",
@@ -43,7 +43,7 @@ func TestGuard_CloudAWS_EnvOverrideCredentials(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"AWS_SHARED_CREDENTIALS_FILE=/custom/creds"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/creds") {
 		t.Error("expected env override path /custom/creds in output")
@@ -56,7 +56,7 @@ func TestGuard_CloudAWS_EnvOverrideConfig(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"AWS_CONFIG_FILE=/custom/config"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/config") {
 		t.Error("expected env override path /custom/config in output")
@@ -78,7 +78,7 @@ func TestGuard_CloudGCP_Metadata(t *testing.T) {
 func TestGuard_CloudGCP_DefaultPaths(t *testing.T) {
 	g := guards.CloudGCPGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.config/gcloud") {
 		t.Error("expected ~/.config/gcloud in output")
@@ -91,7 +91,7 @@ func TestGuard_CloudGCP_EnvOverride(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"CLOUDSDK_CONFIG=/custom/gcloud"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/gcloud") {
 		t.Error("expected env override /custom/gcloud in output")
@@ -104,7 +104,7 @@ func TestGuard_CloudGCP_ApplicationCredentials(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/tmp/sa.json") {
 		t.Error("expected GOOGLE_APPLICATION_CREDENTIALS path in output")
@@ -126,7 +126,7 @@ func TestGuard_CloudAzure_Metadata(t *testing.T) {
 func TestGuard_CloudAzure_DefaultPaths(t *testing.T) {
 	g := guards.CloudAzureGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.azure") {
 		t.Error("expected ~/.azure in output")
@@ -139,7 +139,7 @@ func TestGuard_CloudAzure_EnvOverride(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"AZURE_CONFIG_DIR=/custom/azure"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/azure") {
 		t.Error("expected env override /custom/azure in output")
@@ -161,7 +161,7 @@ func TestGuard_CloudDigitalOcean_Metadata(t *testing.T) {
 func TestGuard_CloudDigitalOcean_DefaultPaths(t *testing.T) {
 	g := guards.CloudDigitalOceanGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.config/doctl") {
 		t.Error("expected ~/.config/doctl in output")
@@ -183,7 +183,7 @@ func TestGuard_CloudOCI_Metadata(t *testing.T) {
 func TestGuard_CloudOCI_DefaultPaths(t *testing.T) {
 	g := guards.CloudOCIGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.oci") {
 		t.Error("expected ~/.oci in output")
@@ -196,7 +196,7 @@ func TestGuard_CloudOCI_EnvOverride(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"OCI_CLI_CONFIG_FILE=/custom/oci/config"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/oci/config") {
 		t.Error("expected env override /custom/oci/config in output")
@@ -218,7 +218,7 @@ func TestGuard_Kubernetes_Metadata(t *testing.T) {
 func TestGuard_Kubernetes_DefaultPaths(t *testing.T) {
 	g := guards.KubernetesGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.kube/config") {
 		t.Error("expected ~/.kube/config in output")
@@ -231,7 +231,7 @@ func TestGuard_Kubernetes_KubeconfigColonSplit(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"KUBECONFIG=/path/a:/path/b:/path/c"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	for _, want := range []string{"/path/a", "/path/b", "/path/c"} {
 		if !strings.Contains(output, want) {
@@ -259,7 +259,7 @@ func TestGuard_Terraform_Metadata(t *testing.T) {
 func TestGuard_Terraform_DefaultPaths(t *testing.T) {
 	g := guards.TerraformGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	for _, want := range []string{
 		"/home/testuser/.terraform.d/credentials.tfrc.json",
@@ -277,7 +277,7 @@ func TestGuard_Terraform_EnvOverride(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"TF_CLI_CONFIG_FILE=/custom/terraform.rc"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/terraform.rc") {
 		t.Error("expected env override /custom/terraform.rc in output")
@@ -299,7 +299,7 @@ func TestGuard_Vault_Metadata(t *testing.T) {
 func TestGuard_Vault_DefaultPaths(t *testing.T) {
 	g := guards.VaultGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.vault-token") {
 		t.Error("expected ~/.vault-token in output")
@@ -312,7 +312,7 @@ func TestGuard_Vault_EnvOverride(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"VAULT_TOKEN_FILE=/custom/vault-token"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/vault-token") {
 		t.Error("expected env override /custom/vault-token in output")
@@ -325,7 +325,7 @@ func TestGuard_Kubernetes_EmptySegments(t *testing.T) {
 		HomeDir: "/Users/testuser",
 		Env:     []string{"KUBECONFIG=/path/a::/path/b:"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 	if strings.Contains(output, `""`) {
 		t.Error("empty KUBECONFIG segment should not produce empty path rule")
 	}

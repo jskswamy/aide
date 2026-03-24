@@ -15,17 +15,17 @@ func (g *terraformGuard) Name() string        { return "terraform" }
 func (g *terraformGuard) Type() string        { return "default" }
 func (g *terraformGuard) Description() string { return "Blocks access to Terraform credentials" }
 
-func (g *terraformGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *terraformGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("Terraform credentials"))
+	rules = append(rules, seatbelt.SectionDeny("Terraform credentials"))
 
 	if cliConfig, ok := ctx.EnvLookup("TF_CLI_CONFIG_FILE"); ok && cliConfig != "" {
 		rules = append(rules, DenyFile(cliConfig)...)
-		return rules
+		return seatbelt.GuardResult{Rules: rules}
 	}
 
 	// Default credential locations
 	rules = append(rules, DenyFile(ctx.HomePath(".terraform.d/credentials.tfrc.json"))...)
 	rules = append(rules, DenyFile(ctx.HomePath(".terraformrc"))...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }

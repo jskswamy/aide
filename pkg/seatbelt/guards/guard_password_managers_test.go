@@ -24,7 +24,7 @@ func TestGuard_PasswordManagers_Metadata(t *testing.T) {
 func TestGuard_PasswordManagers_AllPaths(t *testing.T) {
 	g := guards.PasswordManagersGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	wantPaths := []string{
 		// 1Password CLI
@@ -50,7 +50,7 @@ func TestGuard_PasswordManagers_NoKeychain(t *testing.T) {
 	// CRITICAL: Library/Keychains is managed by the keychain guard, not here
 	g := guards.PasswordManagersGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if strings.Contains(output, "Library/Keychains") {
 		t.Error("CRITICAL: password-managers guard must NOT contain Library/Keychains (managed by keychain guard)")
@@ -73,7 +73,7 @@ func TestGuard_AideSecrets_Metadata(t *testing.T) {
 func TestGuard_AideSecrets_Path(t *testing.T) {
 	g := guards.AideSecretsGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.config/aide/secrets") {
 		t.Error("expected ~/.config/aide/secrets in output")

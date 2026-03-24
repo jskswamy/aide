@@ -43,33 +43,22 @@ func (g *customGuard) Name() string        { return g.name }
 func (g *customGuard) Type() string        { return g.cfg.Type }
 func (g *customGuard) Description() string { return g.cfg.Description }
 
-func (g *customGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *customGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	paths := g.resolvePaths(ctx)
 
 	var rules []seatbelt.Rule
 	// Deny rules for each path.
 	for _, p := range paths {
-		rules = append(rules,
-			seatbelt.RestrictRule(`(deny file-read-data
-    `+`(subpath "`+p+`")`+`
-)`),
-			seatbelt.RestrictRule(`(deny file-write*
-    `+`(subpath "`+p+`")`+`
-)`),
-		)
+		rules = append(rules, DenyDir(p)...)
 	}
 
 	// Allow rules for explicitly allowed paths.
 	for _, a := range g.cfg.Allowed {
 		expanded := expandHome(ctx, a)
-		rules = append(rules,
-			seatbelt.GrantRule(`(allow file-read*
-    `+`(literal "`+filepath.Clean(expanded)+`")`+`
-)`),
-		)
+		rules = append(rules, AllowReadFile(filepath.Clean(expanded)))
 	}
 
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 // resolvePaths returns the effective list of absolute paths for the guard,

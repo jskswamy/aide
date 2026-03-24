@@ -1,11 +1,28 @@
 // SSH keys guard for macOS Seatbelt profiles.
 //
-// Protects private SSH keys from read and write access while allowing
-// known_hosts and config files which are generally safe to read.
+// Protects private SSH keys by scanning ~/.ssh and denying access to
+// files that are not on the safe-file allowlist. Uses the correct
+// allow-broad/deny-narrow pattern: allow known-safe files, deny
+// everything else individually.
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
+
+var sshSafeFiles = map[string]bool{
+	"known_hosts":     true,
+	"known_hosts.old": true,
+	"config":          true,
+	"authorized_keys": true,
+	"environment":     true,
+}
 
 type sshKeysGuard struct{}
 
@@ -19,30 +36,64 @@ func (g *sshKeysGuard) Description() string {
 	return "Blocks access to SSH private keys; allows known_hosts and config"
 }
 
-func (g *sshKeysGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
-	home := ctx.HomeDir
+func (g *sshKeysGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	result := seatbelt.GuardResult{}
+	sshDir := ctx.HomePath(".ssh")
 
-	return []seatbelt.Rule{
-		// Deny all reads/writes to .ssh via subpath — catches private keys
-		seatbelt.SectionRestrict("SSH keys (deny)"),
-		seatbelt.RestrictRule(`(deny file-read-data
-    ` + seatbelt.HomeSubpath(home, ".ssh") + `
-)`),
-		seatbelt.RestrictRule(`(deny file-write*
-    ` + seatbelt.HomeSubpath(home, ".ssh") + `
-)`),
-
-		// Allow known_hosts and config via literal — beats subpath deny
-		seatbelt.SectionGrant("SSH known_hosts and config (allow)"),
-		seatbelt.GrantRule(`(allow file-read*
-    ` + seatbelt.HomeLiteral(home, ".ssh/known_hosts") + `
-    ` + seatbelt.HomeLiteral(home, ".ssh/config") + `
-)`),
-
-		// Allow directory listing of .ssh (metadata only)
-		seatbelt.SectionGrant("SSH directory listing (metadata)"),
-		seatbelt.GrantRule(`(allow file-read-metadata
-    ` + seatbelt.HomeLiteral(home, ".ssh") + `
-)`),
+	if !dirExists(sshDir) {
+		result.Skipped = append(result.Skipped,
+			fmt.Sprintf("%s not found, SSH key protection skipped", sshDir))
+		return result
 	}
+
+	entries, err := os.ReadDir(sshDir)
+	if err != nil {
+		result.Skipped = append(result.Skipped,
+			fmt.Sprintf("%s unreadable, SSH key protection skipped", sshDir))
+		return result
+	}
+
+	var allowRules []seatbelt.Rule
+	var denyRules []seatbelt.Rule
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		fullPath := filepath.Join(sshDir, name)
+
+		if isSafeSSHFile(name) {
+			allowRules = append(allowRules,
+				seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* (literal "%s"))`, fullPath)))
+			result.Allowed = append(result.Allowed, fullPath)
+		} else {
+			denyRules = append(denyRules, DenyFile(fullPath)...)
+			result.Protected = append(result.Protected, fullPath)
+		}
+	}
+
+	if len(allowRules) > 0 {
+		result.Rules = append(result.Rules, seatbelt.SectionAllow("SSH safe files (allow)"))
+		result.Rules = append(result.Rules, allowRules...)
+	}
+	if len(denyRules) > 0 {
+		result.Rules = append(result.Rules, seatbelt.SectionDeny("SSH private keys (deny)"))
+		result.Rules = append(result.Rules, denyRules...)
+	}
+
+	if len(allowRules) > 0 || len(denyRules) > 0 {
+		result.Rules = append(result.Rules,
+			seatbelt.AllowRule(fmt.Sprintf(`(allow file-read-metadata (literal "%s"))`, sshDir)))
+	}
+
+	return result
+}
+
+func isSafeSSHFile(name string) bool {
+	if sshSafeFiles[name] {
+		return true
+	}
+	return strings.HasSuffix(name, ".pub")
 }

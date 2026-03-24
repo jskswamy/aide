@@ -18,9 +18,9 @@ func (g *browsersGuard) Description() string {
 	return "Blocks access to browser data (cookies, passwords, history)"
 }
 
-func (g *browsersGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *browsersGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("Browser profiles"))
+	rules = append(rules, seatbelt.SectionDeny("Browser profiles"))
 
 	switch ctx.GOOS {
 	case "linux":
@@ -29,7 +29,7 @@ func (g *browsersGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 		// darwin and unknown default to darwin paths
 		rules = append(rules, g.darwinRules(ctx)...)
 	}
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 func (g *browsersGuard) darwinRules(ctx *seatbelt.Context) []seatbelt.Rule {

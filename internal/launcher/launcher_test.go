@@ -862,6 +862,289 @@ func TestLaunch_ShowInfoFalse(t *testing.T) {
 	}
 }
 
+func TestLauncher_ConfigYoloEnabled(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: claude
+yolo: true
+`)
+
+	var stderrBuf bytes.Buffer
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		Stderr: &stderrBuf,
+	}
+
+	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	found := false
+	for _, a := range innerArgs {
+		if a == "--dangerously-skip-permissions" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected --dangerously-skip-permissions in args, got %v", innerArgs)
+	}
+	if !strings.Contains(stderrBuf.String(), "yolo mode enabled") {
+		t.Errorf("expected yolo warning in stderr, got: %s", stderrBuf.String())
+	}
+}
+
+func TestLauncher_NoYoloOverridesConfigYolo(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: claude
+yolo: true
+`)
+
+	var stderrBuf bytes.Buffer
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		NoYolo: true,
+		Stderr: &stderrBuf,
+	}
+
+	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	for _, a := range innerArgs {
+		if a == "--dangerously-skip-permissions" {
+			t.Error("--no-yolo should suppress yolo flag injection")
+		}
+	}
+	if strings.Contains(stderrBuf.String(), "yolo mode enabled") {
+		t.Error("--no-yolo should suppress yolo warning")
+	}
+}
+
+func TestLauncher_NoYoloOverridesCliYolo(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: claude
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		Yolo:   true,
+		NoYolo: true,
+	}
+
+	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	for _, a := range innerArgs {
+		if a == "--dangerously-skip-permissions" {
+			t.Error("--no-yolo should override --yolo")
+		}
+	}
+}
+
+func TestYoloSource(t *testing.T) {
+	tr := true
+	f := false
+
+	tests := []struct {
+		name     string
+		cliFlag  bool
+		pref     *bool
+		ctx      *bool
+		proj     *bool
+		expected string
+	}{
+		{"cli flag", true, nil, nil, nil, "--yolo flag"},
+		{"preferences", false, &tr, nil, nil, "preferences"},
+		{"context", false, nil, &tr, nil, "context config"},
+		{"project", false, nil, nil, &tr, ".aide.yaml"},
+		{"cli beats all", true, &f, &f, &f, "--yolo flag"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := yoloSource(tt.cliFlag, tt.pref, tt.ctx, tt.proj)
+			if got != tt.expected {
+				t.Errorf("yoloSource() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestResolveEffectiveYolo(t *testing.T) {
+	tr := true
+	f := false
+
+	tests := []struct {
+		name     string
+		yolo     bool
+		noYolo   bool
+		pref     *bool
+		ctx      *bool
+		proj     *bool
+		expected bool
+	}{
+		{"all off", false, false, nil, nil, nil, false},
+		{"cli yolo", true, false, nil, nil, nil, true},
+		{"no-yolo overrides cli", true, true, nil, nil, nil, false},
+		{"no-yolo overrides config", false, true, &tr, &tr, &tr, false},
+		{"pref true", false, false, &tr, nil, nil, true},
+		{"ctx true", false, false, nil, &tr, nil, true},
+		{"ctx false overrides pref", false, false, &tr, &f, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := &Launcher{Yolo: tt.yolo, NoYolo: tt.noYolo}
+			got := l.resolveEffectiveYolo(tt.pref, tt.ctx, tt.proj)
+			if got != tt.expected {
+				t.Errorf("resolveEffectiveYolo() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestLauncher_YoloWarningContent(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: claude
+yolo: true
+`)
+
+	var stderrBuf bytes.Buffer
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		Stderr: &stderrBuf,
+	}
+
+	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	out := stderrBuf.String()
+	if !strings.Contains(out, "permission checks are disabled") {
+		t.Errorf("expected permission warning, got: %s", out)
+	}
+	if !strings.Contains(out, "sandbox") {
+		t.Errorf("expected sandbox note, got: %s", out)
+	}
+}
+
+func TestLauncher_ConfigYoloUnsupportedAgent(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: vim
+yolo: true
+`)
+
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+	}
+
+	err := l.Launch(cwd, "", nil, false, false)
+	if err == nil {
+		t.Fatal("expected error for unsupported yolo agent")
+	}
+	if !strings.Contains(err.Error(), "--yolo not supported") {
+		t.Errorf("expected unsupported agent error, got: %v", err)
+	}
+}
+
+func TestLauncher_ContextLevelYolo(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agents:
+  claude:
+    binary: claude
+contexts:
+  work:
+    agent: claude
+    yolo: true
+default_context: work
+`)
+
+	var stderrBuf bytes.Buffer
+	mock := &mockExecer{}
+	l := &Launcher{
+		Execer:    mock,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		Stderr: &stderrBuf,
+	}
+
+	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	found := false
+	for _, a := range innerArgs {
+		if a == "--dangerously-skip-permissions" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected yolo flag from context config, got %v", innerArgs)
+	}
+	if !strings.Contains(stderrBuf.String(), "context config") {
+		t.Errorf("expected 'context config' source in warning, got: %s", stderrBuf.String())
+	}
+}
+
 func TestLaunch_ResolveFlagOverridesShowInfoFalse(t *testing.T) {
 	configDir := t.TempDir()
 	cwd := t.TempDir()

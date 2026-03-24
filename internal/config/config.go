@@ -95,6 +95,7 @@ func normalizeMinimal(cfg *Config) *Config {
 				Secret:      cfg.Secret,
 				MCPServers:  cfg.MCPServers,
 				Sandbox:     SandboxPolicyToRef(cfg.Sandbox),
+				Yolo:        cfg.Yolo,
 			},
 		},
 		MCP:            cfg.MCP,

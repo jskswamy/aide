@@ -107,3 +107,54 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 	}
 	return result.Profile, nil
 }
+
+// EvaluateGuards runs all guards from the policy and returns their diagnostics
+// without rendering a full profile. Used by the banner layer to show guard status.
+func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
+	if policy == nil {
+		return nil
+	}
+	homeDir, _ := os.UserHomeDir()
+	activeGuards := guards.ResolveActiveGuards(policy.Guards)
+
+	ctx := &seatbelt.Context{
+		HomeDir:     homeDir,
+		ProjectRoot: policy.ProjectRoot,
+		TempDir:     policy.TempDir,
+		RuntimeDir:  policy.RuntimeDir,
+		Env:         policy.Env,
+		GOOS:        runtime.GOOS,
+		Network:     string(policy.Network),
+		AllowPorts:  policy.AllowPorts,
+		DenyPorts:   policy.DenyPorts,
+		ExtraDenied: policy.ExtraDenied,
+	}
+
+	var results []seatbelt.GuardResult
+	for _, g := range activeGuards {
+		result := g.Rules(ctx)
+		result.Name = g.Name()
+		results = append(results, result)
+	}
+	if policy.AgentModule != nil {
+		result := policy.AgentModule.Rules(ctx)
+		result.Name = policy.AgentModule.Name()
+		results = append(results, result)
+	}
+	return results
+}
+
+// AvailableGuardNames returns opt-in guard names not included in the active list.
+func AvailableGuardNames(activeNames []string) []string {
+	active := make(map[string]bool)
+	for _, n := range activeNames {
+		active[n] = true
+	}
+	var available []string
+	for _, g := range guards.AllGuards() {
+		if g.Type() == "opt-in" && !active[g.Name()] {
+			available = append(available, g.Name())
+		}
+	}
+	return available
+}

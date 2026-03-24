@@ -11,8 +11,10 @@ type testModule struct {
 	rules []Rule
 }
 
-func (m *testModule) Name() string            { return m.name }
-func (m *testModule) Rules(_ *Context) []Rule { return m.rules }
+func (m *testModule) Name() string { return m.name }
+func (m *testModule) Rules(_ *Context) GuardResult {
+	return GuardResult{Rules: m.rules}
+}
 
 func TestProfile_Render_EmptyProfile(t *testing.T) {
 	p := New("/home/user")
@@ -28,7 +30,7 @@ func TestProfile_Render_EmptyProfile(t *testing.T) {
 func TestProfile_Render_SingleModule(t *testing.T) {
 	p := New("/home/user").Use(&testModule{
 		name:  "test",
-		rules: []Rule{Allow("process-exec")},
+		rules: []Rule{AllowOp("process-exec")},
 	})
 	out, err := p.Render()
 	if err != nil {
@@ -44,8 +46,8 @@ func TestProfile_Render_SingleModule(t *testing.T) {
 
 func TestProfile_Render_ModuleOrder(t *testing.T) {
 	p := New("/home/user").Use(
-		&testModule{name: "first", rules: []Rule{Allow("process-exec")}},
-		&testModule{name: "second", rules: []Rule{Allow("process-fork")}},
+		&testModule{name: "first", rules: []Rule{AllowOp("process-exec")}},
+		&testModule{name: "second", rules: []Rule{AllowOp("process-fork")}},
 	)
 	out, err := p.Render()
 	if err != nil {
@@ -81,7 +83,7 @@ type contextCapture struct {
 }
 
 func (c *contextCapture) Name() string { return "capture" }
-func (c *contextCapture) Rules(ctx *Context) []Rule {
+func (c *contextCapture) Rules(ctx *Context) GuardResult {
 	*c.captured = *ctx
-	return nil
+	return GuardResult{}
 }

@@ -29,16 +29,16 @@ func (p *Profile) WithContext(fn func(*Context)) *Profile {
 
 // Render generates the Seatbelt .sb profile string.
 // Rules from all modules are collected, stable-sorted by intent, then rendered.
-// This ensures Setup(100) rules appear first, Restrict(200) second, Grant(300) last,
-// leveraging Seatbelt's last-rule-wins semantics.
+// Allow(100) rules appear first, then Deny(200). The sort order is for
+// readability — Seatbelt uses deny-wins-over-allow semantics.
 func (p *Profile) Render() (string, error) {
 	if len(p.modules) == 0 {
 		return "", nil
 	}
 	var allRules []taggedRule
 	for _, m := range p.modules {
-		rules := m.Rules(&p.ctx)
-		for _, r := range rules {
+		result := m.Rules(&p.ctx)
+		for _, r := range result.Rules {
 			allRules = append(allRules, taggedRule{module: m.Name(), rule: r})
 		}
 	}

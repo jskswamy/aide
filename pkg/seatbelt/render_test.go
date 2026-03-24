@@ -13,8 +13,8 @@ func TestRenderRules_Comment(t *testing.T) {
 	}
 }
 
-func TestRenderRules_Allow(t *testing.T) {
-	rules := []Rule{Allow("process-exec")}
+func TestRenderRules_AllowOp(t *testing.T) {
+	rules := []Rule{AllowOp("process-exec")}
 	out := renderRules(rules)
 	if !strings.Contains(out, "(allow process-exec)") {
 		t.Errorf("expected allow rule, got %q", out)

@@ -84,10 +84,8 @@ Expected: PASS
 
 - [ ] **Step 5: Commit**
 
-```
-git add pkg/seatbelt/path.go pkg/seatbelt/path_test.go
-/commit add SubpathWithParentMetadata helper
-```
+Stage: `git add pkg/seatbelt/path.go pkg/seatbelt/path_test.go`
+Run: `/commit --style classic add SubpathWithParentMetadata helper for seatbelt path traversal`
 
 ---
 
@@ -270,10 +268,8 @@ Expected: All pass
 
 - [ ] **Step 6: Commit**
 
-```
-git add pkg/seatbelt/guards/guard_nix_toolchain.go pkg/seatbelt/guards/toolchain_test.go
-/commit expand nix-toolchain guard with metadata, firmlink, socket, user paths
-```
+Stage: `git add pkg/seatbelt/guards/guard_nix_toolchain.go pkg/seatbelt/guards/toolchain_test.go`
+Run: `/commit --style classic expand nix-toolchain guard with parent metadata, firmlink resolution, daemon socket, and user paths`
 
 ---
 
@@ -441,10 +437,8 @@ Expected: All pass
 
 - [ ] **Step 11: Commit**
 
-```
-git add internal/sandbox/sandbox.go internal/sandbox/policy.go internal/sandbox/darwin.go pkg/seatbelt/module.go pkg/seatbelt/guards/guard_filesystem.go pkg/seatbelt/guards/filesystem_test.go
-/commit wire writable_extra and readable_extra through to seatbelt profile
-```
+Stage: `git add internal/sandbox/sandbox.go internal/sandbox/policy.go internal/sandbox/darwin.go pkg/seatbelt/module.go pkg/seatbelt/guards/guard_filesystem.go pkg/seatbelt/guards/filesystem_test.go`
+Run: `/commit --style classic wire writable_extra and readable_extra config fields through Policy, Context, and filesystem guard to seatbelt profile`
 
 ---
 
@@ -558,10 +552,8 @@ Expected: All pass. Existing tests that check for `(allow process-fork)` will ne
 
 - [ ] **Step 8: Commit**
 
-```
-git add pkg/seatbelt/module.go pkg/seatbelt/guards/guard_system_runtime.go internal/sandbox/darwin.go <test files>
-/commit wire AllowSubprocess to system-runtime guard
-```
+Stage: `git add pkg/seatbelt/module.go pkg/seatbelt/guards/guard_system_runtime.go internal/sandbox/darwin.go` (and any modified test files)
+Run: `/commit --style classic wire AllowSubprocess through Context to system-runtime guard with conditional process-fork`
 
 ---
 
@@ -738,10 +730,8 @@ Expected: No errors
 
 - [ ] **Step 4: Commit**
 
-```
-git add internal/sandbox/integration_test.go
-/commit rewrite integration tests to use guard-based Policy
-```
+Stage: `git add internal/sandbox/integration_test.go`
+Run: `/commit --style classic rewrite broken darwin integration tests to use guard-based Policy with ExtraDenied, ExtraWritable, ExtraReadable`
 
 ---
 
@@ -856,10 +846,8 @@ Expected: All PASS (since we've already wired the fields in Tasks 3-4)
 
 - [ ] **Step 3: Commit**
 
-```
-git add internal/sandbox/policy_contract_test.go
-/commit add config-to-profile contract tests
-```
+Stage: `git add internal/sandbox/policy_contract_test.go`
+Run: `/commit --style classic add config-to-profile contract tests verifying writable_extra, readable_extra, denied_extra, AllowSubprocess, and network mode produce expected seatbelt rules`
 
 ---
 
@@ -989,9 +977,8 @@ Expected: PASS
 
 - [ ] **Step 5: Commit**
 
-```
-git add internal/sandbox/sandbox.go internal/sandbox/sandbox_test.go
-/commit add cross-guard conflict detection diagnostic
+Stage: `git add internal/sandbox/sandbox.go internal/sandbox/sandbox_test.go`
+Run: `/commit --style classic add cross-guard conflict detection diagnostic for banner warnings when deny rules override allow rules from other guards`
 ```
 
 ---
@@ -1111,10 +1098,8 @@ Expected: No errors
 
 - [ ] **Step 3: Commit**
 
-```
-git add internal/sandbox/toolchain_integration_test.go
-/commit add nix toolchain integration smoke tests
-```
+Stage: `git add internal/sandbox/toolchain_integration_test.go`
+Run: `/commit --style classic add nix toolchain integration smoke tests for stat /nix, /run/current-system, and go env GOROOT inside sandbox`
 
 ---
 

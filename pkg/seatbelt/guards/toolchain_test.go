@@ -129,32 +129,6 @@ func TestGuard_NixToolchain_Paths(t *testing.T) {
 	}
 }
 
-func TestGuard_GitIntegration_Metadata(t *testing.T) {
-	g := guards.GitIntegrationGuard()
-
-	if g.Name() != "git-integration" {
-		t.Errorf("expected Name() = %q, got %q", "git-integration", g.Name())
-	}
-	if g.Type() != "always" {
-		t.Errorf("expected Type() = %q, got %q", "always", g.Type())
-	}
-	if g.Description() == "" {
-		t.Error("expected non-empty Description()")
-	}
-}
-
-func TestGuard_GitIntegration_EmptyRules(t *testing.T) {
-	// All git config reads are now covered by the filesystem guard's
-	// scoped $HOME reads. The git-integration guard returns empty.
-	g := guards.GitIntegrationGuard()
-	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	result := g.Rules(ctx)
-
-	if len(result.Rules) != 0 {
-		t.Errorf("expected empty rules, got %d rules", len(result.Rules))
-	}
-}
-
 func TestGuard_Keychain_Metadata(t *testing.T) {
 	g := guards.KeychainGuard()
 

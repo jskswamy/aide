@@ -21,7 +21,6 @@ func init() {
 		KeychainGuard(),
 		NodeToolchainGuard(),
 		NixToolchainGuard(),
-		GitIntegrationGuard(),
 	)
 	// default guards
 	builtinGuards = append(builtinGuards,

@@ -298,6 +298,64 @@ func TestRenderBoxed_GuardGroups(t *testing.T) {
 	}
 }
 
+func TestRenderCompact_YoloShown(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Yolo:      true,
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+		},
+	}
+	var buf bytes.Buffer
+	RenderCompact(&buf, data)
+	out := buf.String()
+	if !strings.Contains(out, "yolo mode") {
+		t.Errorf("compact output should show yolo mode, got:\n%s", out)
+	}
+	if !strings.Contains(out, "permission checks disabled") {
+		t.Errorf("compact yolo should mention permission checks, got:\n%s", out)
+	}
+}
+
+func TestRenderCompact_YoloHiddenWhenFalse(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Yolo:      false,
+	}
+	var buf bytes.Buffer
+	RenderCompact(&buf, data)
+	out := buf.String()
+	if strings.Contains(out, "yolo") {
+		t.Errorf("compact output should not show yolo when disabled, got:\n%s", out)
+	}
+}
+
+func TestRenderBoxed_YoloShown(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Yolo:      true,
+	}
+	var buf bytes.Buffer
+	RenderBoxed(&buf, data)
+	out := buf.String()
+	if !strings.Contains(out, "yolo mode") {
+		t.Errorf("boxed output should show yolo mode, got:\n%s", out)
+	}
+}
+
+func TestRenderClean_YoloShown(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Yolo:      true,
+	}
+	var buf bytes.Buffer
+	RenderClean(&buf, data)
+	out := buf.String()
+	if !strings.Contains(out, "yolo mode") {
+		t.Errorf("clean output should show yolo mode, got:\n%s", out)
+	}
+}
+
 func TestRenderClean_GuardGroups(t *testing.T) {
 	data := &BannerData{
 		AgentName: "claude",

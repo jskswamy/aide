@@ -243,6 +243,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
 		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs)
+		bannerData.Yolo = effectiveYolo
 		ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData)
 		fmt.Fprintln(l.stderr())
 	}

@@ -183,6 +183,7 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 		AgentName: name,
 		AgentPath: binary,
 		Sandbox:   si,
+		Yolo:      l.Yolo && !l.NoYolo,
 	}
 	ui.RenderBanner(l.stderr(), "compact", bannerData)
 	fmt.Fprintln(l.stderr())

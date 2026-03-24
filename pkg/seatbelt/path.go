@@ -32,6 +32,18 @@ func HomePrefix(home, rel string) string {
 	return fmt.Sprintf(`(prefix "%s")`, filepath.Join(home, rel))
 }
 
+// SubpathWithParentMetadata returns two rules: (allow file-read* (subpath ...))
+// for the given path, and (allow file-read-metadata (literal ...)) for its
+// parent directory. Seatbelt subpath rules don't grant lstat on the parent
+// itself, which breaks filepath.EvalSymlinks traversal.
+func SubpathWithParentMetadata(path string) []Rule {
+	parent := filepath.Dir(path)
+	return []Rule{
+		AllowRule(fmt.Sprintf(`(allow file-read* (subpath "%s"))`, path)),
+		AllowRule(fmt.Sprintf(`(allow file-read-metadata (literal "%s"))`, parent)),
+	}
+}
+
 // ExpandGlobs expands glob patterns in a list of paths.
 // Non-glob paths are passed through unchanged.
 func ExpandGlobs(patterns []string) []string {

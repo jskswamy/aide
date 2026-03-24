@@ -17,6 +17,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             pkgs.go
+            pkgs.gnumake
             pkgs.golangci-lint
             pkgs.gosec
             pkgs.gitleaks

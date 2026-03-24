@@ -19,28 +19,28 @@ func (g *keychainGuard) Description() string {
 	return "macOS Keychain access for authentication and certificates"
 }
 
-func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *keychainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
-	return []seatbelt.Rule{
+	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
 		// User keychain (read-write)
-		seatbelt.SectionSetup("User keychain"),
-		seatbelt.SetupRule(`(allow file-read* file-write*
+		seatbelt.SectionAllow("User keychain"),
+		seatbelt.AllowRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, "Library/Keychains") + `
     ` + seatbelt.HomeLiteral(home, "Library/Preferences/com.apple.security.plist") + `
 )`),
 
 		// System keychain (read-only)
-		seatbelt.SectionSetup("System keychain"),
-		seatbelt.SetupRule(`(allow file-read*
+		seatbelt.SectionAllow("System keychain"),
+		seatbelt.AllowRule(`(allow file-read*
     (literal "/Library/Preferences/com.apple.security.plist")
     (literal "/Library/Keychains/System.keychain")
     (subpath "/private/var/db/mds")
 )`),
 
 		// Keychain metadata traversal
-		seatbelt.SectionSetup("Keychain metadata traversal"),
-		seatbelt.SetupRule(`(allow file-read-metadata
+		seatbelt.SectionAllow("Keychain metadata traversal"),
+		seatbelt.AllowRule(`(allow file-read-metadata
     ` + seatbelt.HomeLiteral(home, "Library") + `
     ` + seatbelt.HomeLiteral(home, "Library/Keychains") + `
     (literal "/Library")
@@ -48,8 +48,8 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Security Mach services
-		seatbelt.SectionSetup("Security Mach services"),
-		seatbelt.SetupRule(`(allow mach-lookup
+		seatbelt.SectionAllow("Security Mach services"),
+		seatbelt.AllowRule(`(allow mach-lookup
     (global-name "com.apple.SecurityServer")
     (global-name "com.apple.security.agent")
     (global-name "com.apple.securityd.xpc")
@@ -59,9 +59,9 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Security IPC shared memory
-		seatbelt.SectionSetup("Security IPC shared memory"),
-		seatbelt.SetupRule(`(allow ipc-posix-shm-read-data ipc-posix-shm-write-create ipc-posix-shm-write-data
+		seatbelt.SectionAllow("Security IPC shared memory"),
+		seatbelt.AllowRule(`(allow ipc-posix-shm-read-data ipc-posix-shm-write-create ipc-posix-shm-write-data
     (ipc-posix-name "com.apple.AppleDatabaseChanged")
 )`),
-	}
+	}}
 }

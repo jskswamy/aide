@@ -19,12 +19,12 @@ func (g *gitIntegrationGuard) Description() string {
 	return "Git config and SSH host verification (read-only)"
 }
 
-func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
-	return []seatbelt.Rule{
-		seatbelt.SectionSetup("Git configuration (read-only)"),
-		seatbelt.SetupRule(`(allow file-read*
+	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
+		seatbelt.SectionAllow("Git configuration (read-only)"),
+		seatbelt.AllowRule(`(allow file-read*
     ` + seatbelt.HomePrefix(home, ".gitconfig") + `
     ` + seatbelt.HomePrefix(home, ".gitignore") + `
     ` + seatbelt.HomeSubpath(home, ".config/git") + `
@@ -33,5 +33,5 @@ func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
     ` + seatbelt.HomeLiteral(home, ".ssh/config") + `
     ` + seatbelt.HomeLiteral(home, ".ssh/known_hosts") + `
 )`),
-	}
+	}}
 }

@@ -31,7 +31,8 @@ func TestFilesystem_WritablePaths(t *testing.T) {
 		t.Errorf("expected Name() = %q, got %q", "filesystem", g.Name())
 	}
 
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(allow file-read* file-write*") {
 		t.Error("expected allow file-read* file-write* block")
@@ -56,7 +57,8 @@ func TestFilesystem_ReadablePaths(t *testing.T) {
 		HomeDir: dir1,
 	}
 
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	// Should have file-read* but NOT file-write* for homeDir
 	if !strings.Contains(output, "(allow file-read*") {
@@ -79,7 +81,8 @@ func TestFilesystem_DeniedPaths(t *testing.T) {
 		ExtraDenied: []string{file1},
 	}
 
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny file-read-data for denied path")
@@ -107,7 +110,8 @@ func TestFilesystem_GlobExpansion(t *testing.T) {
 		ExtraDenied: []string{filepath.Join(tmp, "*.env")},
 	}
 
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "a.env") {
 		t.Error("expected expanded glob to include a.env")
@@ -139,7 +143,8 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 		ExtraDenied: []string{denied},
 	}
 
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(allow file-read* file-write*") {
 		t.Error("expected writable block")
@@ -192,7 +197,8 @@ func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 		RuntimeDir:  runtime,
 		ExtraDenied: []string{denied},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(allow file-read* file-write*") {
 		t.Error("expected writable block for ProjectRoot/RuntimeDir")

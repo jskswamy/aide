@@ -25,7 +25,8 @@ func TestGuard_Network_Metadata(t *testing.T) {
 func TestGuard_Network_Unrestricted(t *testing.T) {
 	g := guards.NetworkGuard()
 	ctx := &seatbelt.Context{Network: "unrestricted"}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(allow network*)") {
 		t.Error("expected (allow network*) for unrestricted")
@@ -35,7 +36,8 @@ func TestGuard_Network_Unrestricted(t *testing.T) {
 func TestGuard_Network_Empty(t *testing.T) {
 	g := guards.NetworkGuard()
 	ctx := &seatbelt.Context{Network: ""}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(allow network*)") {
 		t.Error("expected (allow network*) for empty network (default unrestricted)")
@@ -45,7 +47,8 @@ func TestGuard_Network_Empty(t *testing.T) {
 func TestGuard_Network_Outbound(t *testing.T) {
 	g := guards.NetworkGuard()
 	ctx := &seatbelt.Context{Network: "outbound"}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(allow network-outbound)") {
 		t.Error("expected (allow network-outbound) for outbound")
@@ -55,7 +58,8 @@ func TestGuard_Network_Outbound(t *testing.T) {
 func TestGuard_Network_None(t *testing.T) {
 	g := guards.NetworkGuard()
 	ctx := &seatbelt.Context{Network: "none"}
-	rules := g.Rules(ctx)
+	result := g.Rules(ctx)
+	rules := result.Rules
 
 	if len(rules) != 0 {
 		t.Errorf("expected no rules for none, got %d", len(rules))
@@ -68,7 +72,8 @@ func TestGuard_Network_AllowPorts(t *testing.T) {
 		Network:    "outbound",
 		AllowPorts: []int{443, 53},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, "(deny network-outbound)") {
 		t.Error("expected deny network-outbound before allow rules")
@@ -87,7 +92,8 @@ func TestGuard_Network_DenyPorts(t *testing.T) {
 		Network:   "outbound",
 		DenyPorts: []int{22, 25},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if !strings.Contains(output, `(deny network-outbound (remote tcp "*:22"))`) {
 		t.Error("expected deny for TCP port 22")
@@ -104,7 +110,8 @@ func TestGuard_Network_DenyPorts(t *testing.T) {
 
 func TestGuard_Network_NilContext(t *testing.T) {
 	g := guards.NetworkGuard()
-	rules := g.Rules(nil)
+	result := g.Rules(nil)
+	rules := result.Rules
 
 	if rules != nil {
 		t.Errorf("expected nil rules for nil context, got %v", rules)

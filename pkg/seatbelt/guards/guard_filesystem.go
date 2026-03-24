@@ -25,9 +25,9 @@ func (g *filesystemGuard) Description() string {
 	return "Project directory (read-write) and home directory (read-only) access"
 }
 
-func (g *filesystemGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	if ctx == nil {
-		return nil
+		return seatbelt.GuardResult{}
 	}
 
 	var writable, readable []string
@@ -44,25 +44,25 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 		writable = append(writable, ctx.TempDir)
 	}
 
-	return filesystemRules(writable, readable, ctx.ExtraDenied)
+	return seatbelt.GuardResult{Rules: filesystemRules(writable, readable, ctx.ExtraDenied)}
 }
 
 func filesystemRules(writable, readable, denied []string) []seatbelt.Rule {
 	var rules []seatbelt.Rule
 
 	if len(writable) > 0 {
-		rules = append(rules, seatbelt.SetupRule(fmt.Sprintf("(allow file-read* file-write*\n    %s)", buildRequireAny(writable))))
+		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf("(allow file-read* file-write*\n    %s)", buildRequireAny(writable))))
 	}
 	if len(readable) > 0 {
-		rules = append(rules, seatbelt.SetupRule(fmt.Sprintf("(allow file-read*\n    %s)", buildRequireAny(readable))))
+		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf("(allow file-read*\n    %s)", buildRequireAny(readable))))
 	}
 	if len(denied) > 0 {
 		expanded := seatbelt.ExpandGlobs(denied)
 		for _, p := range expanded {
 			expr := seatbelt.Path(p)
 			rules = append(rules,
-				seatbelt.RestrictRule(fmt.Sprintf("(deny file-read-data %s)", expr)),
-				seatbelt.RestrictRule(fmt.Sprintf("(deny file-write* %s)", expr)),
+				seatbelt.DenyRule(fmt.Sprintf("(deny file-read-data %s)", expr)),
+				seatbelt.DenyRule(fmt.Sprintf("(deny file-write* %s)", expr)),
 			)
 		}
 	}

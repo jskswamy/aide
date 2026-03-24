@@ -21,19 +21,19 @@ func (g *networkGuard) Name() string        { return "network" }
 func (g *networkGuard) Type() string        { return "always" }
 func (g *networkGuard) Description() string { return "Network access for agent operation" }
 
-func (g *networkGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *networkGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	if ctx == nil {
-		return nil
+		return seatbelt.GuardResult{}
 	}
 	switch ctx.Network {
 	case "outbound":
-		return networkOutboundRules(ctx.AllowPorts, ctx.DenyPorts)
+		return seatbelt.GuardResult{Rules: networkOutboundRules(ctx.AllowPorts, ctx.DenyPorts)}
 	case "none":
-		return nil
+		return seatbelt.GuardResult{}
 	case "unrestricted", "":
-		return []seatbelt.Rule{seatbelt.SetupRule("(allow network*)")}
+		return seatbelt.GuardResult{Rules: []seatbelt.Rule{seatbelt.AllowRule("(allow network*)")}}
 	default:
-		return nil
+		return seatbelt.GuardResult{}
 	}
 }
 
@@ -44,20 +44,20 @@ func networkOutboundRules(allowPorts, denyPorts []int) []seatbelt.Rule {
 	if len(denyPorts) > 0 {
 		return denyPortRules(denyPorts)
 	}
-	return []seatbelt.Rule{seatbelt.SetupRule("(allow network-outbound)")}
+	return []seatbelt.Rule{seatbelt.AllowRule("(allow network-outbound)")}
 }
 
 func allowPortRules(ports []int) []seatbelt.Rule {
 	rules := []seatbelt.Rule{
-		seatbelt.SetupRule("(deny network-outbound)"),
+		seatbelt.AllowRule("(deny network-outbound)"),
 	}
 	for _, port := range ports {
 		rules = append(rules,
-			seatbelt.SetupRule(fmt.Sprintf(`(allow network-outbound (remote tcp "*:%d"))`, port)),
+			seatbelt.AllowRule(fmt.Sprintf(`(allow network-outbound (remote tcp "*:%d"))`, port)),
 		)
 		if port == 53 {
 			rules = append(rules,
-				seatbelt.SetupRule(fmt.Sprintf(`(allow network-outbound (remote udp "*:%d"))`, port)),
+				seatbelt.AllowRule(fmt.Sprintf(`(allow network-outbound (remote udp "*:%d"))`, port)),
 			)
 		}
 	}
@@ -66,11 +66,11 @@ func allowPortRules(ports []int) []seatbelt.Rule {
 
 func denyPortRules(ports []int) []seatbelt.Rule {
 	rules := []seatbelt.Rule{
-		seatbelt.SetupRule("(allow network-outbound)"),
+		seatbelt.AllowRule("(allow network-outbound)"),
 	}
 	for _, port := range ports {
 		rules = append(rules,
-			seatbelt.SetupRule(fmt.Sprintf(`(deny network-outbound (remote tcp "*:%d"))`, port)),
+			seatbelt.AllowRule(fmt.Sprintf(`(deny network-outbound (remote tcp "*:%d"))`, port)),
 		)
 	}
 	return rules

@@ -473,65 +473,78 @@ func TestProfile_IntentOrdering(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Find positions of key rules from different intents
-	setupPos := strings.Index(profile, "(deny default)")          // Setup intent (base)
-	restrictPos := strings.Index(profile, `(deny file-read-data`) // Restrict intent (credential guard)
+	// Two-tier ordering: Allow(100) rules appear before Deny(200) rules.
+	// "(deny default)" is a DenyOp which has Allow intent (infrastructure),
+	// so it appears in the Allow section. Credential deny rules (file-read-data
+	// denies) have Deny intent and appear later.
+	denyDefaultPos := strings.Index(profile, "(deny default)")
+	if denyDefaultPos == -1 {
+		t.Fatal("expected (deny default) in profile")
+	}
 
-	// Find the LAST occurrence of allow file-read* (which should be a Grant rule)
+	// Find last Allow-intent rule (allow file-read* blocks)
 	lastAllow := strings.LastIndex(profile, `(allow file-read*`)
-
-	if setupPos == -1 {
-		t.Fatal("expected Setup rule (deny default) in profile")
-	}
-	if restrictPos == -1 {
-		t.Fatal("expected Restrict rule (deny file-read-data) in profile")
+	if lastAllow == -1 {
+		t.Fatal("expected at least one (allow file-read*) rule in profile")
 	}
 
-	// Setup should appear before Restrict
-	if setupPos > restrictPos {
-		t.Error("Setup rules should appear before Restrict rules in profile")
+	// Find first Deny-intent rule (deny file-read-data from credential guards)
+	denyFileRead := strings.Index(profile, `(deny file-read-data`)
+	if denyFileRead != -1 {
+		// If credential deny rules exist, they should appear after allow rules
+		if denyFileRead < lastAllow {
+			// This is fine — deny-wins means position doesn't matter,
+			// but the profile sorts Allow(100) before Deny(200)
+			t.Error("Deny-intent rules (deny file-read-data) should appear after Allow-intent rules")
+		}
 	}
 
-	// Restrict should appear before the last Grant
-	if restrictPos > lastAllow {
-		t.Error("Restrict rules should appear before Grant rules in profile")
+	// (deny default) should appear before allow rules (it's in the Allow section)
+	if denyDefaultPos > lastAllow {
+		t.Error("(deny default) should appear before allow file-read rules")
 	}
 }
 
 func TestProfile_SSHKnownHostsSurvives(t *testing.T) {
+	// The SSH keys guard now uses per-file discovery: it scans ~/.ssh,
+	// allows safe files (known_hosts, config, *.pub) and denies everything
+	// else individually. It skips entirely if ~/.ssh doesn't exist.
+	// Comprehensive tests live in guards/guard_ssh_keys_test.go.
+	homeDir, _ := os.UserHomeDir()
+	sshDir := filepath.Join(homeDir, ".ssh")
+
 	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Find the ssh deny (Restrict) and known_hosts allow (Grant).
-	// Rules are multiline: "(deny file-read-data" then "(subpath .../.ssh)" on the next line.
-	// We track block context so we can find the block that contains each path.
-	sshDenyBlock := -1
-	knownHostsAllowBlock := -1
+	if _, statErr := os.Stat(sshDir); os.IsNotExist(statErr) {
+		// If ~/.ssh doesn't exist, the guard skips entirely
+		t.Skip("~/.ssh does not exist, SSH guard skips; see guards/guard_ssh_keys_test.go")
+		return
+	}
 
+	// If ~/.ssh exists, verify per-file rules (not subpath deny)
 	lines := strings.Split(profile, "\n")
-	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
-		if strings.Contains(line, `.ssh"`) && blockType == "deny" && sshDenyBlock == -1 {
-			sshDenyBlock = blockStart
+	for _, line := range lines {
+		if strings.Contains(line, "subpath") && strings.Contains(line, ".ssh") {
+			t.Errorf("SSH guard should not use subpath deny, found: %s", strings.TrimSpace(line))
 		}
-		if strings.Contains(line, `known_hosts"`) && blockType == "allow" {
-			knownHostsAllowBlock = blockStart
-		}
-	})
-
-	if sshDenyBlock == -1 {
-		t.Fatal("expected SSH deny rule in profile")
-	}
-	if knownHostsAllowBlock == -1 {
-		t.Fatal("expected known_hosts allow rule in profile")
 	}
 
-	// Grant (allow known_hosts) must come AFTER Restrict (deny .ssh)
-	// With last-rule-wins, this means known_hosts is readable
-	if knownHostsAllowBlock < sshDenyBlock {
-		t.Errorf("known_hosts allow (block at line %d) must appear AFTER .ssh deny (block at line %d) for last-rule-wins", knownHostsAllowBlock, sshDenyBlock)
+	// If known_hosts exists, it should be in an allow rule
+	knownHosts := filepath.Join(sshDir, "known_hosts")
+	if _, statErr := os.Stat(knownHosts); statErr == nil {
+		knownHostsAllow := false
+		scanBlockContext(lines, func(_ int, line, blockType string, _ int) {
+			if strings.Contains(line, "known_hosts") && blockType == "allow" {
+				knownHostsAllow = true
+			}
+		})
+		if !knownHostsAllow {
+			t.Error("known_hosts should appear in an allow block")
+		}
 	}
 }
 
@@ -543,34 +556,37 @@ func TestProfile_NpmOptInOverridesNodeToolchain(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Find node-toolchain's .npmrc allow (Setup) and npm guard's .npmrc deny (Restrict).
-	// The allow is inside a multiline allow block; the deny is a single-line deny rule.
-	npmAllowBlock := -1
-	npmDenyBlock := -1
+	// The node-toolchain guard always emits an allow rule for .npmrc.
+	// The npm guard only emits a deny rule if ~/.npmrc actually exists on disk.
+	// With deny-wins semantics, the deny rule (if present) overrides the allow
+	// regardless of position.
 
+	// Node-toolchain allow for .npmrc should always be present
+	npmAllowBlock := -1
 	lines := strings.Split(profile, "\n")
 	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
-		if strings.Contains(line, `.npmrc"`) {
-			if blockType == "allow" {
-				npmAllowBlock = blockStart
-			}
-			if blockType == "deny" {
-				npmDenyBlock = blockStart
-			}
+		if strings.Contains(line, `.npmrc"`) && blockType == "allow" {
+			npmAllowBlock = blockStart
 		}
 	})
 
 	if npmAllowBlock == -1 {
 		t.Fatal("expected node-toolchain .npmrc allow in profile")
 	}
-	if npmDenyBlock == -1 {
-		t.Fatal("expected npm guard .npmrc deny in profile")
-	}
 
-	// Restrict (npm deny) must come AFTER Setup (node-toolchain allow)
-	// With last-rule-wins, this means .npmrc is blocked when npm guard is active
-	if npmDenyBlock < npmAllowBlock {
-		t.Errorf("npm deny (block at line %d) must appear AFTER node-toolchain allow (block at line %d) for last-rule-wins", npmDenyBlock, npmAllowBlock)
+	// If ~/.npmrc exists, the npm guard should emit a deny rule for it
+	homeDir, _ := os.UserHomeDir()
+	npmrc := filepath.Join(homeDir, ".npmrc")
+	if _, statErr := os.Stat(npmrc); statErr == nil {
+		npmDenyBlock := -1
+		scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
+			if strings.Contains(line, `.npmrc"`) && blockType == "deny" {
+				npmDenyBlock = blockStart
+			}
+		})
+		if npmDenyBlock == -1 {
+			t.Fatal("expected npm guard .npmrc deny in profile when ~/.npmrc exists")
+		}
 	}
 }
 
@@ -581,15 +597,25 @@ func TestProfile_GPGPublicKeyringNotDenied(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The password-managers guard should deny only private keys
-	if !strings.Contains(profile, "private-keys-v1.d") {
-		t.Error("expected deny for .gnupg/private-keys-v1.d")
+	// The password-managers guard only denies GPG private key paths that
+	// actually exist on disk. Verify that IF the paths exist, they appear
+	// in the profile; and that the entire .gnupg directory is never denied.
+	homeDir, _ := os.UserHomeDir()
+	gpgPrivDir := filepath.Join(homeDir, ".gnupg", "private-keys-v1.d")
+	gpgSecring := filepath.Join(homeDir, ".gnupg", "secring.gpg")
+
+	if _, statErr := os.Stat(gpgPrivDir); statErr == nil {
+		if !strings.Contains(profile, "private-keys-v1.d") {
+			t.Error("expected deny for .gnupg/private-keys-v1.d when it exists")
+		}
 	}
-	if !strings.Contains(profile, "secring.gpg") {
-		t.Error("expected deny for .gnupg/secring.gpg")
+	if _, statErr := os.Stat(gpgSecring); statErr == nil {
+		if !strings.Contains(profile, "secring.gpg") {
+			t.Error("expected deny for .gnupg/secring.gpg when it exists")
+		}
 	}
 
-	// Should NOT deny the entire .gnupg directory
+	// Should NOT deny the entire .gnupg directory regardless
 	lines := strings.Split(profile, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "deny") && strings.Contains(line, `.gnupg"`) && !strings.Contains(line, "private-keys") && !strings.Contains(line, "secring") {
@@ -622,16 +648,15 @@ func TestProfile_ClaudeAgentAllowsSurvive(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Find the last Restrict rule and any Claude allow rule.
-	// Claude allow rules are multiline; find the block that contains .claude paths.
-	lastRestrictLine := -1
+	// With deny-wins semantics, allow rules appear in the Allow(100) section
+	// and deny rules in the Deny(200) section. Position does not matter for
+	// override behavior — deny always wins over allow for the same path.
+	// This test verifies that Claude config paths are present in the profile
+	// as allow rules (they should survive the deny-wins architecture).
 	claudeAllowBlock := -1
 
 	lines := strings.Split(profile, "\n")
-	scanBlockContext(lines, func(i int, line, blockType string, blockStart int) {
-		if strings.Contains(line, "deny file-read-data") || strings.Contains(line, "deny file-write*") {
-			lastRestrictLine = i
-		}
+	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
 		if strings.Contains(line, ".claude") && blockType == "allow" {
 			claudeAllowBlock = blockStart
 		}
@@ -640,13 +665,13 @@ func TestProfile_ClaudeAgentAllowsSurvive(t *testing.T) {
 	if claudeAllowBlock == -1 {
 		t.Fatal("expected Claude allow rule in profile")
 	}
-	if lastRestrictLine == -1 {
-		t.Fatal("expected at least one Restrict rule in profile")
-	}
 
-	// Claude allows (Grant) must appear after all Restrict denies
-	if claudeAllowBlock < lastRestrictLine {
-		t.Errorf("Claude allow (block at line %d) must appear AFTER last Restrict deny (line %d)", claudeAllowBlock, lastRestrictLine)
+	// Verify Claude-specific paths are present
+	if !strings.Contains(profile, ".claude") {
+		t.Error("profile should contain .claude config path")
+	}
+	if !strings.Contains(profile, ".cache/claude") {
+		t.Error("profile should contain .cache/claude runtime path")
 	}
 }
 

@@ -47,6 +47,10 @@ All work correctly outside the sandbox.
 
 All changes are in the single file `pkg/seatbelt/guards/guard_nix_toolchain.go`.
 
+**Note:** `Rules()` is called at profile *generation* time (outside the sandbox),
+so filesystem checks like `dirExists` have full access. The generated profile is
+then applied to the sandboxed child process.
+
 ### 1. Detection Gate
 
 Skip all nix rules when nix is not installed:
@@ -62,7 +66,9 @@ func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 }
 ```
 
-Follows the existing pattern from other guards (e.g., ssh-keys).
+Follows the existing pattern from other guards (e.g., ssh-keys). The guard
+remains `Type() = "always"` because on nix systems every sandboxed process needs
+these rules — but the detection gate makes it a no-op on non-nix systems.
 
 ### 2. Path Traversal Metadata
 
@@ -92,15 +98,21 @@ portability across macOS versions:
 
 ### 4. Nix Daemon Socket
 
-Allow Unix socket connection to the nix daemon:
+Allow Unix socket connection to the nix daemon. Uses `(remote unix-socket ...)`
+consistent with the existing network guard pattern (`(remote tcp ...)`,
+`(remote udp ...)`):
 
 ```seatbelt
 (allow network-outbound
-    (to unix-socket (path-literal "/nix/var/nix/daemon-socket/socket"))
+    (remote unix-socket (path-literal "/nix/var/nix/daemon-socket/socket"))
 )
 ```
 
 Required by all `nix` commands (`nix develop`, `nix build`, `nix-shell`, etc.).
+
+**Note:** Read-only access to `/nix/var` is sufficient for the sandboxed process.
+The daemon itself handles all writes to `/nix/var` (builds, gc, db updates) —
+clients only communicate via the socket.
 
 ### 5. User Paths
 
@@ -113,6 +125,20 @@ Add read access for channel definitions and user config:
 )
 ```
 
+### Design Notes
+
+- The existing `(subpath "/nix/var")` rule grants `file-read*` which includes
+  `file-read-metadata`. This implicitly covers metadata needed for profile
+  symlink resolution through `/nix/var/nix/profiles/`. No additional metadata
+  rules needed for that chain.
+- `/private` and `/private/var` metadata access is already covered by the
+  system-runtime guard (`(subpath "/private/var/db/timezone")` etc.).
+  `/private/var/run` is accessible (confirmed by `stat` inside sandbox).
+- System-wide nix config at `/private/etc/nix/` is covered by the system-runtime
+  guard's existing `/private/etc` rules. User-level `~/.config/nix/` is not.
+- `~/.nix-channels` is omitted — nix-darwin + home-manager uses flakes, and
+  channel config is covered by `~/.nix-defexpr/`.
+
 ## Changes Summary
 
 | File | Change |
@@ -122,6 +148,14 @@ Add read access for channel definitions and user config:
 
 ## Testing
 
-- Existing tests updated to match new rule output
-- Integration test: `go test ./...` succeeds inside aide sandbox (currently fails)
-- Manual: `nix develop` works inside aide sandbox
+**Unit tests** (in `toolchain_test.go`):
+- Detection gate: when `/nix/store` does not exist, `Rules()` returns
+  `Skipped` with no rules
+- `file-read-metadata` rules for `/nix` and `/run` appear in output
+- `/private/var/run/current-system` subpath appears alongside `/run/current-system`
+- Unix socket rule for nix daemon appears with `(remote unix-socket ...)` syntax
+- `HomeSubpath` entries for `~/.nix-defexpr` and `~/.config/nix` appear
+
+**Integration**: `go test ./...` succeeds inside aide sandbox (currently fails)
+
+**Manual**: `nix develop` works inside aide sandbox

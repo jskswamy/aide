@@ -27,8 +27,12 @@ func TestGuard_Docker_Metadata(t *testing.T) {
 
 func TestGuard_Docker_DefaultPath(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".docker"), 0o755)
-	os.WriteFile(filepath.Join(home, ".docker/config.json"), []byte("fake"), 0o600)
+	if err := os.MkdirAll(filepath.Join(home, ".docker"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".docker/config.json"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.DockerGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -57,8 +61,12 @@ func TestGuard_Docker_AllSkipped(t *testing.T) {
 func TestGuard_Docker_EnvOverride(t *testing.T) {
 	home := t.TempDir()
 	customDocker := filepath.Join(home, "custom-docker")
-	os.MkdirAll(customDocker, 0o755)
-	os.WriteFile(filepath.Join(customDocker, "config.json"), []byte("fake"), 0o600)
+	if err := os.MkdirAll(customDocker, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(customDocker, "config.json"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.DockerGuard()
 	ctx := &seatbelt.Context{
@@ -93,7 +101,9 @@ func TestGuard_GithubCLI_Metadata(t *testing.T) {
 
 func TestGuard_GithubCLI_Path(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".config/gh"), 0o755)
+	if err := os.MkdirAll(filepath.Join(home, ".config/gh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.GithubCLIGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -133,8 +143,12 @@ func TestGuard_NPM_Metadata(t *testing.T) {
 
 func TestGuard_NPM_Paths(t *testing.T) {
 	home := t.TempDir()
-	os.WriteFile(filepath.Join(home, ".npmrc"), []byte("fake"), 0o600)
-	os.WriteFile(filepath.Join(home, ".yarnrc"), []byte("fake"), 0o600)
+	if err := os.WriteFile(filepath.Join(home, ".npmrc"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".yarnrc"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.NPMGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -179,7 +193,9 @@ func TestGuard_Netrc_Metadata(t *testing.T) {
 
 func TestGuard_Netrc_Path(t *testing.T) {
 	home := t.TempDir()
-	os.WriteFile(filepath.Join(home, ".netrc"), []byte("fake"), 0o600)
+	if err := os.WriteFile(filepath.Join(home, ".netrc"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.NetrcGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -219,7 +235,9 @@ func TestGuard_Vercel_Metadata(t *testing.T) {
 
 func TestGuard_Vercel_Path(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".config/vercel"), 0o755)
+	if err := os.MkdirAll(filepath.Join(home, ".config/vercel"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.VercelGuard()
 	ctx := &seatbelt.Context{HomeDir: home}

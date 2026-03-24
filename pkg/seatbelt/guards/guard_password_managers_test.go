@@ -87,9 +87,13 @@ func TestGuard_PasswordManagers_NoKeychain(t *testing.T) {
 	home := t.TempDir()
 	// Create all dirs so rules are generated
 	for _, d := range []string{".config/op", ".op", ".config/Bitwarden CLI", ".password-store", ".local/share/gopass", ".gnupg/private-keys-v1.d"} {
-		os.MkdirAll(filepath.Join(home, d), 0o755)
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	os.WriteFile(filepath.Join(home, ".gnupg/secring.gpg"), []byte("fake"), 0o600)
+	if err := os.WriteFile(filepath.Join(home, ".gnupg/secring.gpg"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.PasswordManagersGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -115,7 +119,9 @@ func TestGuard_AideSecrets_Metadata(t *testing.T) {
 
 func TestGuard_AideSecrets_Path(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".config/aide/secrets"), 0o755)
+	if err := os.MkdirAll(filepath.Join(home, ".config/aide/secrets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.AideSecretsGuard()
 	ctx := &seatbelt.Context{HomeDir: home}

@@ -742,3 +742,129 @@ func TestDarwinSandbox_Apply_CleanEnv(t *testing.T) {
 		t.Error("AWS_SECRET should be filtered out")
 	}
 }
+
+func TestGenerateSeatbeltProfile_BroadSystemReads(t *testing.T) {
+	policy := Policy{
+		Guards:          guards.DefaultGuardNames(),
+		Network:         NetworkNone,
+		AllowSubprocess: true,
+	}
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The system-runtime guard now uses broad top-level subpaths.
+	broadPaths := []string{
+		`(subpath "/System")`,
+		`(subpath "/Library")`,
+		`(subpath "/nix")`,
+		`(subpath "/Applications")`,
+		`(subpath "/usr")`,
+		`(subpath "/bin")`,
+		`(subpath "/private")`,
+		`(subpath "/dev")`,
+		`(subpath "/tmp")`,
+		`(subpath "/var")`,
+	}
+	for _, p := range broadPaths {
+		if !strings.Contains(profile, p) {
+			t.Errorf("profile should contain broad system read %s", p)
+		}
+	}
+
+	// Old granular paths should NOT appear (they were replaced by broad reads).
+	oldGranular := []string{
+		`(subpath "/System/Library")`,
+		`(subpath "/Library/Apple")`,
+		`(subpath "/Library/Frameworks")`,
+	}
+	for _, p := range oldGranular {
+		if strings.Contains(profile, p) {
+			t.Errorf("profile should NOT contain old granular path %s (replaced by broad reads)", p)
+		}
+	}
+}
+
+func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Scoped home reads should include specific dev directories
+	scopedDirs := []string{".config", ".cache", ".ssh", ".cargo", ".rustup", ".local"}
+	for _, d := range scopedDirs {
+		if !strings.Contains(profile, d) {
+			t.Errorf("profile should contain scoped home path %q", d)
+		}
+	}
+
+	// Should NOT contain a bare (subpath "$HOME") allow — only specific subdirectories.
+	homeDir, _ := os.UserHomeDir()
+	bareHomeSubpath := `(subpath "` + homeDir + `")`
+	lines := strings.Split(profile, "\n")
+	scanBlockContext(lines, func(_ int, line, blockType string, _ int) {
+		if strings.Contains(line, bareHomeSubpath) && blockType == "allow" {
+			// Check it's not inside a more specific context (like file-write for project)
+			// A bare subpath allow for $HOME would be too broad
+			if !strings.Contains(line, "file-write") {
+				t.Errorf("profile should NOT contain bare home subpath allow %s in read rules", bareHomeSubpath)
+			}
+		}
+	})
+}
+
+func TestProfile_NewDefaultGuards(t *testing.T) {
+	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	profile, err := generateSeatbeltProfile(policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// New default guards: mounted-volumes, shell-history, dev-credentials, project-secrets.
+	// These guards check for file existence, so some may produce no rules.
+	// Verify the profile renders without error (done above) and contains
+	// at least some deny rules from the credential/history guards.
+	hasDenyFileRead := strings.Contains(profile, "(deny file-read-data")
+	hasDenyFileWrite := strings.Contains(profile, "(deny file-write*")
+
+	if !hasDenyFileRead && !hasDenyFileWrite {
+		t.Error("default profile should contain at least some deny rules from new default guards (shell-history, dev-credentials, etc.)")
+	}
+
+	// Verify the guard names are in the default list
+	defaultNames := guards.DefaultGuardNames()
+	newGuards := []string{"mounted-volumes", "shell-history", "dev-credentials", "project-secrets"}
+	nameSet := make(map[string]bool, len(defaultNames))
+	for _, n := range defaultNames {
+		nameSet[n] = true
+	}
+	for _, g := range newGuards {
+		if !nameSet[g] {
+			t.Errorf("expected %q in DefaultGuardNames()", g)
+		}
+	}
+}
+
+func TestProfile_PromotedGuardsInDefault(t *testing.T) {
+	defaultNames := guards.DefaultGuardNames()
+	nameSet := make(map[string]bool, len(defaultNames))
+	for _, n := range defaultNames {
+		nameSet[n] = true
+	}
+
+	// These guards were promoted from opt-in to default.
+	promoted := []string{"docker", "github-cli", "npm", "netrc", "kubernetes"}
+	for _, g := range promoted {
+		if !nameSet[g] {
+			t.Errorf("expected promoted guard %q in DefaultGuardNames()", g)
+		}
+	}
+
+	// git-integration was removed — it should NOT be in any guard list.
+	if nameSet["git-integration"] {
+		t.Error("git-integration guard was removed and should not be in DefaultGuardNames()")
+	}
+}

@@ -25,10 +25,15 @@ func fullBannerData() *BannerData {
 			"ORG_ID":            "= acme",
 		},
 		Sandbox: &SandboxInfo{
-			Network:    "outbound",
-			Ports:      "all",
-			GuardCount: 20,
-			Denied:     []string{"~/.ssh/id_*", "~/.aws/credentials"},
+			Network: "outbound",
+			Ports:   "all",
+			Active: []GuardDisplay{
+				{
+					Name:      "aws",
+					Protected: []string{"~/.aws/credentials", "~/.aws/config"},
+					Allowed:   []string{"/tmp/aws-test"},
+				},
+			},
 		},
 		Warnings: []string{"skipped: ~/.kube (not found)"},
 	}
@@ -38,7 +43,7 @@ func TestRenderCompact(t *testing.T) {
 	var buf bytes.Buffer
 	RenderCompact(&buf, fullBannerData())
 	out := buf.String()
-	for _, want := range []string{"aide", "work", "claude", "secret:", "env:", "Sandbox", "denied:", "guards:"} {
+	for _, want := range []string{"aide", "work", "claude", "secret:", "env:", "Sandbox", "network:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("compact output missing %q", want)
 		}
@@ -86,29 +91,6 @@ func TestRenderBanner_WithWarnings(_ *testing.T) {
 	// Warnings should be rendered (the specific format may vary)
 }
 
-func TestRenderBanner_DetailedMode(t *testing.T) {
-	data := fullBannerData()
-	data.Sandbox.Guards = []string{"base", "system-runtime", "network", "filesystem"}
-	var buf bytes.Buffer
-	RenderCompact(&buf, data)
-	out := buf.String()
-	if !strings.Contains(out, "base") {
-		t.Error("detailed mode should list guard names")
-	}
-}
-
-func TestRenderBanner_NormalMode(t *testing.T) {
-	data := fullBannerData()
-	data.SecretKeys = nil // normal mode
-	data.Sandbox.Guards = nil
-	var buf bytes.Buffer
-	RenderCompact(&buf, data)
-	out := buf.String()
-	if !strings.Contains(out, "20 active") {
-		t.Error("normal mode should show guard count")
-	}
-}
-
 func TestRenderBanner_NoSandbox(t *testing.T) {
 	data := fullBannerData()
 	data.Sandbox = &SandboxInfo{Disabled: true}
@@ -137,5 +119,204 @@ func TestRenderBanner_NoEnv(t *testing.T) {
 	RenderCompact(&buf, data)
 	if strings.Contains(buf.String(), "env:") {
 		t.Error("should not show env section when no env")
+	}
+}
+
+func TestTruncateList(t *testing.T) {
+	tests := []struct {
+		name     string
+		items    []string
+		max      int
+		expected string
+	}{
+		{"empty", nil, 3, ""},
+		{"under limit", []string{"a", "b"}, 3, "a, b"},
+		{"at limit", []string{"a", "b", "c"}, 3, "a, b, c"},
+		{"over limit", []string{"a", "b", "c", "d", "e"}, 3, "a, b, c (+2 more)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateList(tt.items, tt.max)
+			if got != tt.expected {
+				t.Errorf("truncateList(%v, %d) = %q, want %q", tt.items, tt.max, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestRenderCompact_GuardGroups(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+			Active: []GuardDisplay{
+				{
+					Name:      "aws",
+					Protected: []string{"~/.aws/credentials"},
+					Allowed:   []string{"/tmp/aws"},
+				},
+				{
+					Name:      "ssh",
+					Protected: []string{"~/.ssh/id_rsa", "~/.ssh/id_ed25519"},
+				},
+			},
+			Skipped: []GuardDisplay{
+				{Name: "kube", Reason: "~/.kube not found"},
+			},
+			Available: []string{"gcp", "docker"},
+		},
+	}
+	var buf bytes.Buffer
+	RenderCompact(&buf, data)
+	out := buf.String()
+
+	for _, want := range []string{
+		"aws", "ssh",                     // active guard names
+		"denied:", "allowed:",            // guard detail labels
+		"kube", "~/.kube not found",      // skipped guard
+		"gcp, docker", "available (opt-in)", // available guards
+		"aide sandbox",                   // hint line
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("compact guard groups output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderCompact_ListTruncation(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+			Active: []GuardDisplay{
+				{
+					Name:      "filesystem",
+					Protected: []string{"/a", "/b", "/c", "/d", "/e"},
+				},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	RenderCompact(&buf, data)
+	out := buf.String()
+
+	if !strings.Contains(out, "(+2 more)") {
+		t.Errorf("expected truncation marker (+2 more) in output:\n%s", out)
+	}
+	if !strings.Contains(out, "aide sandbox") {
+		t.Errorf("expected hint line when lists are truncated:\n%s", out)
+	}
+}
+
+func TestRenderCompact_PortsShown(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "443, 53",
+			Active: []GuardDisplay{
+				{Name: "network"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	RenderCompact(&buf, data)
+	out := buf.String()
+	if !strings.Contains(out, "ports: 443, 53") {
+		t.Errorf("expected ports line in output:\n%s", out)
+	}
+}
+
+func TestRenderCompact_PortsAllHidden(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+			Active: []GuardDisplay{
+				{Name: "network"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	RenderCompact(&buf, data)
+	out := buf.String()
+	if strings.Contains(out, "ports:") {
+		t.Errorf("ports: all should be hidden, but got:\n%s", out)
+	}
+}
+
+func TestRenderCompact_Overrides(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+			Active: []GuardDisplay{
+				{
+					Name: "aws",
+					Overrides: []GuardOverride{
+						{EnvVar: "AWS_CONFIG_FILE", Value: "/custom/config", DefaultPath: "~/.aws/config"},
+					},
+				},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	RenderCompact(&buf, data)
+	out := buf.String()
+	if !strings.Contains(out, "override: AWS_CONFIG_FILE") {
+		t.Errorf("expected override line in output:\n%s", out)
+	}
+}
+
+func TestRenderBoxed_GuardGroups(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+			Active: []GuardDisplay{
+				{Name: "aws", Protected: []string{"~/.aws/credentials"}},
+			},
+			Skipped: []GuardDisplay{
+				{Name: "kube", Reason: "~/.kube not found"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	RenderBoxed(&buf, data)
+	out := buf.String()
+	// Should not panic; verify basic structure
+	if !strings.Contains(out, "aws") {
+		t.Errorf("boxed guard groups missing active guard name:\n%s", out)
+	}
+	if !strings.Contains(out, "kube") {
+		t.Errorf("boxed guard groups missing skipped guard name:\n%s", out)
+	}
+}
+
+func TestRenderClean_GuardGroups(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+			Active: []GuardDisplay{
+				{Name: "ssh", Protected: []string{"~/.ssh/id_rsa"}},
+			},
+			Available: []string{"docker"},
+		},
+	}
+	var buf bytes.Buffer
+	RenderClean(&buf, data)
+	out := buf.String()
+	if !strings.Contains(out, "ssh") {
+		t.Errorf("clean guard groups missing active guard name:\n%s", out)
+	}
+	if !strings.Contains(out, "docker") {
+		t.Errorf("clean guard groups missing available guard name:\n%s", out)
 	}
 }

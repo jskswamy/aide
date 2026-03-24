@@ -33,13 +33,28 @@ type BannerData struct {
 
 // SandboxInfo describes sandbox configuration for display.
 type SandboxInfo struct {
-	Disabled   bool
-	Network    string
-	Ports      string   // "all" or "443, 53"
-	GuardCount int
-	Denied     []string // user-configured extra denied paths
-	Guards     []string // nil = show count, populated = list names
-	Protecting []string // resources being protected (e.g. "AWS credentials", "SSH keys")
+	Disabled  bool
+	Network   string           // "outbound only", "unrestricted", "none"
+	Ports     string           // "all" or "443, 53"
+	Active    []GuardDisplay
+	Skipped   []GuardDisplay
+	Available []string // opt-in guard names not enabled
+}
+
+// GuardDisplay holds per-guard information for banner rendering.
+type GuardDisplay struct {
+	Name      string
+	Protected []string
+	Allowed   []string
+	Overrides []GuardOverride
+	Reason    string // for skipped: "~/.kube not found"
+}
+
+// GuardOverride records an env var override for display.
+type GuardOverride struct {
+	EnvVar      string
+	Value       string
+	DefaultPath string
 }
 
 // RenderBanner renders the banner using the given style. Valid styles are
@@ -100,40 +115,68 @@ func envLines(data *BannerData) []string {
 	return lines
 }
 
-// sandboxSummary returns a short summary of sandbox mode.
-func sandboxSummary(info *SandboxInfo) string {
-	if info == nil || info.Disabled {
-		return "disabled"
-	}
-	return info.Network
-}
-
-// sandboxDeniedLine returns the denied paths line.
-func sandboxDeniedLine(info *SandboxInfo) string {
-	if info == nil || len(info.Denied) == 0 {
+// truncateList caps a list at maxItems and appends "(+N more)" if truncated.
+func truncateList(items []string, maxItems int) string {
+	if len(items) == 0 {
 		return ""
 	}
-	return "denied: " + strings.Join(info.Denied, ", ")
+	if len(items) <= maxItems {
+		return strings.Join(items, ", ")
+	}
+	shown := strings.Join(items[:maxItems], ", ")
+	return fmt.Sprintf("%s (+%d more)", shown, len(items)-maxItems)
 }
 
-// sandboxCountsLine returns guard info.
-func sandboxCountsLine(info *SandboxInfo) string {
-	if info == nil {
-		return ""
+// renderGuardSection renders the grouped guard display for all banner styles.
+func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
+	// Active guards (green)
+	for _, g := range info.Active {
+		boldGreen.Fprintf(w, "%s✓ %s\n", prefix, g.Name)
+		if len(g.Protected) > 0 {
+			fmt.Fprintf(w, "%s    denied:  %s\n", prefix, truncateList(g.Protected, 3))
+		}
+		if len(g.Allowed) > 0 {
+			fmt.Fprintf(w, "%s    allowed: %s\n", prefix, truncateList(g.Allowed, 3))
+		}
+		for _, o := range g.Overrides {
+			fmt.Fprintf(w, "%s    override: %s → %s (default: %s)\n",
+				prefix, o.EnvVar, o.Value, o.DefaultPath)
+		}
 	}
-	if info.Guards != nil {
-		// detailed mode -- list guard names
-		return fmt.Sprintf("guards: %s", strings.Join(info.Guards, ", "))
-	}
-	return fmt.Sprintf("guards: %d active", info.GuardCount)
-}
 
-// sandboxProtectingLine returns the protecting resources line.
-func sandboxProtectingLine(info *SandboxInfo) string {
-	if info == nil || len(info.Protecting) == 0 {
-		return ""
+	// Blank line between groups
+	if len(info.Active) > 0 && (len(info.Skipped) > 0 || len(info.Available) > 0) {
+		fmt.Fprintln(w)
 	}
-	return "protecting: " + strings.Join(info.Protecting, ", ")
+
+	// Skipped guards (yellow)
+	for _, g := range info.Skipped {
+		yellow.Fprintf(w, "%s⊘ %s", prefix, g.Name)
+		fmt.Fprintf(w, " — %s\n", g.Reason)
+	}
+
+	// Blank line
+	if len(info.Skipped) > 0 && len(info.Available) > 0 {
+		fmt.Fprintln(w)
+	}
+
+	// Available guards (dim)
+	if len(info.Available) > 0 {
+		dim.Fprintf(w, "%s○ %s — available (opt-in)\n",
+			prefix, strings.Join(info.Available, ", "))
+	}
+
+	// Hint line when truncated or guards skipped/available
+	needsHint := len(info.Skipped) > 0 || len(info.Available) > 0
+	for _, g := range info.Active {
+		if len(g.Protected) > 3 || len(g.Allowed) > 3 {
+			needsHint = true
+		}
+	}
+	if needsHint {
+		fmt.Fprintln(w)
+		dim.Fprintf(w, "%srun `aide sandbox` for full details\n", prefix)
+	}
 }
 
 // RenderCompact renders the compact (default) banner style.
@@ -163,17 +206,16 @@ func RenderCompact(w io.Writer, data *BannerData) {
 	}
 
 	if data.Sandbox != nil {
-		fmt.Fprintf(w, "   🛡 Sandbox   %s\n", sandboxSummary(data.Sandbox))
+		fmt.Fprintf(w, "   🛡 Sandbox\n")
 		if !data.Sandbox.Disabled {
-			if dl := sandboxDeniedLine(data.Sandbox); dl != "" {
-				fmt.Fprintf(w, "              %s\n", dl)
+			fmt.Fprintf(w, "         network: %s\n", data.Sandbox.Network)
+			if data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
+				fmt.Fprintf(w, "         ports: %s\n", data.Sandbox.Ports)
 			}
-			if cl := sandboxCountsLine(data.Sandbox); cl != "" {
-				fmt.Fprintf(w, "              %s\n", cl)
-			}
-			if pl := sandboxProtectingLine(data.Sandbox); pl != "" {
-				fmt.Fprintf(w, "              %s\n", pl)
-			}
+			fmt.Fprintln(w)
+			renderGuardSection(w, data.Sandbox, "     ")
+		} else {
+			fmt.Fprintf(w, "         disabled\n")
 		}
 	}
 
@@ -221,18 +263,16 @@ func RenderBoxed(w io.Writer, data *BannerData) {
 
 	if data.Sandbox != nil {
 		fmt.Fprintf(w, "│ 🛡 ")
-		cyan.Fprintf(w, "Sandbox   ")
-		fmt.Fprintf(w, "%s\n", sandboxSummary(data.Sandbox))
+		cyan.Fprintf(w, "Sandbox\n")
 		if !data.Sandbox.Disabled {
-			if dl := sandboxDeniedLine(data.Sandbox); dl != "" {
-				fmt.Fprintf(w, "│              %s\n", dl)
+			fmt.Fprintf(w, "│    network: %s\n", data.Sandbox.Network)
+			if data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
+				fmt.Fprintf(w, "│    ports: %s\n", data.Sandbox.Ports)
 			}
-			if cl := sandboxCountsLine(data.Sandbox); cl != "" {
-				fmt.Fprintf(w, "│              %s\n", cl)
-			}
-			if pl := sandboxProtectingLine(data.Sandbox); pl != "" {
-				fmt.Fprintf(w, "│              %s\n", pl)
-			}
+			fmt.Fprintln(w)
+			renderGuardSection(w, data.Sandbox, "│    ")
+		} else {
+			fmt.Fprintf(w, "│    disabled\n")
 		}
 	}
 
@@ -281,18 +321,16 @@ func RenderClean(w io.Writer, data *BannerData) {
 
 	if data.Sandbox != nil {
 		fmt.Fprintf(w, "  ")
-		cyan.Fprintf(w, "Sandbox   ")
-		fmt.Fprintf(w, "%s\n", sandboxSummary(data.Sandbox))
+		cyan.Fprintf(w, "Sandbox\n")
 		if !data.Sandbox.Disabled {
-			if dl := sandboxDeniedLine(data.Sandbox); dl != "" {
-				fmt.Fprintf(w, "            %s\n", dl)
+			fmt.Fprintf(w, "    network: %s\n", data.Sandbox.Network)
+			if data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
+				fmt.Fprintf(w, "    ports: %s\n", data.Sandbox.Ports)
 			}
-			if cl := sandboxCountsLine(data.Sandbox); cl != "" {
-				fmt.Fprintf(w, "            %s\n", cl)
-			}
-			if pl := sandboxProtectingLine(data.Sandbox); pl != "" {
-				fmt.Fprintf(w, "            %s\n", pl)
-			}
+			fmt.Fprintln(w)
+			renderGuardSection(w, data.Sandbox, "    ")
+		} else {
+			fmt.Fprintf(w, "    disabled\n")
 		}
 	}
 
@@ -301,6 +339,3 @@ func RenderClean(w io.Writer, data *BannerData) {
 		yellow.Fprintf(w, "⚠ %s\n", w2)
 	}
 }
-
-// ensure dim is used to avoid "declared and not used" compile error
-var _ = dim

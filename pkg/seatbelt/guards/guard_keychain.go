@@ -23,29 +23,16 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
 	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
-		// User keychain (read-write)
-		seatbelt.SectionAllow("User keychain"),
-		seatbelt.AllowRule(`(allow file-read* file-write*
+		// User keychain (read-write) — reads covered by filesystem guard's
+		// ~/Library/Keychains allow, but writes need explicit allow
+		seatbelt.SectionAllow("User keychain (write)"),
+		seatbelt.AllowRule(`(allow file-write*
     ` + seatbelt.HomeSubpath(home, "Library/Keychains") + `
     ` + seatbelt.HomeLiteral(home, "Library/Preferences/com.apple.security.plist") + `
 )`),
 
-		// System keychain (read-only)
-		seatbelt.SectionAllow("System keychain"),
-		seatbelt.AllowRule(`(allow file-read*
-    (literal "/Library/Preferences/com.apple.security.plist")
-    (literal "/Library/Keychains/System.keychain")
-    (subpath "/private/var/db/mds")
-)`),
-
-		// Keychain metadata traversal
-		seatbelt.SectionAllow("Keychain metadata traversal"),
-		seatbelt.AllowRule(`(allow file-read-metadata
-    ` + seatbelt.HomeLiteral(home, "Library") + `
-    ` + seatbelt.HomeLiteral(home, "Library/Keychains") + `
-    (literal "/Library")
-    (literal "/Library/Keychains")
-)`),
+		// System keychain reads and metadata traversal are now covered
+		// by the system-runtime guard's broad /Library and /private reads.
 
 		// Security Mach services
 		seatbelt.SectionAllow("Security Mach services"),

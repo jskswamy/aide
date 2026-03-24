@@ -16,7 +16,7 @@ type kubernetesGuard struct{}
 func KubernetesGuard() seatbelt.Guard { return &kubernetesGuard{} }
 
 func (g *kubernetesGuard) Name() string        { return "kubernetes" }
-func (g *kubernetesGuard) Type() string        { return "opt-in" }
+func (g *kubernetesGuard) Type() string        { return "default" }
 func (g *kubernetesGuard) Description() string { return "Blocks access to Kubernetes config" }
 
 func (g *kubernetesGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {

@@ -24,45 +24,19 @@ func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 
 	home := ctx.HomeDir
 
-	rules := []seatbelt.Rule{
-		// Parent directory metadata for symlink traversal (/run firmlink)
-		seatbelt.SectionAllow("Nix parent directory metadata"),
-		seatbelt.AllowRule(`(allow file-read-metadata
-    (literal "/run")
-)`),
-	}
-
-	// Nix store with parent metadata (uses helper to ensure /nix lstat works)
-	rules = append(rules, seatbelt.SectionAllow("Nix store and system paths"))
-	rules = append(rules, seatbelt.SubpathWithParentMetadata("/nix/store")...)
-	rules = append(rules, seatbelt.AllowRule(`(allow file-read*
-    (subpath "/nix/var")
-    (subpath "/run/current-system")
-    (subpath "/private/var/run/current-system")
-)`))
-
-	rules = append(rules,
+	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
 		// Nix daemon socket
 		seatbelt.SectionAllow("Nix daemon socket"),
 		seatbelt.AllowRule(`(allow network-outbound
     (remote unix-socket (path-literal "/nix/var/nix/daemon-socket/socket"))
 )`),
 
-		// Nix user paths (read-write)
-		seatbelt.SectionAllow("Nix user paths"),
-		seatbelt.AllowRule(`(allow file-read* file-write*
-    `+seatbelt.HomeSubpath(home, ".nix-profile")+`
-    `+seatbelt.HomeSubpath(home, ".local/state/nix")+`
-    `+seatbelt.HomeSubpath(home, ".cache/nix")+`
+		// Nix user paths (write only — reads covered by filesystem guard)
+		seatbelt.SectionAllow("Nix user paths (write)"),
+		seatbelt.AllowRule(`(allow file-write*
+    ` + seatbelt.HomeSubpath(home, ".nix-profile") + `
+    ` + seatbelt.HomeSubpath(home, ".local/state/nix") + `
+    ` + seatbelt.HomeSubpath(home, ".cache/nix") + `
 )`),
-
-		// Nix channel definitions and user config (read-only)
-		seatbelt.SectionAllow("Nix channel definitions and user config"),
-		seatbelt.AllowRule(`(allow file-read*
-    `+seatbelt.HomeSubpath(home, ".nix-defexpr")+`
-    `+seatbelt.HomeSubpath(home, ".config/nix")+`
-)`),
-	)
-
-	return seatbelt.GuardResult{Rules: rules}
+	}}
 }

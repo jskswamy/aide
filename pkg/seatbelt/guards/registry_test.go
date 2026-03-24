@@ -8,8 +8,8 @@ import (
 
 func TestRegistry_AllGuards(t *testing.T) {
 	guards := guards.AllGuards()
-	if len(guards) != 25 {
-		t.Errorf("expected 25 guards, got %d", len(guards))
+	if len(guards) != 29 {
+		t.Errorf("expected 29 guards, got %d", len(guards))
 	}
 
 	// Verify each guard has a non-empty name and type.
@@ -50,8 +50,8 @@ func TestRegistry_GuardsByType(t *testing.T) {
 	}
 
 	defaults := guards.ByType("default")
-	if len(defaults) != 11 {
-		t.Errorf("expected 11 default guards, got %d", len(defaults))
+	if len(defaults) != 20 {
+		t.Errorf("expected 20 default guards, got %d", len(defaults))
 	}
 	for _, g := range defaults {
 		if g.Type() != "default" {
@@ -60,8 +60,8 @@ func TestRegistry_GuardsByType(t *testing.T) {
 	}
 
 	optIn := guards.ByType("opt-in")
-	if len(optIn) != 6 {
-		t.Errorf("expected 6 opt-in guards, got %d", len(optIn))
+	if len(optIn) != 1 {
+		t.Errorf("expected 1 opt-in guards, got %d", len(optIn))
 	}
 	for _, g := range optIn {
 		if g.Type() != "opt-in" {
@@ -142,22 +142,23 @@ func TestRegistry_DefaultGuardNames(t *testing.T) {
 }
 
 func TestRegistry_ResolveActiveGuards(t *testing.T) {
-	names := []string{"docker", "base", "ssh-keys"}
+	// docker is now "default", so use vercel (still opt-in) for testing type ordering
+	names := []string{"vercel", "base", "ssh-keys"}
 	guards := guards.ResolveActiveGuards(names)
 
 	if len(guards) != 3 {
 		t.Fatalf("expected 3 guards, got %d", len(guards))
 	}
 
-	// Should be ordered: always (base) → default (ssh-keys) → opt-in (docker)
+	// Should be ordered: always (base) → default (ssh-keys) → opt-in (vercel)
 	if guards[0].Name() != "base" {
 		t.Errorf("expected guards[0] = base (always), got %q", guards[0].Name())
 	}
 	if guards[1].Name() != "ssh-keys" {
 		t.Errorf("expected guards[1] = ssh-keys (default), got %q", guards[1].Name())
 	}
-	if guards[2].Name() != "docker" {
-		t.Errorf("expected guards[2] = docker (opt-in), got %q", guards[2].Name())
+	if guards[2].Name() != "vercel" {
+		t.Errorf("expected guards[2] = vercel (opt-in), got %q", guards[2].Name())
 	}
 }
 

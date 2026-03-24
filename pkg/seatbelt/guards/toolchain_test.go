@@ -44,7 +44,6 @@ func TestGuard_NodeToolchain_Paths(t *testing.T) {
 	}
 }
 
-
 func TestGuard_NixToolchain_Metadata(t *testing.T) {
 	g := guards.NixToolchainGuard()
 
@@ -90,57 +89,45 @@ func TestGuard_NixToolchain_Paths(t *testing.T) {
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 
-	// Existing paths
-	paths := []string{
-		`"/nix/store"`,
-		`"/nix/var"`,
-		`"/run/current-system"`,
-		`(subpath "/Users/testuser/.nix-profile")`,
-		`(subpath "/Users/testuser/.local/state/nix")`,
-		`(subpath "/Users/testuser/.cache/nix")`,
-	}
-	for _, p := range paths {
-		if !strings.Contains(output, p) {
-			t.Errorf("expected output to contain %q", p)
-		}
-	}
-
-	// New: firmlink resolution
-	if !strings.Contains(output, `"/private/var/run/current-system"`) {
-		t.Error("expected /private/var/run/current-system subpath")
-	}
-
-	// New: parent metadata
-	if !strings.Contains(output, `file-read-metadata`) {
-		t.Error("expected file-read-metadata rules")
-	}
-	if !strings.Contains(output, `(literal "/nix")`) {
-		t.Error("expected metadata for /nix parent")
-	}
-	if !strings.Contains(output, `(literal "/run")`) {
-		t.Error("expected metadata for /run parent")
-	}
-
-	// New: daemon socket
+	// Daemon socket (still owned by nix-toolchain)
 	if !strings.Contains(output, `network-outbound`) {
 		t.Error("expected network-outbound rule for daemon socket")
-	}
-	if !strings.Contains(output, `unix-socket`) {
-		t.Error("expected unix-socket in daemon socket rule")
 	}
 	if !strings.Contains(output, `/nix/var/nix/daemon-socket/socket`) {
 		t.Error("expected daemon socket path")
 	}
 
-	// New: user paths
-	if !strings.Contains(output, `"/Users/testuser/.nix-defexpr"`) {
-		t.Error("expected .nix-defexpr path")
+	// Write paths (reads now covered by filesystem + system-runtime guards)
+	writePaths := []string{
+		`(subpath "/Users/testuser/.nix-profile")`,
+		`(subpath "/Users/testuser/.local/state/nix")`,
+		`(subpath "/Users/testuser/.cache/nix")`,
 	}
-	if !strings.Contains(output, `"/Users/testuser/.config/nix"`) {
-		t.Error("expected .config/nix path")
+	for _, p := range writePaths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected write path %q", p)
+		}
+	}
+
+	// Should be write-only, not read+write
+	if strings.Contains(output, "file-read*") {
+		t.Error("nix user paths should be file-write* only (reads covered by filesystem guard)")
+	}
+
+	// Read paths should NOT be in nix-toolchain anymore
+	readPaths := []string{
+		`"/nix/store"`,
+		`"/nix/var"`,
+		`"/run/current-system"`,
+		`"/Users/testuser/.nix-defexpr"`,
+		`"/Users/testuser/.config/nix"`,
+	}
+	for _, p := range readPaths {
+		if strings.Contains(output, p) {
+			t.Errorf("should NOT contain read path %q (moved to system-runtime/filesystem guards)", p)
+		}
 	}
 }
-
 
 func TestGuard_GitIntegration_Metadata(t *testing.T) {
 	g := guards.GitIntegrationGuard()
@@ -156,31 +143,17 @@ func TestGuard_GitIntegration_Metadata(t *testing.T) {
 	}
 }
 
-func TestGuard_GitIntegration_Paths(t *testing.T) {
+func TestGuard_GitIntegration_EmptyRules(t *testing.T) {
+	// All git config reads are now covered by the filesystem guard's
+	// scoped $HOME reads. The git-integration guard returns empty.
 	g := guards.GitIntegrationGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	result := g.Rules(ctx)
-	output := renderTestRules(result.Rules)
 
-	paths := []string{
-		`(prefix "/Users/testuser/.gitconfig")`,
-		`(prefix "/Users/testuser/.gitignore")`,
-		`(subpath "/Users/testuser/.config/git")`,
-		`(literal "/Users/testuser/.gitattributes")`,
-		`(literal "/Users/testuser/.ssh")`,
-	}
-	for _, p := range paths {
-		if !strings.Contains(output, p) {
-			t.Errorf("expected output to contain %q", p)
-		}
-	}
-
-	// Should be read-only - no file-write in output
-	if strings.Contains(output, "file-write") {
-		t.Error("expected git integration to be read-only (no file-write)")
+	if len(result.Rules) != 0 {
+		t.Errorf("expected empty rules, got %d rules", len(result.Rules))
 	}
 }
-
 
 func TestGuard_Keychain_Metadata(t *testing.T) {
 	g := guards.KeychainGuard()
@@ -196,29 +169,35 @@ func TestGuard_Keychain_Metadata(t *testing.T) {
 	}
 }
 
-func TestGuard_Keychain_AllowRules(t *testing.T) {
+func TestGuard_Keychain_Rules(t *testing.T) {
 	g := guards.KeychainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 
-	paths := []string{
-		`(subpath "/Users/testuser/Library/Keychains")`,
-		`(literal "/Users/testuser/Library/Preferences/com.apple.security.plist")`,
-		`(literal "/Library/Preferences/com.apple.security.plist")`,
-		`(literal "/Library/Keychains/System.keychain")`,
+	// User keychain write paths
+	if !strings.Contains(output, `(subpath "/Users/testuser/Library/Keychains")`) {
+		t.Error("expected user Library/Keychains write path")
+	}
+
+	// System keychain reads are now covered by system-runtime broad reads
+	if strings.Contains(output, `(literal "/Library/Keychains/System.keychain")`) {
+		t.Error("system keychain read should be removed (covered by system-runtime)")
+	}
+
+	// Mach services and IPC should still be present
+	machServices := []string{
 		"com.apple.SecurityServer",
 		"com.apple.secd",
 		"com.apple.trustd",
 		"com.apple.AppleDatabaseChanged",
 	}
-	for _, p := range paths {
-		if !strings.Contains(output, p) {
-			t.Errorf("expected output to contain %q", p)
+	for _, svc := range machServices {
+		if !strings.Contains(output, svc) {
+			t.Errorf("expected output to contain %q", svc)
 		}
 	}
 }
-
 
 func TestClaudeAgent(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}

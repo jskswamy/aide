@@ -53,7 +53,9 @@ func (g *sshKeysGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		return result
 	}
 
-	var allowRules []seatbelt.Rule
+	// Safe files (known_hosts, config, *.pub) are now readable via the
+	// filesystem guard's ~/.ssh subpath allow. We only need deny rules
+	// for private keys.
 	var denyRules []seatbelt.Rule
 
 	for _, entry := range entries {
@@ -65,8 +67,6 @@ func (g *sshKeysGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		fullPath := filepath.Join(sshDir, name)
 
 		if isSafeSSHFile(name) {
-			allowRules = append(allowRules,
-				seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* (literal "%s"))`, fullPath)))
 			result.Allowed = append(result.Allowed, fullPath)
 		} else {
 			denyRules = append(denyRules, DenyFile(fullPath)...)
@@ -74,19 +74,14 @@ func (g *sshKeysGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		}
 	}
 
-	if len(allowRules) > 0 {
-		result.Rules = append(result.Rules, seatbelt.SectionAllow("SSH safe files (allow)"))
-		result.Rules = append(result.Rules, allowRules...)
-	}
 	if len(denyRules) > 0 {
 		result.Rules = append(result.Rules, seatbelt.SectionDeny("SSH private keys (deny)"))
 		result.Rules = append(result.Rules, denyRules...)
 	}
 
-	if len(allowRules) > 0 || len(denyRules) > 0 {
-		result.Rules = append(result.Rules,
-			seatbelt.AllowRule(fmt.Sprintf(`(allow file-read-metadata (literal "%s"))`, sshDir)))
-	}
+	// Metadata for ~/.ssh directory traversal
+	result.Rules = append(result.Rules,
+		seatbelt.AllowRule(fmt.Sprintf(`(allow file-read-metadata (literal "%s"))`, sshDir)))
 
 	return result
 }

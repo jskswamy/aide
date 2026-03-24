@@ -20,18 +20,7 @@ func (g *gitIntegrationGuard) Description() string {
 }
 
 func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	home := ctx.HomeDir
-
-	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
-		seatbelt.SectionAllow("Git configuration (read-only)"),
-		seatbelt.AllowRule(`(allow file-read*
-    ` + seatbelt.HomePrefix(home, ".gitconfig") + `
-    ` + seatbelt.HomePrefix(home, ".gitignore") + `
-    ` + seatbelt.HomeSubpath(home, ".config/git") + `
-    ` + seatbelt.HomeLiteral(home, ".gitattributes") + `
-    ` + seatbelt.HomeLiteral(home, ".ssh") + `
-    ` + seatbelt.HomeLiteral(home, ".ssh/config") + `
-    ` + seatbelt.HomeLiteral(home, ".ssh/known_hosts") + `
-)`),
-	}}
+	// All git config reads are now covered by the filesystem guard's
+	// scoped $HOME reads (.gitconfig dotfile, ~/.config/git/, ~/.ssh/).
+	return seatbelt.GuardResult{}
 }

@@ -396,10 +396,10 @@ func (l *Launcher) buildBannerData(
 		tempDir := os.TempDir()
 		policy, _, _ := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDirPath, homeDir, tempDir)
 		if policy != nil {
+			guardResults := sandbox.EvaluateGuards(policy)
+			availableNames := sandbox.AvailableGuardNames(policy.Guards)
 			si := &ui.SandboxInfo{
-				Network:       string(policy.Network),
-				GuardCount:    len(policy.Guards),
-				Denied:        policy.ExtraDenied,
+				Network: networkDisplayName(string(policy.Network)),
 			}
 			if len(policy.AllowPorts) > 0 {
 				portStrs := make([]string, len(policy.AllowPorts))
@@ -407,17 +407,49 @@ func (l *Launcher) buildBannerData(
 					portStrs[i] = strconv.Itoa(p)
 				}
 				si.Ports = strings.Join(portStrs, ", ")
-			} else {
-				si.Ports = "all"
 			}
-			if prefs.InfoDetail == "detailed" {
-				si.Guards = policy.Guards
+			for _, g := range guardResults {
+				if len(g.Rules) > 0 {
+					display := ui.GuardDisplay{
+						Name:      g.Name,
+						Protected: g.Protected,
+						Allowed:   g.Allowed,
+					}
+					for _, o := range g.Overrides {
+						display.Overrides = append(display.Overrides, ui.GuardOverride{
+							EnvVar:      o.EnvVar,
+							Value:       o.Value,
+							DefaultPath: o.DefaultPath,
+						})
+					}
+					si.Active = append(si.Active, display)
+				} else if len(g.Skipped) > 0 {
+					si.Skipped = append(si.Skipped, ui.GuardDisplay{
+						Name:   g.Name,
+						Reason: strings.Join(g.Skipped, "; "),
+					})
+				}
 			}
+			si.Available = availableNames
 			data.Sandbox = si
 		}
 	}
 
 	return data
+}
+
+// networkDisplayName converts raw network mode to user-friendly display.
+func networkDisplayName(mode string) string {
+	switch mode {
+	case "outbound":
+		return "outbound only"
+	case "none":
+		return "none"
+	case "unrestricted":
+		return "unrestricted"
+	default:
+		return mode
+	}
 }
 
 // classifyEnvSource determines the source type of an env template value.

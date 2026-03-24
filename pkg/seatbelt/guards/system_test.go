@@ -13,7 +13,8 @@ func systemRuntimeOutput() string {
 		HomeDir: "/Users/testuser",
 	}
 	g := guards.SystemRuntimeGuard()
-	return renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	return renderTestRules(result.Rules)
 }
 
 func TestGuard_SystemRuntime_Metadata(t *testing.T) {

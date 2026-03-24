@@ -15,24 +15,24 @@ func (g *nixToolchainGuard) Name() string        { return "nix-toolchain" }
 func (g *nixToolchainGuard) Type() string        { return "always" }
 func (g *nixToolchainGuard) Description() string { return "Nix store and profile access" }
 
-func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
-	return []seatbelt.Rule{
+	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
 		// Nix store and system paths (read-only)
-		seatbelt.SectionSetup("Nix store and system paths"),
-		seatbelt.SetupRule(`(allow file-read*
+		seatbelt.SectionAllow("Nix store and system paths"),
+		seatbelt.AllowRule(`(allow file-read*
     (subpath "/nix/store")
     (subpath "/nix/var")
     (subpath "/run/current-system")
 )`),
 
 		// Nix user paths
-		seatbelt.SectionSetup("Nix user paths"),
-		seatbelt.SetupRule(`(allow file-read* file-write*
+		seatbelt.SectionAllow("Nix user paths"),
+		seatbelt.AllowRule(`(allow file-read* file-write*
     ` + seatbelt.HomeSubpath(home, ".nix-profile") + `
     ` + seatbelt.HomeSubpath(home, ".local/state/nix") + `
     ` + seatbelt.HomeSubpath(home, ".cache/nix") + `
 )`),
-	}
+	}}
 }

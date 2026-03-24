@@ -26,7 +26,8 @@ func TestGuard_NodeToolchain_Metadata(t *testing.T) {
 func TestGuard_NodeToolchain_Paths(t *testing.T) {
 	g := guards.NodeToolchainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	paths := []string{
 		`(subpath "/Users/testuser/.npm")`,
@@ -61,7 +62,8 @@ func TestGuard_NixToolchain_Metadata(t *testing.T) {
 func TestGuard_NixToolchain_Paths(t *testing.T) {
 	g := guards.NixToolchainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	paths := []string{
 		`"/nix/store"`,
@@ -96,7 +98,8 @@ func TestGuard_GitIntegration_Metadata(t *testing.T) {
 func TestGuard_GitIntegration_Paths(t *testing.T) {
 	g := guards.GitIntegrationGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	paths := []string{
 		`(prefix "/Users/testuser/.gitconfig")`,
@@ -135,7 +138,8 @@ func TestGuard_Keychain_Metadata(t *testing.T) {
 func TestGuard_Keychain_AllowRules(t *testing.T) {
 	g := guards.KeychainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	paths := []string{
 		`(subpath "/Users/testuser/Library/Keychains")`,
@@ -158,7 +162,8 @@ func TestGuard_Keychain_AllowRules(t *testing.T) {
 func TestClaudeAgent(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	m := modules.ClaudeAgent()
-	output := renderTestRules(m.Rules(ctx))
+	result := m.Rules(ctx)
+	output := renderTestRules(result.Rules)
 
 	if m.Name() != "Claude Agent" {
 		t.Errorf("expected name %q, got %q", "Claude Agent", m.Name())

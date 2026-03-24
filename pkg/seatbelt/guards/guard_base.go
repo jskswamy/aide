@@ -14,9 +14,11 @@ func (g *baseGuard) Description() string {
 	return "Sandbox foundation — blocks all access unless explicitly allowed"
 }
 
-func (g *baseGuard) Rules(_ *seatbelt.Context) []seatbelt.Rule {
-	return []seatbelt.Rule{
-		seatbelt.SetupRule("(version 1)"),
-		seatbelt.SetupRule("(deny default)"),
+func (g *baseGuard) Rules(_ *seatbelt.Context) seatbelt.GuardResult {
+	return seatbelt.GuardResult{
+		Rules: []seatbelt.Rule{
+			seatbelt.AllowRule("(version 1)"),
+			seatbelt.AllowRule("(deny default)"),
+		},
 	}
 }

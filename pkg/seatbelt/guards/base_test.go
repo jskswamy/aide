@@ -30,7 +30,8 @@ func TestGuard_Base(t *testing.T) {
 		t.Errorf("expected Description() = %q, got %q", "Sandbox foundation — blocks all access unless explicitly allowed", g.Description())
 	}
 
-	output := renderTestRules(g.Rules(nil))
+	result := g.Rules(nil)
+	output := renderTestRules(result.Rules)
 	if !strings.Contains(output, "(version 1)") {
 		t.Error("expected rules to contain (version 1)")
 	}

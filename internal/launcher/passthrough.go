@@ -147,15 +147,38 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	}
 
 	// Render minimal startup banner
+	guardResults := sandbox.EvaluateGuards(&policy)
+	availableNames := sandbox.AvailableGuardNames(policy.Guards)
+	si := &ui.SandboxInfo{
+		Network: networkDisplayName(string(policy.Network)),
+	}
+	for _, g := range guardResults {
+		if len(g.Rules) > 0 {
+			display := ui.GuardDisplay{
+				Name:      g.Name,
+				Protected: g.Protected,
+				Allowed:   g.Allowed,
+			}
+			for _, o := range g.Overrides {
+				display.Overrides = append(display.Overrides, ui.GuardOverride{
+					EnvVar:      o.EnvVar,
+					Value:       o.Value,
+					DefaultPath: o.DefaultPath,
+				})
+			}
+			si.Active = append(si.Active, display)
+		} else if len(g.Skipped) > 0 {
+			si.Skipped = append(si.Skipped, ui.GuardDisplay{
+				Name:   g.Name,
+				Reason: strings.Join(g.Skipped, "; "),
+			})
+		}
+	}
+	si.Available = availableNames
 	bannerData := &ui.BannerData{
 		AgentName: name,
 		AgentPath: binary,
-		Sandbox: &ui.SandboxInfo{
-			Network:    string(policy.Network),
-			Ports:      "all",
-			GuardCount: len(policy.Guards),
-			Denied:     policy.ExtraDenied,
-		},
+		Sandbox:   si,
 	}
 	ui.RenderBanner(l.stderr(), "compact", bannerData)
 	fmt.Fprintln(l.stderr())

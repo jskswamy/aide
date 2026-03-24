@@ -2,8 +2,10 @@ package sandbox
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
@@ -118,6 +120,54 @@ func TestDefaultPolicy_EmptyExtraDenied(t *testing.T) {
 
 	if len(policy.ExtraDenied) != 0 {
 		t.Errorf("expected empty ExtraDenied, got %v", policy.ExtraDenied)
+	}
+}
+
+func TestDetectGuardConflicts(t *testing.T) {
+	results := []seatbelt.GuardResult{
+		{
+			Name: "node-toolchain",
+			Rules: []seatbelt.Rule{
+				seatbelt.AllowRule(`(allow file-read* (literal "/Users/test/.npmrc"))`),
+			},
+		},
+		{
+			Name: "npm",
+			Rules: []seatbelt.Rule{
+				seatbelt.DenyRule(`(deny file-read-data (literal "/Users/test/.npmrc"))`),
+			},
+		},
+	}
+
+	warnings := DetectGuardConflicts(results)
+	if len(warnings) == 0 {
+		t.Error("expected conflict warning for .npmrc")
+	}
+
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, ".npmrc") && strings.Contains(w, "npm") && strings.Contains(w, "node-toolchain") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning mentioning .npmrc conflict between npm and node-toolchain, got: %v", warnings)
+	}
+}
+
+func TestDetectGuardConflicts_NoConflict(t *testing.T) {
+	results := []seatbelt.GuardResult{
+		{
+			Name: "filesystem",
+			Rules: []seatbelt.Rule{
+				seatbelt.AllowRule(`(allow file-read* (subpath "/project"))`),
+			},
+		},
+	}
+
+	warnings := DetectGuardConflicts(results)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got: %v", warnings)
 	}
 }
 

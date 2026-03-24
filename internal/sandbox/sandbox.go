@@ -1,9 +1,11 @@
 package sandbox
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -201,6 +203,51 @@ func AvailableGuardNames(activeNames []string) []string {
 		}
 	}
 	return available
+}
+
+// DetectGuardConflicts scans guard results for cases where a deny rule
+// from one guard covers a path that another guard explicitly allows.
+// Returns human-readable warning strings for the banner.
+//
+// Known limitation: only detects exact path matches, not subpath-covers-literal
+// overlaps (e.g., deny subpath "/tmp" vs allow literal "/tmp/foo").
+func DetectGuardConflicts(results []seatbelt.GuardResult) []string {
+	type pathEntry struct {
+		guard string
+		path  string
+	}
+
+	var denied []pathEntry
+	var allowed []pathEntry
+
+	pathRe := regexp.MustCompile(`"([^"]+)"`)
+
+	for _, r := range results {
+		for _, rule := range r.Rules {
+			text := rule.String()
+			matches := pathRe.FindAllStringSubmatch(text, -1)
+			for _, m := range matches {
+				p := m[1]
+				if strings.Contains(text, "deny ") {
+					denied = append(denied, pathEntry{guard: r.Name, path: p})
+				} else if strings.Contains(text, "allow ") {
+					allowed = append(allowed, pathEntry{guard: r.Name, path: p})
+				}
+			}
+		}
+	}
+
+	var warnings []string
+	for _, d := range denied {
+		for _, a := range allowed {
+			if d.guard != a.guard && d.path == a.path {
+				warnings = append(warnings,
+					fmt.Sprintf("guard %q denies %s which guard %q allows (deny wins in seatbelt)",
+						d.guard, d.path, a.guard))
+			}
+		}
+	}
+	return warnings
 }
 
 // filterEnv returns only essential env vars when CleanEnv is true (DD-17).

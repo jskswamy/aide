@@ -73,17 +73,20 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     `+seatbelt.HomeSubpath(home, ".sdkman")+`
     `+seatbelt.HomeSubpath(home, ".gradle")+`
     `+seatbelt.HomeSubpath(home, ".m2")+`
+    `+seatbelt.HomeSubpath(home, ".gnupg")+`
     `+seatbelt.HomeSubpath(home, "Library/Keychains")+`
     `+seatbelt.HomeSubpath(home, "Library/Caches")+`
     `+seatbelt.HomeSubpath(home, "Library/Preferences")+`
 )`),
 
-			// Build cache directories (read-write) — Go, npm, pip, Homebrew
-			// all write to these. Without write access, builds fail.
-			seatbelt.SectionAllow("Build cache directories (read-write)"),
+			// Build cache and GPG directories (read-write) — Go, npm, pip
+			// write to caches; GPG writes lock files, trustdb, random_seed.
+			// Password-managers guard still denies private-keys-v1.d via deny-wins.
+			seatbelt.SectionAllow("Build cache and GPG directories (read-write)"),
 			seatbelt.AllowRule(`(allow file-read* file-write*
     `+seatbelt.HomeSubpath(home, "Library/Caches")+`
     `+seatbelt.HomeSubpath(home, ".cache")+`
+    `+seatbelt.HomeSubpath(home, ".gnupg")+`
 )`),
 
 			// Dotfiles directly in $HOME (e.g., .gitconfig, .npmrc)

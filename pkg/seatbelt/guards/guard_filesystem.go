@@ -44,6 +44,9 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		writable = append(writable, ctx.TempDir)
 	}
 
+	writable = append(writable, ctx.ExtraWritable...)
+	readable = append(readable, ctx.ExtraReadable...)
+
 	return seatbelt.GuardResult{Rules: filesystemRules(writable, readable, ctx.ExtraDenied)}
 }
 

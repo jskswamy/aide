@@ -65,6 +65,12 @@ type Policy struct {
 	// ExtraDenied holds user-configured denied paths from config.
 	ExtraDenied []string
 
+	// ExtraWritable holds user-configured extra writable paths from config.
+	ExtraWritable []string
+
+	// ExtraReadable holds user-configured extra readable paths from config.
+	ExtraReadable []string
+
 	// Whether the agent may spawn child processes.
 	AllowSubprocess bool
 
@@ -162,7 +168,9 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 		Network:     string(policy.Network),
 		AllowPorts:  policy.AllowPorts,
 		DenyPorts:   policy.DenyPorts,
-		ExtraDenied: policy.ExtraDenied,
+		ExtraDenied:   policy.ExtraDenied,
+		ExtraWritable: policy.ExtraWritable,
+		ExtraReadable: policy.ExtraReadable,
 	}
 
 	var results []seatbelt.GuardResult

@@ -43,6 +43,7 @@ type Launcher struct {
 	ConfigDir string       // override for testing (default: config.Dir())
 	LookPath  LookPathFunc // override for testing (default: exec.LookPath)
 	Yolo      bool         // inject agent-specific skip-permissions flag
+	NoYolo    bool         // override: disable yolo mode (overrides config and --yolo)
 	Stderr    io.Writer    // override for testing (default: os.Stderr)
 }
 

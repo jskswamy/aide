@@ -13,10 +13,10 @@ func AiderAgent() seatbelt.Module { return &aiderAgentModule{} }
 
 func (m *aiderAgentModule) Name() string { return "Aider Agent" }
 
-func (m *aiderAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (m *aiderAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	// Aider has no single config dir env var override.
 	dirs := resolveConfigDirs(ctx, "", []string{
 		filepath.Join(ctx.HomeDir, ".aider"),
 	})
-	return configDirRules("Aider", dirs)
+	return seatbelt.GuardResult{Rules: configDirRules("Aider", dirs)}
 }

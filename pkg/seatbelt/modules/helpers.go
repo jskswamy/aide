@@ -29,17 +29,17 @@ func resolveConfigDirs(ctx *seatbelt.Context, envKey string, candidates []string
 	return dirs
 }
 
-// configDirRules generates file-read* file-write* Grant rules for
+// configDirRules generates file-read* file-write* Allow rules for
 // agent config directories. Each dir gets a subpath rule.
 func configDirRules(sectionName string, dirs []string) []seatbelt.Rule {
 	if len(dirs) == 0 {
 		return nil
 	}
 	rules := []seatbelt.Rule{
-		seatbelt.SectionGrant(sectionName + " config"),
+		seatbelt.SectionAllow(sectionName + " config"),
 	}
 	for _, dir := range dirs {
-		rules = append(rules, seatbelt.GrantRule(fmt.Sprintf(
+		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf(
 			`(allow file-read* file-write* (subpath %q))`, dir,
 		)))
 	}

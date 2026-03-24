@@ -1,7 +1,7 @@
 // Filesystem guard for macOS Seatbelt profiles.
 //
-// Controls file system access with writable, readable, and denied paths.
-// Denied paths support glob expansion.
+// Controls file system access with writable project paths, scoped $HOME
+// reads for development directories, and denied paths with glob expansion.
 
 package guards
 
@@ -22,7 +22,7 @@ func FilesystemGuard() seatbelt.Guard { return &filesystemGuard{} }
 func (g *filesystemGuard) Name() string        { return "filesystem" }
 func (g *filesystemGuard) Type() string        { return "always" }
 func (g *filesystemGuard) Description() string {
-	return "Project directory (read-write) and home directory (read-only) access"
+	return "Project directory (read-write) and scoped home directory (read-only) access"
 }
 
 func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
@@ -30,12 +30,11 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		return seatbelt.GuardResult{}
 	}
 
-	var writable, readable []string
+	home := ctx.HomeDir
+	var writable []string
+
 	if ctx.ProjectRoot != "" {
 		writable = append(writable, ctx.ProjectRoot)
-	}
-	if ctx.HomeDir != "" {
-		readable = append(readable, ctx.HomeDir)
 	}
 	if ctx.RuntimeDir != "" {
 		writable = append(writable, ctx.RuntimeDir)
@@ -43,24 +42,66 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	if ctx.TempDir != "" {
 		writable = append(writable, ctx.TempDir)
 	}
-
 	writable = append(writable, ctx.ExtraWritable...)
-	readable = append(readable, ctx.ExtraReadable...)
 
-	return seatbelt.GuardResult{Rules: filesystemRules(writable, readable, ctx.ExtraDenied)}
-}
-
-func filesystemRules(writable, readable, denied []string) []seatbelt.Rule {
 	var rules []seatbelt.Rule
 
+	// Writable paths
 	if len(writable) > 0 {
-		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf("(allow file-read* file-write*\n    %s)", buildRequireAny(writable))))
+		rules = append(rules, seatbelt.AllowRule(
+			fmt.Sprintf("(allow file-read* file-write*\n    %s)", buildRequireAny(writable))))
 	}
-	if len(readable) > 0 {
-		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf("(allow file-read*\n    %s)", buildRequireAny(readable))))
+
+	// Scoped $HOME reads — development paths only
+	if home != "" {
+		rules = append(rules,
+			seatbelt.SectionAllow("Home development paths (read-only)"),
+			seatbelt.AllowRule(`(allow file-read*
+    `+seatbelt.HomeSubpath(home, ".config")+`
+    `+seatbelt.HomeSubpath(home, ".cache")+`
+    `+seatbelt.HomeSubpath(home, ".local")+`
+    `+seatbelt.HomeSubpath(home, ".nix-profile")+`
+    `+seatbelt.HomeSubpath(home, ".nix-defexpr")+`
+    `+seatbelt.HomeSubpath(home, ".ssh")+`
+    `+seatbelt.HomeSubpath(home, ".cargo")+`
+    `+seatbelt.HomeSubpath(home, ".rustup")+`
+    `+seatbelt.HomeSubpath(home, "go")+`
+    `+seatbelt.HomeSubpath(home, ".pyenv")+`
+    `+seatbelt.HomeSubpath(home, ".rbenv")+`
+    `+seatbelt.HomeSubpath(home, ".sdkman")+`
+    `+seatbelt.HomeSubpath(home, ".gradle")+`
+    `+seatbelt.HomeSubpath(home, ".m2")+`
+    `+seatbelt.HomeSubpath(home, "Library/Keychains")+`
+    `+seatbelt.HomeSubpath(home, "Library/Caches")+`
+    `+seatbelt.HomeSubpath(home, "Library/Preferences")+`
+)`),
+
+			// Dotfiles directly in $HOME (e.g., .gitconfig, .npmrc)
+			seatbelt.SectionAllow("Home dotfiles"),
+			seatbelt.AllowRule(fmt.Sprintf(`(allow file-read*
+    (regex #"^%s/\.[^/]+$")
+)`, home)),
+
+			// Home and Library metadata for traversal
+			seatbelt.SectionAllow("Home metadata traversal"),
+			seatbelt.AllowRule(`(allow file-read-metadata
+    `+seatbelt.HomeLiteral(home, "")+`
+    `+seatbelt.HomeLiteral(home, "Library")+`
+)`),
+		)
+
+		// ExtraReadable — adds allow rules AND serves as deny opt-out
+		if len(ctx.ExtraReadable) > 0 {
+			for _, p := range ctx.ExtraReadable {
+				rules = append(rules,
+					seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* %s)`, seatbelt.Path(p))))
+			}
+		}
 	}
-	if len(denied) > 0 {
-		expanded := seatbelt.ExpandGlobs(denied)
+
+	// Denied paths
+	if len(ctx.ExtraDenied) > 0 {
+		expanded := seatbelt.ExpandGlobs(ctx.ExtraDenied)
 		for _, p := range expanded {
 			expr := seatbelt.Path(p)
 			rules = append(rules,
@@ -70,7 +111,7 @@ func filesystemRules(writable, readable, denied []string) []seatbelt.Rule {
 		}
 	}
 
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }
 
 func buildRequireAny(paths []string) string {

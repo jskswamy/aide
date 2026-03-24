@@ -19,6 +19,7 @@ agent: claude
 env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 secret: personal
+yolo: true   # optional: skip agent permission checks
 ```
 
 aide registers the agent binary automatically using the name provided. Credentials belong here, not on a separate agent definition.
@@ -92,6 +93,7 @@ Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aide
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
+- `yolo:` (bool, optional): skip agent permission checks for this context. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
 - `sandbox:`: accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
 
 ```yaml
@@ -111,6 +113,7 @@ The top-level `preferences:` block controls the startup display.
 - `show_info:` (bool, default `true`). Show the startup banner before launching the agent.
 - `info_style:` (`compact` | `boxed` | `clean`, default `compact`). Banner style.
 - `info_detail:` (`normal` | `detailed`, default `normal`). Banner verbosity.
+- `yolo:` (bool, optional). Global default for yolo mode. Context-level and project-level `yolo:` override this.
 
 Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
@@ -118,7 +121,7 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
 ## Per-Project Override
 
-`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`. aide merges it on top of the matched global context.
+`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`. aide merges it on top of the matched global context.
 
 - `env:` merges additively; project values win on key conflicts.
 - All other fields replace the matched context value entirely.

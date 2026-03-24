@@ -24,7 +24,7 @@ contexts:
 default_context: work
 ```
 
-Each context contains: `agent`, `secret`, `env`, `match`, and `sandbox`.
+Each context contains: `agent`, `secret`, `env`, `match`, `sandbox`, and optionally `yolo`.
 
 ## Match Rules
 
@@ -76,7 +76,7 @@ sandbox:
     - /tmp/build
 ```
 
-Env variables merge additively; the project override wins on key conflicts. All other fields replace the matched value when set.
+Env variables merge additively; the project override wins on key conflicts. All other fields (including `yolo`) replace the matched value when set.
 
 ## Managing Contexts
 

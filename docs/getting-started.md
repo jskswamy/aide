@@ -19,6 +19,14 @@ If multiple agents are on PATH, aide cannot pick automatically. Use `--agent`:
 $ aide --agent codex
 ```
 
+To skip the agent's built-in permission prompts while keeping the OS sandbox active, add `--yolo`:
+
+```
+$ aide --yolo
+```
+
+This injects the agent-specific skip flag (e.g. `--dangerously-skip-permissions` for Claude). You can also set `yolo: true` in config for specific contexts. Use `--no-yolo` to override config-level yolo.
+
 ## First-Time Setup
 
 `aide setup` runs a guided wizard for the current directory. It detects agents on PATH, optionally creates an encrypted secrets file, and writes a context to `~/.config/aide/config.yaml`.

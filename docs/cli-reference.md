@@ -23,6 +23,7 @@ sandbox policy.
 |------|---------|-------------|
 | `--agent <name>` | | Override which agent to launch |
 | `--yolo` | false | Skip agent permission checks; sandbox still applies |
+| `--no-yolo` | false | Disable yolo mode (overrides config `yolo:` and `--yolo` flag) |
 | `--clean-env` | false | Start agent with only essential environment variables |
 
 ```

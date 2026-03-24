@@ -519,6 +519,122 @@ network: outbound
 	}
 }
 
+func TestPreferences_YoloField(t *testing.T) {
+	input := `
+preferences:
+  yolo: true
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Preferences == nil {
+		t.Fatal("Preferences is nil")
+	}
+	if cfg.Preferences.Yolo == nil || !*cfg.Preferences.Yolo {
+		t.Errorf("Yolo = %v, want true", cfg.Preferences.Yolo)
+	}
+}
+
+func TestContext_YoloField(t *testing.T) {
+	input := `
+agents:
+  claude:
+    binary: claude
+contexts:
+  work:
+    agent: claude
+    yolo: true
+default_context: work
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	ctx := cfg.Contexts["work"]
+	if ctx.Yolo == nil || !*ctx.Yolo {
+		t.Errorf("Context.Yolo = %v, want true", ctx.Yolo)
+	}
+}
+
+func TestConfig_MinimalYoloField(t *testing.T) {
+	input := `
+agent: claude
+yolo: true
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Yolo == nil || !*cfg.Yolo {
+		t.Errorf("Config.Yolo = %v, want true", cfg.Yolo)
+	}
+}
+
+func TestProjectOverride_YoloField(t *testing.T) {
+	input := `
+agent: codex
+yolo: false
+`
+	var po config.ProjectOverride
+	if err := yaml.Unmarshal([]byte(input), &po); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if po.Yolo == nil || *po.Yolo {
+		t.Errorf("ProjectOverride.Yolo = %v, want false", po.Yolo)
+	}
+}
+
+func TestResolveYolo_AllNil(t *testing.T) {
+	got := config.ResolveYolo(nil, nil, nil)
+	if got {
+		t.Error("ResolveYolo(nil, nil, nil) = true, want false")
+	}
+}
+
+func TestResolveYolo_PreferencesOnly(t *testing.T) {
+	tr := true
+	got := config.ResolveYolo(&tr, nil, nil)
+	if !got {
+		t.Error("ResolveYolo(true, nil, nil) = false, want true")
+	}
+}
+
+func TestResolveYolo_ContextOverridesPreferences(t *testing.T) {
+	tr := true
+	f := false
+	got := config.ResolveYolo(&tr, &f, nil)
+	if got {
+		t.Error("ResolveYolo(true, false, nil) = true, want false")
+	}
+}
+
+func TestResolveYolo_ProjectOverridesAll(t *testing.T) {
+	tr := true
+	f := false
+	got := config.ResolveYolo(&f, &tr, &f)
+	if got {
+		t.Error("ResolveYolo(false, true, false) = true, want false")
+	}
+}
+
+func TestResolveYolo_ProjectTrue(t *testing.T) {
+	f := false
+	tr := true
+	got := config.ResolveYolo(&f, &f, &tr)
+	if !got {
+		t.Error("ResolveYolo(false, false, true) = false, want true")
+	}
+}
+
+func TestResolveYolo_ContextOnlyTrue(t *testing.T) {
+	tr := true
+	got := config.ResolveYolo(nil, &tr, nil)
+	if !got {
+		t.Error("ResolveYolo(nil, true, nil) = false, want true")
+	}
+}
+
 func TestConfigRoundTrip_SandboxExtraFields(t *testing.T) {
 	dir := t.TempDir()
 	configPath := dir + "/config.yaml"

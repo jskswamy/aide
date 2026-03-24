@@ -23,6 +23,7 @@ type Config struct {
 	Secret      string            `yaml:"secret,omitempty"`
 	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
+	Yolo        *bool             `yaml:"yolo,omitempty"`
 
 	// --- Project override (populated by loader, not from YAML) ---
 	// Holds .aide.yaml data to be merged on top of the matched context at
@@ -51,6 +52,7 @@ type Context struct {
 	MCPServers         []string             `yaml:"mcp_servers,omitempty"`
 	MCPServerOverrides map[string]MCPServer `yaml:"mcp_server_overrides,omitempty"`
 	Sandbox            *SandboxRef          `yaml:"sandbox,omitempty"`
+	Yolo               *bool                `yaml:"yolo,omitempty"`
 }
 
 // MatchRule is a single rule in a context's match list.
@@ -238,6 +240,7 @@ type ProjectOverride struct {
 	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
 	Preferences *Preferences      `yaml:"preferences,omitempty"`
+	Yolo        *bool             `yaml:"yolo,omitempty"`
 }
 
 // Preferences holds global display/behavior settings.
@@ -245,6 +248,7 @@ type Preferences struct {
 	ShowInfo   *bool  `yaml:"show_info,omitempty"`
 	InfoStyle  string `yaml:"info_style,omitempty"`
 	InfoDetail string `yaml:"info_detail,omitempty"`
+	Yolo       *bool  `yaml:"yolo,omitempty"`
 }
 
 // ResolvePreferences merges global and project preferences,
@@ -277,6 +281,23 @@ func ResolvePreferences(global, project *Preferences) Preferences {
 		if project.InfoDetail != "" {
 			result.InfoDetail = project.InfoDetail
 		}
+	}
+	return result
+}
+
+// ResolveYolo resolves the effective yolo setting from three layers:
+// preferences (global default), context-level, and project override.
+// Later layers override earlier ones. If all are nil, returns false.
+func ResolveYolo(preferences, context, project *bool) bool {
+	result := false
+	if preferences != nil {
+		result = *preferences
+	}
+	if context != nil {
+		result = *context
+	}
+	if project != nil {
+		result = *project
 	}
 	return result
 }

@@ -22,7 +22,7 @@ func (g *systemRuntimeGuard) Description() string {
 func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
-	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
+	rules := []seatbelt.Rule{
 		// 1. System binary paths
 		seatbelt.SectionAllow("System binary paths"),
 		seatbelt.AllowRule(`(allow file-read*
@@ -109,7 +109,6 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		// 6. Process rules
 		seatbelt.SectionAllow("Process rules"),
 		seatbelt.AllowRule("(allow process-exec)"),
-		seatbelt.AllowRule("(allow process-fork)"),
 		seatbelt.AllowRule("(allow sysctl-read)"),
 		seatbelt.AllowRule("(allow process-info* (target same-sandbox))"),
 		seatbelt.AllowRule("(allow signal (target same-sandbox))"),
@@ -197,5 +196,14 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		seatbelt.AllowRule(`(allow ipc-posix-shm-read-data
     (ipc-posix-name "apple.shm.notification_center")
 )`),
-	}}
+	}
+
+	// Conditional process-fork based on AllowSubprocess
+	if ctx.AllowSubprocess {
+		rules = append(rules, seatbelt.AllowRule("(allow process-fork)"))
+	} else {
+		rules = append(rules, seatbelt.DenyRule("(deny process-fork)"))
+	}
+
+	return seatbelt.GuardResult{Rules: rules}
 }

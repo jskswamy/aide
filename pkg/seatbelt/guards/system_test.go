@@ -10,7 +10,8 @@ import (
 
 func systemRuntimeOutput() string {
 	ctx := &seatbelt.Context{
-		HomeDir: "/Users/testuser",
+		HomeDir:         "/Users/testuser",
+		AllowSubprocess: true,
 	}
 	g := guards.SystemRuntimeGuard()
 	result := g.Rules(ctx)
@@ -99,6 +100,43 @@ func TestSystemRuntime_SystemPaths(t *testing.T) {
 		if !strings.Contains(output, path) {
 			t.Errorf("expected output to contain %q", path)
 		}
+	}
+}
+
+func TestSystemRuntime_AllowSubprocess_True(t *testing.T) {
+	g := guards.SystemRuntimeGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:         "/Users/testuser",
+		AllowSubprocess: true,
+	}
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	if !strings.Contains(output, "(allow process-exec)") {
+		t.Error("expected process-exec when AllowSubprocess=true")
+	}
+	if !strings.Contains(output, "(allow process-fork)") {
+		t.Error("expected process-fork when AllowSubprocess=true")
+	}
+}
+
+func TestSystemRuntime_AllowSubprocess_False(t *testing.T) {
+	g := guards.SystemRuntimeGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:         "/Users/testuser",
+		AllowSubprocess: false,
+	}
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	if !strings.Contains(output, "(allow process-exec)") {
+		t.Error("expected process-exec even when AllowSubprocess=false")
+	}
+	if !strings.Contains(output, "(deny process-fork)") {
+		t.Error("expected deny process-fork when AllowSubprocess=false")
+	}
+	if strings.Contains(output, "(allow process-fork)") {
+		t.Error("should NOT have allow process-fork when AllowSubprocess=false")
 	}
 }
 

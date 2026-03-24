@@ -132,8 +132,9 @@ func TestGenerateSeatbeltProfile_NetworkUnrestricted(t *testing.T) {
 
 func TestGenerateSeatbeltProfile_SystemEssentials(t *testing.T) {
 	policy := Policy{
-		Guards:  guards.DefaultGuardNames(),
-		Network: NetworkNone,
+		Guards:          guards.DefaultGuardNames(),
+		Network:         NetworkNone,
+		AllowSubprocess: true,
 	}
 
 	profile, err := generateSeatbeltProfile(policy)

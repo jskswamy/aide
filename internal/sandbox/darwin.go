@@ -93,6 +93,7 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 			c.ExtraDenied = policy.ExtraDenied
 			c.ExtraWritable = policy.ExtraWritable
 			c.ExtraReadable = policy.ExtraReadable
+			c.AllowSubprocess = policy.AllowSubprocess
 		})
 
 	for _, g := range activeGuards {

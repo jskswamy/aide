@@ -56,6 +56,7 @@ type Context struct {
 	ExtraDenied   []string // consumed by filesystem guard (user-configured denied: paths)
 	ExtraWritable []string // consumed by filesystem guard (user-configured writable paths)
 	ExtraReadable []string // consumed by filesystem guard (user-configured readable paths)
+	AllowSubprocess bool // consumed by system-runtime guard
 }
 
 // HomePath returns homeDir joined with a relative path.

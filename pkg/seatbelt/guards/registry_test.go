@@ -8,8 +8,8 @@ import (
 
 func TestRegistry_AllGuards(t *testing.T) {
 	guards := guards.AllGuards()
-	if len(guards) != 29 {
-		t.Errorf("expected 29 guards, got %d", len(guards))
+	if len(guards) != 28 {
+		t.Errorf("expected 28 guards, got %d", len(guards))
 	}
 
 	// Verify each guard has a non-empty name and type.
@@ -40,8 +40,8 @@ func TestRegistry_GuardByName(t *testing.T) {
 
 func TestRegistry_GuardsByType(t *testing.T) {
 	always := guards.ByType("always")
-	if len(always) != 8 {
-		t.Errorf("expected 8 always guards, got %d", len(always))
+	if len(always) != 7 {
+		t.Errorf("expected 7 always guards, got %d", len(always))
 	}
 	for _, g := range always {
 		if g.Type() != "always" {

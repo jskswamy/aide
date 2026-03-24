@@ -382,8 +382,8 @@ func TestGuard_Kubernetes_Metadata(t *testing.T) {
 	if g.Name() != "kubernetes" {
 		t.Errorf("expected Name() = %q, got %q", "kubernetes", g.Name())
 	}
-	if g.Type() != "opt-in" {
-		t.Errorf("expected Type() = %q, got %q", "opt-in", g.Type())
+	if g.Type() != "default" {
+		t.Errorf("expected Type() = %q, got %q", "default", g.Type())
 	}
 }
 

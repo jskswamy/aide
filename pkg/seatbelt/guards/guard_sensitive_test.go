@@ -17,8 +17,8 @@ func TestGuard_Docker_Metadata(t *testing.T) {
 	if g.Name() != "docker" {
 		t.Errorf("expected Name() = %q, got %q", "docker", g.Name())
 	}
-	if g.Type() != "opt-in" {
-		t.Errorf("expected Type() = %q, got %q", "opt-in", g.Type())
+	if g.Type() != "default" {
+		t.Errorf("expected Type() = %q, got %q", "default", g.Type())
 	}
 	if g.Description() == "" {
 		t.Error("expected non-empty Description()")
@@ -94,8 +94,8 @@ func TestGuard_GithubCLI_Metadata(t *testing.T) {
 	if g.Name() != "github-cli" {
 		t.Errorf("expected Name() = %q, got %q", "github-cli", g.Name())
 	}
-	if g.Type() != "opt-in" {
-		t.Errorf("expected Type() = %q, got %q", "opt-in", g.Type())
+	if g.Type() != "default" {
+		t.Errorf("expected Type() = %q, got %q", "default", g.Type())
 	}
 }
 
@@ -136,8 +136,8 @@ func TestGuard_NPM_Metadata(t *testing.T) {
 	if g.Name() != "npm" {
 		t.Errorf("expected Name() = %q, got %q", "npm", g.Name())
 	}
-	if g.Type() != "opt-in" {
-		t.Errorf("expected Type() = %q, got %q", "opt-in", g.Type())
+	if g.Type() != "default" {
+		t.Errorf("expected Type() = %q, got %q", "default", g.Type())
 	}
 }
 
@@ -186,8 +186,8 @@ func TestGuard_Netrc_Metadata(t *testing.T) {
 	if g.Name() != "netrc" {
 		t.Errorf("expected Name() = %q, got %q", "netrc", g.Name())
 	}
-	if g.Type() != "opt-in" {
-		t.Errorf("expected Type() = %q, got %q", "opt-in", g.Type())
+	if g.Type() != "default" {
+		t.Errorf("expected Type() = %q, got %q", "default", g.Type())
 	}
 }
 

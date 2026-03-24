@@ -20,7 +20,7 @@ type dockerGuard struct{}
 func DockerGuard() seatbelt.Guard { return &dockerGuard{} }
 
 func (g *dockerGuard) Name() string        { return "docker" }
-func (g *dockerGuard) Type() string        { return "opt-in" }
+func (g *dockerGuard) Type() string        { return "default" }
 func (g *dockerGuard) Description() string { return "Blocks access to Docker registry credentials" }
 
 func (g *dockerGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
@@ -59,7 +59,7 @@ type githubCLIGuard struct{}
 func GithubCLIGuard() seatbelt.Guard { return &githubCLIGuard{} }
 
 func (g *githubCLIGuard) Name() string        { return "github-cli" }
-func (g *githubCLIGuard) Type() string        { return "opt-in" }
+func (g *githubCLIGuard) Type() string        { return "default" }
 func (g *githubCLIGuard) Description() string { return "Blocks access to GitHub CLI credentials" }
 
 func (g *githubCLIGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
@@ -85,7 +85,7 @@ type npmGuard struct{}
 func NPMGuard() seatbelt.Guard { return &npmGuard{} }
 
 func (g *npmGuard) Name() string        { return "npm" }
-func (g *npmGuard) Type() string        { return "opt-in" }
+func (g *npmGuard) Type() string        { return "default" }
 func (g *npmGuard) Description() string { return "Blocks access to npm and yarn auth tokens" }
 
 func (g *npmGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
@@ -122,7 +122,7 @@ type netrcGuard struct{}
 func NetrcGuard() seatbelt.Guard { return &netrcGuard{} }
 
 func (g *netrcGuard) Name() string        { return "netrc" }
-func (g *netrcGuard) Type() string        { return "opt-in" }
+func (g *netrcGuard) Type() string        { return "default" }
 func (g *netrcGuard) Description() string { return "Blocks access to netrc credentials" }
 
 func (g *netrcGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {

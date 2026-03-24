@@ -37,13 +37,17 @@ func init() {
 		BrowsersGuard(),
 		PasswordManagersGuard(),
 		AideSecretsGuard(),
-	)
-	// opt-in guards
-	builtinGuards = append(builtinGuards,
+		MountedVolumesGuard(),
+		ShellHistoryGuard(),
+		DevCredentialsGuard(),
+		ProjectSecretsGuard(),
 		DockerGuard(),
 		GithubCLIGuard(),
 		NPMGuard(),
 		NetrcGuard(),
+	)
+	// opt-in guards
+	builtinGuards = append(builtinGuards,
 		VercelGuard(),
 	)
 }

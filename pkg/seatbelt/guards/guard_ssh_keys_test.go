@@ -28,7 +28,6 @@ func TestSSHKeysGuard_Metadata(t *testing.T) {
 func TestSSHKeysGuard_DirectoryNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	ctx := &seatbelt.Context{HomeDir: tmpDir}
-	// No .ssh directory exists under tmpDir
 
 	g := guards.SSHKeysGuard()
 	result := g.Rules(ctx)
@@ -55,8 +54,10 @@ func TestSSHKeysGuard_EmptyDirectory(t *testing.T) {
 	g := guards.SSHKeysGuard()
 	result := g.Rules(ctx)
 
-	if len(result.Rules) != 0 {
-		t.Errorf("expected 0 rules for empty dir, got %d", len(result.Rules))
+	// Should have metadata rule for .ssh dir but no deny rules
+	output := renderTestRules(result.Rules)
+	if !strings.Contains(output, "file-read-metadata") {
+		t.Error("expected metadata rule for .ssh directory")
 	}
 	if len(result.Protected) != 0 {
 		t.Errorf("expected 0 protected, got %d", len(result.Protected))
@@ -91,12 +92,10 @@ func TestSSHKeysGuard_OnlyPublicKeys(t *testing.T) {
 		t.Errorf("expected %d allowed, got %d: %v", len(pubFiles), len(result.Allowed), result.Allowed)
 	}
 
+	// Safe files no longer generate allow rules (covered by filesystem guard's ~/.ssh subpath)
 	output := renderTestRules(result.Rules)
-	for _, name := range pubFiles {
-		fullPath := filepath.Join(sshDir, name)
-		if !strings.Contains(output, fullPath) {
-			t.Errorf("expected allow rule for %s", fullPath)
-		}
+	if strings.Contains(output, "allow file-read*") && strings.Contains(output, ".pub") {
+		t.Error("safe files should NOT have individual allow rules (covered by filesystem guard)")
 	}
 }
 
@@ -153,11 +152,19 @@ func TestSSHKeysGuard_MixedFiles(t *testing.T) {
 		}
 	}
 
-	// Verify allow rules exist for each allowed path
+	// Safe files no longer have individual allow rules (covered by filesystem guard)
+	// But verify they are tracked in result.Allowed
 	for _, name := range safeFiles {
 		fullPath := filepath.Join(sshDir, name)
-		if !strings.Contains(output, fmt.Sprintf(`(allow file-read* (literal "%s"))`, fullPath)) {
-			t.Errorf("expected allow file-read* rule for %s", fullPath)
+		found := false
+		for _, a := range result.Allowed {
+			if a == fullPath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected %s in result.Allowed", fullPath)
 		}
 	}
 
@@ -198,7 +205,6 @@ func TestSSHKeysGuard_SymlinkToFile(t *testing.T) {
 	g := guards.SSHKeysGuard()
 	result := g.Rules(ctx)
 
-	// The non-allowlisted symlink should be denied
 	if len(result.Protected) != 1 {
 		t.Errorf("expected 1 protected (symlink to key), got %d: %v", len(result.Protected), result.Protected)
 	}
@@ -207,7 +213,6 @@ func TestSSHKeysGuard_SymlinkToFile(t *testing.T) {
 		t.Errorf("expected protected path %q, got %q", expectedDenied, result.Protected[0])
 	}
 
-	// The allowlisted symlink (.pub) should be allowed
 	if len(result.Allowed) != 1 {
 		t.Errorf("expected 1 allowed (symlink to .pub), got %d: %v", len(result.Allowed), result.Allowed)
 	}

@@ -78,6 +78,14 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     `+seatbelt.HomeSubpath(home, "Library/Preferences")+`
 )`),
 
+			// Build cache directories (read-write) — Go, npm, pip, Homebrew
+			// all write to these. Without write access, builds fail.
+			seatbelt.SectionAllow("Build cache directories (read-write)"),
+			seatbelt.AllowRule(`(allow file-read* file-write*
+    `+seatbelt.HomeSubpath(home, "Library/Caches")+`
+    `+seatbelt.HomeSubpath(home, ".cache")+`
+)`),
+
 			// Dotfiles directly in $HOME (e.g., .gitconfig, .npmrc)
 			seatbelt.SectionAllow("Home dotfiles"),
 			seatbelt.AllowRule(fmt.Sprintf(`(allow file-read*

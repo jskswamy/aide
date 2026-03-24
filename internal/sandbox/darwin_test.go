@@ -526,27 +526,19 @@ func TestProfile_SSHKnownHostsSurvives(t *testing.T) {
 		return
 	}
 
-	// If ~/.ssh exists, verify per-file rules (not subpath deny)
+	// SSH guard should only have per-file deny rules, not subpath deny.
+	// The filesystem guard provides a subpath allow for ~/.ssh (for reads)
+	// which is expected. Only check for subpath *deny* targeting .ssh.
 	lines := strings.Split(profile, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "subpath") && strings.Contains(line, ".ssh") {
+	scanBlockContext(lines, func(_ int, line, blockType string, _ int) {
+		if strings.Contains(line, "subpath") && strings.Contains(line, ".ssh") && blockType == "deny" {
 			t.Errorf("SSH guard should not use subpath deny, found: %s", strings.TrimSpace(line))
 		}
-	}
+	})
 
-	// If known_hosts exists, it should be in an allow rule
-	knownHosts := filepath.Join(sshDir, "known_hosts")
-	if _, statErr := os.Stat(knownHosts); statErr == nil {
-		knownHostsAllow := false
-		scanBlockContext(lines, func(_ int, line, blockType string, _ int) {
-			if strings.Contains(line, "known_hosts") && blockType == "allow" {
-				knownHostsAllow = true
-			}
-		})
-		if !knownHostsAllow {
-			t.Error("known_hosts should appear in an allow block")
-		}
-	}
+	// ~/.ssh reads are now covered by the filesystem guard's scoped home
+	// reads (subpath allow for ~/.ssh). known_hosts no longer needs
+	// individual allow rules from the SSH guard.
 }
 
 func TestProfile_NpmOptInOverridesNodeToolchain(t *testing.T) {

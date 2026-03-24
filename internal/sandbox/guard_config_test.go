@@ -27,18 +27,18 @@ func TestEffectiveGuards_WithUnguard(t *testing.T) {
 
 func TestEnableGuard_Basic(t *testing.T) {
 	cfg := &config.SandboxPolicy{}
-	r := EnableGuard(cfg, "docker")
+	r := EnableGuard(cfg, "vercel")
 	if !r.OK() {
 		t.Errorf("unexpected error: %v", r.Errors)
 	}
 	found := false
 	for _, g := range cfg.GuardsExtra {
-		if g == "docker" {
+		if g == "vercel" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("docker should be in guards_extra")
+		t.Error("vercel should be in guards_extra")
 	}
 }
 
@@ -46,18 +46,18 @@ func TestEnableGuard_WithGuardsSet(t *testing.T) {
 	cfg := &config.SandboxPolicy{
 		Guards: []string{"ssh-keys"},
 	}
-	r := EnableGuard(cfg, "docker")
+	r := EnableGuard(cfg, "vercel")
 	if !r.OK() {
 		t.Errorf("unexpected error: %v", r.Errors)
 	}
 	found := false
 	for _, g := range cfg.Guards {
-		if g == "docker" {
+		if g == "vercel" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("docker should be appended to guards (not guards_extra) when guards is set")
+		t.Error("vercel should be appended to guards (not guards_extra) when guards is set")
 	}
 }
 
@@ -112,7 +112,7 @@ func TestDisableGuard_Always(t *testing.T) {
 
 func TestDisableGuard_AlreadyInactive(t *testing.T) {
 	cfg := &config.SandboxPolicy{}
-	r := DisableGuard(cfg, "docker") // opt-in, already inactive
+	r := DisableGuard(cfg, "vercel") // opt-in, already inactive
 	if len(r.Warnings) == 0 {
 		t.Error("expected warning for already inactive guard")
 	}
@@ -207,16 +207,16 @@ func TestOptInGuard_EnableDisableRoundTrip(t *testing.T) {
 	cfg := &config.SandboxPolicy{}
 
 	// Enable opt-in
-	r := EnableGuard(cfg, "docker")
+	r := EnableGuard(cfg, "vercel")
 	if !r.OK() {
 		t.Fatalf("enable: %v", r.Errors)
 	}
-	if len(cfg.GuardsExtra) != 1 || cfg.GuardsExtra[0] != "docker" {
-		t.Fatalf("expected GuardsExtra=[docker], got %v", cfg.GuardsExtra)
+	if len(cfg.GuardsExtra) != 1 || cfg.GuardsExtra[0] != "vercel" {
+		t.Fatalf("expected GuardsExtra=[vercel], got %v", cfg.GuardsExtra)
 	}
 
 	// Disable — removes from GuardsExtra
-	r = DisableGuard(cfg, "docker")
+	r = DisableGuard(cfg, "vercel")
 	if !r.OK() {
 		t.Fatalf("disable: %v", r.Errors)
 	}
@@ -228,11 +228,11 @@ func TestOptInGuard_EnableDisableRoundTrip(t *testing.T) {
 	}
 
 	// Re-enable — should work cleanly
-	r = EnableGuard(cfg, "docker")
+	r = EnableGuard(cfg, "vercel")
 	if !r.OK() {
 		t.Fatalf("re-enable: %v", r.Errors)
 	}
 	if len(cfg.GuardsExtra) != 1 {
-		t.Errorf("expected GuardsExtra=[docker], got %v", cfg.GuardsExtra)
+		t.Errorf("expected GuardsExtra=[vercel], got %v", cfg.GuardsExtra)
 	}
 }

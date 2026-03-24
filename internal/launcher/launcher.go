@@ -107,13 +107,24 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 
-	// 5b. Inject yolo flag if requested
-	if l.Yolo {
+	// 5b. Resolve effective yolo from config layers + CLI flags.
+	// Priority: --no-yolo (highest) > --yolo flag > project override > context > preferences
+	var prefYolo *bool
+	if cfg.Preferences != nil {
+		prefYolo = cfg.Preferences.Yolo
+	}
+	effectiveYolo := l.resolveEffectiveYolo(prefYolo, rc.Context.Yolo, nil)
+	if effectiveYolo {
 		yoloArgs, err := YoloArgs(agentName)
 		if err != nil {
 			return err
 		}
 		extraArgs = append(yoloArgs, extraArgs...)
+		source := yoloSource(l.Yolo, prefYolo, rc.Context.Yolo, nil)
+		fmt.Fprintf(l.stderr(), "\033[1;33mWARNING:\033[0m yolo mode enabled (source: %s)\n", source)
+		fmt.Fprintln(l.stderr(), "  Agent permission checks are disabled.")
+		fmt.Fprintln(l.stderr(), "  OS sandbox is active (use `aide sandbox show` to inspect).")
+		fmt.Fprintln(l.stderr())
 	}
 
 	// 6. Create runtime dir, register signal handlers
@@ -496,4 +507,34 @@ func redactValue(s string) string {
 		return s + "***"
 	}
 	return s[:8] + "***"
+}
+
+// resolveEffectiveYolo computes the effective yolo state considering CLI flags
+// and config layers. --no-yolo always wins. --yolo flag sets a floor.
+// Config layers are resolved via config.ResolveYolo (preferences < context < project).
+func (l *Launcher) resolveEffectiveYolo(preferences, context, project *bool) bool {
+	if l.NoYolo {
+		return false
+	}
+	if l.Yolo {
+		return true
+	}
+	return config.ResolveYolo(preferences, context, project)
+}
+
+// yoloSource returns a human-readable string describing why yolo is active.
+func yoloSource(cliFlag bool, preferences, context, project *bool) string {
+	if cliFlag {
+		return "--yolo flag"
+	}
+	if project != nil && *project {
+		return ".aide.yaml"
+	}
+	if context != nil && *context {
+		return "context config"
+	}
+	if preferences != nil && *preferences {
+		return "preferences"
+	}
+	return "config"
 }

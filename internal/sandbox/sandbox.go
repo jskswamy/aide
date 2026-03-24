@@ -169,8 +169,9 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 		AllowPorts:  policy.AllowPorts,
 		DenyPorts:   policy.DenyPorts,
 		ExtraDenied:   policy.ExtraDenied,
-		ExtraWritable: policy.ExtraWritable,
-		ExtraReadable: policy.ExtraReadable,
+		ExtraWritable:   policy.ExtraWritable,
+		ExtraReadable:   policy.ExtraReadable,
+		AllowSubprocess: policy.AllowSubprocess,
 	}
 
 	var results []seatbelt.GuardResult

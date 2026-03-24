@@ -111,12 +111,16 @@ func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []str
 
 // execAgent injects yolo flags if needed, applies the OS sandbox, and execs the agent.
 func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error {
-	if l.Yolo {
+	if l.Yolo && !l.NoYolo {
 		yoloArgs, err := YoloArgs(name)
 		if err != nil {
 			return err
 		}
 		extraArgs = append(yoloArgs, extraArgs...)
+		fmt.Fprintf(l.stderr(), "\033[1;33mWARNING:\033[0m yolo mode enabled (source: --yolo flag)\n")
+		fmt.Fprintln(l.stderr(), "  Agent permission checks are disabled.")
+		fmt.Fprintln(l.stderr(), "  OS sandbox is active (use `aide sandbox show` to inspect).")
+		fmt.Fprintln(l.stderr())
 	}
 
 	// Resolve project root from cwd (git root or cwd fallback).

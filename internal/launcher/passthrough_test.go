@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -232,6 +233,60 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 		if innerArgs[i] != want {
 			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
+	}
+}
+
+func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
+	mock := &mockExecer{}
+	var stderrBuf bytes.Buffer
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+		Yolo:     true,
+		NoYolo:   true,
+		Stderr:   &stderrBuf,
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	err := l.Passthrough(t.TempDir(), "", nil)
+	if err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	for _, a := range innerArgs {
+		if a == "--dangerously-skip-permissions" {
+			t.Error("--no-yolo should suppress yolo flag in passthrough")
+		}
+	}
+	if strings.Contains(stderrBuf.String(), "yolo mode enabled") {
+		t.Error("--no-yolo should suppress yolo warning in passthrough")
+	}
+}
+
+func TestPassthrough_YoloWarningShown(t *testing.T) {
+	mock := &mockExecer{}
+	var stderrBuf bytes.Buffer
+	l := &Launcher{
+		Execer:   mock,
+		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+		Yolo:     true,
+		Stderr:   &stderrBuf,
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	err := l.Passthrough(t.TempDir(), "", nil)
+	if err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	if !strings.Contains(stderrBuf.String(), "yolo mode enabled") {
+		t.Error("expected yolo warning in passthrough stderr")
+	}
+	if !strings.Contains(stderrBuf.String(), "--yolo flag") {
+		t.Error("expected source attribution in yolo warning")
 	}
 }
 

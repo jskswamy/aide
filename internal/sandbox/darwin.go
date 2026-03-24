@@ -101,5 +101,9 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 		p.Use(policy.AgentModule)
 	}
 
-	return p.Render()
+	result, err := p.Render()
+	if err != nil {
+		return "", err
+	}
+	return result.Profile, nil
 }

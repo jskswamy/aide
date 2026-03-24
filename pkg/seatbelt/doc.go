@@ -27,5 +27,6 @@
 //	        guards.NetworkGuard(),
 //	        guards.FilesystemGuard(),
 //	    )
-//	sbText, err := profile.Render()
+//	result, err := profile.Render()
+//	sbText := result.Profile
 package seatbelt

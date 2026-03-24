@@ -28,6 +28,7 @@ type BannerData struct {
 	Env         map[string]string // key → annotation (e.g. "← secrets.api_key" or "= literal")
 	EnvResolved map[string]string // key → redacted value, nil in normal mode
 	Sandbox     *SandboxInfo
+	Yolo        bool
 	Warnings    []string
 }
 
@@ -205,6 +206,10 @@ func RenderCompact(w io.Writer, data *BannerData) {
 		}
 	}
 
+	if data.Yolo {
+		yellow.Fprintf(w, "   ⚡ yolo mode (agent permission checks disabled)\n")
+	}
+
 	if data.Sandbox != nil {
 		fmt.Fprintf(w, "   🛡 Sandbox\n")
 		if !data.Sandbox.Disabled {
@@ -245,6 +250,11 @@ func RenderBoxed(w io.Writer, data *BannerData) {
 	fmt.Fprintf(w, "│ 🤖 ")
 	cyan.Fprintf(w, "Agent     ")
 	fmt.Fprintf(w, "%s\n", agentDisplay(data))
+
+	if data.Yolo {
+		fmt.Fprintf(w, "│ ")
+		yellow.Fprintf(w, "⚡ yolo mode (agent permission checks disabled)\n")
+	}
 
 	if s := secretDisplay(data); s != "" {
 		fmt.Fprintf(w, "│ 🔐 ")
@@ -297,6 +307,11 @@ func RenderClean(w io.Writer, data *BannerData) {
 	fmt.Fprintf(w, "  ")
 	cyan.Fprintf(w, "Agent     ")
 	fmt.Fprintf(w, "%s\n", agentDisplay(data))
+
+	if data.Yolo {
+		fmt.Fprintf(w, "  ")
+		yellow.Fprintf(w, "yolo mode (agent permission checks disabled)\n")
+	}
 
 	if data.MatchReason != "" {
 		fmt.Fprintf(w, "  ")

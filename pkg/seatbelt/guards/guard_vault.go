@@ -4,7 +4,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"fmt"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type vaultGuard struct{}
 
@@ -16,10 +20,25 @@ func (g *vaultGuard) Type() string        { return "default" }
 func (g *vaultGuard) Description() string { return "Blocks access to Vault token" }
 
 func (g *vaultGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	result := seatbelt.GuardResult{}
 	tokenPath := EnvOverridePath(ctx, "VAULT_TOKEN_FILE", ".vault-token")
 
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("Vault credentials"))
-	rules = append(rules, DenyFile(tokenPath)...)
-	return seatbelt.GuardResult{Rules: rules}
+	if !pathExists(tokenPath) {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", tokenPath))
+		return result
+	}
+
+	// Check for env override
+	if val, ok := ctx.EnvLookup("VAULT_TOKEN_FILE"); ok && val != "" {
+		result.Overrides = append(result.Overrides, seatbelt.Override{
+			EnvVar:      "VAULT_TOKEN_FILE",
+			Value:       val,
+			DefaultPath: ctx.HomePath(".vault-token"),
+		})
+	}
+
+	result.Rules = append(result.Rules, seatbelt.SectionDeny("Vault credentials"))
+	result.Rules = append(result.Rules, DenyFile(tokenPath)...)
+	result.Protected = append(result.Protected, tokenPath)
+	return result
 }

@@ -5,7 +5,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"fmt"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type passwordManagersGuard struct{}
 
@@ -19,33 +23,85 @@ func (g *passwordManagersGuard) Description() string {
 }
 
 func (g *passwordManagersGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
+	result := seatbelt.GuardResult{}
 
 	// 1Password CLI
-	rules = append(rules, seatbelt.SectionDeny("1Password CLI"))
-	rules = append(rules, DenyDir(ctx.HomePath(".config/op"))...)
-	rules = append(rules, DenyDir(ctx.HomePath(".op"))...)
+	opDir := ctx.HomePath(".config/op")
+	opLegacyDir := ctx.HomePath(".op")
+	opFound := false
+	if dirExists(opDir) {
+		result.Rules = append(result.Rules, seatbelt.SectionDeny("1Password CLI"))
+		result.Rules = append(result.Rules, DenyDir(opDir)...)
+		result.Protected = append(result.Protected, opDir)
+		opFound = true
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", opDir))
+	}
+	if dirExists(opLegacyDir) {
+		if !opFound {
+			result.Rules = append(result.Rules, seatbelt.SectionDeny("1Password CLI"))
+		}
+		result.Rules = append(result.Rules, DenyDir(opLegacyDir)...)
+		result.Protected = append(result.Protected, opLegacyDir)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", opLegacyDir))
+	}
 
 	// Bitwarden CLI
-	rules = append(rules, seatbelt.SectionDeny("Bitwarden CLI"))
-	rules = append(rules, DenyDir(ctx.HomePath(".config/Bitwarden CLI"))...)
+	bwDir := ctx.HomePath(".config/Bitwarden CLI")
+	if dirExists(bwDir) {
+		result.Rules = append(result.Rules, seatbelt.SectionDeny("Bitwarden CLI"))
+		result.Rules = append(result.Rules, DenyDir(bwDir)...)
+		result.Protected = append(result.Protected, bwDir)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", bwDir))
+	}
 
 	// pass (standard unix password manager)
-	rules = append(rules, seatbelt.SectionDeny("pass"))
-	rules = append(rules, DenyDir(ctx.HomePath(".password-store"))...)
+	passDir := ctx.HomePath(".password-store")
+	if dirExists(passDir) {
+		result.Rules = append(result.Rules, seatbelt.SectionDeny("pass"))
+		result.Rules = append(result.Rules, DenyDir(passDir)...)
+		result.Protected = append(result.Protected, passDir)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", passDir))
+	}
 
 	// gopass
-	rules = append(rules, seatbelt.SectionDeny("gopass"))
-	rules = append(rules, DenyDir(ctx.HomePath(".local/share/gopass"))...)
+	gopassDir := ctx.HomePath(".local/share/gopass")
+	if dirExists(gopassDir) {
+		result.Rules = append(result.Rules, seatbelt.SectionDeny("gopass"))
+		result.Rules = append(result.Rules, DenyDir(gopassDir)...)
+		result.Protected = append(result.Protected, gopassDir)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", gopassDir))
+	}
 
 	// GPG private keys (used by pass/gopass and general signing)
-	// Only block private key material — public keyring and trustdb are
+	// Only block private key material -- public keyring and trustdb are
 	// needed for GPG commit signing to work.
-	rules = append(rules, seatbelt.SectionDeny("GPG private keys"))
-	rules = append(rules, DenyDir(ctx.HomePath(".gnupg/private-keys-v1.d"))...)
-	rules = append(rules, DenyFile(ctx.HomePath(".gnupg/secring.gpg"))...)
+	gpgPrivDir := ctx.HomePath(".gnupg/private-keys-v1.d")
+	gpgSecring := ctx.HomePath(".gnupg/secring.gpg")
+	gpgFound := false
+	if dirExists(gpgPrivDir) {
+		result.Rules = append(result.Rules, seatbelt.SectionDeny("GPG private keys"))
+		result.Rules = append(result.Rules, DenyDir(gpgPrivDir)...)
+		result.Protected = append(result.Protected, gpgPrivDir)
+		gpgFound = true
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", gpgPrivDir))
+	}
+	if pathExists(gpgSecring) {
+		if !gpgFound {
+			result.Rules = append(result.Rules, seatbelt.SectionDeny("GPG private keys"))
+		}
+		result.Rules = append(result.Rules, DenyFile(gpgSecring)...)
+		result.Protected = append(result.Protected, gpgSecring)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", gpgSecring))
+	}
 
-	return seatbelt.GuardResult{Rules: rules}
+	return result
 }
 
 // --- aide-secrets ---
@@ -60,8 +116,16 @@ func (g *aideSecretsGuard) Type() string        { return "default" }
 func (g *aideSecretsGuard) Description() string { return "Blocks access to aide's encrypted secrets" }
 
 func (g *aideSecretsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("aide secrets"))
-	rules = append(rules, DenyDir(ctx.HomePath(".config/aide/secrets"))...)
-	return seatbelt.GuardResult{Rules: rules}
+	result := seatbelt.GuardResult{}
+	secretsDir := ctx.HomePath(".config/aide/secrets")
+
+	if !dirExists(secretsDir) {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", secretsDir))
+		return result
+	}
+
+	result.Rules = append(result.Rules, seatbelt.SectionDeny("aide secrets"))
+	result.Rules = append(result.Rules, DenyDir(secretsDir)...)
+	result.Protected = append(result.Protected, secretsDir)
+	return result
 }

@@ -6,6 +6,7 @@
 package guards
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
@@ -23,19 +24,31 @@ func (g *dockerGuard) Type() string        { return "opt-in" }
 func (g *dockerGuard) Description() string { return "Blocks access to Docker registry credentials" }
 
 func (g *dockerGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	result := seatbelt.GuardResult{}
+
 	// DOCKER_CONFIG points to the directory; config.json is always inside it.
 	var configDir string
 	if v, ok := ctx.EnvLookup("DOCKER_CONFIG"); ok && v != "" {
 		configDir = v
+		result.Overrides = append(result.Overrides, seatbelt.Override{
+			EnvVar:      "DOCKER_CONFIG",
+			Value:       v,
+			DefaultPath: ctx.HomePath(".docker"),
+		})
 	} else {
 		configDir = ctx.HomePath(".docker")
 	}
 	configFile := filepath.Join(configDir, "config.json")
 
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("Docker credentials"))
-	rules = append(rules, DenyFile(configFile)...)
-	return seatbelt.GuardResult{Rules: rules}
+	if !pathExists(configFile) {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", configFile))
+		return result
+	}
+
+	result.Rules = append(result.Rules, seatbelt.SectionDeny("Docker credentials"))
+	result.Rules = append(result.Rules, DenyFile(configFile)...)
+	result.Protected = append(result.Protected, configFile)
+	return result
 }
 
 // --- github-cli ---
@@ -50,10 +63,18 @@ func (g *githubCLIGuard) Type() string        { return "opt-in" }
 func (g *githubCLIGuard) Description() string { return "Blocks access to GitHub CLI credentials" }
 
 func (g *githubCLIGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("GitHub CLI credentials"))
-	rules = append(rules, DenyDir(ctx.HomePath(".config/gh"))...)
-	return seatbelt.GuardResult{Rules: rules}
+	result := seatbelt.GuardResult{}
+	ghDir := ctx.HomePath(".config/gh")
+
+	if !dirExists(ghDir) {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", ghDir))
+		return result
+	}
+
+	result.Rules = append(result.Rules, seatbelt.SectionDeny("GitHub CLI credentials"))
+	result.Rules = append(result.Rules, DenyDir(ghDir)...)
+	result.Protected = append(result.Protected, ghDir)
+	return result
 }
 
 // --- npm ---
@@ -68,11 +89,29 @@ func (g *npmGuard) Type() string        { return "opt-in" }
 func (g *npmGuard) Description() string { return "Blocks access to npm and yarn auth tokens" }
 
 func (g *npmGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("npm/yarn credentials"))
-	rules = append(rules, DenyFile(ctx.HomePath(".npmrc"))...)
-	rules = append(rules, DenyFile(ctx.HomePath(".yarnrc"))...)
-	return seatbelt.GuardResult{Rules: rules}
+	result := seatbelt.GuardResult{}
+
+	npmrc := ctx.HomePath(".npmrc")
+	if pathExists(npmrc) {
+		result.Rules = append(result.Rules, DenyFile(npmrc)...)
+		result.Protected = append(result.Protected, npmrc)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", npmrc))
+	}
+
+	yarnrc := ctx.HomePath(".yarnrc")
+	if pathExists(yarnrc) {
+		result.Rules = append(result.Rules, DenyFile(yarnrc)...)
+		result.Protected = append(result.Protected, yarnrc)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", yarnrc))
+	}
+
+	if len(result.Rules) > 0 {
+		result.Rules = append([]seatbelt.Rule{seatbelt.SectionDeny("npm/yarn credentials")}, result.Rules...)
+	}
+
+	return result
 }
 
 // --- netrc ---
@@ -87,10 +126,18 @@ func (g *netrcGuard) Type() string        { return "opt-in" }
 func (g *netrcGuard) Description() string { return "Blocks access to netrc credentials" }
 
 func (g *netrcGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("netrc credentials"))
-	rules = append(rules, DenyFile(ctx.HomePath(".netrc"))...)
-	return seatbelt.GuardResult{Rules: rules}
+	result := seatbelt.GuardResult{}
+	netrcPath := ctx.HomePath(".netrc")
+
+	if !pathExists(netrcPath) {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", netrcPath))
+		return result
+	}
+
+	result.Rules = append(result.Rules, seatbelt.SectionDeny("netrc credentials"))
+	result.Rules = append(result.Rules, DenyFile(netrcPath)...)
+	result.Protected = append(result.Protected, netrcPath)
+	return result
 }
 
 // --- vercel ---
@@ -105,8 +152,16 @@ func (g *vercelGuard) Type() string        { return "opt-in" }
 func (g *vercelGuard) Description() string { return "Blocks access to Vercel CLI credentials" }
 
 func (g *vercelGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("Vercel credentials"))
-	rules = append(rules, DenyDir(ctx.HomePath(".config/vercel"))...)
-	return seatbelt.GuardResult{Rules: rules}
+	result := seatbelt.GuardResult{}
+	vercelDir := ctx.HomePath(".config/vercel")
+
+	if !dirExists(vercelDir) {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", vercelDir))
+		return result
+	}
+
+	result.Rules = append(result.Rules, seatbelt.SectionDeny("Vercel credentials"))
+	result.Rules = append(result.Rules, DenyDir(vercelDir)...)
+	result.Protected = append(result.Protected, vercelDir)
+	return result
 }

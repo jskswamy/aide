@@ -5,7 +5,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"fmt"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type browsersGuard struct{}
 
@@ -19,20 +23,24 @@ func (g *browsersGuard) Description() string {
 }
 
 func (g *browsersGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("Browser profiles"))
+	result := seatbelt.GuardResult{}
 
 	switch ctx.GOOS {
 	case "linux":
-		rules = append(rules, g.linuxRules(ctx)...)
+		g.linuxPaths(ctx, &result)
 	default:
 		// darwin and unknown default to darwin paths
-		rules = append(rules, g.darwinRules(ctx)...)
+		g.darwinPaths(ctx, &result)
 	}
-	return seatbelt.GuardResult{Rules: rules}
+
+	if len(result.Rules) > 0 {
+		result.Rules = append([]seatbelt.Rule{seatbelt.SectionDeny("Browser profiles")}, result.Rules...)
+	}
+
+	return result
 }
 
-func (g *browsersGuard) darwinRules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *browsersGuard) darwinPaths(ctx *seatbelt.Context, result *seatbelt.GuardResult) {
 	appSupport := ctx.HomePath("Library/Application Support")
 
 	browsers := []string{
@@ -46,14 +54,18 @@ func (g *browsersGuard) darwinRules(ctx *seatbelt.Context) []seatbelt.Rule {
 		"Chromium",
 	}
 
-	var rules []seatbelt.Rule
 	for _, b := range browsers {
-		rules = append(rules, DenyDir(appSupport+"/"+b)...)
+		path := appSupport + "/" + b
+		if dirExists(path) {
+			result.Rules = append(result.Rules, DenyDir(path)...)
+			result.Protected = append(result.Protected, path)
+		} else {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", path))
+		}
 	}
-	return rules
 }
 
-func (g *browsersGuard) linuxRules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *browsersGuard) linuxPaths(ctx *seatbelt.Context, result *seatbelt.GuardResult) {
 	configDir := ctx.HomePath(".config")
 	mozillaDir := ctx.HomePath(".mozilla")
 	snapDir := ctx.HomePath("snap")
@@ -71,9 +83,13 @@ func (g *browsersGuard) linuxRules(ctx *seatbelt.Context) []seatbelt.Rule {
 		{snapDir, "chromium"},
 	}
 
-	var rules []seatbelt.Rule
 	for _, b := range browsers {
-		rules = append(rules, DenyDir(b.base+"/"+b.name)...)
+		path := b.base + "/" + b.name
+		if dirExists(path) {
+			result.Rules = append(result.Rules, DenyDir(path)...)
+			result.Protected = append(result.Protected, path)
+		} else {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", path))
+		}
 	}
-	return rules
 }

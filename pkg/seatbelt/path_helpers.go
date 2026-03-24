@@ -1,4 +1,4 @@
-// pkg/seatbelt/path_helpers.go
+// Package seatbelt path helpers for resolving and normalizing file paths.
 package seatbelt
 
 import (

@@ -128,7 +128,7 @@ func (n *noopSandbox) GenerateProfile(_ Policy) (string, error) {
 // expandGlobs expands glob patterns in a list of paths.
 // Non-glob paths are passed through unchanged.
 // Used by linux.go — appears unused on darwin.
-func expandGlobs(patterns []string) []string { //nolint:unused // used by linux.go, not compiled on darwin
+func expandGlobs(patterns []string) []string { //nolint:unused,nolintlint // used by linux.go, not compiled on darwin
 	var result []string
 	for _, p := range patterns {
 		if strings.ContainsAny(p, "*?[") {

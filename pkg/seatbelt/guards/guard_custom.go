@@ -6,6 +6,7 @@
 package guards
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -44,21 +45,46 @@ func (g *customGuard) Type() string        { return g.cfg.Type }
 func (g *customGuard) Description() string { return g.cfg.Description }
 
 func (g *customGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	result := seatbelt.GuardResult{}
+
+	// Check for env override and record it.
+	if g.cfg.EnvOverride != "" {
+		if v, ok := ctx.EnvLookup(g.cfg.EnvOverride); ok && v != "" {
+			parts := SplitColonPaths(v)
+			if len(parts) == 1 {
+				defaultPath := ""
+				if len(g.cfg.Paths) == 1 {
+					defaultPath = expandHome(ctx, g.cfg.Paths[0])
+				}
+				result.Overrides = append(result.Overrides, seatbelt.Override{
+					EnvVar:      g.cfg.EnvOverride,
+					Value:       v,
+					DefaultPath: defaultPath,
+				})
+			}
+		}
+	}
+
 	paths := g.resolvePaths(ctx)
 
-	var rules []seatbelt.Rule
-	// Deny rules for each path.
+	// Deny rules for each path, with existence check.
 	for _, p := range paths {
-		rules = append(rules, DenyDir(p)...)
+		if pathExists(p) {
+			result.Rules = append(result.Rules, DenyDir(p)...)
+			result.Protected = append(result.Protected, p)
+		} else {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", p))
+		}
 	}
 
 	// Allow rules for explicitly allowed paths.
 	for _, a := range g.cfg.Allowed {
-		expanded := expandHome(ctx, a)
-		rules = append(rules, AllowReadFile(filepath.Clean(expanded)))
+		expanded := filepath.Clean(expandHome(ctx, a))
+		result.Rules = append(result.Rules, AllowReadFile(expanded))
+		result.Allowed = append(result.Allowed, expanded)
 	}
 
-	return seatbelt.GuardResult{Rules: rules}
+	return result
 }
 
 // resolvePaths returns the effective list of absolute paths for the guard,

@@ -20,94 +20,38 @@ func (g *systemRuntimeGuard) Description() string {
 }
 
 func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	home := ctx.HomeDir
-
 	rules := []seatbelt.Rule{
-		// 1. System binary paths
-		seatbelt.SectionAllow("System binary paths"),
+		// 1. Broad system reads — all top-level system directories
+		seatbelt.SectionAllow("Broad system reads"),
 		seatbelt.AllowRule(`(allow file-read*
     (subpath "/usr")
     (subpath "/bin")
     (subpath "/sbin")
     (subpath "/opt")
-    (subpath "/System/Library")
-    (subpath "/System/Volumes/Preboot")
-    (subpath "/Library/Apple")
-    (subpath "/Library/Frameworks")
-    (subpath "/Library/Fonts")
-    (subpath "/Library/Filesystems/NetFSPlugins")
-    (subpath "/Library/Preferences/Logging")
-    (literal "/Library/Preferences/.GlobalPreferences.plist")
-    (literal "/Library/Preferences/com.apple.networkd.plist")
-    (literal "/dev")
+    (subpath "/System")
+    (subpath "/Library")
+    (subpath "/nix")
+    (subpath "/private")
+    (subpath "/Applications")
+    (subpath "/run")
+    (subpath "/dev")
+    (subpath "/tmp")
+    (subpath "/var")
 )`),
 
-		// 2. Root filesystem traversal
-		seatbelt.SectionAllow("Root filesystem traversal"),
+		// 2. Root-level traversal
+		seatbelt.SectionAllow("Root-level traversal"),
+		seatbelt.AllowRule(`(allow file-read-metadata
+    (literal "/")
+    (literal "/Users")
+)`),
 		seatbelt.AllowRule(`(allow file-read-data
     (literal "/")
 )`),
 
-		// 3. Metadata traversal
-		seatbelt.SectionAllow("Metadata traversal"),
-		// Git requires stat() on parent directories up to / for its
-		// safe.directory ownership check. /Users is needed on macOS
-		// so git can walk /Users → /Users/<user> → ... → repo root.
-		seatbelt.AllowRule(`(allow file-read-metadata
-    (literal "/")
-    (literal "/Users")
-    (subpath "/System")
-    (subpath "/private/var/run")
-)`),
-
-		// 3. Private/etc paths
-		seatbelt.SectionAllow("Private/etc paths"),
-		seatbelt.AllowRule(`(allow file-read*
-    (literal "/private")
-    (literal "/private/var")
-    (subpath "/private/var/db/timezone")
-    (literal "/private/var/select/sh")
-    (literal "/private/var/select/developer_dir")
-    (literal "/var/select/developer_dir")
-    (literal "/private/var/db/xcode_select_link")
-    (literal "/var/db/xcode_select_link")
-    (literal "/private/etc/hosts")
-    (literal "/private/etc/resolv.conf")
-    (literal "/private/etc/services")
-    (literal "/private/etc/protocols")
-    (literal "/private/etc/shells")
-    (subpath "/private/etc/ssl")
-    (literal "/private/etc/localtime")
-    (literal "/etc")
-    (literal "/var")
-)`),
-
-		// 4. Home metadata traversal
-		seatbelt.SectionAllow("Home metadata traversal"),
-		seatbelt.AllowRule(`(allow file-read-metadata
-    (literal "/home")
-    (literal "/private/etc")
-    (subpath "/dev")
-    ` + seatbelt.HomeLiteral(home, ".config") + `
-    ` + seatbelt.HomeLiteral(home, ".cache") + `
-    ` + seatbelt.HomeLiteral(home, ".local") + `
-    ` + seatbelt.HomeLiteral(home, ".local/share") + `
-)`),
-
-		// 5. User preferences
-		seatbelt.SectionAllow("User preferences"),
-		seatbelt.AllowRule(`(allow file-read*
-    ` + seatbelt.HomePrefix(home, "Library/Preferences/.GlobalPreferences") + `
-    ` + seatbelt.HomePrefix(home, "Library/Preferences/com.apple.GlobalPreferences") + `
-    ` + seatbelt.HomeSubpath(home, "Library/Preferences/ByHost") + `
-    ` + seatbelt.HomeLiteral(home, ".CFUserTextEncoding") + `
-    ` + seatbelt.HomeLiteral(home, ".config") + `
-    ` + seatbelt.HomeLiteral(home, ".cache") + `
-    ` + seatbelt.HomeLiteral(home, ".local/bin") + `
-)`),
-
-		// 6. Process rules
+		// 3. Process rules
 		seatbelt.SectionAllow("Process rules"),
+
 		seatbelt.AllowRule("(allow process-exec)"),
 		seatbelt.AllowRule("(allow sysctl-read)"),
 		seatbelt.AllowRule("(allow process-info* (target same-sandbox))"),

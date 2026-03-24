@@ -95,7 +95,8 @@ func TestSystemRuntime_SystemPaths(t *testing.T) {
 	for _, path := range []string{
 		`(subpath "/usr")`,
 		`(subpath "/bin")`,
-		`(subpath "/System/Library")`,
+		`(subpath "/System")`,
+		`(subpath "/Library")`,
 	} {
 		if !strings.Contains(output, path) {
 			t.Errorf("expected output to contain %q", path)
@@ -140,15 +141,60 @@ func TestSystemRuntime_AllowSubprocess_False(t *testing.T) {
 	}
 }
 
-func TestSystemRuntime_HomeMetadata(t *testing.T) {
+func TestSystemRuntime_NoHomeRules(t *testing.T) {
+	// Home metadata and user preferences are now handled by the filesystem guard.
 	output := systemRuntimeOutput()
 
-	for _, path := range []string{
-		`(literal "/Users/testuser/.config")`,
-		`(literal "/Users/testuser/.cache")`,
-	} {
-		if !strings.Contains(output, path) {
-			t.Errorf("expected output to contain %q", path)
+	homePatterns := []string{
+		"/Users/testuser/.config",
+		"/Users/testuser/.cache",
+		"/Users/testuser/.local",
+		"GlobalPreferences",
+		".CFUserTextEncoding",
+	}
+	for _, p := range homePatterns {
+		if strings.Contains(output, p) {
+			t.Errorf("system-runtime should NOT contain home path %q (moved to filesystem guard)", p)
 		}
+	}
+}
+
+func TestSystemRuntime_BroadSystemReads(t *testing.T) {
+	g := guards.SystemRuntimeGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser", AllowSubprocess: true}
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should have broad system directory allows
+	broadPaths := []string{
+		`(subpath "/usr")`, `(subpath "/bin")`, `(subpath "/sbin")`,
+		`(subpath "/opt")`, `(subpath "/System")`, `(subpath "/Library")`,
+		`(subpath "/nix")`, `(subpath "/private")`, `(subpath "/Applications")`,
+		`(subpath "/run")`, `(subpath "/dev")`, `(subpath "/tmp")`, `(subpath "/var")`,
+	}
+	for _, p := range broadPaths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected broad system read for %s", p)
+		}
+	}
+
+	// Should NOT have the old granular paths
+	oldPaths := []string{
+		`(subpath "/System/Library")`,     // was specific, now just /System
+		`(subpath "/Library/Apple")`,       // was specific, now just /Library
+		`(subpath "/Library/Frameworks")`,  // was specific, now just /Library
+	}
+	for _, p := range oldPaths {
+		if strings.Contains(output, p) {
+			t.Errorf("should not have old granular path %s (replaced by broad /System, /Library)", p)
+		}
+	}
+
+	// Non-read rules should still be present
+	if !strings.Contains(output, "(allow process-exec)") {
+		t.Error("expected process-exec rule")
+	}
+	if !strings.Contains(output, "(allow mach-lookup") {
+		t.Error("expected mach-lookup rules")
 	}
 }

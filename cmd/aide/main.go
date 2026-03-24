@@ -19,6 +19,7 @@ func main() {
 	var agentFlag string
 	var cleanEnv bool
 	var yolo bool
+	var noYolo bool
 	var resolve bool
 
 	rootCmd := &cobra.Command{
@@ -31,13 +32,6 @@ agents on your PATH.`,
 		DisableFlagParsing: false,
 		SilenceUsage:       true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if yolo {
-				fmt.Fprintln(os.Stderr, "\033[1;33mWARNING:\033[0m --yolo mode enabled")
-				fmt.Fprintln(os.Stderr, "  Agent permission checks are disabled.")
-				fmt.Fprintln(os.Stderr, "  OS sandbox is active with default policy (use `aide sandbox show` to inspect).")
-				fmt.Fprintln(os.Stderr, "")
-			}
-
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
@@ -46,6 +40,7 @@ agents on your PATH.`,
 			l := &launcher.Launcher{
 				Execer: &launcher.SyscallExecer{},
 				Yolo:   yolo,
+				NoYolo: noYolo,
 			}
 
 			// Check if a config file exists.
@@ -64,6 +59,7 @@ agents on your PATH.`,
 	rootCmd.Flags().StringVar(&agentFlag, "agent", "", "Override which agent to launch")
 	rootCmd.Flags().BoolVar(&cleanEnv, "clean-env", false, "Start agent with only essential environment variables")
 	rootCmd.Flags().BoolVar(&yolo, "yolo", false, "Launch agent with skip-permissions (agent-specific, sandbox still applies)")
+	rootCmd.Flags().BoolVar(&noYolo, "no-yolo", false, "Disable yolo mode (overrides config and --yolo flag)")
 	rootCmd.PersistentFlags().BoolVar(&resolve, "resolve", false, "Show detailed startup info")
 
 	registerCommands(rootCmd)

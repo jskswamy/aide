@@ -4,7 +4,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"fmt"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type terraformGuard struct{}
 
@@ -16,16 +20,45 @@ func (g *terraformGuard) Type() string        { return "default" }
 func (g *terraformGuard) Description() string { return "Blocks access to Terraform credentials" }
 
 func (g *terraformGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionDeny("Terraform credentials"))
+	result := seatbelt.GuardResult{}
 
 	if cliConfig, ok := ctx.EnvLookup("TF_CLI_CONFIG_FILE"); ok && cliConfig != "" {
-		rules = append(rules, DenyFile(cliConfig)...)
-		return seatbelt.GuardResult{Rules: rules}
+		if !pathExists(cliConfig) {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", cliConfig))
+			return result
+		}
+		result.Rules = append(result.Rules, seatbelt.SectionDeny("Terraform credentials"))
+		result.Rules = append(result.Rules, DenyFile(cliConfig)...)
+		result.Protected = append(result.Protected, cliConfig)
+		result.Overrides = append(result.Overrides, seatbelt.Override{
+			EnvVar:      "TF_CLI_CONFIG_FILE",
+			Value:       cliConfig,
+			DefaultPath: ctx.HomePath(".terraform.d/credentials.tfrc.json"),
+		})
+		return result
 	}
 
 	// Default credential locations
-	rules = append(rules, DenyFile(ctx.HomePath(".terraform.d/credentials.tfrc.json"))...)
-	rules = append(rules, DenyFile(ctx.HomePath(".terraformrc"))...)
-	return seatbelt.GuardResult{Rules: rules}
+	credPath := ctx.HomePath(".terraform.d/credentials.tfrc.json")
+	rcPath := ctx.HomePath(".terraformrc")
+
+	if pathExists(credPath) {
+		result.Rules = append(result.Rules, DenyFile(credPath)...)
+		result.Protected = append(result.Protected, credPath)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", credPath))
+	}
+
+	if pathExists(rcPath) {
+		result.Rules = append(result.Rules, DenyFile(rcPath)...)
+		result.Protected = append(result.Protected, rcPath)
+	} else {
+		result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", rcPath))
+	}
+
+	if len(result.Rules) > 0 {
+		result.Rules = append([]seatbelt.Rule{seatbelt.SectionDeny("Terraform credentials")}, result.Rules...)
+	}
+
+	return result
 }

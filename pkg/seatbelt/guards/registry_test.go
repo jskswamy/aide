@@ -50,8 +50,8 @@ func TestRegistry_GuardsByType(t *testing.T) {
 	}
 
 	defaults := guards.ByType("default")
-	if len(defaults) != 12 {
-		t.Errorf("expected 12 default guards, got %d", len(defaults))
+	if len(defaults) != 11 {
+		t.Errorf("expected 11 default guards, got %d", len(defaults))
 	}
 	for _, g := range defaults {
 		if g.Type() != "default" {
@@ -60,8 +60,8 @@ func TestRegistry_GuardsByType(t *testing.T) {
 	}
 
 	optIn := guards.ByType("opt-in")
-	if len(optIn) != 5 {
-		t.Errorf("expected 5 opt-in guards, got %d", len(optIn))
+	if len(optIn) != 6 {
+		t.Errorf("expected 6 opt-in guards, got %d", len(optIn))
 	}
 	for _, g := range optIn {
 		if g.Type() != "opt-in" {

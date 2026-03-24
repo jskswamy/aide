@@ -1,6 +1,6 @@
 {
   "name": "aide",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Diagnostic assistant for the aide CLI — manages contexts, sandbox, secrets, and agents conversationally",
   "author": {
     "name": "jskswamy",

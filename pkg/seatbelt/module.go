@@ -93,9 +93,12 @@ func (c *Context) Validate() *ValidationResult {
 // readability only.
 type RuleIntent int
 
+// RuleIntent values determine rendering order.
 const (
-	Allow RuleIntent = 100 // broad infrastructure + directory allows
-	Deny  RuleIntent = 200 // narrow specific-file/path denials
+	// Allow is for broad infrastructure + directory allows.
+	Allow RuleIntent = 100
+	// Deny is for narrow specific-file/path denials.
+	Deny  RuleIntent = 200
 )
 
 // Rule represents a Seatbelt rule or comment block.

@@ -25,10 +25,18 @@ func TestGuard_CloudAWS_Metadata(t *testing.T) {
 func TestGuard_CloudAWS_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
 	// Create all AWS credential paths
-	os.MkdirAll(filepath.Join(home, ".aws/sso/cache"), 0o755)
-	os.MkdirAll(filepath.Join(home, ".aws/cli/cache"), 0o755)
-	os.WriteFile(filepath.Join(home, ".aws/credentials"), []byte("fake"), 0o600)
-	os.WriteFile(filepath.Join(home, ".aws/config"), []byte("fake"), 0o600)
+	if err := os.MkdirAll(filepath.Join(home, ".aws/sso/cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".aws/cli/cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".aws/credentials"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".aws/config"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudAWSGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -64,7 +72,9 @@ func TestGuard_CloudAWS_AllSkipped(t *testing.T) {
 func TestGuard_CloudAWS_EnvOverrideCredentials(t *testing.T) {
 	home := t.TempDir()
 	customCreds := filepath.Join(home, "custom-creds")
-	os.WriteFile(customCreds, []byte("fake"), 0o600)
+	if err := os.WriteFile(customCreds, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudAWSGuard()
 	ctx := &seatbelt.Context{
@@ -85,7 +95,9 @@ func TestGuard_CloudAWS_EnvOverrideCredentials(t *testing.T) {
 func TestGuard_CloudAWS_EnvOverrideConfig(t *testing.T) {
 	home := t.TempDir()
 	customConfig := filepath.Join(home, "custom-config")
-	os.WriteFile(customConfig, []byte("fake"), 0o600)
+	if err := os.WriteFile(customConfig, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudAWSGuard()
 	ctx := &seatbelt.Context{
@@ -117,7 +129,9 @@ func TestGuard_CloudGCP_Metadata(t *testing.T) {
 
 func TestGuard_CloudGCP_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".config/gcloud"), 0o755)
+	if err := os.MkdirAll(filepath.Join(home, ".config/gcloud"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudGCPGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -146,7 +160,9 @@ func TestGuard_CloudGCP_AllSkipped(t *testing.T) {
 func TestGuard_CloudGCP_EnvOverride(t *testing.T) {
 	home := t.TempDir()
 	customGcloud := filepath.Join(home, "custom-gcloud")
-	os.MkdirAll(customGcloud, 0o755)
+	if err := os.MkdirAll(customGcloud, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudGCPGuard()
 	ctx := &seatbelt.Context{
@@ -167,7 +183,9 @@ func TestGuard_CloudGCP_EnvOverride(t *testing.T) {
 func TestGuard_CloudGCP_ApplicationCredentials(t *testing.T) {
 	home := t.TempDir()
 	saFile := filepath.Join(home, "sa.json")
-	os.WriteFile(saFile, []byte("fake"), 0o600)
+	if err := os.WriteFile(saFile, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudGCPGuard()
 	ctx := &seatbelt.Context{
@@ -199,7 +217,9 @@ func TestGuard_CloudAzure_Metadata(t *testing.T) {
 
 func TestGuard_CloudAzure_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".azure"), 0o755)
+	if err := os.MkdirAll(filepath.Join(home, ".azure"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudAzureGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -228,7 +248,9 @@ func TestGuard_CloudAzure_AllSkipped(t *testing.T) {
 func TestGuard_CloudAzure_EnvOverride(t *testing.T) {
 	home := t.TempDir()
 	customAzure := filepath.Join(home, "custom-azure")
-	os.MkdirAll(customAzure, 0o755)
+	if err := os.MkdirAll(customAzure, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudAzureGuard()
 	ctx := &seatbelt.Context{
@@ -260,7 +282,9 @@ func TestGuard_CloudDigitalOcean_Metadata(t *testing.T) {
 
 func TestGuard_CloudDigitalOcean_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".config/doctl"), 0o755)
+	if err := os.MkdirAll(filepath.Join(home, ".config/doctl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudDigitalOceanGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -300,7 +324,9 @@ func TestGuard_CloudOCI_Metadata(t *testing.T) {
 
 func TestGuard_CloudOCI_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".oci"), 0o755)
+	if err := os.MkdirAll(filepath.Join(home, ".oci"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudOCIGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -329,7 +355,9 @@ func TestGuard_CloudOCI_AllSkipped(t *testing.T) {
 func TestGuard_CloudOCI_EnvOverride(t *testing.T) {
 	home := t.TempDir()
 	customOCI := filepath.Join(home, "custom-oci-config")
-	os.WriteFile(customOCI, []byte("fake"), 0o600)
+	if err := os.WriteFile(customOCI, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.CloudOCIGuard()
 	ctx := &seatbelt.Context{
@@ -361,8 +389,12 @@ func TestGuard_Kubernetes_Metadata(t *testing.T) {
 
 func TestGuard_Kubernetes_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".kube"), 0o755)
-	os.WriteFile(filepath.Join(home, ".kube/config"), []byte("fake"), 0o600)
+	if err := os.MkdirAll(filepath.Join(home, ".kube"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".kube/config"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.KubernetesGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -394,7 +426,9 @@ func TestGuard_Kubernetes_KubeconfigColonSplit(t *testing.T) {
 	pathB := filepath.Join(home, "path-b")
 	pathC := filepath.Join(home, "path-c")
 	for _, p := range []string{pathA, pathB, pathC} {
-		os.WriteFile(p, []byte("fake"), 0o600)
+		if err := os.WriteFile(p, []byte("fake"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	g := guards.KubernetesGuard()
@@ -423,8 +457,12 @@ func TestGuard_Kubernetes_EmptySegments(t *testing.T) {
 	home := t.TempDir()
 	pathA := filepath.Join(home, "path-a")
 	pathB := filepath.Join(home, "path-b")
-	os.WriteFile(pathA, []byte("fake"), 0o600)
-	os.WriteFile(pathB, []byte("fake"), 0o600)
+	if err := os.WriteFile(pathA, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pathB, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.KubernetesGuard()
 	ctx := &seatbelt.Context{
@@ -457,9 +495,15 @@ func TestGuard_Terraform_Metadata(t *testing.T) {
 
 func TestGuard_Terraform_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".terraform.d"), 0o755)
-	os.WriteFile(filepath.Join(home, ".terraform.d/credentials.tfrc.json"), []byte("fake"), 0o600)
-	os.WriteFile(filepath.Join(home, ".terraformrc"), []byte("fake"), 0o600)
+	if err := os.MkdirAll(filepath.Join(home, ".terraform.d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".terraform.d/credentials.tfrc.json"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".terraformrc"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.TerraformGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -493,7 +537,9 @@ func TestGuard_Terraform_AllSkipped(t *testing.T) {
 func TestGuard_Terraform_EnvOverride(t *testing.T) {
 	home := t.TempDir()
 	customTF := filepath.Join(home, "terraform.rc")
-	os.WriteFile(customTF, []byte("fake"), 0o600)
+	if err := os.WriteFile(customTF, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.TerraformGuard()
 	ctx := &seatbelt.Context{
@@ -525,7 +571,9 @@ func TestGuard_Vault_Metadata(t *testing.T) {
 
 func TestGuard_Vault_DefaultPaths(t *testing.T) {
 	home := t.TempDir()
-	os.WriteFile(filepath.Join(home, ".vault-token"), []byte("fake"), 0o600)
+	if err := os.WriteFile(filepath.Join(home, ".vault-token"), []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.VaultGuard()
 	ctx := &seatbelt.Context{HomeDir: home}
@@ -554,7 +602,9 @@ func TestGuard_Vault_AllSkipped(t *testing.T) {
 func TestGuard_Vault_EnvOverride(t *testing.T) {
 	home := t.TempDir()
 	customVault := filepath.Join(home, "custom-vault-token")
-	os.WriteFile(customVault, []byte("fake"), 0o600)
+	if err := os.WriteFile(customVault, []byte("fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	g := guards.VaultGuard()
 	ctx := &seatbelt.Context{

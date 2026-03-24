@@ -38,7 +38,9 @@ func TestGuard_Browsers_DarwinPaths(t *testing.T) {
 		"Chromium",
 	}
 	for _, b := range darwinBrowsers {
-		os.MkdirAll(filepath.Join(appSupport, b), 0o755)
+		if err := os.MkdirAll(filepath.Join(appSupport, b), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	g := guards.BrowsersGuard()
@@ -101,7 +103,9 @@ func TestGuard_Browsers_LinuxPaths(t *testing.T) {
 		{snapDir, "chromium"},
 	}
 	for _, b := range linuxBrowsers {
-		os.MkdirAll(filepath.Join(b.base, b.name), 0o755)
+		if err := os.MkdirAll(filepath.Join(b.base, b.name), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	g := guards.BrowsersGuard()

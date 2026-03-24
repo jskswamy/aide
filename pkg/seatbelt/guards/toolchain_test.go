@@ -59,12 +59,38 @@ func TestGuard_NixToolchain_Metadata(t *testing.T) {
 	}
 }
 
+func TestGuard_NixToolchain_DetectionGate(t *testing.T) {
+	g := guards.NixToolchainGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
+	result := g.Rules(ctx)
+
+	if guards.TestDirExists("/nix/store") {
+		if len(result.Skipped) > 0 {
+			t.Error("nix is installed but guard returned Skipped")
+		}
+		if len(result.Rules) == 0 {
+			t.Error("nix is installed but guard returned no rules")
+		}
+	} else {
+		if len(result.Rules) > 0 {
+			t.Error("nix is not installed but guard returned rules")
+		}
+		if len(result.Skipped) == 0 {
+			t.Error("nix is not installed but guard returned no Skipped messages")
+		}
+	}
+}
+
 func TestGuard_NixToolchain_Paths(t *testing.T) {
+	if !guards.TestDirExists("/nix/store") {
+		t.Skip("nix not installed")
+	}
 	g := guards.NixToolchainGuard()
 	ctx := &seatbelt.Context{HomeDir: "/Users/testuser"}
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 
+	// Existing paths
 	paths := []string{
 		`"/nix/store"`,
 		`"/nix/var"`,
@@ -77,6 +103,41 @@ func TestGuard_NixToolchain_Paths(t *testing.T) {
 		if !strings.Contains(output, p) {
 			t.Errorf("expected output to contain %q", p)
 		}
+	}
+
+	// New: firmlink resolution
+	if !strings.Contains(output, `"/private/var/run/current-system"`) {
+		t.Error("expected /private/var/run/current-system subpath")
+	}
+
+	// New: parent metadata
+	if !strings.Contains(output, `file-read-metadata`) {
+		t.Error("expected file-read-metadata rules")
+	}
+	if !strings.Contains(output, `(literal "/nix")`) {
+		t.Error("expected metadata for /nix parent")
+	}
+	if !strings.Contains(output, `(literal "/run")`) {
+		t.Error("expected metadata for /run parent")
+	}
+
+	// New: daemon socket
+	if !strings.Contains(output, `network-outbound`) {
+		t.Error("expected network-outbound rule for daemon socket")
+	}
+	if !strings.Contains(output, `unix-socket`) {
+		t.Error("expected unix-socket in daemon socket rule")
+	}
+	if !strings.Contains(output, `/nix/var/nix/daemon-socket/socket`) {
+		t.Error("expected daemon socket path")
+	}
+
+	// New: user paths
+	if !strings.Contains(output, `"/Users/testuser/.nix-defexpr"`) {
+		t.Error("expected .nix-defexpr path")
+	}
+	if !strings.Contains(output, `"/Users/testuser/.config/nix"`) {
+		t.Error("expected .config/nix path")
 	}
 }
 

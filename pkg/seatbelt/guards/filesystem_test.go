@@ -45,27 +45,25 @@ func TestFilesystem_WritablePaths(t *testing.T) {
 	}
 }
 
-func TestFilesystem_ReadablePaths(t *testing.T) {
-	tmp := t.TempDir()
-	dir1 := filepath.Join(tmp, "readonly")
-	if err := os.Mkdir(dir1, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
+func TestFilesystem_ScopedReadablePaths(t *testing.T) {
 	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{
-		HomeDir: dir1,
+		HomeDir: "/Users/testuser",
 	}
 
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 
-	// Should have file-read* but NOT file-write* for homeDir
+	// Should have scoped dev paths, not broad $HOME read
 	if !strings.Contains(output, "(allow file-read*") {
 		t.Error("expected allow file-read* block")
 	}
-	if !strings.Contains(output, `(subpath "`+dir1+`")`) {
-		t.Errorf("expected subpath for %s", dir1)
+	if !strings.Contains(output, `"/Users/testuser/.config"`) {
+		t.Error("expected scoped .config path")
+	}
+	// Should have regex for dotfiles
+	if !strings.Contains(output, "regex") {
+		t.Error("expected regex rule for home dotfiles")
 	}
 }
 
@@ -124,12 +122,8 @@ func TestFilesystem_GlobExpansion(t *testing.T) {
 func TestFilesystem_MixedConfig(t *testing.T) {
 	tmp := t.TempDir()
 	wdir := filepath.Join(tmp, "work")
-	rdir := filepath.Join(tmp, "docs")
 	denied := filepath.Join(tmp, "secret.key")
 	if err := os.Mkdir(wdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(rdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(denied, []byte("key"), 0o644); err != nil {
@@ -139,7 +133,7 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{
 		ProjectRoot: wdir,
-		HomeDir:     rdir,
+		HomeDir:     "/Users/testuser",
 		ExtraDenied: []string{denied},
 	}
 
@@ -152,8 +146,9 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 	if !strings.Contains(output, `(subpath "`+wdir+`")`) {
 		t.Error("expected writable dir path")
 	}
-	if !strings.Contains(output, `(subpath "`+rdir+`")`) {
-		t.Error("expected readable dir path")
+	// HomeDir now produces scoped reads, not broad subpath
+	if !strings.Contains(output, `"/Users/testuser/.config"`) {
+		t.Error("expected scoped home development paths")
 	}
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny block")
@@ -191,6 +186,55 @@ func TestFilesystemGuard_ExtraReadable(t *testing.T) {
 	if !strings.Contains(output, `"/custom/readable"`) {
 		t.Error("expected /custom/readable in filesystem guard output")
 	}
+	// ExtraReadable produces individual allow rules
+	if !strings.Contains(output, "(allow file-read*") {
+		t.Error("expected file-read* rule for extra readable path")
+	}
+}
+
+func TestFilesystemGuard_ScopedHomeReads(t *testing.T) {
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:     "/Users/testuser",
+		ProjectRoot: "/project",
+	}
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should NOT have broad $HOME read
+	if strings.Contains(output, `(subpath "/Users/testuser")`) &&
+		!strings.Contains(output, `(subpath "/Users/testuser/`) {
+		t.Error("should NOT have broad $HOME subpath read")
+	}
+
+	// Should have specific dev paths
+	devPaths := []string{
+		`"/Users/testuser/.config"`,
+		`"/Users/testuser/.cache"`,
+		`"/Users/testuser/.local"`,
+		`"/Users/testuser/.ssh"`,
+		`"/Users/testuser/.cargo"`,
+		`"/Users/testuser/.rustup"`,
+		`"/Users/testuser/go"`,
+		`"/Users/testuser/Library/Keychains"`,
+		`"/Users/testuser/Library/Caches"`,
+		`"/Users/testuser/Library/Preferences"`,
+	}
+	for _, p := range devPaths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected dev path %s in output", p)
+		}
+	}
+
+	// Should have home dotfile regex
+	if !strings.Contains(output, "regex") {
+		t.Error("expected regex rule for home dotfiles")
+	}
+
+	// Project root should still be writable
+	if !strings.Contains(output, `"/project"`) {
+		t.Error("expected project root in writable paths")
+	}
 }
 
 func TestGuard_Filesystem_Metadata(t *testing.T) {
@@ -210,11 +254,10 @@ func TestGuard_Filesystem_Metadata(t *testing.T) {
 func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 	tmp := t.TempDir()
 	project := filepath.Join(tmp, "project")
-	home := filepath.Join(tmp, "home")
 	runtime := filepath.Join(tmp, "runtime")
 	denied := filepath.Join(tmp, "secret.key")
 
-	for _, d := range []string{project, home, runtime} {
+	for _, d := range []string{project, runtime} {
 		if err := os.Mkdir(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -226,7 +269,7 @@ func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{
 		ProjectRoot: project,
-		HomeDir:     home,
+		HomeDir:     "/Users/testuser",
 		RuntimeDir:  runtime,
 		ExtraDenied: []string{denied},
 	}
@@ -239,8 +282,9 @@ func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 	if !strings.Contains(output, `(subpath "`+project+`")`) {
 		t.Errorf("expected ProjectRoot %s in output", project)
 	}
-	if !strings.Contains(output, "(allow file-read*") {
-		t.Error("expected readable block for HomeDir")
+	// HomeDir now produces scoped reads
+	if !strings.Contains(output, `"/Users/testuser/.config"`) {
+		t.Error("expected scoped home development paths")
 	}
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny block for ExtraDenied")

@@ -138,6 +138,12 @@ contexts:
 
 aide loads the `strict` profile and applies it to the `secure` context.
 
+## Yolo Mode and Sandbox
+
+`yolo: true` in config or `--yolo` on the CLI disables the agent's own permission checks (e.g. Claude's `--dangerously-skip-permissions`). The OS sandbox remains fully active. Yolo mode does not weaken the sandbox; it only removes the agent's interactive approval prompts.
+
+Use `--no-yolo` to override config-based yolo and restore agent permission checks.
+
 ## Disabling Sandbox
 
 Set `sandbox: false` in your config to disable sandboxing entirely for that context. The agent runs with full filesystem and network access, subject only to OS-level user permissions.

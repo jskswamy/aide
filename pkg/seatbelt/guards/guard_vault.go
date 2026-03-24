@@ -15,11 +15,11 @@ func (g *vaultGuard) Name() string        { return "vault" }
 func (g *vaultGuard) Type() string        { return "default" }
 func (g *vaultGuard) Description() string { return "Blocks access to Vault token" }
 
-func (g *vaultGuard) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (g *vaultGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	tokenPath := EnvOverridePath(ctx, "VAULT_TOKEN_FILE", ".vault-token")
 
 	var rules []seatbelt.Rule
-	rules = append(rules, seatbelt.SectionRestrict("Vault credentials"))
+	rules = append(rules, seatbelt.SectionDeny("Vault credentials"))
 	rules = append(rules, DenyFile(tokenPath)...)
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }

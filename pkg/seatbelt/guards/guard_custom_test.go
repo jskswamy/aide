@@ -28,7 +28,7 @@ func TestGuard_Custom_Basic(t *testing.T) {
 
 	ctx := &seatbelt.Context{HomeDir: "/home/user"}
 	rules := g.Rules(ctx)
-	output := renderTestRules(rules)
+	output := renderTestRules(rules.Rules)
 
 	if !strings.Contains(output, `(deny file-read-data`) {
 		t.Error("expected deny file-read-data rule")
@@ -56,7 +56,7 @@ func TestGuard_Custom_EnvOverride(t *testing.T) {
 		Env:     []string{"MY_TOOL_CONFIG=/custom/override/path"},
 	}
 	rules := g.Rules(ctx)
-	output := renderTestRules(rules)
+	output := renderTestRules(rules.Rules)
 
 	if !strings.Contains(output, `/custom/override/path`) {
 		t.Error("expected env override path /custom/override/path in rules")
@@ -77,7 +77,7 @@ func TestGuard_Custom_AllowedPaths(t *testing.T) {
 
 	ctx := &seatbelt.Context{HomeDir: "/home/user"}
 	rules := g.Rules(ctx)
-	output := renderTestRules(rules)
+	output := renderTestRules(rules.Rules)
 
 	// Deny rule for the directory.
 	if !strings.Contains(output, `(subpath "/home/user/.secrets-dir")`) {

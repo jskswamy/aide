@@ -27,7 +27,7 @@ func TestGuard_Browsers_DarwinPaths(t *testing.T) {
 		HomeDir: "/Users/testuser",
 		GOOS:    "darwin",
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	darwinPaths := []string{
 		"Google/Chrome",
@@ -64,7 +64,7 @@ func TestGuard_Browsers_LinuxPaths(t *testing.T) {
 		HomeDir: "/home/testuser",
 		GOOS:    "linux",
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	linuxPaths := []string{
 		"google-chrome",

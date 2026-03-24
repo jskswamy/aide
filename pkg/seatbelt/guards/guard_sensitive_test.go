@@ -26,7 +26,7 @@ func TestGuard_Docker_Metadata(t *testing.T) {
 func TestGuard_Docker_DefaultPath(t *testing.T) {
 	g := guards.DockerGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.docker/config.json") {
 		t.Error("expected ~/.docker/config.json in output")
@@ -39,7 +39,7 @@ func TestGuard_Docker_EnvOverride(t *testing.T) {
 		HomeDir: "/home/testuser",
 		Env:     []string{"DOCKER_CONFIG=/custom/docker"},
 	}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/custom/docker/config.json") {
 		t.Error("expected DOCKER_CONFIG override path /custom/docker/config.json in output")
@@ -64,7 +64,7 @@ func TestGuard_GithubCLI_Metadata(t *testing.T) {
 func TestGuard_GithubCLI_Path(t *testing.T) {
 	g := guards.GithubCLIGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.config/gh") {
 		t.Error("expected ~/.config/gh in output")
@@ -86,7 +86,7 @@ func TestGuard_NPM_Metadata(t *testing.T) {
 func TestGuard_NPM_Paths(t *testing.T) {
 	g := guards.NPMGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	for _, want := range []string{
 		"/home/testuser/.npmrc",
@@ -113,7 +113,7 @@ func TestGuard_Netrc_Metadata(t *testing.T) {
 func TestGuard_Netrc_Path(t *testing.T) {
 	g := guards.NetrcGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.netrc") {
 		t.Error("expected ~/.netrc in output")
@@ -135,7 +135,7 @@ func TestGuard_Vercel_Metadata(t *testing.T) {
 func TestGuard_Vercel_Path(t *testing.T) {
 	g := guards.VercelGuard()
 	ctx := &seatbelt.Context{HomeDir: "/home/testuser"}
-	output := renderTestRules(g.Rules(ctx))
+	output := renderTestRules(g.Rules(ctx).Rules)
 
 	if !strings.Contains(output, "/home/testuser/.config/vercel") {
 		t.Error("expected ~/.config/vercel in output")

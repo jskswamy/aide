@@ -696,6 +696,86 @@ func TestResolve_PreferencesDefaults(t *testing.T) {
 	}
 }
 
+func TestResolve_MinimalConfig_YoloPassedThrough(t *testing.T) {
+	tr := true
+	cfg := &config.Config{
+		Agent: "claude",
+		Yolo:  &tr,
+	}
+
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Context.Yolo == nil || !*rc.Context.Yolo {
+		t.Errorf("expected Yolo=true in resolved context, got %v", rc.Context.Yolo)
+	}
+}
+
+func TestResolve_MinimalConfig_YoloNilByDefault(t *testing.T) {
+	cfg := &config.Config{
+		Agent: "claude",
+	}
+
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Context.Yolo != nil {
+		t.Errorf("expected Yolo=nil in resolved context, got %v", rc.Context.Yolo)
+	}
+}
+
+func TestResolve_ProjectOverrideYolo(t *testing.T) {
+	f := false
+	tr := true
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "claude",
+				Yolo:  &tr,
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Yolo: &f,
+		},
+	}
+
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Context.Yolo == nil || *rc.Context.Yolo {
+		t.Errorf("expected Yolo=false from project override, got %v", rc.Context.Yolo)
+	}
+}
+
+func TestResolve_ProjectOverrideYoloNil_PreservesContext(t *testing.T) {
+	tr := true
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "claude",
+				Yolo:  &tr,
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Agent: "codex",
+			// Yolo not set
+		},
+	}
+
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Context.Yolo == nil || !*rc.Context.Yolo {
+		t.Errorf("expected Yolo=true preserved from context, got %v", rc.Context.Yolo)
+	}
+}
+
 func TestResolve_ProjectOverrideReplacesSecret(t *testing.T) {
 	cfg := &config.Config{
 		Contexts: map[string]config.Context{

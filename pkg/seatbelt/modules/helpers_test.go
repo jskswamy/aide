@@ -100,8 +100,8 @@ func TestConfigDirRules_Single(t *testing.T) {
 	if !strings.Contains(got, want) {
 		t.Errorf("expected grant rule containing %q, got %q", want, got)
 	}
-	if rules[1].Intent() != seatbelt.Grant {
-		t.Errorf("expected Grant intent, got %d", rules[1].Intent())
+	if rules[1].Intent() != seatbelt.Allow {
+		t.Errorf("expected Allow intent, got %d", rules[1].Intent())
 	}
 }
 

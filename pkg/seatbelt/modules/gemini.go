@@ -13,10 +13,10 @@ func GeminiAgent() seatbelt.Module { return &geminiAgentModule{} }
 
 func (m *geminiAgentModule) Name() string { return "Gemini Agent" }
 
-func (m *geminiAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (m *geminiAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	dirs := resolveConfigDirs(ctx, "GEMINI_HOME", []string{
 		filepath.Join(ctx.HomeDir, ".gemini"),
 		filepath.Join(ctx.HomeDir, ".config", "gemini"),
 	})
-	return configDirRules("Gemini", dirs)
+	return seatbelt.GuardResult{Rules: configDirRules("Gemini", dirs)}
 }

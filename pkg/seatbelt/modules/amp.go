@@ -13,10 +13,10 @@ func AmpAgent() seatbelt.Module { return &ampAgentModule{} }
 
 func (m *ampAgentModule) Name() string { return "Amp Agent" }
 
-func (m *ampAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (m *ampAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	dirs := resolveConfigDirs(ctx, "AMP_HOME", []string{
 		filepath.Join(ctx.HomeDir, ".amp"),
 		filepath.Join(ctx.HomeDir, ".config", "amp"),
 	})
-	return configDirRules("Amp", dirs)
+	return seatbelt.GuardResult{Rules: configDirRules("Amp", dirs)}
 }

@@ -18,11 +18,11 @@ func ClaudeAgent() seatbelt.Module { return &claudeAgentModule{} }
 
 func (m *claudeAgentModule) Name() string { return "Claude Agent" }
 
-func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
+func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
 	// Config directories respect CLAUDE_CONFIG_DIR env var override.
-	// When set, only the override path is granted. When unset, all defaults.
+	// When set, only the override path is allowed. When unset, all defaults.
 	configDirs := resolveConfigDirs(ctx, "CLAUDE_CONFIG_DIR", []string{
 		filepath.Join(home, ".claude"),
 		filepath.Join(home, ".config", "claude"),
@@ -33,8 +33,8 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 
 	// Runtime data paths: always present regardless of CLAUDE_CONFIG_DIR.
 	rules = append(rules,
-		seatbelt.SectionGrant("Claude user data"),
-		seatbelt.GrantRule(`(allow file-read* file-write*
+		seatbelt.SectionAllow("Claude user data"),
+		seatbelt.AllowRule(`(allow file-read* file-write*
     `+seatbelt.HomePrefix(home, ".local/bin/claude")+`
     `+seatbelt.HomeSubpath(home, ".cache/claude")+`
     `+seatbelt.HomePrefix(home, ".claude.json")+`
@@ -45,8 +45,8 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 
 		// Claude managed configuration (read-only)
-		seatbelt.SectionGrant("Claude managed configuration"),
-		seatbelt.GrantRule(`(allow file-read*
+		seatbelt.SectionAllow("Claude managed configuration"),
+		seatbelt.AllowRule(`(allow file-read*
     `+seatbelt.HomePrefix(home, ".claude.json.")+`
     `+seatbelt.HomeLiteral(home, "Library/Application Support/Claude/claude_desktop_config.json")+`
     (subpath "/Library/Application Support/ClaudeCode/.claude")
@@ -56,5 +56,5 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) []seatbelt.Rule {
 )`),
 	)
 
-	return rules
+	return seatbelt.GuardResult{Rules: rules}
 }

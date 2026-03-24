@@ -23,8 +23,8 @@ func TestClaudeAgent_EnvOverride(t *testing.T) {
 		HomeDir: "/home/user",
 		Env:     []string{"CLAUDE_CONFIG_DIR=/custom/claude"},
 	}
-	rules := ClaudeAgent().Rules(ctx)
-	got := rulesToString(rules)
+	result := ClaudeAgent().Rules(ctx)
+	got := rulesToString(result.Rules)
 
 	// Config dir rules should reference /custom/claude only.
 	if !strings.Contains(got, `/custom/claude`) {
@@ -43,8 +43,8 @@ func TestClaudeAgent_DefaultConfigDirs(t *testing.T) {
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/user",
 	}
-	rules := ClaudeAgent().Rules(ctx)
-	got := rulesToString(rules)
+	result := ClaudeAgent().Rules(ctx)
+	got := rulesToString(result.Rules)
 
 	// Default config dirs (affected by CLAUDE_CONFIG_DIR).
 	configDirs := []string{
@@ -65,8 +65,8 @@ func TestClaudeAgent_NonConfigPathsAlwaysPresent(t *testing.T) {
 		HomeDir: "/home/user",
 		Env:     []string{"CLAUDE_CONFIG_DIR=/custom/claude"},
 	}
-	rules := ClaudeAgent().Rules(ctx)
-	got := rulesToString(rules)
+	result := ClaudeAgent().Rules(ctx)
+	got := rulesToString(result.Rules)
 
 	// Non-config paths that should always be present (runtime data + managed config).
 	nonConfig := []string{

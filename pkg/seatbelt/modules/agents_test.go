@@ -123,8 +123,8 @@ func TestAgentModules(t *testing.T) {
 				HomeDir: "/home/user",
 				Env:     tt.env,
 			}
-			rules := tt.module.Rules(ctx)
-			got := rulesToString(rules)
+			result := tt.module.Rules(ctx)
+			got := rulesToString(result.Rules)
 
 			for _, s := range tt.wantContain {
 				if !strings.Contains(got, s) {

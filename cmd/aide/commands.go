@@ -14,6 +14,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
@@ -36,6 +37,8 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(envCmd())
 	rootCmd.AddCommand(setupCmd())
 	rootCmd.AddCommand(sandboxCmd())
+	rootCmd.AddCommand(capCmd())
+	rootCmd.AddCommand(statusCmd())
 }
 
 func initCmd() *cobra.Command {
@@ -3545,3 +3548,919 @@ func sandboxTypesCmd() *cobra.Command {
 		},
 	}
 }
+
+func statusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "status",
+		Short:        "Show detailed view of current context and capabilities",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			remoteURL := aidectx.DetectRemote(cwd, "origin")
+			resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
+			if err != nil {
+				return err
+			}
+
+			// Resolve agent path
+			agentName := resolved.Context.Agent
+			agentPath, lookErr := exec.LookPath(agentName)
+			if lookErr != nil {
+				agentPath = "(not found)"
+			}
+
+			// Resolve secret key count
+			secretName := resolved.Context.Secret
+			var secretKeyCount int
+			if secretName != "" {
+				filePath := config.ResolveSecretPath(secretName)
+				identity, idErr := secrets.DiscoverAgeKey()
+				if idErr == nil {
+					if data, decErr := secrets.DecryptSecretsFile(filePath, identity); decErr == nil {
+						secretKeyCount = len(data)
+					}
+				}
+			}
+
+			// Build capability registry and resolve capabilities
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+
+			capNames := resolved.Context.Capabilities
+			var capSet *capability.Set
+			if len(capNames) > 0 {
+				capSet, err = capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
+				if err != nil {
+					return fmt.Errorf("resolving capabilities: %w", err)
+				}
+			}
+
+			// Resolve sandbox policy for rule count
+			sandboxPolicy, sandboxDisabled, _ := sandbox.ResolveSandboxRef(
+				resolved.Context.Sandbox, cfg.Sandboxes,
+			)
+			var guardCount int
+			if !sandboxDisabled {
+				homeDir, _ := os.UserHomeDir()
+				tempDir := os.TempDir()
+				pol, _, _ := sandbox.PolicyFromConfig(sandboxPolicy, cwd, "", homeDir, tempDir)
+				if pol != nil {
+					guardCount = len(pol.Guards)
+				}
+			}
+
+			// Determine network mode
+			networkMode := "outbound only (all ports)"
+			if sandboxPolicy != nil && sandboxPolicy.Network != nil {
+				mode := sandboxPolicy.Network.Mode
+				switch mode {
+				case "none":
+					networkMode = "none"
+				case "unrestricted":
+					networkMode = "unrestricted"
+				default:
+					networkMode = "outbound only"
+				}
+				if len(sandboxPolicy.Network.AllowPorts) > 0 {
+					ports := make([]string, len(sandboxPolicy.Network.AllowPorts))
+					for i, p := range sandboxPolicy.Network.AllowPorts {
+						ports[i] = strconv.Itoa(p)
+					}
+					networkMode += " (ports " + strings.Join(ports, ", ") + ")"
+				} else if mode == "" || mode == "outbound" {
+					networkMode += " (all ports)"
+				}
+			}
+
+			// Determine auto-approve
+			autoApprove := resolved.Context.Yolo != nil && *resolved.Context.Yolo
+
+			// Print formatted output
+			line := strings.Repeat("\u2500", 40)
+			fmt.Fprintln(out, line)
+
+			fmt.Fprintf(out, "Context:      %s\n", resolved.Name)
+			fmt.Fprintf(out, "Agent:        %s \u2192 %s\n", agentName, agentPath)
+			fmt.Fprintf(out, "Matched:      %s\n", resolved.MatchReason)
+
+			if secretName != "" {
+				if secretKeyCount > 0 {
+					fmt.Fprintf(out, "Secret:       %s (%d keys)\n", secretName, secretKeyCount)
+				} else {
+					fmt.Fprintf(out, "Secret:       %s\n", secretName)
+				}
+			}
+
+			// Capabilities section
+			if capSet != nil && len(capSet.Capabilities) > 0 {
+				fmt.Fprintln(out)
+				fmt.Fprintln(out, "Capabilities:")
+				for _, cap := range capSet.Capabilities {
+					// Show name with inheritance chain
+					label := cap.Name
+					if len(cap.Sources) > 1 {
+						label += " (extends " + strings.Join(cap.Sources[1:], ", ") + ")"
+					}
+					fmt.Fprintf(out, "  %s\n", label)
+
+					if len(cap.Readable) > 0 {
+						fmt.Fprintf(out, "    readable:  %s\n", strings.Join(cap.Readable, ", "))
+					}
+					if len(cap.Writable) > 0 {
+						fmt.Fprintf(out, "    writable:  %s\n", strings.Join(cap.Writable, ", "))
+					}
+					if len(cap.Deny) > 0 {
+						fmt.Fprintf(out, "    deny:      %s\n", strings.Join(cap.Deny, ", "))
+					}
+					if len(cap.EnvAllow) > 0 {
+						fmt.Fprintf(out, "    env:       %s\n", strings.Join(cap.EnvAllow, ", "))
+					}
+					fmt.Fprintf(out, "    source:    context config\n")
+					fmt.Fprintln(out)
+				}
+			}
+
+			// Never-allow section
+			neverAllow := cfg.NeverAllow
+			if capSet != nil {
+				neverAllow = capSet.NeverAllow
+			}
+			if len(neverAllow) > 0 {
+				fmt.Fprintln(out, "Never-allow:")
+				for _, path := range neverAllow {
+					fmt.Fprintf(out, "  %s\n", path)
+				}
+			}
+
+			// Credential warnings
+			if capSet != nil && len(capSet.Capabilities) > 0 {
+				var allEnvAllow []string
+				for _, cap := range capSet.Capabilities {
+					allEnvAllow = append(allEnvAllow, cap.EnvAllow...)
+				}
+				credWarnings := capability.CredentialWarnings(allEnvAllow)
+				if len(credWarnings) > 0 {
+					fmt.Fprintln(out)
+					fmt.Fprintln(out, "Credentials exposed:")
+					for _, w := range credWarnings {
+						fmt.Fprintf(out, "  \u26a0 %s\n", w)
+					}
+				}
+
+				compWarnings := capability.CompositionWarnings(capSet.Capabilities)
+				if len(compWarnings) > 0 {
+					fmt.Fprintln(out)
+					for _, w := range compWarnings {
+						fmt.Fprintf(out, "\u26a0 %s\n", w)
+					}
+				}
+			}
+
+			fmt.Fprintln(out)
+			fmt.Fprintf(out, "Network: %s\n", networkMode)
+			if sandboxDisabled {
+				fmt.Fprintln(out, "Sandbox: disabled")
+			} else {
+				fmt.Fprintf(out, "Sandbox: active (%d guards)\n", guardCount)
+			}
+			if autoApprove {
+				fmt.Fprintln(out, "Auto-approve: yes")
+			} else {
+				fmt.Fprintln(out, "Auto-approve: no")
+			}
+			fmt.Fprintln(out, line)
+
+			return nil
+		},
+	}
+}
+
+func capCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cap",
+		Short: "Manage capabilities",
+	}
+	cmd.AddCommand(capListCmd())
+	cmd.AddCommand(capShowCmd())
+	cmd.AddCommand(capCreateCmd())
+	cmd.AddCommand(capEditCmd())
+	cmd.AddCommand(capEnableCmd())
+	cmd.AddCommand(capDisableCmd())
+	cmd.AddCommand(capNeverAllowCmd())
+	cmd.AddCommand(capCheckCmd())
+	cmd.AddCommand(capAuditCmd())
+	cmd.AddCommand(capSuggestForPathCmd())
+	return cmd
+}
+
+func capListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "list",
+		Short:        "List all capabilities (built-in and user-defined)",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+			builtins := capability.Builtins()
+
+			// Collect and sort names
+			names := make([]string, 0, len(registry))
+			for name := range registry {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+
+			fmt.Fprintf(out, "%-20s %-12s %s\n", "NAME", "SOURCE", "DESCRIPTION")
+			for _, name := range names {
+				entry := registry[name]
+				source := "built-in"
+				if _, isBuiltin := builtins[name]; !isBuiltin {
+					switch {
+					case entry.Extends != "":
+						source = "extends"
+					case len(entry.Combines) > 0:
+						source = "combines"
+					default:
+						source = "custom"
+					}
+				} else if _, isUser := userCaps[name]; isUser {
+					// User override of a built-in
+					source = "custom"
+				}
+				fmt.Fprintf(out, "%-20s %-12s %s\n", name, source, entry.Description)
+			}
+
+			return nil
+		},
+	}
+}
+
+func capShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:               "show <name>",
+		Short:             "Show detailed information about a capability",
+		Args:              cobra.ExactArgs(1),
+		SilenceUsage:      true,
+		ValidArgsFunction: capabilityCompletionFunc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			name := args[0]
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+
+			if _, ok := registry[name]; !ok {
+				return fmt.Errorf("unknown capability: %q", name)
+			}
+
+			resolved, err := capability.ResolveOne(name, registry)
+			if err != nil {
+				return fmt.Errorf("resolving capability: %w", err)
+			}
+
+			entry := registry[name]
+			fmt.Fprintf(out, "Name:        %s\n", name)
+			fmt.Fprintf(out, "Description: %s\n", entry.Description)
+
+			if len(resolved.Sources) > 1 {
+				fmt.Fprintf(out, "Sources:     %s\n", strings.Join(resolved.Sources, " -> "))
+			}
+
+			capShowSection(out, "Unguard", resolved.Unguard)
+			capShowSection(out, "Readable", resolved.Readable)
+			capShowSection(out, "Writable", resolved.Writable)
+			capShowSection(out, "Deny", resolved.Deny)
+			capShowSection(out, "EnvAllow", resolved.EnvAllow)
+
+			return nil
+		},
+	}
+}
+
+func capShowSection(out io.Writer, label string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "%-12s %s\n", label+":", strings.Join(items, ", "))
+}
+
+func capCreateCmd() *cobra.Command {
+	var extends string
+	var combines, readable, writable, deny, envAllow []string
+	var description string
+
+	cmd := &cobra.Command{
+		Use:          "create <name>",
+		Short:        "Create a new capability definition",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			name := args[0]
+
+			// Validate: name must not conflict with a built-in capability
+			builtins := capability.Builtins()
+			if _, isBuiltin := builtins[name]; isBuiltin {
+				return fmt.Errorf("capability %q is a built-in capability and cannot be overridden", name)
+			}
+
+			// Validate: --extends and --combines are mutually exclusive
+			if extends != "" && len(combines) > 0 {
+				return fmt.Errorf("--extends and --combines are mutually exclusive; use one or the other")
+			}
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				cfg = &config.Config{}
+			}
+			if cfg.Capabilities == nil {
+				cfg.Capabilities = make(map[string]config.CapabilityDef)
+			}
+
+			if _, exists := cfg.Capabilities[name]; exists {
+				return fmt.Errorf("capability %q already exists (use 'aide cap edit' to modify)", name)
+			}
+
+			// Build a lookup of all known capabilities (built-in + user-defined)
+			allKnown := make(map[string]bool, len(builtins)+len(cfg.Capabilities))
+			for k := range builtins {
+				allKnown[k] = true
+			}
+			for k := range cfg.Capabilities {
+				allKnown[k] = true
+			}
+
+			// Validate: referenced capabilities must exist
+			if extends != "" {
+				if !allKnown[extends] {
+					return fmt.Errorf("parent capability %q does not exist in built-in or user-defined registry", extends)
+				}
+			}
+			for _, c := range combines {
+				if !allKnown[c] {
+					return fmt.Errorf("combined capability %q does not exist in built-in or user-defined registry", c)
+				}
+			}
+
+			capDef := config.CapabilityDef{
+				Extends:     extends,
+				Combines:    combines,
+				Description: description,
+				Readable:    readable,
+				Writable:    writable,
+				Deny:        deny,
+				EnvAllow:    envAllow,
+			}
+
+			cfg.Capabilities[name] = capDef
+
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+
+			fmt.Fprintf(out, "Created capability %q\n", name)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&extends, "extends", "", "Parent capability to extend")
+	cmd.Flags().StringSliceVar(&combines, "combines", nil, "Capabilities to combine")
+	cmd.Flags().StringSliceVar(&readable, "readable", nil, "Readable paths")
+	cmd.Flags().StringSliceVar(&writable, "writable", nil, "Writable paths")
+	cmd.Flags().StringSliceVar(&deny, "deny", nil, "Denied paths")
+	cmd.Flags().StringSliceVar(&envAllow, "env-allow", nil, "Environment variables to pass through")
+	cmd.Flags().StringVar(&description, "description", "", "Human-readable description")
+
+	return cmd
+}
+
+func capEditCmd() *cobra.Command {
+	var addReadable, addWritable, addDeny, removeDeny, addEnvAllow, removeEnvAllow []string
+	var description string
+
+	cmd := &cobra.Command{
+		Use:          "edit <name>",
+		Short:        "Edit a user-defined capability",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			name := args[0]
+
+			// Must not be a built-in capability
+			builtins := capability.Builtins()
+			if _, isBuiltin := builtins[name]; isBuiltin {
+				return fmt.Errorf("capability %q is a built-in capability and cannot be edited", name)
+			}
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			if cfg.Capabilities == nil {
+				return fmt.Errorf("capability %q not found in user-defined capabilities", name)
+			}
+
+			capDef, exists := cfg.Capabilities[name]
+			if !exists {
+				return fmt.Errorf("capability %q not found in user-defined capabilities", name)
+			}
+
+			// Apply description change
+			if cmd.Flags().Changed("description") {
+				capDef.Description = description
+			}
+
+			// Apply additive changes
+			capDef.Readable = append(capDef.Readable, addReadable...)
+			capDef.Writable = append(capDef.Writable, addWritable...)
+			capDef.Deny = append(capDef.Deny, addDeny...)
+			capDef.EnvAllow = append(capDef.EnvAllow, addEnvAllow...)
+
+			// Apply removals
+			for _, r := range removeDeny {
+				capDef.Deny = removeFromSlice(capDef.Deny, r)
+			}
+			for _, r := range removeEnvAllow {
+				capDef.EnvAllow = removeFromSlice(capDef.EnvAllow, r)
+			}
+
+			cfg.Capabilities[name] = capDef
+
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+
+			fmt.Fprintf(out, "Updated capability %q\n", name)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringSliceVar(&addReadable, "add-readable", nil, "Readable paths to add")
+	cmd.Flags().StringSliceVar(&addWritable, "add-writable", nil, "Writable paths to add")
+	cmd.Flags().StringSliceVar(&addDeny, "add-deny", nil, "Denied paths to add")
+	cmd.Flags().StringSliceVar(&removeDeny, "remove-deny", nil, "Denied paths to remove")
+	cmd.Flags().StringSliceVar(&addEnvAllow, "add-env-allow", nil, "Environment variables to add")
+	cmd.Flags().StringSliceVar(&removeEnvAllow, "remove-env-allow", nil, "Environment variables to remove")
+	cmd.Flags().StringVar(&description, "description", "", "Update the description")
+
+	return cmd
+}
+
+func capEnableCmd() *cobra.Command {
+	var contextName string
+	cmd := &cobra.Command{
+		Use:               "enable <capability>",
+		Short:             "Enable a capability for the current context",
+		Args:              cobra.ExactArgs(1),
+		SilenceUsage:      true,
+		ValidArgsFunction: capabilityCompletionFunc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			capName := args[0]
+
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+
+			// Validate the capability exists (built-in or user-defined)
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+			if _, ok := registry[capName]; !ok {
+				return fmt.Errorf("unknown capability: %q", capName)
+			}
+
+			// Check if already enabled
+			for _, c := range ctx.Capabilities {
+				if c == capName {
+					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled for context %q\n", capName, ctxName)
+					return nil
+				}
+			}
+
+			ctx.Capabilities = append(ctx.Capabilities, capName)
+			cfg.Contexts[ctxName] = ctx
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled for context %q\n", capName, ctxName)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	return cmd
+}
+
+func capDisableCmd() *cobra.Command {
+	var contextName string
+	cmd := &cobra.Command{
+		Use:               "disable <capability>",
+		Short:             "Disable a capability for the current context",
+		Args:              cobra.ExactArgs(1),
+		SilenceUsage:      true,
+		ValidArgsFunction: capabilityCompletionFunc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			capName := args[0]
+
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+
+			// Check if the capability is in the list
+			found := false
+			for _, c := range ctx.Capabilities {
+				if c == capName {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capability %q is not enabled for context %q\n", capName, ctxName)
+				return nil
+			}
+
+			ctx.Capabilities = removeFromSlice(ctx.Capabilities, capName)
+			cfg.Contexts[ctxName] = ctx
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled for context %q\n", capName, ctxName)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	return cmd
+}
+
+func capNeverAllowCmd() *cobra.Command {
+	var envMode bool
+	var list bool
+	var remove bool
+
+	cmd := &cobra.Command{
+		Use:   "never-allow [path or env var]",
+		Short: "Manage global never-allow paths and environment variables",
+		Long: `Manage the global never_allow and never_allow_env lists.
+
+These entries are always denied regardless of capability configuration.
+
+Examples:
+  aide cap never-allow ~/.kube/prod-config            Add path to never_allow
+  aide cap never-allow --env VAULT_ROOT_TOKEN          Add env var to never_allow_env
+  aide cap never-allow --list                          Show all entries
+  aide cap never-allow --remove ~/.kube/prod-config    Remove a path
+  aide cap never-allow --remove --env VAULT_ROOT_TOKEN Remove an env var`,
+		SilenceUsage: true,
+		Args:         cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			// --list mode: show all entries
+			if list {
+				if len(cfg.NeverAllow) == 0 && len(cfg.NeverAllowEnv) == 0 {
+					fmt.Fprintln(out, "No never-allow entries configured.")
+					return nil
+				}
+				if len(cfg.NeverAllow) > 0 {
+					fmt.Fprintln(out, "never_allow paths:")
+					for _, p := range cfg.NeverAllow {
+						fmt.Fprintf(out, "  %s\n", p)
+					}
+				}
+				if len(cfg.NeverAllowEnv) > 0 {
+					fmt.Fprintln(out, "never_allow_env variables:")
+					for _, e := range cfg.NeverAllowEnv {
+						fmt.Fprintf(out, "  %s\n", e)
+					}
+				}
+				return nil
+			}
+
+			// All other modes require an argument
+			if len(args) == 0 {
+				return fmt.Errorf("a path or environment variable name is required (use --list to show entries)")
+			}
+			entry := args[0]
+
+			if remove {
+				// --remove mode
+				if envMode {
+					before := len(cfg.NeverAllowEnv)
+					cfg.NeverAllowEnv = removeFromSlice(cfg.NeverAllowEnv, entry)
+					if len(cfg.NeverAllowEnv) == before {
+						return fmt.Errorf("env var %q not found in never_allow_env", entry)
+					}
+				} else {
+					before := len(cfg.NeverAllow)
+					cfg.NeverAllow = removeFromSlice(cfg.NeverAllow, entry)
+					if len(cfg.NeverAllow) == before {
+						return fmt.Errorf("path %q not found in never_allow", entry)
+					}
+				}
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				if envMode {
+					fmt.Fprintf(out, "Removed env var %q from never_allow_env\n", entry)
+				} else {
+					fmt.Fprintf(out, "Removed path %q from never_allow\n", entry)
+				}
+				return nil
+			}
+
+			// Add mode (default)
+			if envMode {
+				for _, e := range cfg.NeverAllowEnv {
+					if e == entry {
+						return fmt.Errorf("env var %q is already in never_allow_env", entry)
+					}
+				}
+				cfg.NeverAllowEnv = append(cfg.NeverAllowEnv, entry)
+			} else {
+				for _, p := range cfg.NeverAllow {
+					if p == entry {
+						return fmt.Errorf("path %q is already in never_allow", entry)
+					}
+				}
+				cfg.NeverAllow = append(cfg.NeverAllow, entry)
+			}
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+			if envMode {
+				fmt.Fprintf(out, "Added env var %q to never_allow_env\n", entry)
+			} else {
+				fmt.Fprintf(out, "Added path %q to never_allow\n", entry)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&envMode, "env", false, "Operate on environment variables instead of paths")
+	cmd.Flags().BoolVar(&list, "list", false, "List all never-allow entries")
+	cmd.Flags().BoolVar(&remove, "remove", false, "Remove an entry instead of adding")
+
+	return cmd
+}
+
+func capCheckCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "check <name> [name...]",
+		Short: "Preview merged sandbox overrides for given capabilities",
+		Long: `Resolve one or more capabilities and display the merged sandbox overrides
+that would be applied, along with any credential or composition warnings.
+This is a preview — nothing is launched or modified.`,
+		Args:              cobra.MinimumNArgs(1),
+		SilenceUsage:      true,
+		ValidArgsFunction: capabilityCompletionFunc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				// Allow check to work even without config (built-ins only)
+				cfg = &config.Config{}
+			}
+
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+
+			set, err := capability.ResolveAll(args, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
+			if err != nil {
+				return err
+			}
+
+			printCapabilityReport(out, set)
+			return nil
+		},
+	}
+}
+
+func capAuditCmd() *cobra.Command {
+	var contextName string
+	cmd := &cobra.Command{
+		Use:          "audit",
+		Short:        "Show resolved capabilities for the current context",
+		Long:         `Reads the active context's capabilities and displays the merged sandbox overrides and any warnings.`,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+
+			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if err != nil {
+				return err
+			}
+
+			if len(ctx.Capabilities) == 0 {
+				fmt.Fprintf(out, "Context %q has no capabilities enabled.\n", ctxName)
+				return nil
+			}
+
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+
+			set, err := capability.ResolveAll(ctx.Capabilities, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(out, "Context: %s\n\n", ctxName)
+			printCapabilityReport(out, set)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	return cmd
+}
+
+func capSuggestForPathCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "suggest-for-path <path>",
+		Short:        "Suggest capabilities that would grant access to a path",
+		Long:         `Outputs capability names (one per line) that would grant access to the given path. Designed for machine consumption by plugin hooks.`,
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			targetPath := args[0]
+
+			// Expand ~ in the target path
+			if strings.HasPrefix(targetPath, "~/") {
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return fmt.Errorf("getting home directory: %w", err)
+				}
+				targetPath = filepath.Join(home, targetPath[2:])
+			}
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				// Allow suggest to work even without config (built-ins only)
+				cfg = &config.Config{}
+			}
+
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+
+			suggestions := capability.SuggestForPath(targetPath, registry)
+			sort.Strings(suggestions)
+			for _, name := range suggestions {
+				fmt.Fprintln(out, name)
+			}
+			return nil
+		},
+	}
+}
+
+// printCapabilityReport displays the merged sandbox overrides and warnings for a CapabilitySet.
+func printCapabilityReport(out io.Writer, set *capability.Set) {
+	overrides := set.ToSandboxOverrides()
+
+	// Show per-capability sources
+	fmt.Fprintln(out, "Capabilities:")
+	for _, cap := range set.Capabilities {
+		if len(cap.Sources) > 1 {
+			fmt.Fprintf(out, "  %s (via %s)\n", cap.Name, strings.Join(cap.Sources[1:], " -> "))
+		} else {
+			fmt.Fprintf(out, "  %s\n", cap.Name)
+		}
+	}
+	fmt.Fprintln(out)
+
+	// Show merged overrides
+	fmt.Fprintln(out, "Merged sandbox overrides:")
+	capReportSection(out, "Unguard", overrides.Unguard)
+	capReportSection(out, "Readable", overrides.ReadableExtra)
+	capReportSection(out, "Writable", overrides.WritableExtra)
+	capReportSection(out, "Denied", overrides.DeniedExtra)
+	capReportSection(out, "EnvAllow", overrides.EnvAllow)
+
+	if len(overrides.Unguard) == 0 && len(overrides.ReadableExtra) == 0 &&
+		len(overrides.WritableExtra) == 0 && len(overrides.DeniedExtra) == 0 &&
+		len(overrides.EnvAllow) == 0 {
+		fmt.Fprintln(out, "  (none)")
+	}
+
+	// Show warnings
+	credWarnings := capability.CredentialWarnings(overrides.EnvAllow)
+	compWarnings := capability.CompositionWarnings(set.Capabilities)
+
+	if len(credWarnings) > 0 || len(compWarnings) > 0 {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Warnings:")
+		for _, env := range credWarnings {
+			fmt.Fprintf(out, "  [credential] %s is a known credential-bearing env var\n", env)
+		}
+		for _, w := range compWarnings {
+			fmt.Fprintf(out, "  [composition] %s\n", w)
+		}
+	}
+}
+
+func capReportSection(out io.Writer, label string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "  %-12s %s\n", label+":", strings.Join(items, ", "))
+}
+
+// capabilityNamesForCompletion returns a sorted list of all capability names
+// (built-in + user-defined from config) for shell tab completion.
+func capabilityNamesForCompletion() []string {
+	builtins := capability.Builtins()
+	names := make([]string, 0, len(builtins))
+	for name := range builtins {
+		names = append(names, name)
+	}
+
+	// Try to load config for user-defined capabilities.
+	cwd, err := os.Getwd()
+	if err == nil {
+		if cfg, err := config.Load(config.Dir(), cwd); err == nil {
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			for name := range userCaps {
+				// Only add if not already present from builtins.
+				if _, exists := builtins[name]; !exists {
+					names = append(names, name)
+				}
+			}
+		}
+	}
+
+	sort.Strings(names)
+	return names
+}
+
+// capabilityCompletionFunc is a cobra completion function that returns all
+// available capability names.
+func capabilityCompletionFunc(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return capabilityNamesForCompletion(), cobra.ShellCompDirectiveNoFileComp
+}
+

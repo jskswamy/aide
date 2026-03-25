@@ -9,6 +9,7 @@ import (
 
 type shellHistoryGuard struct{}
 
+// ShellHistoryGuard returns a Guard that denies access to shell and REPL history files.
 func ShellHistoryGuard() seatbelt.Guard { return &shellHistoryGuard{} }
 
 func (g *shellHistoryGuard) Name() string { return "shell-history" }

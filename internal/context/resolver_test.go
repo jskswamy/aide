@@ -798,3 +798,32 @@ func TestResolve_ProjectOverrideReplacesSecret(t *testing.T) {
 		t.Errorf("expected secret 'project', got %q", rc.Context.Secret)
 	}
 }
+
+func TestResolve_ProjectOverrideCapabilities(t *testing.T) {
+	cwd := t.TempDir()
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent:        "claude",
+				Capabilities: []string{"docker"},
+				Match:        []config.MatchRule{{Path: cwd}},
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Capabilities: []string{"k8s", "aws"},
+		},
+	}
+	rc, err := Resolve(cfg, cwd, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Project override replaces context capabilities
+	if len(rc.Context.Capabilities) != 2 {
+		t.Errorf("expected 2 capabilities from project override, got %d: %v",
+			len(rc.Context.Capabilities), rc.Context.Capabilities)
+	}
+	if rc.Context.Capabilities[0] != "k8s" || rc.Context.Capabilities[1] != "aws" {
+		t.Errorf("expected capabilities [k8s aws], got %v", rc.Context.Capabilities)
+	}
+}

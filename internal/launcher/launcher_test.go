@@ -112,7 +112,7 @@ env:
 		ConfigDir: configDir,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -166,7 +166,7 @@ env:
 		ConfigDir: configDir,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -199,7 +199,7 @@ agent: /usr/local/bin/my-agent
 	}
 
 	extraArgs := []string{"--verbose", "--model", "opus"}
-	if err := l.Launch(cwd, "", extraArgs, false, false); err != nil {
+	if err := l.Launch(cwd, "", extraArgs, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -236,7 +236,7 @@ env:
 		ConfigDir: configDir,
 	}
 
-	if err := l.Launch(cwd, "", nil, true, false); err != nil {
+	if err := l.Launch(cwd, "", nil, true, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -280,7 +280,7 @@ default_context: default
 	}
 
 	// Override to codex.
-	if err := l.Launch(cwd, "codex", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "codex", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -312,7 +312,7 @@ contexts:
 		ConfigDir: configDir,
 	}
 
-	err := l.Launch(cwd, "", nil, false, false)
+	err := l.Launch(cwd, "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error when no context matches, got nil")
 	}
@@ -348,7 +348,7 @@ secret: /nonexistent/secrets.enc.yaml
 		ConfigDir: configDir,
 	}
 
-	err := l.Launch(cwd, "", nil, false, false)
+	err := l.Launch(cwd, "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error from secrets decryption, got nil")
 	}
@@ -441,7 +441,7 @@ env:
 		ConfigDir: configDir,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -478,7 +478,7 @@ env:
 		},
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -506,7 +506,7 @@ agent: nonexistent-agent
 		},
 	}
 
-	err := l.Launch(cwd, "", nil, false, false)
+	err := l.Launch(cwd, "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error when agent not on PATH, got nil")
 	}
@@ -537,7 +537,7 @@ agent: /usr/local/bin/my-agent
 		},
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -612,7 +612,7 @@ agent: claude
 		Yolo: true,
 	}
 
-	if err := l.Launch(cwd, "", []string{"--model", "opus"}, false, false); err != nil {
+	if err := l.Launch(cwd, "", []string{"--model", "opus"}, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -650,7 +650,7 @@ agent: claude
 		},
 	}
 
-	err := l.Launch(cwd, "vim", nil, false, false)
+	err := l.Launch(cwd, "vim", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown agent override, got nil")
 	}
@@ -688,7 +688,7 @@ default_context: default
 		},
 	}
 
-	err := l.Launch(cwd, "codex", nil, false, false)
+	err := l.Launch(cwd, "codex", nil, false, false, nil, nil)
 	if err != nil {
 		t.Fatalf("Launch with known agent override failed: %v", err)
 	}
@@ -716,7 +716,7 @@ env:
 		ConfigDir: configDir,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -752,7 +752,7 @@ sandbox:
 		ConfigDir: configDir,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -785,7 +785,7 @@ env:
 		ConfigDir: configDir,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -810,7 +810,7 @@ agent: vim
 		Yolo:      true,
 	}
 
-	err := l.Launch(cwd, "", nil, false, false)
+	err := l.Launch(cwd, "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported yolo agent, got nil")
 	}
@@ -831,7 +831,7 @@ func TestLaunch_BannerPrintsToStderr(t *testing.T) {
 		ConfigDir: configDir,
 		Stderr:    &stderrBuf,
 	}
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 	if stderrBuf.Len() == 0 {
@@ -854,7 +854,7 @@ func TestLaunch_ShowInfoFalse(t *testing.T) {
 		ConfigDir: configDir,
 		Stderr:    &stderrBuf,
 	}
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 	if stderrBuf.Len() != 0 {
@@ -885,7 +885,7 @@ yolo: true
 		Stderr: &stderrBuf,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -899,8 +899,8 @@ yolo: true
 	if !found {
 		t.Errorf("expected --dangerously-skip-permissions in args, got %v", innerArgs)
 	}
-	if !strings.Contains(stderrBuf.String(), "yolo mode enabled") {
-		t.Errorf("expected yolo warning in stderr, got: %s", stderrBuf.String())
+	if !strings.Contains(stderrBuf.String(), "AUTO-APPROVE") {
+		t.Errorf("expected AUTO-APPROVE in banner, got: %s", stderrBuf.String())
 	}
 }
 
@@ -928,7 +928,7 @@ yolo: true
 		Stderr: &stderrBuf,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -965,7 +965,7 @@ agent: claude
 		NoYolo: true,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -1060,16 +1060,16 @@ yolo: true
 		Stderr: &stderrBuf,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
 	out := stderrBuf.String()
-	if !strings.Contains(out, "permission checks are disabled") {
-		t.Errorf("expected permission warning, got: %s", out)
+	if !strings.Contains(out, "AUTO-APPROVE") {
+		t.Errorf("expected AUTO-APPROVE in banner, got: %s", out)
 	}
-	if !strings.Contains(out, "sandbox") {
-		t.Errorf("expected sandbox note, got: %s", out)
+	if !strings.Contains(out, "without confirmation") {
+		t.Errorf("expected 'without confirmation' in auto-approve banner, got: %s", out)
 	}
 }
 
@@ -1088,7 +1088,7 @@ yolo: true
 		ConfigDir: configDir,
 	}
 
-	err := l.Launch(cwd, "", nil, false, false)
+	err := l.Launch(cwd, "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported yolo agent")
 	}
@@ -1126,7 +1126,7 @@ default_context: work
 		Stderr: &stderrBuf,
 	}
 
-	if err := l.Launch(cwd, "", nil, false, false); err != nil {
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 
@@ -1140,8 +1140,8 @@ default_context: work
 	if !found {
 		t.Errorf("expected yolo flag from context config, got %v", innerArgs)
 	}
-	if !strings.Contains(stderrBuf.String(), "context config") {
-		t.Errorf("expected 'context config' source in warning, got: %s", stderrBuf.String())
+	if !strings.Contains(stderrBuf.String(), "AUTO-APPROVE") {
+		t.Errorf("expected AUTO-APPROVE in banner for context-level yolo, got: %s", stderrBuf.String())
 	}
 }
 
@@ -1157,7 +1157,7 @@ func TestLaunch_ResolveFlagOverridesShowInfoFalse(t *testing.T) {
 		ConfigDir: configDir,
 		Stderr:    &stderrBuf,
 	}
-	if err := l.Launch(cwd, "", nil, false, true); err != nil {
+	if err := l.Launch(cwd, "", nil, false, true, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
 	if stderrBuf.Len() == 0 {

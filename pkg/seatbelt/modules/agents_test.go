@@ -111,6 +111,51 @@ func TestAgentModules(t *testing.T) {
 				"/home/user/.config/gemini",
 			},
 		},
+		{
+			name:     "Copilot defaults",
+			module:   CopilotAgent(),
+			wantName: "Copilot Agent",
+			wantContain: []string{
+				"/home/user/.copilot",
+				"/home/user/.config/.copilot",
+				"/home/user/.config/copilot",
+				"/home/user/.local/state/.copilot",
+				"/home/user/.local/state/copilot",
+			},
+		},
+		{
+			name:     "Copilot env override",
+			module:   CopilotAgent(),
+			wantName: "Copilot Agent",
+			env:      []string{"COPILOT_HOME=/custom/copilot"},
+			wantContain: []string{
+				"/custom/copilot",
+			},
+			wantAbsent: []string{
+				"/home/user/.copilot",
+				"/home/user/.config/.copilot",
+				"/home/user/.config/copilot",
+			},
+		},
+		{
+			name:     "Copilot XDG override",
+			module:   CopilotAgent(),
+			wantName: "Copilot Agent",
+			env:      []string{"XDG_CONFIG_HOME=/custom/xdg", "XDG_STATE_HOME=/custom/state"},
+			wantContain: []string{
+				"/home/user/.copilot",
+				"/custom/xdg/.copilot",
+				"/custom/xdg/copilot",
+				"/custom/state/.copilot",
+				"/custom/state/copilot",
+			},
+			wantAbsent: []string{
+				"/home/user/.config/.copilot",
+				"/home/user/.config/copilot",
+				"/home/user/.local/state/.copilot",
+				"/home/user/.local/state/copilot",
+			},
+		},
 	}
 
 	for _, tt := range tests {

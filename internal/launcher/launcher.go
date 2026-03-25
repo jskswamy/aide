@@ -33,9 +33,10 @@ func (s *SyscallExecer) Exec(binary string, args []string, env []string) error {
 
 // agentYoloFlags maps agent names to their "skip all permissions" flags.
 var agentYoloFlags = map[string]string{
-	"claude": "--dangerously-skip-permissions",
-	"codex":  "--full-auto",
-	"gemini": "--yolo",
+	"claude":  "--dangerously-skip-permissions",
+	"codex":   "--full-auto",
+	"gemini":  "--yolo",
+	"copilot": "--yolo",
 }
 
 // Launcher orchestrates the full agent launch flow.

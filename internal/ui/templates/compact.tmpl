@@ -1,0 +1,59 @@
+{{- boldGreen "🔧 aide" -}}
+{{- if .ContextName}} · {{.ContextName}}{{end}} ({{agentDisplay .}})
+{{- if .MatchReason}}
+   📁 {{.MatchReason}}
+{{- end}}
+{{- if .SecretName}}
+   🔐 secret: {{secretDisplay .}}
+{{- end}}
+{{- $lines := envLines . -}}
+{{- if $lines}}
+   📦 env: {{index $lines 0}}
+{{- range slice $lines 1}}
+          {{.}}
+{{- end}}
+{{- end}}
+{{- if sandboxDisabled .}}
+   🛡 sandbox: disabled
+{{- else if hasCapOrExtra .}}
+   🛡 sandbox: network {{networkLabel .}}
+{{- with sandboxPorts .}}
+   🛡 ports: {{.}}
+{{- end}}
+{{- range .Capabilities}}
+     {{boldGreen "✓"}} {{printf "%-10s" .Name}} {{truncate .Paths 3}}
+{{- if and .Source (ne .Source "context config")}}  {{dim (printf "← %s" .Source)}}{{end}}
+{{- end}}
+{{- if .ExtraWritable}}
+     {{yellow "⊕"}} writable:  {{truncate .ExtraWritable 3}}
+{{- end}}
+{{- if .ExtraReadable}}
+     {{yellow "⊕"}} readable:  {{truncate .ExtraReadable 3}}
+{{- end}}
+{{- if .ExtraDenied}}
+     {{red "⊘"}} denied:    {{truncate .ExtraDenied 3}}
+{{- end}}
+{{- range .DisabledCaps}}
+     {{dim "○"}} {{printf "%-10s" .Name}} disabled for this session  ← --without
+{{- end}}
+{{- range .NeverAllow}}
+     {{red "✗"}} denied    {{.}} (never-allow)
+{{- end}}
+{{- if .CredWarnings}}
+     {{yellow "⚠"}} credentials exposed: {{join .CredWarnings ", "}}
+{{- end}}
+{{- range .CompWarnings}}
+     {{yellow "⚠"}} {{.}}
+{{- end}}
+{{- else}}
+   🛡 sandbox: network {{networkLabel .}}, code-only
+{{- with sandboxPorts .}}
+   🛡 ports: {{.}}
+{{- end}}
+{{- end}}
+{{- range .Warnings}}
+     {{yellow "⚠"}} {{.}}
+{{- end}}
+{{- if .AutoApprove}}
+   {{red "⚡ AUTO-APPROVE — all agent actions execute without confirmation"}}
+{{- end}}

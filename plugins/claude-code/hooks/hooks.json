@@ -1,5 +1,5 @@
 {
-  "description": "aide plugin hooks — SessionStart diagnostic check",
+  "description": "aide plugin hooks — session diagnostics and sandbox error suggestions",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,17 @@
           {
             "type": "prompt",
             "prompt": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.md"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "${CLAUDE_PLUGIN_ROOT}/hooks/sandbox-error-suggest.md"
           }
         ]
       }

@@ -801,17 +801,20 @@ func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
 		}
 	}
 
-	// Should NOT contain a bare (subpath "$HOME") allow — only specific subdirectories.
+	// Should NOT contain a bare (subpath "$HOME") in file-read* or file-read-data
+	// rules. file-read-metadata on $HOME subpath is intentional (POSIX tools need
+	// lstat on parent directories).
 	homeDir, _ := os.UserHomeDir()
 	bareHomeSubpath := `(subpath "` + homeDir + `")`
 	lines := strings.Split(profile, "\n")
-	scanBlockContext(lines, func(_ int, line, blockType string, _ int) {
+	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
 		if strings.Contains(line, bareHomeSubpath) && blockType == "allow" {
-			// Check it's not inside a more specific context (like file-write for project)
-			// A bare subpath allow for $HOME would be too broad
-			if !strings.Contains(line, "file-write") {
-				t.Errorf("profile should NOT contain bare home subpath allow %s in read rules", bareHomeSubpath)
+			opener := lines[blockStart]
+			// file-write and file-read-metadata on $HOME subpath are intentional
+			if strings.Contains(opener, "file-write") || strings.Contains(opener, "file-read-metadata") {
+				return
 			}
+			t.Errorf("profile should NOT contain bare home subpath allow %s in content-read rules (block: %s)", bareHomeSubpath, strings.TrimSpace(opener))
 		}
 	})
 }

@@ -95,14 +95,13 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     (regex #"^%s/\.[^/]+$")
 )`, home)),
 
-			// Home directory listing and Library metadata for traversal
+			// Home directory listing and broad metadata traversal
 			seatbelt.SectionAllow("Home directory traversal"),
 			seatbelt.AllowRule(`(allow file-read-data
     `+seatbelt.HomeLiteral(home, "")+`
 )`),
 			seatbelt.AllowRule(`(allow file-read-metadata
-    `+seatbelt.HomeLiteral(home, "")+`
-    `+seatbelt.HomeLiteral(home, "Library")+`
+    `+seatbelt.HomeSubpath(home, "")+`
 )`),
 		)
 

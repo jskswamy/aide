@@ -2,7 +2,6 @@ package ui
 
 import (
 	"bytes"
-	"io"
 	"strings"
 	"testing"
 
@@ -42,7 +41,9 @@ func fullBannerData() *BannerData {
 
 func TestRenderCompact(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, fullBannerData())
+	if err := RenderBanner(&buf, "compact", fullBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	for _, want := range []string{"aide", "work", "claude", "secret:", "env:", "sandbox:", "code-only"} {
 		if !strings.Contains(out, want) {
@@ -53,7 +54,9 @@ func TestRenderCompact(t *testing.T) {
 
 func TestRenderBoxed(t *testing.T) {
 	var buf bytes.Buffer
-	RenderBoxed(&buf, fullBannerData())
+	if err := RenderBanner(&buf, "boxed", fullBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, string(rune(9484))) || !strings.Contains(out, string(rune(9492))) {
 		t.Error("boxed output missing box-drawing characters")
@@ -65,7 +68,9 @@ func TestRenderBoxed(t *testing.T) {
 
 func TestRenderClean(t *testing.T) {
 	var buf bytes.Buffer
-	RenderClean(&buf, fullBannerData())
+	if err := RenderBanner(&buf, "clean", fullBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "aide") {
 		t.Error("clean output missing header")
@@ -77,16 +82,20 @@ func TestRenderClean(t *testing.T) {
 
 func TestRenderBanner_UnknownStyle(t *testing.T) {
 	var buf bytes.Buffer
-	RenderBanner(&buf, "unknown-style", fullBannerData())
+	if err := RenderBanner(&buf, "unknown-style", fullBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "aide") {
 		t.Error("unknown style should fall back to compact")
 	}
 }
 
-func TestRenderBanner_WithWarnings(_ *testing.T) {
+func TestRenderBanner_WithWarnings(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, fullBannerData())
+	if err := RenderBanner(&buf, "compact", fullBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	_ = out
 	// Warnings should be rendered (the specific format may vary)
@@ -96,7 +105,9 @@ func TestRenderBanner_NoSandbox(t *testing.T) {
 	data := fullBannerData()
 	data.Sandbox = &SandboxInfo{Disabled: true}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(buf.String(), "disabled") {
 		t.Error("disabled sandbox should show 'disabled'")
 	}
@@ -107,7 +118,9 @@ func TestRenderBanner_NoSecret(t *testing.T) {
 	data.SecretName = ""
 	data.SecretKeys = nil
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(buf.String(), "secret:") {
 		t.Error("should not show secret section when no secret")
 	}
@@ -117,7 +130,9 @@ func TestRenderBanner_NoEnv(t *testing.T) {
 	data := fullBannerData()
 	data.Env = nil
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(buf.String(), "env:") {
 		t.Error("should not show env section when no env")
 	}
@@ -170,7 +185,9 @@ func TestRenderCompact_GuardGroups(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 
 	// No capabilities → should show code-only
@@ -202,7 +219,9 @@ func TestRenderCompact_ListTruncation(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 
 	if !strings.Contains(out, "(+2 more)") {
@@ -222,7 +241,9 @@ func TestRenderCompact_PortsShown(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "ports: 443, 53") {
 		t.Errorf("expected ports line in output:\n%s", out)
@@ -241,7 +262,9 @@ func TestRenderCompact_PortsAllHidden(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if strings.Contains(out, "ports:") {
 		t.Errorf("ports: all should be hidden, but got:\n%s", out)
@@ -267,7 +290,9 @@ func TestRenderCompact_Overrides(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 
 	// No capabilities → code-only, no guard details
@@ -295,7 +320,9 @@ func TestRenderBoxed_GuardGroups(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderBoxed(&buf, data)
+	if err := RenderBanner(&buf, "boxed", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 
 	if !strings.Contains(out, "code-only") {
@@ -316,7 +343,9 @@ func TestRenderCompact_YoloShown(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "AUTO-APPROVE") {
 		t.Errorf("compact output should show AUTO-APPROVE, got:\n%s", out)
@@ -332,7 +361,9 @@ func TestRenderCompact_YoloHiddenWhenFalse(t *testing.T) {
 		AutoApprove: false,
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if strings.Contains(out, "AUTO-APPROVE") {
 		t.Errorf("compact output should not show AUTO-APPROVE when disabled, got:\n%s", out)
@@ -345,7 +376,9 @@ func TestRenderBoxed_YoloShown(t *testing.T) {
 		AutoApprove: true,
 	}
 	var buf bytes.Buffer
-	RenderBoxed(&buf, data)
+	if err := RenderBanner(&buf, "boxed", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "AUTO-APPROVE") {
 		t.Errorf("boxed output should show AUTO-APPROVE, got:\n%s", out)
@@ -358,7 +391,9 @@ func TestRenderClean_YoloShown(t *testing.T) {
 		AutoApprove: true,
 	}
 	var buf bytes.Buffer
-	RenderClean(&buf, data)
+	if err := RenderBanner(&buf, "clean", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "AUTO-APPROVE") {
 		t.Errorf("clean output should show AUTO-APPROVE, got:\n%s", out)
@@ -379,7 +414,9 @@ func TestRenderClean_GuardGroups(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderClean(&buf, data)
+	if err := RenderBanner(&buf, "clean", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 
 	if !strings.Contains(out, "code-only") {
@@ -425,7 +462,9 @@ func capabilityBannerData() *BannerData {
 
 func TestRenderCompact_CapabilityCheckmarks(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "compact", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	// Active capabilities should show checkmark and name
 	if !strings.Contains(out, "\u2713") {
@@ -441,7 +480,9 @@ func TestRenderCompact_CapabilityCheckmarks(t *testing.T) {
 
 func TestRenderCompact_CapabilitySourceAnnotation(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "compact", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	// docker has source "--with", should show annotation
 	if !strings.Contains(out, "\u2190 --with") {
@@ -460,7 +501,9 @@ func TestRenderCompact_CapabilitySourceAnnotation(t *testing.T) {
 
 func TestRenderCompact_DisabledCaps(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "compact", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "\u25CB") {
 		t.Errorf("compact output missing disabled cap circle:\n%s", out)
@@ -478,7 +521,9 @@ func TestRenderCompact_DisabledCaps(t *testing.T) {
 
 func TestRenderCompact_NeverAllow(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "compact", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "\u2717") {
 		t.Errorf("compact output missing never-allow X:\n%s", out)
@@ -493,7 +538,9 @@ func TestRenderCompact_NeverAllow(t *testing.T) {
 
 func TestRenderCompact_CredWarnings(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "compact", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "credentials exposed") {
 		t.Errorf("compact output missing credential warning:\n%s", out)
@@ -505,7 +552,9 @@ func TestRenderCompact_CredWarnings(t *testing.T) {
 
 func TestRenderCompact_CompWarnings(t *testing.T) {
 	var buf bytes.Buffer
-	RenderCompact(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "compact", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "docker + k8s share /var/run") {
 		t.Errorf("compact output missing composition warning:\n%s", out)
@@ -514,12 +563,11 @@ func TestRenderCompact_CompWarnings(t *testing.T) {
 
 func TestAutoApprove_LastNonEmptyLine(t *testing.T) {
 	styles := []struct {
-		name   string
-		render func(io.Writer, *BannerData)
+		name string
 	}{
-		{"compact", func(w io.Writer, d *BannerData) { RenderCompact(w, d) }},
-		{"boxed", func(w io.Writer, d *BannerData) { RenderBoxed(w, d) }},
-		{"clean", func(w io.Writer, d *BannerData) { RenderClean(w, d) }},
+		{"compact"},
+		{"boxed"},
+		{"clean"},
 	}
 
 	for _, style := range styles {
@@ -528,7 +576,9 @@ func TestAutoApprove_LastNonEmptyLine(t *testing.T) {
 			data.AutoApprove = true
 
 			var buf bytes.Buffer
-			style.render(&buf, data)
+			if err := RenderBanner(&buf, style.name, data); err != nil {
+				t.Fatal(err)
+			}
 			out := buf.String()
 
 			if !strings.Contains(out, "AUTO-APPROVE") {
@@ -582,7 +632,9 @@ func TestAutoApprove_HiddenWhenFalse(t *testing.T) {
 	data.AutoApprove = false
 
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(buf.String(), "AUTO-APPROVE") {
 		t.Error("AUTO-APPROVE should not appear when AutoApprove is false")
 	}
@@ -601,7 +653,9 @@ func TestRenderCompact_CodeOnlyWhenNoCapabilities(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "code-only") {
 		t.Errorf("should show code-only when no capabilities:\n%s", out)
@@ -621,7 +675,9 @@ func TestRenderCompact_CodeOnlyLabel(t *testing.T) {
 		AgentName: "claude",
 	}
 	var buf bytes.Buffer
-	RenderCompact(&buf, data)
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "code-only") {
 		t.Errorf("should show code-only when no capabilities and no sandbox:\n%s", out)
@@ -630,7 +686,9 @@ func TestRenderCompact_CodeOnlyLabel(t *testing.T) {
 
 func TestRenderBoxed_CapabilityCheckmarks(t *testing.T) {
 	var buf bytes.Buffer
-	RenderBoxed(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "boxed", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "\u2713") {
 		t.Errorf("boxed capability output missing checkmark:\n%s", out)
@@ -642,7 +700,9 @@ func TestRenderBoxed_CapabilityCheckmarks(t *testing.T) {
 
 func TestRenderClean_CapabilityCheckmarks(t *testing.T) {
 	var buf bytes.Buffer
-	RenderClean(&buf, capabilityBannerData())
+	if err := RenderBanner(&buf, "clean", capabilityBannerData()); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "\u2713") {
 		t.Errorf("clean capability output missing checkmark:\n%s", out)
@@ -655,7 +715,9 @@ func TestRenderClean_CapabilityCheckmarks(t *testing.T) {
 func TestRenderBoxed_CodeOnlyLabel(t *testing.T) {
 	data := &BannerData{AgentName: "claude"}
 	var buf bytes.Buffer
-	RenderBoxed(&buf, data)
+	if err := RenderBanner(&buf, "boxed", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "code-only") {
 		t.Errorf("boxed should show code-only when no capabilities and no sandbox:\n%s", out)
@@ -665,9 +727,127 @@ func TestRenderBoxed_CodeOnlyLabel(t *testing.T) {
 func TestRenderClean_CodeOnlyLabel(t *testing.T) {
 	data := &BannerData{AgentName: "claude"}
 	var buf bytes.Buffer
-	RenderClean(&buf, data)
+	if err := RenderBanner(&buf, "clean", data); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "code-only") {
 		t.Errorf("clean should show code-only when no capabilities and no sandbox:\n%s", out)
+	}
+}
+
+func TestRenderCompact_ExtraWritable(t *testing.T) {
+	data := &BannerData{
+		AgentName:     "claude",
+		Sandbox:       &SandboxInfo{Network: "unrestricted"},
+		ExtraWritable: []string{"~/.config/gcloud", "~/.kube/"},
+	}
+	var buf bytes.Buffer
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "writable:") {
+		t.Errorf("expected writable section:\n%s", out)
+	}
+	if !strings.Contains(out, "~/.config/gcloud") {
+		t.Errorf("expected gcloud path:\n%s", out)
+	}
+	if strings.Contains(out, "code-only") {
+		t.Errorf("should not show code-only when extra paths present:\n%s", out)
+	}
+}
+
+func TestRenderCompact_ExtraReadable(t *testing.T) {
+	data := &BannerData{
+		AgentName:     "claude",
+		Sandbox:       &SandboxInfo{Network: "outbound only"},
+		ExtraReadable: []string{"~/.docker"},
+	}
+	var buf bytes.Buffer
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "readable:") {
+		t.Errorf("expected readable section:\n%s", out)
+	}
+	if !strings.Contains(out, "~/.docker") {
+		t.Errorf("expected docker path:\n%s", out)
+	}
+}
+
+func TestRenderCompact_ExtraDenied(t *testing.T) {
+	data := &BannerData{
+		AgentName:   "claude",
+		Sandbox:     &SandboxInfo{Network: "outbound only"},
+		ExtraDenied: []string{"/etc/shadow"},
+	}
+	var buf bytes.Buffer
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "denied:") {
+		t.Errorf("expected denied section:\n%s", out)
+	}
+}
+
+func TestRenderCompact_NoExtraPaths(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox:   &SandboxInfo{Network: "outbound only"},
+	}
+	var buf bytes.Buffer
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "writable:") {
+		t.Errorf("should not show writable when empty:\n%s", out)
+	}
+	if !strings.Contains(out, "code-only") {
+		t.Errorf("should show code-only when no caps or extra paths:\n%s", out)
+	}
+}
+
+func TestRenderBoxed_ExtraWritable(t *testing.T) {
+	data := &BannerData{
+		AgentName:     "claude",
+		Sandbox:       &SandboxInfo{Network: "outbound only"},
+		ExtraWritable: []string{"~/.azure/"},
+	}
+	var buf bytes.Buffer
+	if err := RenderBanner(&buf, "boxed", data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "writable:") {
+		t.Errorf("boxed expected writable section:\n%s", buf.String())
+	}
+}
+
+func TestRenderClean_ExtraWritable(t *testing.T) {
+	data := &BannerData{
+		AgentName:     "claude",
+		Sandbox:       &SandboxInfo{Network: "outbound only"},
+		ExtraWritable: []string{"~/.azure/"},
+	}
+	var buf bytes.Buffer
+	if err := RenderBanner(&buf, "clean", data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "writable:") {
+		t.Errorf("clean expected writable section:\n%s", buf.String())
+	}
+}
+
+func TestRenderBanner_ErrorOnBadTemplate(t *testing.T) {
+	var buf bytes.Buffer
+	err := RenderBanner(&buf, "nonexistent", &BannerData{AgentName: "claude"})
+	if err != nil {
+		t.Errorf("unknown style should fall back to compact, not error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "aide") {
+		t.Error("fallback should render compact")
 	}
 }

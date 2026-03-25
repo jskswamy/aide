@@ -294,7 +294,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs, resolvedCapSet, capOverrides, contextCapSet, withoutCaps, cfg)
 		bannerData.Yolo = effectiveYolo
 		bannerData.AutoApprove = effectiveYolo
-		ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData)
+		if err := ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData); err != nil {
+			fmt.Fprintf(l.stderr(), "warning: banner render failed: %v\n", err)
+		}
 		fmt.Fprintln(l.stderr())
 	}
 

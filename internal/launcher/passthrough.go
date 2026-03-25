@@ -186,7 +186,9 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 		Sandbox:   si,
 		Yolo:      l.Yolo && !l.NoYolo,
 	}
-	ui.RenderBanner(l.stderr(), "compact", bannerData)
+	if err := ui.RenderBanner(l.stderr(), "compact", bannerData); err != nil {
+		fmt.Fprintf(l.stderr(), "warning: banner render failed: %v\n", err)
+	}
 	fmt.Fprintln(l.stderr())
 
 	return l.Execer.Exec(cmd.Path, cmd.Args, cmd.Env)

@@ -132,6 +132,9 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
 	if po.Yolo != nil {
 		rc.Context.Yolo = po.Yolo
 	}
+	if len(po.Capabilities) > 0 {
+		rc.Context.Capabilities = po.Capabilities
+	}
 	// Env: merge additively, override wins on conflict
 	if len(po.Env) > 0 {
 		merged := make(map[string]string, len(rc.Context.Env)+len(po.Env))

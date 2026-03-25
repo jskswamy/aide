@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/sandbox"
@@ -65,7 +66,7 @@ func (l *Launcher) configDir() string {
 
 // Launch resolves context, decrypts secrets, resolves templates, creates
 // a runtime directory, applies sandbox policy, and execs the agent binary.
-func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, cleanEnv bool, resolve bool) error {
+func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, cleanEnv bool, resolve bool, withCaps []string, withoutCaps []string) error {
 	// 1. Load config
 	cfg, err := config.Load(l.configDir(), cwd)
 	if err != nil {
@@ -107,8 +108,8 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 
-	// 5b. Resolve effective yolo from config layers + CLI flags.
-	// Priority: --no-yolo (highest) > --yolo flag > project override > context > preferences
+	// 5b. Resolve effective auto-approve from config layers + CLI flags.
+	// Priority: --no-auto-approve/--no-yolo (highest) > --auto-approve/--yolo flag > project override > context > preferences
 	var prefYolo *bool
 	if cfg.Preferences != nil {
 		prefYolo = cfg.Preferences.Yolo
@@ -120,11 +121,8 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			return err
 		}
 		extraArgs = append(yoloArgs, extraArgs...)
-		source := yoloSource(l.Yolo, prefYolo, rc.Context.Yolo, nil)
-		fmt.Fprintf(l.stderr(), "\033[1;33mWARNING:\033[0m yolo mode enabled (source: %s)\n", source)
-		fmt.Fprintln(l.stderr(), "  Agent permission checks are disabled.")
-		fmt.Fprintln(l.stderr(), "  OS sandbox is active (use `aide sandbox show` to inspect).")
-		fmt.Fprintln(l.stderr())
+		// No separate warning here — auto-approve is shown in the banner
+		// as the last line via renderAutoApprove().
 	}
 
 	// 6. Create runtime dir, register signal handlers
@@ -195,13 +193,63 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		binary = resolved
 	}
 
-	// 12. Apply sandbox (DD-18: always applied unless explicitly disabled).
+	// 12. Resolve capabilities and merge into sandbox config.
+	// Merge context capabilities + CLI --with, minus CLI --without.
+	contextCapNames := rc.Context.Capabilities
+	capNames := make([]string, len(contextCapNames))
+	copy(capNames, contextCapNames)
+	capNames = append(capNames, withCaps...)
+	if len(withoutCaps) > 0 {
+		blocked := make(map[string]bool, len(withoutCaps))
+		for _, c := range withoutCaps {
+			blocked[c] = true
+		}
+		var filtered []string
+		for _, c := range capNames {
+			if !blocked[c] {
+				filtered = append(filtered, c)
+			}
+		}
+		capNames = filtered
+	}
+
+	// Build capability source map: track whether each cap came from context or --with.
+	contextCapSet := make(map[string]bool, len(contextCapNames))
+	for _, c := range contextCapNames {
+		contextCapSet[c] = true
+	}
+
+	// 13. Apply sandbox (DD-18: always applied unless explicitly disabled).
 	// ResolveSandboxRef resolves named profiles; PolicyFromConfig handles nil → defaults.
 	sandboxCfg, sbDisabled, sbErr := sandbox.ResolveSandboxRef(rc.Context.Sandbox, cfg.Sandboxes)
 	if sbErr != nil {
 		cleanup()
 		return fmt.Errorf("resolving sandbox: %w", sbErr)
 	}
+
+	// Merge capability overrides into sandbox config before PolicyFromConfig.
+	var resolvedCapSet *capability.Set
+	var capOverrides capability.SandboxOverrides
+	if len(capNames) > 0 {
+		userDefined := capability.FromConfigDefs(cfg.Capabilities)
+		registry := capability.MergedRegistry(userDefined)
+		capSet, err := capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
+		if err != nil {
+			cleanup()
+			return fmt.Errorf("resolving capabilities: %w", err)
+		}
+		resolvedCapSet = capSet
+		capOverrides = capSet.ToSandboxOverrides()
+
+		if sandboxCfg == nil {
+			sandboxCfg = &config.SandboxPolicy{}
+		}
+		sandboxCfg.Unguard = append(sandboxCfg.Unguard, capOverrides.Unguard...)
+		sandboxCfg.ReadableExtra = append(sandboxCfg.ReadableExtra, capOverrides.ReadableExtra...)
+		sandboxCfg.WritableExtra = append(sandboxCfg.WritableExtra, capOverrides.WritableExtra...)
+		sandboxCfg.DeniedExtra = append(sandboxCfg.DeniedExtra, capOverrides.DeniedExtra...)
+	}
+
 	homeDir, _ := os.UserHomeDir()
 	var pathWarnings []string
 	if !sbDisabled {
@@ -242,8 +290,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefs.InfoDetail = "detailed"
 	}
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
-		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs)
+		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs, resolvedCapSet, capOverrides, contextCapSet, withoutCaps, cfg)
 		bannerData.Yolo = effectiveYolo
+		bannerData.AutoApprove = effectiveYolo
 		ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData)
 		fmt.Fprintln(l.stderr())
 	}
@@ -375,6 +424,11 @@ func (l *Launcher) buildBannerData(
 	sandboxCfg *config.SandboxPolicy,
 	projectRoot, rtDirPath, homeDir string,
 	prefs *config.Preferences,
+	resolvedCapSet *capability.Set,
+	capOverrides capability.SandboxOverrides,
+	contextCapSet map[string]bool,
+	withoutCaps []string,
+	cfg *config.Config,
 ) *ui.BannerData {
 	data := &ui.BannerData{
 		ContextName: rc.Name,
@@ -399,6 +453,45 @@ func (l *Launcher) buildBannerData(
 		data.EnvResolved = make(map[string]string, len(resolvedEnv))
 		for k, v := range resolvedEnv {
 			data.EnvResolved[k] = redactValue(v)
+		}
+	}
+
+	// Populate capability display data
+	if resolvedCapSet != nil && len(resolvedCapSet.Capabilities) > 0 {
+		for _, rc := range resolvedCapSet.Capabilities {
+			paths := append([]string{}, rc.Readable...)
+			paths = append(paths, rc.Writable...)
+			source := "--with"
+			if contextCapSet[rc.Name] {
+				source = "context config"
+			}
+			data.Capabilities = append(data.Capabilities, ui.CapabilityDisplay{
+				Name:    rc.Name,
+				Paths:   paths,
+				EnvVars: rc.EnvAllow,
+				Source:  source,
+			})
+		}
+		data.NeverAllow = cfg.NeverAllow
+		data.CredWarnings = capability.CredentialWarnings(capOverrides.EnvAllow)
+		data.CompWarnings = capability.CompositionWarnings(resolvedCapSet.Capabilities)
+	}
+
+	// Build disabled caps from --without
+	for _, name := range withoutCaps {
+		data.DisabledCaps = append(data.DisabledCaps, ui.CapabilityDisplay{
+			Name:     name,
+			Source:   "--without",
+			Disabled: true,
+		})
+	}
+
+	// Project detection: if no capabilities active, suggest based on project files
+	if len(data.Capabilities) == 0 && len(data.DisabledCaps) == 0 {
+		suggestions := capability.DetectProject(projectRoot)
+		if len(suggestions) > 0 {
+			data.Warnings = append(data.Warnings,
+				fmt.Sprintf("Detected project tools. Suggested: aide --with %s", strings.Join(suggestions, " ")))
 		}
 	}
 

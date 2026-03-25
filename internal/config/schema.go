@@ -122,6 +122,16 @@ func (n *NetworkPolicy) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return unmarshal((*alias)(n))
 }
 
+// SandboxOverrides carries external overrides (typically from resolved
+// capabilities) to merge into a SandboxPolicy before policy evaluation.
+type SandboxOverrides struct {
+	Unguard       []string
+	ReadableExtra []string
+	WritableExtra []string
+	DeniedExtra   []string
+	EnvAllow      []string
+}
+
 // SandboxPolicy defines the OS-native sandbox constraints for an agent.
 // A nil pointer means "use defaults". The bool variant (sandbox: false)
 // is handled during YAML unmarshalling by setting Disabled = true.

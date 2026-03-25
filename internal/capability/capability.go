@@ -1,6 +1,10 @@
 package capability
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/jskswamy/aide/internal/config"
+)
 
 // Capability defines a task-oriented permission bundle.
 type Capability struct {
@@ -33,14 +37,10 @@ type Set struct {
 	NeverAllowEnv []string
 }
 
-// SandboxOverrides contains the merged sandbox policy fields from resolved capabilities.
-type SandboxOverrides struct {
-	Unguard       []string
-	ReadableExtra []string
-	WritableExtra []string
-	DeniedExtra   []string
-	EnvAllow      []string
-}
+// SandboxOverrides is an alias for config.SandboxOverrides.
+// The canonical definition lives in config to avoid circular imports
+// between capability and sandbox packages.
+type SandboxOverrides = config.SandboxOverrides
 
 const maxDepth = 10
 

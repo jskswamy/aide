@@ -2759,6 +2759,7 @@ func sandboxNetworkCmd() *cobra.Command {
 
 func sandboxShowCmd() *cobra.Command {
 	var contextName string
+	var withCaps, withoutCaps []string
 
 	cmd := &cobra.Command{
 		Use:   "show",
@@ -2805,6 +2806,14 @@ func sandboxShowCmd() *cobra.Command {
 				return nil
 			}
 
+			// Resolve capabilities and merge into sandbox config
+			capNames := sandbox.MergeCapNames(rc.Context.Capabilities, withCaps, withoutCaps)
+			_, capOverrides, err := sandbox.ResolveCapabilities(capNames, cfg)
+			if err != nil {
+				return fmt.Errorf("resolving capabilities: %w", err)
+			}
+			sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
+
 			homeDir, _ := os.UserHomeDir()
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
@@ -2834,11 +2843,14 @@ func sandboxShowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "show policy for a specific context")
+	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
+	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
 	return cmd
 }
 
 func sandboxTestCmd() *cobra.Command {
 	var contextName string
+	var withCaps, withoutCaps []string
 
 	cmd := &cobra.Command{
 		Use:   "test",
@@ -2885,6 +2897,14 @@ func sandboxTestCmd() *cobra.Command {
 				return nil
 			}
 
+			// Resolve capabilities and merge into sandbox config
+			capNames := sandbox.MergeCapNames(rc.Context.Capabilities, withCaps, withoutCaps)
+			_, capOverrides, err := sandbox.ResolveCapabilities(capNames, cfg)
+			if err != nil {
+				return fmt.Errorf("resolving capabilities: %w", err)
+			}
+			sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
+
 			homeDir, _ := os.UserHomeDir()
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
@@ -2909,6 +2929,8 @@ func sandboxTestCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "generate profile for a specific context")
+	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
+	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
 	return cmd
 }
 
@@ -3406,6 +3428,7 @@ func sandboxPortsCmd() *cobra.Command {
 
 func sandboxGuardsCmd() *cobra.Command {
 	var contextName string
+	var withCaps, withoutCaps []string
 	cmd := &cobra.Command{
 		Use:          "guards",
 		Short:        "List all guards with type, status, and description",
@@ -3429,6 +3452,14 @@ func sandboxGuardsCmd() *cobra.Command {
 						}
 					}
 				}
+
+				// Resolve capabilities and merge into sandbox config
+				capNames := sandbox.MergeCapNames(ctx.Capabilities, withCaps, withoutCaps)
+				_, capOverrides, capErr := sandbox.ResolveCapabilities(capNames, cfg)
+				if capErr == nil {
+					sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
+				}
+
 				activeNames = sandbox.EffectiveGuards(sandboxCfg)
 			} else {
 				// Fall back to defaults if config cannot be loaded
@@ -3452,6 +3483,8 @@ func sandboxGuardsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
+	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
 	return cmd
 }
 

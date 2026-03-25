@@ -195,28 +195,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// 12. Resolve capabilities and merge into sandbox config.
-	// Merge context capabilities + CLI --with, minus CLI --without.
-	contextCapNames := rc.Context.Capabilities
-	capNames := make([]string, len(contextCapNames))
-	copy(capNames, contextCapNames)
-	capNames = append(capNames, withCaps...)
-	if len(withoutCaps) > 0 {
-		blocked := make(map[string]bool, len(withoutCaps))
-		for _, c := range withoutCaps {
-			blocked[c] = true
-		}
-		var filtered []string
-		for _, c := range capNames {
-			if !blocked[c] {
-				filtered = append(filtered, c)
-			}
-		}
-		capNames = filtered
-	}
+	capNames := sandbox.MergeCapNames(rc.Context.Capabilities, withCaps, withoutCaps)
 
 	// Build capability source map: track whether each cap came from context or --with.
-	contextCapSet := make(map[string]bool, len(contextCapNames))
-	for _, c := range contextCapNames {
+	contextCapSet := make(map[string]bool, len(rc.Context.Capabilities))
+	for _, c := range rc.Context.Capabilities {
 		contextCapSet[c] = true
 	}
 
@@ -237,27 +220,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// Merge capability overrides into sandbox config before PolicyFromConfig.
-	var resolvedCapSet *capability.Set
-	var capOverrides capability.SandboxOverrides
-	if len(capNames) > 0 {
-		userDefined := capability.FromConfigDefs(cfg.Capabilities)
-		registry := capability.MergedRegistry(userDefined)
-		capSet, err := capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
-		if err != nil {
-			cleanup()
-			return fmt.Errorf("resolving capabilities: %w", err)
-		}
-		resolvedCapSet = capSet
-		capOverrides = capSet.ToSandboxOverrides()
-
-		if sandboxCfg == nil {
-			sandboxCfg = &config.SandboxPolicy{}
-		}
-		sandboxCfg.Unguard = append(sandboxCfg.Unguard, capOverrides.Unguard...)
-		sandboxCfg.ReadableExtra = append(sandboxCfg.ReadableExtra, capOverrides.ReadableExtra...)
-		sandboxCfg.WritableExtra = append(sandboxCfg.WritableExtra, capOverrides.WritableExtra...)
-		sandboxCfg.DeniedExtra = append(sandboxCfg.DeniedExtra, capOverrides.DeniedExtra...)
+	resolvedCapSet, capOverrides, err := sandbox.ResolveCapabilities(capNames, cfg)
+	if err != nil {
+		cleanup()
+		return fmt.Errorf("resolving capabilities: %w", err)
 	}
+	sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
 
 	homeDir, _ := os.UserHomeDir()
 	var pathWarnings []string

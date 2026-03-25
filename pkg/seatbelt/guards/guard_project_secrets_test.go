@@ -17,12 +17,17 @@ func TestProjectSecrets_DeniesEnvFiles(t *testing.T) {
 		t.Errorf("expected type default, got %s", g.Type())
 	}
 
-	// Create a temp project with .env files
 	projectDir := t.TempDir()
-	os.WriteFile(filepath.Join(projectDir, ".env"), []byte("SECRET=foo"), 0644)
-	os.WriteFile(filepath.Join(projectDir, ".env.local"), []byte("DB=bar"), 0644)
-	os.WriteFile(filepath.Join(projectDir, ".envrc"), []byte("export X=1"), 0644)
-	os.WriteFile(filepath.Join(projectDir, "main.go"), []byte("package main"), 0644)
+	for _, f := range []struct{ name, content string }{
+		{".env", "SECRET=foo"},
+		{".env.local", "DB=bar"},
+		{".envrc", "export X=1"},
+		{"main.go", "package main"},
+	} {
+		if err := os.WriteFile(filepath.Join(projectDir, f.name), []byte(f.content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	ctx := &seatbelt.Context{
 		HomeDir:     "/Users/testuser",
@@ -31,7 +36,6 @@ func TestProjectSecrets_DeniesEnvFiles(t *testing.T) {
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 
-	// Should deny .env, .env.local, .envrc but NOT main.go
 	if !strings.Contains(output, ".env\"") {
 		t.Error("expected .env to be denied")
 	}
@@ -51,7 +55,9 @@ func TestProjectSecrets_DeniesGitHooksWrites(t *testing.T) {
 
 	projectDir := t.TempDir()
 	gitHooksDir := filepath.Join(projectDir, ".git", "hooks")
-	os.MkdirAll(gitHooksDir, 0755)
+	if err := os.MkdirAll(gitHooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := &seatbelt.Context{
 		HomeDir:     "/Users/testuser",
@@ -73,8 +79,12 @@ func TestProjectSecrets_SkipsNodeModules(t *testing.T) {
 
 	projectDir := t.TempDir()
 	nmDir := filepath.Join(projectDir, "node_modules", "pkg")
-	os.MkdirAll(nmDir, 0755)
-	os.WriteFile(filepath.Join(nmDir, ".env"), []byte("LEAKED=1"), 0644)
+	if err := os.MkdirAll(nmDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nmDir, ".env"), []byte("LEAKED=1"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := &seatbelt.Context{
 		HomeDir:     "/Users/testuser",
@@ -93,7 +103,9 @@ func TestProjectSecrets_RespectsWritableExtra(t *testing.T) {
 
 	projectDir := t.TempDir()
 	envFile := filepath.Join(projectDir, ".env")
-	os.WriteFile(envFile, []byte("SECRET=foo"), 0644)
+	if err := os.WriteFile(envFile, []byte("SECRET=foo"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := &seatbelt.Context{
 		HomeDir:       "/Users/testuser",

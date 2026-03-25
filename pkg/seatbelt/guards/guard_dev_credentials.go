@@ -9,6 +9,7 @@ import (
 
 type devCredentialsGuard struct{}
 
+// DevCredentialsGuard returns a Guard that denies access to development tool credential files.
 func DevCredentialsGuard() seatbelt.Guard { return &devCredentialsGuard{} }
 
 func (g *devCredentialsGuard) Name() string        { return "dev-credentials" }

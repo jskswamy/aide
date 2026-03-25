@@ -74,7 +74,7 @@ func (g *projectSecretsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult 
 // skipping known non-project directories.
 func scanEnvFiles(root string) []string {
 	var found []string
-	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip unreadable
 		}

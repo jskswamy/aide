@@ -15,7 +15,17 @@ var (
 	cyan      = color.New(color.FgCyan)
 	yellow    = color.New(color.FgYellow)
 	dim       = color.New(color.Faint)
+	red       = color.New(color.FgRed, color.Bold)
 )
+
+// CapabilityDisplay holds per-capability information for banner rendering.
+type CapabilityDisplay struct {
+	Name     string
+	Paths    []string // readable/writable paths granted
+	EnvVars  []string // env vars passed through
+	Source   string   // "context config", "--with", "--without"
+	Disabled bool     // true if --without excluded this
+}
 
 // BannerData holds all information needed to render an aide banner.
 type BannerData struct {
@@ -27,9 +37,15 @@ type BannerData struct {
 	SecretKeys  []string          // nil = normal (show count), populated = detailed (list names)
 	Env         map[string]string // key → annotation (e.g. "← secrets.api_key" or "= literal")
 	EnvResolved map[string]string // key → redacted value, nil in normal mode
-	Sandbox     *SandboxInfo
-	Yolo        bool
-	Warnings    []string
+	Sandbox       *SandboxInfo
+	Yolo          bool
+	Warnings      []string
+	Capabilities  []CapabilityDisplay
+	DisabledCaps  []CapabilityDisplay // --without caps
+	NeverAllow    []string
+	CredWarnings  []string // "AWS_SECRET_ACCESS_KEY (via aws)"
+	CompWarnings  []string // composition warnings
+	AutoApprove   bool     // replaces Yolo for new banner display
 }
 
 // SandboxInfo describes sandbox configuration for display.
@@ -128,9 +144,13 @@ func truncateList(items []string, maxItems int) string {
 	return fmt.Sprintf("%s (+%d more)", shown, len(items)-maxItems)
 }
 
-// renderGuardSection renders the grouped guard display for all banner styles.
+// renderGuardSection is available for aide sandbox commands but no longer
+// used in the banner. Guard details are internal — the banner shows
+// capabilities only. Keeping the types (SandboxInfo, GuardDisplay) for
+// the aide sandbox guards CLI command.
+//
+//nolint:unused // retained for aide sandbox guards command
 func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
-	// Active guards (green)
 	for _, g := range info.Active {
 		boldGreen.Fprintf(w, "%s✓ %s\n", prefix, g.Name)
 		if len(g.Protected) > 0 {
@@ -144,30 +164,20 @@ func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
 				prefix, o.EnvVar, o.Value, o.DefaultPath)
 		}
 	}
-
-	// Blank line between groups
 	if len(info.Active) > 0 && (len(info.Skipped) > 0 || len(info.Available) > 0) {
 		fmt.Fprintln(w)
 	}
-
-	// Skipped guards (yellow)
 	for _, g := range info.Skipped {
 		yellow.Fprintf(w, "%s⊘ %s", prefix, g.Name)
 		fmt.Fprintf(w, " — %s\n", g.Reason)
 	}
-
-	// Blank line
 	if len(info.Skipped) > 0 && len(info.Available) > 0 {
 		fmt.Fprintln(w)
 	}
-
-	// Available guards (dim)
 	if len(info.Available) > 0 {
 		dim.Fprintf(w, "%s○ %s — available (opt-in)\n",
 			prefix, strings.Join(info.Available, ", "))
 	}
-
-	// Hint line when truncated or guards skipped/available
 	needsHint := len(info.Skipped) > 0 || len(info.Available) > 0
 	for _, g := range info.Active {
 		if len(g.Protected) > 3 || len(g.Allowed) > 3 {
@@ -178,6 +188,63 @@ func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
 		fmt.Fprintln(w)
 		dim.Fprintf(w, "%srun `aide sandbox` for full details\n", prefix)
 	}
+}
+
+// renderCapabilitySection renders the capability-oriented display for all banner styles.
+func renderCapabilitySection(w io.Writer, data *BannerData, prefix string) {
+	// Active capabilities (green checkmark)
+	for _, cap := range data.Capabilities {
+		paths := truncateList(cap.Paths, 3)
+		if cap.Source != "" && cap.Source != "context config" {
+			boldGreen.Fprintf(w, "%s\u2713 %-10s %s", prefix, cap.Name, paths)
+			dim.Fprintf(w, "  \u2190 %s\n", cap.Source)
+		} else {
+			boldGreen.Fprintf(w, "%s\u2713 %-10s %s\n", prefix, cap.Name, paths)
+		}
+	}
+
+	// Disabled capabilities (dim circle)
+	for _, cap := range data.DisabledCaps {
+		dim.Fprintf(w, "%s\u25CB %-10s disabled for this session", prefix, cap.Name)
+		fmt.Fprintf(w, "  \u2190 --without\n")
+	}
+
+	// Never-allow (red X)
+	for _, path := range data.NeverAllow {
+		red.Fprintf(w, "%s\u2717 denied    %s (never-allow)\n", prefix, path)
+	}
+
+	// Credential warnings
+	if len(data.CredWarnings) > 0 {
+		fmt.Fprintln(w)
+		yellow.Fprintf(w, "%s\u26A0 credentials exposed: %s\n", prefix,
+			strings.Join(data.CredWarnings, ", "))
+	}
+
+	// Composition warnings
+	for _, w2 := range data.CompWarnings {
+		yellow.Fprintf(w, "%s\u26A0 %s\n", prefix, w2)
+	}
+}
+
+// renderAutoApprove renders the auto-approve warning as the last line if enabled.
+func renderAutoApprove(w io.Writer, prefix string, data *BannerData) {
+	if data.AutoApprove {
+		red.Fprintf(w, "%s\u26A1 AUTO-APPROVE \u2014 all agent actions execute without confirmation\n", prefix)
+	}
+}
+
+// sandboxNetworkLabel returns the network mode for display.
+func sandboxNetworkLabel(data *BannerData) string {
+	if data.Sandbox != nil && data.Sandbox.Network != "" {
+		return data.Sandbox.Network
+	}
+	return "outbound"
+}
+
+// hasCapabilities returns true if capability data is present.
+func hasCapabilities(data *BannerData) bool {
+	return len(data.Capabilities) > 0 || len(data.DisabledCaps) > 0
 }
 
 // RenderCompact renders the compact (default) banner style.
@@ -206,27 +273,29 @@ func RenderCompact(w io.Writer, data *BannerData) {
 		}
 	}
 
-	if data.Yolo {
-		yellow.Fprintf(w, "   ⚡ yolo mode (agent permission checks disabled)\n")
-	}
-
-	if data.Sandbox != nil {
-		fmt.Fprintf(w, "   🛡 Sandbox\n")
-		if !data.Sandbox.Disabled {
-			fmt.Fprintf(w, "         network: %s\n", data.Sandbox.Network)
-			if data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
-				fmt.Fprintf(w, "         ports: %s\n", data.Sandbox.Ports)
+	if data.Sandbox != nil && data.Sandbox.Disabled {
+		fmt.Fprintf(w, "   🛡 sandbox: disabled\n")
+	} else {
+		network := sandboxNetworkLabel(data)
+		if hasCapabilities(data) {
+			fmt.Fprintf(w, "   🛡 sandbox: network %s\n", network)
+			if data.Sandbox != nil && data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
+				fmt.Fprintf(w, "   🛡 ports: %s\n", data.Sandbox.Ports)
 			}
-			fmt.Fprintln(w)
-			renderGuardSection(w, data.Sandbox, "     ")
+			renderCapabilitySection(w, data, "     ")
 		} else {
-			fmt.Fprintf(w, "         disabled\n")
+			fmt.Fprintf(w, "   🛡 sandbox: network %s, code-only\n", network)
+			if data.Sandbox != nil && data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
+				fmt.Fprintf(w, "   🛡 ports: %s\n", data.Sandbox.Ports)
+			}
 		}
 	}
 
 	for _, w2 := range data.Warnings {
-		yellow.Fprintf(w, "              ⚠ %s\n", w2)
+		yellow.Fprintf(w, "     ⚠ %s\n", w2)
 	}
+
+	renderAutoApprove(w, "   ", data)
 }
 
 // RenderBoxed renders the boxed banner style with box-drawing characters.
@@ -251,11 +320,6 @@ func RenderBoxed(w io.Writer, data *BannerData) {
 	cyan.Fprintf(w, "Agent     ")
 	fmt.Fprintf(w, "%s\n", agentDisplay(data))
 
-	if data.Yolo {
-		fmt.Fprintf(w, "│ ")
-		yellow.Fprintf(w, "⚡ yolo mode (agent permission checks disabled)\n")
-	}
-
 	if s := secretDisplay(data); s != "" {
 		fmt.Fprintf(w, "│ 🔐 ")
 		cyan.Fprintf(w, "Secret    ")
@@ -271,25 +335,20 @@ func RenderBoxed(w io.Writer, data *BannerData) {
 		}
 	}
 
-	if data.Sandbox != nil {
-		fmt.Fprintf(w, "│ 🛡 ")
-		cyan.Fprintf(w, "Sandbox\n")
-		if !data.Sandbox.Disabled {
-			fmt.Fprintf(w, "│    network: %s\n", data.Sandbox.Network)
-			if data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
-				fmt.Fprintf(w, "│    ports: %s\n", data.Sandbox.Ports)
-			}
-			fmt.Fprintln(w)
-			renderGuardSection(w, data.Sandbox, "│    ")
-		} else {
-			fmt.Fprintf(w, "│    disabled\n")
-		}
+	network := sandboxNetworkLabel(data)
+	if hasCapabilities(data) {
+		fmt.Fprintf(w, "│ 🛡 sandbox: network %s\n", network)
+		renderCapabilitySection(w, data, "│    ")
+	} else {
+		fmt.Fprintf(w, "│ 🛡 sandbox: network %s, code-only\n", network)
 	}
 
 	for _, w2 := range data.Warnings {
-		fmt.Fprintf(w, "│              ")
+		fmt.Fprintf(w, "│ ")
 		yellow.Fprintf(w, "⚠ %s\n", w2)
 	}
+
+	renderAutoApprove(w, "│ ", data)
 
 	fmt.Fprintf(w, "└%s\n", border)
 }
@@ -307,11 +366,6 @@ func RenderClean(w io.Writer, data *BannerData) {
 	fmt.Fprintf(w, "  ")
 	cyan.Fprintf(w, "Agent     ")
 	fmt.Fprintf(w, "%s\n", agentDisplay(data))
-
-	if data.Yolo {
-		fmt.Fprintf(w, "  ")
-		yellow.Fprintf(w, "yolo mode (agent permission checks disabled)\n")
-	}
 
 	if data.MatchReason != "" {
 		fmt.Fprintf(w, "  ")
@@ -334,23 +388,22 @@ func RenderClean(w io.Writer, data *BannerData) {
 		}
 	}
 
-	if data.Sandbox != nil {
+	network := sandboxNetworkLabel(data)
+	if hasCapabilities(data) {
 		fmt.Fprintf(w, "  ")
-		cyan.Fprintf(w, "Sandbox\n")
-		if !data.Sandbox.Disabled {
-			fmt.Fprintf(w, "    network: %s\n", data.Sandbox.Network)
-			if data.Sandbox.Ports != "" && data.Sandbox.Ports != "all" {
-				fmt.Fprintf(w, "    ports: %s\n", data.Sandbox.Ports)
-			}
-			fmt.Fprintln(w)
-			renderGuardSection(w, data.Sandbox, "    ")
-		} else {
-			fmt.Fprintf(w, "    disabled\n")
-		}
+		cyan.Fprintf(w, "sandbox:  ")
+		fmt.Fprintf(w, "network %s\n", network)
+		renderCapabilitySection(w, data, "    ")
+	} else {
+		fmt.Fprintf(w, "  ")
+		cyan.Fprintf(w, "sandbox:  ")
+		fmt.Fprintf(w, "network %s, code-only\n", network)
 	}
 
 	for _, w2 := range data.Warnings {
-		fmt.Fprintf(w, "            ")
+		fmt.Fprintf(w, "  ")
 		yellow.Fprintf(w, "⚠ %s\n", w2)
 	}
+
+	renderAutoApprove(w, "  ", data)
 }

@@ -32,8 +32,10 @@ func TestSSHKeysGuard_DirectoryNotFound(t *testing.T) {
 	g := guards.SSHKeysGuard()
 	result := g.Rules(ctx)
 
-	if len(result.Rules) != 0 {
-		t.Errorf("expected 0 rules, got %d", len(result.Rules))
+	// Should still have agent socket deny rules even without ~/.ssh
+	output := renderTestRules(result.Rules)
+	if !strings.Contains(output, `/tmp/ssh-`) {
+		t.Error("expected agent socket deny rules even when ~/.ssh missing")
 	}
 	if len(result.Skipped) != 1 {
 		t.Fatalf("expected 1 skip message, got %d", len(result.Skipped))
@@ -171,6 +173,166 @@ func TestSSHKeysGuard_MixedFiles(t *testing.T) {
 	// Verify metadata allow for .ssh directory itself
 	if !strings.Contains(output, fmt.Sprintf(`(allow file-read-metadata (literal "%s"))`, sshDir)) {
 		t.Error("expected metadata allow rule for .ssh directory")
+	}
+}
+
+func TestSSHKeysGuard_DeniesSSHAuthSockSocket(t *testing.T) {
+	tmpDir := t.TempDir()
+	sshDir := filepath.Join(tmpDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate SSH_AUTH_SOCK pointing to a GPG agent socket
+	agentSock := filepath.Join(tmpDir, ".gnupg", "S.gpg-agent.ssh")
+	if err := os.MkdirAll(filepath.Dir(agentSock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := &seatbelt.Context{
+		HomeDir: tmpDir,
+		Env:     []string{"SSH_AUTH_SOCK=" + agentSock},
+	}
+	g := guards.SSHKeysGuard()
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should deny network-outbound to the SSH_AUTH_SOCK unix socket
+	if !strings.Contains(output, fmt.Sprintf(`(deny network-outbound (remote unix-socket (path-literal "%s")))`, agentSock)) {
+		t.Errorf("expected deny network-outbound unix-socket for SSH_AUTH_SOCK path %s\ngot:\n%s", agentSock, output)
+	}
+}
+
+func TestSSHKeysGuard_DeniesGPGAgentSSHSocket(t *testing.T) {
+	tmpDir := t.TempDir()
+	sshDir := filepath.Join(tmpDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// GPG agent SSH socket exists but SSH_AUTH_SOCK is not set
+	gpgDir := filepath.Join(tmpDir, ".gnupg")
+	if err := os.MkdirAll(gpgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	agentSock := filepath.Join(gpgDir, "S.gpg-agent.ssh")
+	if err := os.WriteFile(agentSock, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := &seatbelt.Context{HomeDir: tmpDir}
+	g := guards.SSHKeysGuard()
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should deny network-outbound to ~/.gnupg/S.gpg-agent.ssh even without SSH_AUTH_SOCK
+	if !strings.Contains(output, fmt.Sprintf(`(deny network-outbound (remote unix-socket (path-literal "%s")))`, agentSock)) {
+		t.Errorf("expected deny network-outbound unix-socket for GPG agent SSH socket %s\ngot:\n%s", agentSock, output)
+	}
+}
+
+func TestSSHKeysGuard_DeniesStandardSSHAgentSockets(t *testing.T) {
+	tmpDir := t.TempDir()
+	sshDir := filepath.Join(tmpDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := &seatbelt.Context{HomeDir: tmpDir}
+	g := guards.SSHKeysGuard()
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should deny network-outbound to standard ssh-agent socket patterns in /tmp
+	if !strings.Contains(output, `deny network-outbound`) || !strings.Contains(output, `/tmp/ssh-`) {
+		t.Error("expected deny network-outbound regex rule for /tmp/ssh-*/agent.* sockets")
+	}
+	if !strings.Contains(output, `/private/tmp/ssh-`) {
+		t.Error("expected deny network-outbound regex rule for /private/tmp/ssh-*/agent.* sockets")
+	}
+}
+
+func TestSSHKeysGuard_SSHAuthSockNotSet(t *testing.T) {
+	tmpDir := t.TempDir()
+	sshDir := filepath.Join(tmpDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// No SSH_AUTH_SOCK in env, no GPG agent socket file exists
+	ctx := &seatbelt.Context{HomeDir: tmpDir}
+	g := guards.SSHKeysGuard()
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should still have the regex rules for /tmp/ssh-* patterns
+	if !strings.Contains(output, `/tmp/ssh-`) {
+		t.Error("expected deny regex for /tmp/ssh-* even without SSH_AUTH_SOCK")
+	}
+	// Should NOT have a literal deny for an empty SSH_AUTH_SOCK
+	if strings.Contains(output, `(deny network-outbound (remote unix-socket (path-literal "")))`) {
+		t.Error("should not generate deny rule for empty SSH_AUTH_SOCK")
+	}
+}
+
+func TestSSHKeysGuard_DeduplicatesSSHAuthSockAndGPGSocket(t *testing.T) {
+	tmpDir := t.TempDir()
+	sshDir := filepath.Join(tmpDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// SSH_AUTH_SOCK points to the same path as ~/.gnupg/S.gpg-agent.ssh
+	gpgDir := filepath.Join(tmpDir, ".gnupg")
+	if err := os.MkdirAll(gpgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	agentSock := filepath.Join(gpgDir, "S.gpg-agent.ssh")
+	if err := os.WriteFile(agentSock, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := &seatbelt.Context{
+		HomeDir: tmpDir,
+		Env:     []string{"SSH_AUTH_SOCK=" + agentSock},
+	}
+	g := guards.SSHKeysGuard()
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should only have one deny for this path, not two
+	count := strings.Count(output, fmt.Sprintf(`(deny network-outbound (remote unix-socket (path-literal "%s")))`, agentSock))
+	if count != 1 {
+		t.Errorf("expected 1 deny network-outbound for %s, got %d", agentSock, count)
+	}
+}
+
+func TestSSHKeysGuard_DeniesAgentSocketEvenWithoutSSHDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	// No .ssh directory exists
+
+	agentSock := filepath.Join(tmpDir, ".gnupg", "S.gpg-agent.ssh")
+	if err := os.MkdirAll(filepath.Dir(agentSock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentSock, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := &seatbelt.Context{
+		HomeDir: tmpDir,
+		Env:     []string{"SSH_AUTH_SOCK=" + agentSock},
+	}
+	g := guards.SSHKeysGuard()
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Agent socket denial should work even without ~/.ssh
+	if !strings.Contains(output, fmt.Sprintf(`(deny network-outbound (remote unix-socket (path-literal "%s")))`, agentSock)) {
+		t.Error("expected agent socket deny even when ~/.ssh doesn't exist")
+	}
+	if !strings.Contains(output, `/tmp/ssh-`) {
+		t.Error("expected /tmp/ssh-* regex deny even when ~/.ssh doesn't exist")
 	}
 }
 

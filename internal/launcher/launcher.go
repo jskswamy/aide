@@ -228,6 +228,14 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving sandbox: %w", sbErr)
 	}
 
+	// Snapshot original config paths before capability overrides merge them.
+	var configWritableExtra, configReadableExtra, configDeniedExtra []string
+	if sandboxCfg != nil {
+		configWritableExtra = append([]string{}, sandboxCfg.WritableExtra...)
+		configReadableExtra = append([]string{}, sandboxCfg.ReadableExtra...)
+		configDeniedExtra = append([]string{}, sandboxCfg.DeniedExtra...)
+	}
+
 	// Merge capability overrides into sandbox config before PolicyFromConfig.
 	var resolvedCapSet *capability.Set
 	var capOverrides capability.SandboxOverrides
@@ -291,7 +299,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefs.InfoDetail = "detailed"
 	}
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
-		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs, resolvedCapSet, capOverrides, contextCapSet, withoutCaps, cfg)
+		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs, resolvedCapSet, capOverrides, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra)
 		bannerData.Yolo = effectiveYolo
 		bannerData.AutoApprove = effectiveYolo
 		if err := ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData); err != nil {
@@ -432,6 +440,7 @@ func (l *Launcher) buildBannerData(
 	contextCapSet map[string]bool,
 	withoutCaps []string,
 	cfg *config.Config,
+	configWritableExtra, configReadableExtra, configDeniedExtra []string,
 ) *ui.BannerData {
 	data := &ui.BannerData{
 		ContextName: rc.Name,
@@ -544,6 +553,11 @@ func (l *Launcher) buildBannerData(
 		}
 	}
 
+	// Populate extra paths that are from config (not capabilities)
+	data.ExtraWritable = stringSetDiff(configWritableExtra, capOverrides.WritableExtra)
+	data.ExtraReadable = stringSetDiff(configReadableExtra, capOverrides.ReadableExtra)
+	data.ExtraDenied = stringSetDiff(configDeniedExtra, capOverrides.DeniedExtra)
+
 	return data
 }
 
@@ -617,6 +631,24 @@ func (l *Launcher) resolveEffectiveYolo(preferences, context, project *bool) boo
 		return true
 	}
 	return config.ResolveYolo(preferences, context, project)
+}
+
+// stringSetDiff returns elements in a that are not in b.
+func stringSetDiff(a, b []string) []string {
+	if len(a) == 0 {
+		return nil
+	}
+	bSet := make(map[string]bool, len(b))
+	for _, s := range b {
+		bSet[s] = true
+	}
+	var diff []string
+	for _, s := range a {
+		if !bSet[s] {
+			diff = append(diff, s)
+		}
+	}
+	return diff
 }
 
 // yoloSource returns a human-readable string describing why yolo is active.

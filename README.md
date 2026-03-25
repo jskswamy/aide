@@ -20,24 +20,74 @@ claude --dangerously-skip-permissions  # what could go wrong?
 
 Or you click "allow" on every. single. action. File read? Allow. Shell command? Allow. Network call? Allow. Two hundred times a session.
 
-With aide, the agent runs inside OS-native guardrails. 20 guards active by default — no config, no prompts:
+With aide, the agent runs inside OS-native guardrails — no config, no prompts:
 
 ```bash
 aide    # agent launches sandboxed automatically
-aide sandbox guards   # see exactly what's blocked
 ```
 
 ```
-Protected              Guards
-─────────────────────  ──────────────────────────────────────────────────
-SSH private keys       Blocks ~/.ssh (allows known_hosts and config)
-Cloud credentials      AWS, GCP, Azure, DigitalOcean, Oracle Cloud
-Infrastructure         Kubernetes, Terraform, Vault tokens
-Browser data           Cookies, passwords, history (all browsers)
-Password managers      1Password, Bitwarden, pass, gopass, GPG keys
+🔧 aide · work (claude)
+   📁 github.com/acme/api
+   🛡 sandbox: network outbound, code-only
 ```
 
-Your agent can read your code, run your tests, hit the network — but it physically cannot touch your SSH keys, cloud credentials, or browser data.
+Code-only mode. Your agent can read your code, run tests, hit the network — but it physically cannot touch your SSH keys, cloud credentials, or browser data. 20 guards active by default, zero configuration.
+
+**Ready to deploy?** Tell aide what you're doing:
+
+```bash
+aide --with docker          # build and push images
+aide --with docker k8s      # deploy to your cluster
+aide --with docker k8s gcp  # debug cloud infra too
+```
+
+```
+🔧 aide · work (claude)
+   📁 github.com/acme/api
+   🛡 sandbox: network outbound
+      ✓ docker     ~/.docker/config.json
+      ✓ k8s        ~/.kube/config (KUBECONFIG)
+      ✓ gcp        ~/.config/gcloud
+
+      ⚠ credentials exposed: GOOGLE_APPLICATION_CREDENTIALS
+```
+
+Each capability unlocks exactly what the agent needs — nothing more. Docker gets registry creds. Kubernetes gets kubeconfig. GCP gets gcloud auth. Everything else stays locked.
+
+**Protect what matters:**
+
+```bash
+aide cap never-allow ~/.kube/prod-config
+aide cap never-allow --env PRODUCTION_DB_PASSWORD
+```
+
+Now no capability — not even `k8s` — can ever read your production kubeconfig. The agent sees your dev and staging clusters but production is a hard wall:
+
+```
+🔧 aide · work (claude)
+   🛡 sandbox: network outbound
+      ✓ k8s        ~/.kube/dev-config, ~/.kube/staging-config
+      ✗ denied     ~/.kube/prod-config (never-allow)
+```
+
+**Make it permanent for a project:**
+
+```yaml
+# .aide.yaml in your repo root
+capabilities: [docker, k8s, gcp]
+```
+
+No flags needed next time — `aide` picks up the capabilities from your config.
+
+**Create your own:**
+
+```bash
+aide cap create k8s-dev --extends k8s --deny ~/.kube/prod-config
+aide --with k8s-dev docker    # dev clusters only, production blocked
+```
+
+12 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, and more. Or define your own.
 
 ### Unified UX — one command, any agent
 
@@ -105,10 +155,10 @@ cd aide && make build   # Binary at ./bin/aide
 Four commands to know:
 
 ```bash
-aide                    # Resolve context and launch the agent (sandboxed)
-aide setup              # Interactive first-time configuration
-aide --agent codex      # Override agent selection
-aide sandbox guards     # See what the sandbox protects
+aide                        # Resolve context and launch the agent (sandboxed)
+aide setup                  # Interactive first-time configuration
+aide --with k8s docker      # Enable capabilities for this session
+aide cap list               # See all available capabilities
 ```
 
 No config file required. If one agent exists on PATH with its API key in the environment, `aide` launches it sandboxed — zero setup.
@@ -117,12 +167,63 @@ No config file required. If one agent exists on PATH with its API key in the env
 
 1. Run `aide` in any project directory.
 2. aide matches the git remote URL and directory path against your config.
-3. It resolves the context: agent, credentials, and sandbox policy.
+3. It resolves the context: agent, credentials, capabilities, and sandbox policy.
 4. Secrets decrypt in-process via the sops Go library. Nothing hits disk.
-5. aide applies 20 guards via macOS Seatbelt, blocking access to sensitive data. Linux sandbox support (Landlock) is planned.
-6. aide execs the agent with the resolved environment inside the sandbox.
+5. Capabilities translate to sandbox rules — each `--with` flag unlocks specific tool access while keeping everything else locked.
+6. aide applies the sandbox via macOS Seatbelt and execs the agent inside it. Linux sandbox support (Landlock) is planned.
 
 No config file? aide detects your agent on PATH and launches it directly.
+
+## Capabilities
+
+Capabilities are task-oriented permission bundles. Instead of configuring low-level sandbox rules, you declare what you're doing:
+
+| Capability | What it unlocks |
+|------------|----------------|
+| `aws` | AWS CLI credentials (`~/.aws/`) |
+| `gcp` | Google Cloud credentials (`~/.config/gcloud/`) |
+| `azure` | Azure CLI credentials (`~/.azure/`) |
+| `docker` | Docker registry credentials (`~/.docker/`) |
+| `k8s` | Kubernetes cluster access (`~/.kube/`) |
+| `helm` | Helm charts and releases |
+| `terraform` | Terraform state and providers |
+| `vault` | HashiCorp Vault access |
+| `ssh` | SSH keys and agent |
+| `npm` | npm/yarn registry credentials |
+
+**Session-scoped** (this launch only):
+
+```bash
+aide --with k8s docker
+```
+
+**Context-scoped** (always for this project):
+
+```yaml
+# ~/.config/aide/config.yaml
+contexts:
+  work:
+    agent: claude
+    capabilities: [docker, k8s, gcp]
+    secret: work
+    env:
+      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+```
+
+**Custom capabilities:**
+
+```bash
+aide cap create k8s-dev --extends k8s --deny ~/.kube/prod-config
+aide cap show k8s-dev     # see what it grants
+aide cap check k8s-dev docker  # preview composition before launching
+```
+
+**Global protection:**
+
+```bash
+aide cap never-allow ~/.kube/prod-config      # no capability can ever read this
+aide cap never-allow --env VAULT_ROOT_TOKEN   # this env var is always stripped
+```
 
 ## Configuration
 
@@ -146,6 +247,7 @@ contexts:
       - remote: "github.com/work-org/*"
       - path: "~/work/*"
     agent: claude
+    capabilities: [docker, k8s, aws]
     secret: work
     env:
       CLAUDE_CODE_USE_BEDROCK: "1"
@@ -171,39 +273,6 @@ default_context: personal
 ```
 
 Contexts match git remote URL patterns and directory path globs. The most specific match wins. `default_context` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.
-
-## Sandbox
-
-Agents run inside an OS-native sandbox by default. No per-action permission prompts.
-
-### What the sandbox protects
-
-aide blocks access to sensitive data by default:
-
-| Protected | Guards |
-|-----------|--------|
-| SSH private keys | Blocks `~/.ssh` (allows `known_hosts` and `config` for git) |
-| Cloud credentials | AWS, GCP, Azure, DigitalOcean, Oracle Cloud |
-| Infrastructure | Kubernetes config, Terraform credentials, Vault tokens |
-| Browser data | Cookies, passwords, history (Chrome, Firefox, Safari, etc.) |
-| Password managers | 1Password, Bitwarden, pass, gopass, GPG private keys |
-
-The agent can still use macOS Keychain for its own authentication, read git config, and access Node.js/Nix toolchains. These are always-on guards that provide controlled access.
-
-Need Docker or GitHub CLI credentials in the sandbox? Enable them:
-
-```bash
-aide sandbox guard docker
-aide sandbox guard github-cli
-```
-
-Don't need browser protection? Disable it:
-
-```bash
-aide sandbox unguard browsers
-```
-
-The macOS Seatbelt rules port the shell scripts from [agent-safehouse](https://github.com/eugene1g/agent-safehouse) as a Go library. The `pkg/seatbelt` library is reusable in your own Go projects. See [docs/sandbox.md](docs/sandbox.md).
 
 ## Secrets
 
@@ -238,7 +307,7 @@ RUN aide --agent claude -- -p "run tests"
 
 ## Supported Agents
 
-Claude, Codex, Aider, Goose, Amp, Gemini. Any binary on PATH works as an agent target.
+Claude, Copilot, Codex, Aider, Goose, Amp, Gemini. Any binary on PATH works as an agent target.
 
 ## Development
 
@@ -252,6 +321,7 @@ make lint                   # Run golangci-lint
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
+- [Capabilities](docs/capabilities.md)
 - [Contexts](docs/contexts.md)
 - [Environment Variables](docs/environment.md)
 - [Secrets](docs/secrets.md)

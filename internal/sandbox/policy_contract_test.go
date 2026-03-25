@@ -193,6 +193,50 @@ func TestContract_CrossGuardSafety_NodeToolchain(t *testing.T) {
 	}
 }
 
+func TestContract_CapabilityUnguardProducesRule(t *testing.T) {
+	// A capability that unguards cloud-aws should result in AWS paths
+	// not being denied in the profile (cloud-aws guard inactive).
+	home, _ := os.UserHomeDir()
+	awsDir := filepath.Join(home, ".aws")
+	if _, err := os.Stat(awsDir); err != nil {
+		t.Skip("~/.aws not found")
+	}
+
+	profile := renderProfileFromConfig(t, &config.SandboxPolicy{
+		Unguard: []string{"cloud-aws"},
+	})
+	// cloud-aws guard's deny rules should NOT appear
+	if strings.Contains(profile, "deny") && strings.Contains(profile, ".aws/credentials") {
+		t.Error("unguarding cloud-aws should remove .aws deny rules from profile")
+	}
+}
+
+func TestContract_NeverAllowOverridesCapability(t *testing.T) {
+	// Even with cloud-aws unguarded, never_allow (via denied_extra) should
+	// still deny the path. We use a temp dir to avoid depending on ~/.aws
+	// existing, since renderProfileFromConfig uses a synthetic home dir and
+	// validateAndFilterPaths requires the path to exist on disk.
+	denied := t.TempDir()
+	profile := renderProfileFromConfig(t, &config.SandboxPolicy{
+		Unguard:     []string{"cloud-aws"},
+		DeniedExtra: []string{denied},
+	})
+	if !strings.Contains(profile, denied) {
+		t.Error("never_allow (via denied_extra) should still deny the path even with cloud-aws unguarded")
+	}
+	// Verify it's actually a deny rule, not just any mention
+	foundDeny := false
+	for _, line := range strings.Split(profile, "\n") {
+		if strings.Contains(line, "deny") && strings.Contains(line, denied) {
+			foundDeny = true
+			break
+		}
+	}
+	if !foundDeny {
+		t.Error("denied_extra path should appear as a deny rule in the profile")
+	}
+}
+
 func TestContract_CrossGuardSafety_NixToolchain(t *testing.T) {
 	if _, err := os.Stat("/nix/store"); err != nil {
 		t.Skip("/nix/store not found — nix not installed")

@@ -14,6 +14,9 @@ type Config struct {
 	Sandboxes      map[string]SandboxPolicy   `yaml:"sandboxes,omitempty"`
 	CustomGuards   map[string]CustomGuard     `yaml:"custom_guards,omitempty"`
 	GuardTypes     map[string]GuardType       `yaml:"guard_types,omitempty"`
+	Capabilities  map[string]CapabilityDef `yaml:"capabilities,omitempty"`
+	NeverAllow    []string                 `yaml:"never_allow,omitempty"`
+	NeverAllowEnv []string                 `yaml:"never_allow_env,omitempty"`
 	Preferences    *Preferences               `yaml:"preferences,omitempty"`
 
 	// --- Minimal (flat) format fields ---
@@ -37,6 +40,20 @@ func (c *Config) IsMinimal() bool {
 	return len(c.Agents) == 0 && len(c.Contexts) == 0
 }
 
+// CapabilityDef defines a reusable capability that grants filesystem and
+// environment access. Capabilities can extend a single parent or combine
+// multiple peers, and declare readable/writable/deny path lists plus
+// environment variable allow-lists.
+type CapabilityDef struct {
+	Extends     string   `yaml:"extends,omitempty"`
+	Combines    []string `yaml:"combines,omitempty"`
+	Description string   `yaml:"description,omitempty"`
+	Readable    []string `yaml:"readable,omitempty"`
+	Writable    []string `yaml:"writable,omitempty"`
+	Deny        []string `yaml:"deny,omitempty"`
+	EnvAllow    []string `yaml:"env_allow,omitempty"`
+}
+
 // AgentDef defines an agent binary. Agents carry no env or secrets (DD-5).
 type AgentDef struct {
 	Binary string `yaml:"binary"`
@@ -53,6 +70,7 @@ type Context struct {
 	MCPServerOverrides map[string]MCPServer `yaml:"mcp_server_overrides,omitempty"`
 	Sandbox            *SandboxRef          `yaml:"sandbox,omitempty"`
 	Yolo               *bool                `yaml:"yolo,omitempty"`
+	Capabilities       []string             `yaml:"capabilities,omitempty"`
 }
 
 // MatchRule is a single rule in a context's match list.
@@ -239,8 +257,9 @@ type ProjectOverride struct {
 	Secret      string            `yaml:"secret,omitempty"`
 	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
-	Preferences *Preferences      `yaml:"preferences,omitempty"`
-	Yolo        *bool             `yaml:"yolo,omitempty"`
+	Preferences  *Preferences      `yaml:"preferences,omitempty"`
+	Yolo         *bool             `yaml:"yolo,omitempty"`
+	Capabilities []string          `yaml:"capabilities,omitempty"`
 }
 
 // Preferences holds global display/behavior settings.

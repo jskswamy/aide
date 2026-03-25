@@ -687,3 +687,135 @@ func TestConfigRoundTrip_SandboxExtraFields(t *testing.T) {
 		t.Errorf("Network = %v, want mode=outbound", sb.Network)
 	}
 }
+
+func TestCapabilityDef_Unmarshal(t *testing.T) {
+	input := `
+capabilities:
+  git-ro:
+    description: "Read-only Git access"
+    readable:
+      - "{{project}}/.git"
+    writable: []
+    deny:
+      - "{{project}}/.git/config"
+    env_allow:
+      - GIT_DIR
+  node-dev:
+    extends: git-ro
+    description: "Node.js development"
+    writable:
+      - "{{project}}/node_modules"
+    env_allow:
+      - NODE_ENV
+      - NPM_TOKEN
+  full-stack:
+    combines:
+      - git-ro
+      - node-dev
+    description: "Combined full-stack capability"
+never_allow:
+  - /etc/shadow
+  - /etc/passwd
+never_allow_env:
+  - AWS_SECRET_ACCESS_KEY
+  - GITHUB_TOKEN
+agents:
+  claude:
+    binary: claude
+contexts:
+  dev:
+    agent: claude
+    capabilities:
+      - git-ro
+      - node-dev
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Verify capabilities map
+	if len(cfg.Capabilities) != 3 {
+		t.Fatalf("len(Capabilities) = %d, want 3", len(cfg.Capabilities))
+	}
+
+	gitRO := cfg.Capabilities["git-ro"]
+	if gitRO.Description != "Read-only Git access" {
+		t.Errorf("git-ro.Description = %q, want %q", gitRO.Description, "Read-only Git access")
+	}
+	if len(gitRO.Readable) != 1 || gitRO.Readable[0] != "{{project}}/.git" {
+		t.Errorf("git-ro.Readable = %v, want [{{project}}/.git]", gitRO.Readable)
+	}
+	if len(gitRO.Writable) != 0 {
+		t.Errorf("git-ro.Writable = %v, want []", gitRO.Writable)
+	}
+	if len(gitRO.Deny) != 1 || gitRO.Deny[0] != "{{project}}/.git/config" {
+		t.Errorf("git-ro.Deny = %v, want [{{project}}/.git/config]", gitRO.Deny)
+	}
+	if len(gitRO.EnvAllow) != 1 || gitRO.EnvAllow[0] != "GIT_DIR" {
+		t.Errorf("git-ro.EnvAllow = %v, want [GIT_DIR]", gitRO.EnvAllow)
+	}
+	if gitRO.Extends != "" {
+		t.Errorf("git-ro.Extends = %q, want empty", gitRO.Extends)
+	}
+	if len(gitRO.Combines) != 0 {
+		t.Errorf("git-ro.Combines = %v, want empty", gitRO.Combines)
+	}
+
+	nodeDev := cfg.Capabilities["node-dev"]
+	if nodeDev.Extends != "git-ro" {
+		t.Errorf("node-dev.Extends = %q, want %q", nodeDev.Extends, "git-ro")
+	}
+	if nodeDev.Description != "Node.js development" {
+		t.Errorf("node-dev.Description = %q, want %q", nodeDev.Description, "Node.js development")
+	}
+	if len(nodeDev.Writable) != 1 || nodeDev.Writable[0] != "{{project}}/node_modules" {
+		t.Errorf("node-dev.Writable = %v, want [{{project}}/node_modules]", nodeDev.Writable)
+	}
+	if len(nodeDev.EnvAllow) != 2 || nodeDev.EnvAllow[0] != "NODE_ENV" || nodeDev.EnvAllow[1] != "NPM_TOKEN" {
+		t.Errorf("node-dev.EnvAllow = %v, want [NODE_ENV NPM_TOKEN]", nodeDev.EnvAllow)
+	}
+
+	fullStack := cfg.Capabilities["full-stack"]
+	if len(fullStack.Combines) != 2 || fullStack.Combines[0] != "git-ro" || fullStack.Combines[1] != "node-dev" {
+		t.Errorf("full-stack.Combines = %v, want [git-ro node-dev]", fullStack.Combines)
+	}
+	if fullStack.Description != "Combined full-stack capability" {
+		t.Errorf("full-stack.Description = %q, want %q", fullStack.Description, "Combined full-stack capability")
+	}
+
+	// Verify never_allow
+	if len(cfg.NeverAllow) != 2 || cfg.NeverAllow[0] != "/etc/shadow" || cfg.NeverAllow[1] != "/etc/passwd" {
+		t.Errorf("NeverAllow = %v, want [/etc/shadow /etc/passwd]", cfg.NeverAllow)
+	}
+
+	// Verify never_allow_env
+	if len(cfg.NeverAllowEnv) != 2 || cfg.NeverAllowEnv[0] != "AWS_SECRET_ACCESS_KEY" || cfg.NeverAllowEnv[1] != "GITHUB_TOKEN" {
+		t.Errorf("NeverAllowEnv = %v, want [AWS_SECRET_ACCESS_KEY GITHUB_TOKEN]", cfg.NeverAllowEnv)
+	}
+
+	// Verify context capabilities
+	ctx := cfg.Contexts["dev"]
+	if len(ctx.Capabilities) != 2 || ctx.Capabilities[0] != "git-ro" || ctx.Capabilities[1] != "node-dev" {
+		t.Errorf("Context.Capabilities = %v, want [git-ro node-dev]", ctx.Capabilities)
+	}
+}
+
+func TestProjectOverride_Capabilities(t *testing.T) {
+	input := `
+agent: codex
+capabilities:
+  - git-ro
+  - docker
+`
+	var po config.ProjectOverride
+	if err := yaml.Unmarshal([]byte(input), &po); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if po.Agent != "codex" {
+		t.Errorf("Agent = %q, want %q", po.Agent, "codex")
+	}
+	if len(po.Capabilities) != 2 || po.Capabilities[0] != "git-ro" || po.Capabilities[1] != "docker" {
+		t.Errorf("Capabilities = %v, want [git-ro docker]", po.Capabilities)
+	}
+}

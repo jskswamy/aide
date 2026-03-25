@@ -1,0 +1,65 @@
+package ui
+
+import (
+	"strings"
+	"text/template"
+
+	"github.com/fatih/color"
+)
+
+// colorFuncMap returns the template.FuncMap for banner templates.
+// Color helpers return plain strings (ANSI codes applied by fatih/color).
+// Data helpers expose existing logic to templates declaratively.
+func colorFuncMap() template.FuncMap {
+	return template.FuncMap{
+		// Color helpers
+		"bold":      func(s string) string { return color.New(color.Bold).Sprint(s) },
+		"green":     func(s string) string { return color.New(color.FgGreen).Sprint(s) },
+		"boldGreen": func(s string) string { return color.New(color.FgGreen, color.Bold).Sprint(s) },
+		"yellow":    func(s string) string { return color.New(color.FgYellow).Sprint(s) },
+		"dim":       func(s string) string { return color.New(color.Faint).Sprint(s) },
+		"red":       func(s string) string { return color.New(color.FgRed, color.Bold).Sprint(s) },
+		"cyan":      func(s string) string { return color.New(color.FgCyan).Sprint(s) },
+
+		// Data helpers (wrapping existing functions)
+		"agentDisplay":  agentDisplay,
+		"secretDisplay": secretDisplay,
+		"envLines":      envLines,
+		"networkLabel":  sandboxNetworkLabel,
+		"truncate":      truncateList,
+
+		// Utility helpers
+		"join":     strings.Join,
+		"hasItems": func(s []string) bool { return len(s) > 0 },
+		"slice": func(s []string, i int) []string {
+			if i >= len(s) {
+				return nil
+			}
+			return s[i:]
+		},
+
+		// Banner logic helpers (nil-safe)
+		// IMPORTANT: Go text/template `and` does NOT short-circuit argument evaluation.
+		// `{{if and .Sandbox .Sandbox.Ports}}` panics when .Sandbox is nil.
+		// Use these nil-safe helpers instead.
+		"sandboxDisabled": func(d *BannerData) bool {
+			return d.Sandbox != nil && d.Sandbox.Disabled
+		},
+		"sandboxPorts": func(d *BannerData) string {
+			if d.Sandbox == nil {
+				return ""
+			}
+			if d.Sandbox.Ports == "all" {
+				return ""
+			}
+			return d.Sandbox.Ports
+		},
+		"hasCapOrExtra": func(d *BannerData) bool {
+			return len(d.Capabilities) > 0 ||
+				len(d.DisabledCaps) > 0 ||
+				len(d.ExtraWritable) > 0 ||
+				len(d.ExtraReadable) > 0 ||
+				len(d.ExtraDenied) > 0
+		},
+	}
+}

@@ -1,24 +1,39 @@
 # Sandbox
 
-## Why Sandbox
+## The Short Version
 
-Coding agents read files, run commands, and install packages. Without a defined security boundary, every action that touches the filesystem or network triggers a permission prompt. Users press "yes" repeatedly until they approve something dangerous.
+```sh
+aide status
+```
 
-aide defines the security boundary once, upfront. The agent runs freely inside it. No per-action prompts, no approval fatigue.
+This shows what capabilities are active, which sandbox guards are enforcing them, and whether the sandbox is enabled. For most users, that is all you need.
+
+## Capabilities and Sandbox
+
+aide separates **what** the agent can access from **how** that access is enforced:
+
+- **Capabilities** handle WHAT the agent can access — network, filesystem paths, cloud credentials, toolchains, and more. You configure capabilities in your context config and aide translates them into the right set of guards. See [docs/capabilities.md](capabilities.md) for the full capability reference.
+
+- **The sandbox** handles HOW it is enforced — on macOS, aide generates a Seatbelt profile at launch that locks the agent process to exactly the permissions its capabilities describe.
+
+A practical example:
+
+```yaml
+contexts:
+  work:
+    capabilities:
+      - docker
+      - kubernetes
+      - cloud-aws
+```
+
+aide reads those capabilities, activates the corresponding guards, and produces a sandbox profile that grants Docker socket access, kubeconfig reads, and AWS credential reads — nothing more.
 
 ## On by Default
 
-If no `sandbox:` block appears in your config, aide applies a default policy automatically using guards.
+If no `sandbox:` block appears in your config, aide applies a default policy automatically. With 27 guards active out of the box, the sandbox covers filesystem, network, credentials, cloud providers, toolchains, and common development tools.
 
-aide applies a sandbox with 20 active guards by default:
-
-- **8 always guards:** `base`, `system-runtime`, `network`, `filesystem`, `keychain`,
-  `node-toolchain`, `nix-toolchain`, `git-integration`
-- **12 default guards:** `ssh-keys`, `cloud-aws`, `cloud-gcp`, `cloud-azure`,
-  `cloud-digitalocean`, `cloud-oci`, `kubernetes`, `terraform`, `vault`, `browsers`,
-  `password-managers`, `aide-secrets`
-
-Run `aide sandbox guards` to see all guards and their status.
+Run `aide status` to see what is active for the current context.
 
 | Category     | Default                  |
 |--------------|--------------------------|
@@ -40,14 +55,14 @@ aide auto-detects known agent config directories and adds them to the writable l
 
 ## Customizing Per-Context
 
-Use guards to control what the agent can access:
+The preferred way to customize is through capabilities in your context config. For fine-grained control, you can also work with guards directly:
 
 ```yaml
 contexts:
   work:
     sandbox:
-      guards_extra: [docker]      # enable additional guards
-      unguard: [browsers]         # disable default guards
+      guards_extra: [vercel]        # enable additional guards
+      unguard: [browsers]           # disable default guards
 ```
 
 ### Guard configuration fields
@@ -81,36 +96,6 @@ sandbox:
     mode: outbound
     allow_ports: [443, 80]
     deny_ports: [22]
-```
-
-## Guard Commands
-
-```bash
-aide sandbox guards                    # List all guards with status
-aide sandbox guard docker              # Enable a guard
-aide sandbox unguard browsers          # Disable a guard
-aide sandbox types                     # List guard types
-aide sandbox test                      # Preview generated sandbox profile
-```
-
-All commands accept `--context <name>` to target a specific context.
-
-## Quick CLI Adjustments
-
-```sh
-# Add a path to the deny list
-aide sandbox deny <path>
-
-# Restrict outbound to specific ports
-aide sandbox ports 443 8080
-
-# Set network mode
-aide sandbox network outbound
-aide sandbox network none
-aide sandbox network unrestricted
-
-# Revert sandbox config for the context to defaults
-aide sandbox reset
 ```
 
 ## Named Profiles
@@ -152,6 +137,58 @@ Set `sandbox: false` in your config to disable sandboxing entirely for that cont
 contexts:
   local-dev:
     sandbox: false
+```
+
+## Under the Hood
+
+Capabilities are the user-facing concept, but under the hood aide translates them into **guards** — small, composable policy modules that each protect a specific resource. Guards are the low-level mechanism that generates the actual sandbox profile.
+
+### Guard inventory
+
+aide ships with 28 built-in guards across three tiers:
+
+**Always guards** (7) — cannot be disabled, form the baseline policy:
+
+`base`, `system-runtime`, `network`, `filesystem`, `keychain`, `node-toolchain`, `nix-toolchain`
+
+**Default guards** (20) — active out of the box, can be disabled with `unguard`:
+
+`ssh-keys`, `cloud-aws`, `cloud-gcp`, `cloud-azure`, `cloud-digitalocean`, `cloud-oci`, `kubernetes`, `terraform`, `vault`, `browsers`, `password-managers`, `aide-secrets`, `mounted-volumes`, `shell-history`, `dev-credentials`, `project-secrets`, `docker`, `github-cli`, `npm`, `netrc`
+
+**Opt-in guards** (1) — must be explicitly enabled:
+
+`vercel`
+
+### Guard commands
+
+These commands are available for power users who want to inspect or adjust guards directly:
+
+```bash
+aide sandbox guards                    # List all guards with status
+aide sandbox guard vercel              # Enable a guard
+aide sandbox unguard browsers          # Disable a guard
+aide sandbox types                     # List guard types
+aide sandbox test                      # Preview generated sandbox profile
+```
+
+All commands accept `--context <name>` to target a specific context.
+
+### Quick CLI adjustments
+
+```sh
+# Add a path to the deny list
+aide sandbox deny <path>
+
+# Restrict outbound to specific ports
+aide sandbox ports 443 8080
+
+# Set network mode
+aide sandbox network outbound
+aide sandbox network none
+aide sandbox network unrestricted
+
+# Revert sandbox config for the context to defaults
+aide sandbox reset
 ```
 
 ## Platform Details

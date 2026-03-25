@@ -19,7 +19,8 @@ agent: claude
 env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 secret: personal
-yolo: true   # optional: skip agent permission checks
+yolo: true          # optional: skip agent permission checks
+auto_approve: true  # alias for yolo
 ```
 
 aide registers the agent binary automatically using the name provided. Credentials belong here, not on a separate agent definition.
@@ -69,6 +70,14 @@ contexts:
       OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
     sandbox: strict
 
+  infra:
+    match:
+      - path: "~/infra/*"
+    agent: claude
+    secret: work
+    capabilities: [docker, k8s]
+    auto_approve: true
+
 default_context: personal
 
 preferences:
@@ -87,13 +96,35 @@ Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aide
 
 ---
 
+## Top-Level Config Fields
+
+In addition to `agents:`, `contexts:`, `default_context:`, and `preferences:`, the following top-level fields are available:
+
+- `capabilities:` (map) — User-defined capability definitions. Each key is a capability name mapping to a `CapabilityDef`. Example:
+
+```yaml
+capabilities:
+  k8s-dev:
+    extends: k8s
+    readable: ["~/.kube/dev-config"]
+    deny: ["~/.kube/prod-config"]
+    env_allow: [KUBECONFIG]
+```
+
+- `never_allow:` (list) — Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
+- `never_allow_env:` (list) — Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
+
+---
+
 ## Context Fields
 
 - `match:`: list of path or remote rules that activate the context. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against git remote URL). `remote_name:` defaults to `origin`.
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
+- `capabilities:` (list) — Capability names to activate for this context (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
 - `yolo:` (bool, optional): skip agent permission checks for this context. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
+- `auto_approve:` (bool, optional): alias for `yolo`. Run agent without permission checks.
 - `sandbox:`: accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
 
 ```yaml

@@ -24,7 +24,7 @@ contexts:
 default_context: work
 ```
 
-Each context contains: `agent`, `secret`, `env`, `match`, `sandbox`, and optionally `yolo`.
+Each context contains: `agent`, `secret`, `env`, `match`, `sandbox`, `capabilities`, and optionally `yolo`.
 
 ## Match Rules
 
@@ -77,6 +77,24 @@ sandbox:
 ```
 
 Env variables merge additively; the project override wins on key conflicts. All other fields (including `yolo`) replace the matched value when set.
+
+## Capabilities
+
+The `capabilities` field activates named capabilities for a context. Capabilities grant the sandbox additional permissions (filesystem paths, environment variables, network access) for specific tools.
+
+```yaml
+contexts:
+  infra:
+    agent: claude
+    match:
+      - path: ~/infra/*
+    capabilities: [docker, k8s, aws]
+    secret: work
+    env:
+      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+```
+
+See [Capabilities](capabilities.md) for details on built-in and custom capabilities.
 
 ## Managing Contexts
 

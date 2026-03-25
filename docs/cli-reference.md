@@ -22,8 +22,12 @@ sandbox policy.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--agent <name>` | | Override which agent to launch |
-| `--yolo` | false | Skip agent permission checks; sandbox still applies |
-| `--no-yolo` | false | Disable yolo mode (overrides config `yolo:` and `--yolo` flag) |
+| `--with <caps>` | | Activate capabilities for this session (e.g., `--with k8s,docker`) |
+| `--without <caps>` | | Disable context capabilities for this session |
+| `--auto-approve` | false | Run agent without permission checks (replaces `--yolo`) |
+| `--no-auto-approve` | false | Override config: require permission checks |
+| `--yolo` | false | Alias for `--auto-approve` (kept for backwards compatibility) |
+| `--no-yolo` | false | Alias for `--no-auto-approve` (kept for backwards compatibility) |
 | `--clean-env` | false | Start agent with only essential environment variables |
 
 ```
@@ -44,6 +48,21 @@ and expanded env values.
 
 ```
 aide which --resolve
+```
+
+---
+
+## aide status
+
+```
+aide status
+```
+
+Shows current context, active capabilities, sandbox state, and auto-approve
+status for the working directory.
+
+```
+aide status
 ```
 
 ---
@@ -119,6 +138,164 @@ basename.
 
 ```
 aide use claude --match "~/work/*" --secret personal
+```
+
+---
+
+## aide cap
+
+Manage capabilities -- reusable bundles of sandbox paths, environment
+allowlists, and deny rules that can be composed and activated per session.
+
+### aide cap list
+
+```
+aide cap list
+```
+
+Lists all capabilities (built-in and user-defined).
+
+```
+aide cap list
+```
+
+### aide cap show
+
+```
+aide cap show <name>
+```
+
+Shows capability details with resolved inheritance.
+
+```
+aide cap show k8s
+```
+
+### aide cap create
+
+```
+aide cap create <name> [flags]
+```
+
+Creates a custom capability.
+
+| Flag | Description |
+|------|-------------|
+| `--extends <cap>` | Inherit from an existing capability |
+| `--combines <caps>` | Compose multiple capabilities together |
+| `--readable <path>` | Add a readable path (repeatable) |
+| `--writable <path>` | Add a writable path (repeatable) |
+| `--deny <path>` | Add a denied path (repeatable) |
+| `--env-allow <var>` | Allow an environment variable (repeatable) |
+| `--description <text>` | Human-readable description |
+
+```
+aide cap create my-k8s --extends k8s --writable ~/.kube --description "K8s with local kubeconfig"
+```
+
+### aide cap edit
+
+```
+aide cap edit <name> [flags]
+```
+
+Modifies a user-defined capability. Cannot edit built-in capabilities.
+
+| Flag | Description |
+|------|-------------|
+| `--add-readable <path>` | Add a readable path (repeatable) |
+| `--add-writable <path>` | Add a writable path (repeatable) |
+| `--add-deny <path>` | Add a denied path (repeatable) |
+| `--remove-deny <path>` | Remove a denied path (repeatable) |
+| `--add-env-allow <var>` | Allow an environment variable (repeatable) |
+| `--remove-env-allow <var>` | Remove an environment variable allowance (repeatable) |
+| `--description <text>` | Update description |
+
+```
+aide cap edit my-k8s --add-writable /tmp/helm-cache --description "K8s with Helm"
+```
+
+### aide cap enable
+
+```
+aide cap enable <name>
+```
+
+Adds a capability to the current context.
+
+```
+aide cap enable docker
+```
+
+### aide cap disable
+
+```
+aide cap disable <name>
+```
+
+Removes a capability from the current context.
+
+```
+aide cap disable docker
+```
+
+### aide cap never-allow
+
+```
+aide cap never-allow <path> [flags]
+```
+
+Adds a global deny path that applies across all capabilities and contexts.
+
+| Flag | Description |
+|------|-------------|
+| `--env` | Treat argument as an environment variable name instead of a path |
+| `--list` | List current global deny entries |
+| `--remove` | Remove the entry instead of adding it |
+
+```
+aide cap never-allow ~/.ssh/id_ed25519
+aide cap never-allow --env AWS_SECRET_ACCESS_KEY
+aide cap never-allow --list
+aide cap never-allow --remove /tmp/scratch
+```
+
+### aide cap check
+
+```
+aide cap check <caps...>
+```
+
+Previews the composed result of one or more capabilities without modifying
+config. Shows the merged readable, writable, denied paths and env allowlist.
+
+```
+aide cap check k8s docker
+```
+
+### aide cap audit
+
+```
+aide cap audit
+```
+
+Shows the current context's resolved capabilities -- the effective set of
+paths and environment allowlists after composing all enabled capabilities.
+
+```
+aide cap audit
+```
+
+### aide cap suggest-for-path
+
+```
+aide cap suggest-for-path <path>
+```
+
+Maps a filesystem path to capability names that would grant access to it.
+
+```
+aide cap suggest-for-path /var/run/docker.sock
 ```
 
 ---
@@ -565,6 +742,8 @@ aide agents list
 
 Lists configured agents (with binary path and which contexts use them) and
 agents detected on PATH that are not yet configured.
+
+Supported agents: Claude, Copilot, Codex, Aider, Goose, Amp, Gemini.
 
 ```
 aide agents list

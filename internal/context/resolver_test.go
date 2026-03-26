@@ -905,3 +905,104 @@ func TestResolve_ProjectOverrideDisabledCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestResolve_ProjectOverrideSandbox_AdditiveExtra(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "claude",
+				Sandbox: &config.SandboxRef{Inline: &config.SandboxPolicy{
+					DeniedExtra:   []string{"/etc/passwd"},
+					ReadableExtra: []string{"/opt/tools"},
+				}},
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Sandbox: &config.SandboxPolicy{
+				DeniedExtra:   []string{"/etc/shadow"},
+				ReadableExtra: []string{"/opt/data"},
+			},
+		},
+	}
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inline := rc.Context.Sandbox.Inline
+	if len(inline.DeniedExtra) != 2 {
+		t.Errorf("expected 2 denied_extra (additive), got %v", inline.DeniedExtra)
+	}
+	if len(inline.ReadableExtra) != 2 {
+		t.Errorf("expected 2 readable_extra (additive), got %v", inline.ReadableExtra)
+	}
+}
+
+func TestResolve_ProjectOverrideSandbox_ReplaceBase(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "claude",
+				Sandbox: &config.SandboxRef{Inline: &config.SandboxPolicy{
+					Writable: []string{"/tmp"},
+					Network:  &config.NetworkPolicy{Mode: "none"},
+				}},
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Sandbox: &config.SandboxPolicy{
+				Writable: []string{"/var/data"},
+				Network:  &config.NetworkPolicy{Mode: "outbound"},
+			},
+		},
+	}
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inline := rc.Context.Sandbox.Inline
+	if len(inline.Writable) != 1 || inline.Writable[0] != "/var/data" {
+		t.Errorf("expected writable replaced to [/var/data], got %v", inline.Writable)
+	}
+	if inline.Network.Mode != "outbound" {
+		t.Errorf("expected network mode 'outbound', got %q", inline.Network.Mode)
+	}
+}
+
+func TestResolve_ProjectOverrideSandbox_ProfileExpanded(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent:   "claude",
+				Sandbox: &config.SandboxRef{ProfileName: "strict"},
+			},
+		},
+		Sandboxes: map[string]config.SandboxPolicy{
+			"strict": {
+				Writable: []string{"/tmp"},
+				Readable: []string{"/usr"},
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Sandbox: &config.SandboxPolicy{
+				ReadableExtra: []string{"/opt/data"},
+			},
+		},
+	}
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inline := rc.Context.Sandbox.Inline
+	if inline == nil {
+		t.Fatal("expected inline sandbox after profile expansion")
+	}
+	if len(inline.Readable) != 1 || inline.Readable[0] != "/usr" {
+		t.Errorf("expected base readable from profile, got %v", inline.Readable)
+	}
+	if len(inline.ReadableExtra) != 1 || inline.ReadableExtra[0] != "/opt/data" {
+		t.Errorf("expected readable_extra merged, got %v", inline.ReadableExtra)
+	}
+}

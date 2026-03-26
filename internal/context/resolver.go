@@ -59,7 +59,7 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 			Context:     ctx,
 		}
 		rc.Preferences = config.ResolvePreferences(cfg.Preferences, nil)
-		applyProjectOverride(rc, cfg.ProjectOverride)
+		applyProjectOverride(rc, cfg.ProjectOverride, cfg.Sandboxes)
 		return rc, nil
 	}
 
@@ -107,13 +107,14 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 	}
 
 	rc.Preferences = config.ResolvePreferences(cfg.Preferences, nil)
-	applyProjectOverride(rc, cfg.ProjectOverride)
+	applyProjectOverride(rc, cfg.ProjectOverride, cfg.Sandboxes)
 	return rc, nil
 }
 
 // applyProjectOverride merges a ProjectOverride on top of the resolved context.
 // env merges additively (override wins on conflict); other fields replace if set.
-func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
+// sandboxes is the named profile map from Config.Sandboxes, used to expand profile references.
+func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride, sandboxes map[string]config.SandboxPolicy) {
 	if po == nil {
 		return
 	}
@@ -127,7 +128,51 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
 		rc.Context.MCPServers = po.MCPServers
 	}
 	if po.Sandbox != nil {
-		rc.Context.Sandbox = config.SandboxPolicyToRef(po.Sandbox)
+		// Ensure we have an inline policy to merge into.
+		// If context uses a profile reference, expand it first.
+		if rc.Context.Sandbox == nil {
+			rc.Context.Sandbox = &config.SandboxRef{Inline: &config.SandboxPolicy{}}
+		}
+		if rc.Context.Sandbox.ProfileName != "" && sandboxes != nil {
+			if profile, ok := sandboxes[rc.Context.Sandbox.ProfileName]; ok {
+				profileCopy := profile
+				rc.Context.Sandbox = &config.SandboxRef{Inline: &profileCopy}
+			}
+		}
+		if rc.Context.Sandbox.Inline == nil {
+			rc.Context.Sandbox.Inline = &config.SandboxPolicy{}
+		}
+		inline := rc.Context.Sandbox.Inline
+
+		// Additive fields (append + dedup)
+		inline.DeniedExtra = dedupStrings(append(inline.DeniedExtra, po.Sandbox.DeniedExtra...))
+		inline.ReadableExtra = dedupStrings(append(inline.ReadableExtra, po.Sandbox.ReadableExtra...))
+		inline.WritableExtra = dedupStrings(append(inline.WritableExtra, po.Sandbox.WritableExtra...))
+		inline.GuardsExtra = dedupStrings(append(inline.GuardsExtra, po.Sandbox.GuardsExtra...))
+		inline.Unguard = dedupStrings(append(inline.Unguard, po.Sandbox.Unguard...))
+
+		// Replace-if-set fields
+		if len(po.Sandbox.Writable) > 0 {
+			inline.Writable = po.Sandbox.Writable
+		}
+		if len(po.Sandbox.Readable) > 0 {
+			inline.Readable = po.Sandbox.Readable
+		}
+		if len(po.Sandbox.Denied) > 0 {
+			inline.Denied = po.Sandbox.Denied
+		}
+		if len(po.Sandbox.Guards) > 0 {
+			inline.Guards = po.Sandbox.Guards
+		}
+		if po.Sandbox.Network != nil {
+			inline.Network = po.Sandbox.Network
+		}
+		if po.Sandbox.AllowSubprocess != nil {
+			inline.AllowSubprocess = po.Sandbox.AllowSubprocess
+		}
+		if po.Sandbox.CleanEnv != nil {
+			inline.CleanEnv = po.Sandbox.CleanEnv
+		}
 	}
 	if po.Yolo != nil {
 		rc.Context.Yolo = po.Yolo

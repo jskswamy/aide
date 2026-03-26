@@ -224,12 +224,35 @@ contexts:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 ```
 
-**Custom capabilities:**
+**Need something not in the list?** Create your own in one command:
 
 ```bash
+# Grant access to your Bazel cache
+aide cap create bazel --writable ~/.cache/bazel --env-allow BAZEL_HOME
+
+# Extend a built-in with project-specific restrictions
 aide cap create k8s-dev --extends k8s --deny ~/.kube/prod-config
-aide cap show k8s-dev     # see what it grants
-aide cap check k8s-dev docker  # preview composition before launching
+
+# Bundle capabilities for a workflow
+aide cap create my-deploy --combines docker,k8s,aws
+```
+
+Custom capabilities work the same as built-ins. Use them with `--with`, persist them in `.aide.yaml`, or share them across projects via your global config:
+
+```yaml
+# ~/.config/aide/config.yaml
+capabilities:
+  bazel:
+    writable: ["~/.cache/bazel"]
+    env_allow: [BAZEL_HOME]
+
+# .aide.yaml in a repo (shared with the team)
+capabilities: [docker, k8s, bazel]
+```
+
+```bash
+aide cap show bazel           # inspect what it grants
+aide cap check bazel docker   # preview composition before launching
 ```
 
 **Global protection:**

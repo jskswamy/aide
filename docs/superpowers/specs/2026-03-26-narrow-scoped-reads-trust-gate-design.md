@@ -86,15 +86,12 @@ this guard becomes unnecessary unless the `gpg` capability is active.
 | `python` | — | `~/.pyenv` | — | `PYENV_ROOT`, `VIRTUAL_ENV` |
 | `ruby` | — | `~/.rbenv` | — | `RBENV_ROOT`, `GEM_HOME` |
 | `java` | — | `~/.sdkman`, `~/.gradle`, `~/.m2` | — | `JAVA_HOME`, `SDKMAN_DIR` |
-| `github` | `github-cli`* | `~/.config/gh` | — | `GITHUB_TOKEN`, `GH_TOKEN` |
-| `gpg` | `password-managers`* | `~/.gnupg` | — | `GNUPGHOME` |
-
-*Unguard fields marked with `*` are no-ops after guard removal but
-retained for forward compatibility.
+| `github` | — | `~/.config/gh` | — | `GITHUB_TOKEN`, `GH_TOKEN` |
+| `gpg` | — | `~/.gnupg` | — | `GNUPGHOME` |
 
 Existing capabilities (`aws`, `gcp`, `docker`, `k8s`, `ssh`, `npm`,
-`vault`, etc.) remain unchanged. Their `Unguard` fields also become
-no-ops but are harmless.
+`vault`, etc.) must have their `Unguard` fields cleared since the
+corresponding guards are being removed. Dead references add confusion.
 
 ### 3. Guard Cleanup
 
@@ -122,15 +119,10 @@ capabilities already `Unguard` the corresponding guard. So these guards
 only fire when the path is NOT accessible — meaning they deny what's
 already denied. **They can be removed.**
 
-However, removing them changes the meaning of `--with docker`: today it
-unguards `docker`, which removes the deny on `~/.docker/config.json`.
-After narrowing baseline reads, `--with docker` grants writable access
-to `~/.docker` (new) and there's nothing to unguard. The `Unguard` field
-on these capabilities becomes a no-op but is harmless.
-
-**Action:** Remove redundant guards. Keep the `Unguard` fields on
-capabilities (no-op but forward-compatible if we ever re-add the paths
-to baseline).
+**Action:** Remove redundant guards AND clear the `Unguard` fields
+from their corresponding capabilities. `--with docker` no longer
+means "unguard docker" — it means "grant writable access to
+`~/.docker`". The guard concept is gone for these paths.
 
 **Keep but re-evaluate:**
 - `cloud-gcp` — if `gcp` capability grants `~/.config/gcloud` writable,
@@ -246,20 +238,19 @@ processes.
 **Display on untrusted:**
 
 ```
-$ aide run claude
+$ aide
 ! .aide.yaml is not trusted
 
   Agent:        claude
   Capabilities: go, docker, k8s
   Sandbox:
     writable_extra: [~/.docker]
-    unguard:        [kubernetes]
   Env:
     KUBECONFIG: ~/.kube/tails
 
   Run `aide trust` to approve this configuration.
   Run `aide deny` to permanently block it.
-  Run `aide run --ignore-project-config claude` to launch without it.
+  Run `aide --ignore-project-config` to launch without it.
 ```
 
 **Storage location:** `$XDG_DATA_HOME/aide/trust/` and

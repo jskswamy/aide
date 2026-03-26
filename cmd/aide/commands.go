@@ -4821,7 +4821,7 @@ func trustCmd() *cobra.Command {
 		Use:          "trust",
 		Short:        "Trust the .aide.yaml in the current directory",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			absPath, err := filepath.Abs(".aide.yaml")
 			if err != nil {
 				return err
@@ -4845,7 +4845,7 @@ func denyCmd() *cobra.Command {
 		Use:          "deny",
 		Short:        "Deny the .aide.yaml in the current directory",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			absPath, err := filepath.Abs(".aide.yaml")
 			if err != nil {
 				return err
@@ -4865,7 +4865,7 @@ func untrustCmd() *cobra.Command {
 		Use:          "untrust",
 		Short:        "Remove trust for .aide.yaml without denying",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			absPath, err := filepath.Abs(".aide.yaml")
 			if err != nil {
 				return err

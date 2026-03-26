@@ -59,14 +59,14 @@ func TestBuiltins_LanguageRuntimes(t *testing.T) {
 		{"gpg", []string{"~/.gnupg"}},
 	}
 	for _, tc := range cases {
-		cap, ok := bs[tc.name]
+		c, ok := bs[tc.name]
 		if !ok {
 			t.Errorf("missing capability %q", tc.name)
 			continue
 		}
-		if !reflect.DeepEqual(cap.Writable, tc.writable) {
+		if !reflect.DeepEqual(c.Writable, tc.writable) {
 			t.Errorf("%s writable: got %v, want %v",
-				tc.name, cap.Writable, tc.writable)
+				tc.name, c.Writable, tc.writable)
 		}
 	}
 }

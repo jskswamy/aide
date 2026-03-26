@@ -46,6 +46,7 @@ func Load(configDir, projectDir string) (*Config, error) {
 			return nil, fmt.Errorf("loading project config %s: %w", projectConfigPath, err)
 		}
 		cfg.ProjectOverride = override
+		cfg.ProjectConfigPath = projectConfigPath
 	}
 
 	return cfg, nil

@@ -25,6 +25,7 @@ func main() {
 	var resolve bool
 	var withCaps []string
 	var withoutCaps []string
+	var ignoreProjectConfig bool
 
 	rootCmd := &cobra.Command{
 		Use:   "aide [flags] [-- agent-args...]",
@@ -42,9 +43,10 @@ agents on your PATH.`,
 			}
 
 			l := &launcher.Launcher{
-				Execer: &launcher.SyscallExecer{},
-				Yolo:   yolo || autoApprove,
-				NoYolo: noYolo || noAutoApprove,
+				Execer:              &launcher.SyscallExecer{},
+				Yolo:                yolo || autoApprove,
+				NoYolo:              noYolo || noAutoApprove,
+				IgnoreProjectConfig: ignoreProjectConfig,
 			}
 
 			// Check if a config file exists.
@@ -70,6 +72,7 @@ agents on your PATH.`,
 	rootCmd.Flags().BoolVar(&noAutoApprove, "no-auto-approve", false, "Override config: require permission checks")
 	rootCmd.Flags().StringSliceVar(&withCaps, "with", nil, "Activate capabilities for this session (e.g., --with k8s,docker)")
 	rootCmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "Disable context capabilities for this session")
+	rootCmd.Flags().BoolVar(&ignoreProjectConfig, "ignore-project-config", false, "Launch without applying .aide.yaml")
 	rootCmd.PersistentFlags().BoolVar(&resolve, "resolve", false, "Show detailed startup info")
 
 	registerCommands(rootCmd)

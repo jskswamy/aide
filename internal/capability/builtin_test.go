@@ -35,10 +35,22 @@ func TestBuiltins_EachResolvable(t *testing.T) {
 	}
 }
 
-func TestBuiltin_K8s_HasCorrectGuard(t *testing.T) {
-	k8s := Builtins()["k8s"]
-	if len(k8s.Unguard) != 1 || k8s.Unguard[0] != "kubernetes" {
-		t.Errorf("k8s should unguard [kubernetes], got %v", k8s.Unguard)
+func TestBuiltins_NoStaleUnguardRefs(t *testing.T) {
+	removedGuards := map[string]bool{
+		"cloud-aws": true, "cloud-gcp": true,
+		"cloud-azure": true, "cloud-digitalocean": true,
+		"cloud-oci": true, "kubernetes": true,
+		"docker": true, "terraform": true, "vault": true,
+		"ssh-keys": true, "npm": true, "netrc": true,
+		"github-cli": true, "password-managers": true,
+	}
+	for name, cap := range Builtins() {
+		for _, ug := range cap.Unguard {
+			if removedGuards[ug] {
+				t.Errorf("capability %q has stale Unguard ref %q "+
+					"(guard removed)", name, ug)
+			}
+		}
 	}
 }
 
@@ -69,9 +81,16 @@ func TestBuiltins_LanguageRuntimes(t *testing.T) {
 	}
 }
 
-func TestBuiltin_Helm_ExtendsK8sGuard(t *testing.T) {
+func TestBuiltin_K8s_NoUnguard(t *testing.T) {
+	k8s := Builtins()["k8s"]
+	if len(k8s.Unguard) != 0 {
+		t.Errorf("k8s should have no Unguard, got %v", k8s.Unguard)
+	}
+}
+
+func TestBuiltin_Helm_NoUnguard(t *testing.T) {
 	helm := Builtins()["helm"]
-	if len(helm.Unguard) != 1 || helm.Unguard[0] != "kubernetes" {
-		t.Errorf("helm should unguard [kubernetes], got %v", helm.Unguard)
+	if len(helm.Unguard) != 0 {
+		t.Errorf("helm should have no Unguard, got %v", helm.Unguard)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jskswamy/aide/internal/trust"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,6 +30,39 @@ func WriteProjectOverride(path string, po *ProjectOverride) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
+	return nil
+}
+
+// WriteProjectOverrideWithTrust writes the project override and auto-re-trusts the file
+// if it was previously trusted. This prevents users from being re-prompted after
+// aide-initiated modifications (e.g., `aide cap enable docker`).
+//
+// Security: only auto-re-trusts if the pre-modification content was trusted.
+// If the file was externally modified after the last trust, the pre-modification
+// content won't match any trust hash, so we skip auto-re-trust.
+func WriteProjectOverrideWithTrust(path string, po *ProjectOverride, store *trust.Store) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+
+	// Check pre-modification trust status.
+	oldContents, readErr := os.ReadFile(absPath)
+	wasTrusted := readErr == nil && store.Check(absPath, oldContents) == trust.Trusted
+
+	// Write the new content using existing write function.
+	if err := WriteProjectOverride(path, po); err != nil {
+		return err
+	}
+
+	// Auto-re-trust if previously trusted.
+	if wasTrusted {
+		newContents, err := os.ReadFile(absPath)
+		if err == nil {
+			_ = store.Trust(absPath, newContents)
+		}
+	}
+
 	return nil
 }
 

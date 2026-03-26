@@ -54,16 +54,18 @@ func TestFilesystem_ScopedReadablePaths(t *testing.T) {
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 
-	// Should have scoped dev paths, not broad $HOME read
+	// Should have narrow baseline paths, not broad $HOME read
 	if !strings.Contains(output, "(allow file-read*") {
 		t.Error("expected allow file-read* block")
 	}
-	if !strings.Contains(output, `"/Users/testuser/.config"`) {
-		t.Error("expected scoped .config path")
+	if !strings.Contains(output, `"/Users/testuser/.gitconfig"`) {
+		t.Error("expected .gitconfig literal path")
 	}
-	// Should have regex for dotfiles
-	if !strings.Contains(output, "regex") {
-		t.Error("expected regex rule for home dotfiles")
+	if !strings.Contains(output, `"/Users/testuser/.config/git"`) {
+		t.Error("expected .config/git subpath")
+	}
+	if !strings.Contains(output, `"/Users/testuser/.config/aide"`) {
+		t.Error("expected .config/aide subpath")
 	}
 }
 
@@ -146,9 +148,9 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 	if !strings.Contains(output, `(subpath "`+wdir+`")`) {
 		t.Error("expected writable dir path")
 	}
-	// HomeDir now produces scoped reads, not broad subpath
-	if !strings.Contains(output, `"/Users/testuser/.config"`) {
-		t.Error("expected scoped home development paths")
+	// HomeDir now produces narrow baseline reads
+	if !strings.Contains(output, `"/Users/testuser/.gitconfig"`) {
+		t.Error("expected narrow baseline home paths")
 	}
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny block")
@@ -207,28 +209,36 @@ func TestFilesystemGuard_ScopedHomeReads(t *testing.T) {
 		t.Error("should NOT have broad $HOME subpath read")
 	}
 
-	// Should have specific dev paths
-	devPaths := []string{
-		`"/Users/testuser/.config"`,
+	// Should have narrow baseline paths
+	narrowPaths := []string{
+		`"/Users/testuser/.gitconfig"`,
+		`"/Users/testuser/.config/git"`,
+		`"/Users/testuser/.config/aide"`,
+		`"/Users/testuser/.local/share/aide"`,
 		`"/Users/testuser/.cache"`,
-		`"/Users/testuser/.local"`,
-		`"/Users/testuser/.ssh"`,
-		`"/Users/testuser/.cargo"`,
-		`"/Users/testuser/.rustup"`,
-		`"/Users/testuser/go"`,
-		`"/Users/testuser/Library/Keychains"`,
 		`"/Users/testuser/Library/Caches"`,
-		`"/Users/testuser/Library/Preferences"`,
 	}
-	for _, p := range devPaths {
+	for _, p := range narrowPaths {
 		if !strings.Contains(output, p) {
-			t.Errorf("expected dev path %s in output", p)
+			t.Errorf("expected narrow baseline path %s in output", p)
 		}
 	}
 
-	// Should have home dotfile regex
-	if !strings.Contains(output, "regex") {
-		t.Error("expected regex rule for home dotfiles")
+	// Should NOT have broad dev paths
+	broadPaths := []string{
+		`"/Users/testuser/.ssh"`,
+		`"/Users/testuser/.cargo"`,
+		`"/Users/testuser/.gnupg"`,
+	}
+	for _, p := range broadPaths {
+		if strings.Contains(output, p) {
+			t.Errorf("should NOT have broad path %s in output", p)
+		}
+	}
+
+	// Should NOT have dotfile regex
+	if strings.Contains(output, "regex") {
+		t.Error("should NOT have regex rule for home dotfiles")
 	}
 
 	// Project root should still be writable
@@ -282,14 +292,83 @@ func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 	if !strings.Contains(output, `(subpath "`+project+`")`) {
 		t.Errorf("expected ProjectRoot %s in output", project)
 	}
-	// HomeDir now produces scoped reads
-	if !strings.Contains(output, `"/Users/testuser/.config"`) {
-		t.Error("expected scoped home development paths")
+	// HomeDir now produces narrow baseline reads
+	if !strings.Contains(output, `"/Users/testuser/.gitconfig"`) {
+		t.Error("expected narrow baseline home paths")
 	}
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny block for ExtraDenied")
 	}
 	if !strings.Contains(output, `(literal "`+denied+`")`) {
 		t.Errorf("expected denied path %s in output", denied)
+	}
+}
+
+func TestFilesystemGuard_NarrowBaseline(t *testing.T) {
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:     "/Users/testuser",
+		ProjectRoot: "/project",
+	}
+	result := g.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Should have narrow baseline reads
+	allowedPaths := []struct {
+		path    string
+		kind    string // "literal" or "subpath"
+	}{
+		{`(literal "/Users/testuser/.gitconfig")`, "git config file"},
+		{`(subpath "/Users/testuser/.config/git")`, "git config dir"},
+		{`(subpath "/Users/testuser/.config/aide")`, "aide config"},
+		{`(subpath "/Users/testuser/.local/share/aide")`, "aide data"},
+		{`(subpath "/Users/testuser/.cache")`, "cache dir"},
+		{`(subpath "/Users/testuser/Library/Caches")`, "Library Caches"},
+	}
+	for _, ap := range allowedPaths {
+		if !strings.Contains(output, ap.path) {
+			t.Errorf("expected %s: %s", ap.kind, ap.path)
+		}
+	}
+
+	// Should NOT have broad paths that are now removed
+	broadPaths := []struct {
+		path string
+		desc string
+	}{
+		{`"/Users/testuser/.config"`, "broad .config"},
+		{`"/Users/testuser/.local"`, "broad .local"},
+		{`"/Users/testuser/.ssh"`, "broad .ssh"},
+		{`"/Users/testuser/.cargo"`, "broad .cargo"},
+		{`"/Users/testuser/.rustup"`, "broad .rustup"},
+		{`"/Users/testuser/go"`, "broad go"},
+		{`"/Users/testuser/.pyenv"`, "broad .pyenv"},
+		{`"/Users/testuser/.rbenv"`, "broad .rbenv"},
+		{`"/Users/testuser/.sdkman"`, "broad .sdkman"},
+		{`"/Users/testuser/.gradle"`, "broad .gradle"},
+		{`"/Users/testuser/.m2"`, "broad .m2"},
+		{`"/Users/testuser/.gnupg"`, "broad .gnupg"},
+		{`"/Users/testuser/.nix-profile"`, "broad .nix-profile"},
+		{`"/Users/testuser/.nix-defexpr"`, "broad .nix-defexpr"},
+		{`"/Users/testuser/Library/Keychains"`, "broad Library/Keychains"},
+		{`"/Users/testuser/Library/Preferences"`, "broad Library/Preferences"},
+	}
+	for _, bp := range broadPaths {
+		if strings.Contains(output, bp.path) {
+			t.Errorf("should NOT have %s: %s", bp.desc, bp.path)
+		}
+	}
+
+	// Should NOT have dotfile regex
+	if strings.Contains(output, "regex") {
+		t.Error("should NOT have regex rule for home dotfiles")
+	}
+
+	// Should still have home directory traversal
+	if !strings.Contains(output, `(literal "/Users/testuser")`) {
+		t.Error("expected home directory listing literal")
+	}
+	if !strings.Contains(output, `(allow file-read-metadata`) {
+		t.Error("expected home metadata traversal")
 	}
 }

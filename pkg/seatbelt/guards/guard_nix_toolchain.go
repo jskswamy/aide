@@ -4,7 +4,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"fmt"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type nixToolchainGuard struct{}
 
@@ -31,12 +35,22 @@ func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     (remote unix-socket (path-literal "/nix/var/nix/daemon-socket/socket"))
 )`),
 
-		// Nix user paths (write only — reads covered by filesystem guard)
-		seatbelt.SectionAllow("Nix user paths (write)"),
-		seatbelt.AllowRule(`(allow file-write*
-    ` + seatbelt.HomeSubpath(home, ".nix-profile") + `
-    ` + seatbelt.HomeSubpath(home, ".local/state/nix") + `
-    ` + seatbelt.HomeSubpath(home, ".cache/nix") + `
-)`),
+		// Nix user paths (read+write, self-contained)
+		seatbelt.SectionAllow("Nix user paths"),
+		seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* file-write*
+    %s
+    %s
+    %s
+)`, seatbelt.HomeSubpath(home, ".nix-profile"),
+			seatbelt.HomeSubpath(home, ".local/state/nix"),
+			seatbelt.HomeSubpath(home, ".cache/nix"))),
+
+		// Nix channel definitions and user config (read-only)
+		seatbelt.SectionAllow("Nix channel definitions and user config"),
+		seatbelt.AllowRule(fmt.Sprintf(`(allow file-read*
+    %s
+    %s
+)`, seatbelt.HomeSubpath(home, ".nix-defexpr"),
+			seatbelt.HomeSubpath(home, ".config/nix"))),
 	}}
 }

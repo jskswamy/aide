@@ -7,8 +7,6 @@ package guards
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
@@ -115,46 +113,6 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	return seatbelt.GuardResult{Rules: rules}
 }
 
-// resolveHomeDotfileSymlinks scans dotfiles in $HOME for symlinks and returns
-// the unique parent directories of their resolved targets (when under $HOME).
-// This handles dotfile managers (stow, home-manager, etc.) that create symlinks
-// like ~/.gitconfig → ~/dot-files/git/.gitconfig.
-func resolveHomeDotfileSymlinks(home string) []string {
-	entries, err := os.ReadDir(home)
-	if err != nil {
-		return nil
-	}
-
-	seen := make(map[string]bool)
-	var dirs []string
-
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasPrefix(name, ".") || entry.IsDir() {
-			continue
-		}
-
-		fullPath := filepath.Join(home, name)
-		target, err := filepath.EvalSymlinks(fullPath)
-		if err != nil || target == fullPath {
-			continue // not a symlink or can't resolve
-		}
-
-		// Only add targets that live under $HOME (outside targets like
-		// /nix/store are covered by broad system reads).
-		if !strings.HasPrefix(target, home+"/") {
-			continue
-		}
-
-		dir := filepath.Dir(target)
-		if !seen[dir] {
-			seen[dir] = true
-			dirs = append(dirs, dir)
-		}
-	}
-
-	return dirs
-}
 
 func buildRequireAny(paths []string) string {
 	if len(paths) == 1 {

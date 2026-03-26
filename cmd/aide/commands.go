@@ -3241,6 +3241,19 @@ func sandboxRemoveCmd() *cobra.Command {
 	}
 }
 
+// splitCommaList splits a comma-separated string into its parts,
+// matching the behaviour of pflag's StringSliceVar used by --with.
+func splitCommaList(s string) []string {
+	var result []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
 func removeFromSlice(slice []string, item string) []string {
 	var result []string
 	for _, s := range slice {
@@ -4087,41 +4100,51 @@ func capEditCmd() *cobra.Command {
 func capEnableCmd() *cobra.Command {
 	var contextName string
 	cmd := &cobra.Command{
-		Use:               "enable <capability>",
-		Short:             "Enable a capability for the current context",
+		Use:               "enable <capability>[,capability...]",
+		Short:             "Enable capabilities for the current context",
 		Args:              cobra.ExactArgs(1),
 		SilenceUsage:      true,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			capName := args[0]
+			capNames := splitCommaList(args[0])
 
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
 				return err
 			}
 
-			// Validate the capability exists (built-in or user-defined)
+			// Validate all capabilities exist (built-in or user-defined)
 			userCaps := capability.FromConfigDefs(cfg.Capabilities)
 			registry := capability.MergedRegistry(userCaps)
-			if _, ok := registry[capName]; !ok {
-				return fmt.Errorf("unknown capability: %q", capName)
-			}
-
-			// Check if already enabled
-			for _, c := range ctx.Capabilities {
-				if c == capName {
-					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled for context %q\n", capName, ctxName)
-					return nil
+			for _, capName := range capNames {
+				if _, ok := registry[capName]; !ok {
+					return fmt.Errorf("unknown capability: %q", capName)
 				}
 			}
 
-			ctx.Capabilities = append(ctx.Capabilities, capName)
+			for _, capName := range capNames {
+				// Check if already enabled
+				already := false
+				for _, c := range ctx.Capabilities {
+					if c == capName {
+						already = true
+						break
+					}
+				}
+				if already {
+					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled for context %q\n", capName, ctxName)
+					continue
+				}
+
+				ctx.Capabilities = append(ctx.Capabilities, capName)
+				fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled for context %q\n", capName, ctxName)
+			}
+
 			cfg.Contexts[ctxName] = ctx
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled for context %q\n", capName, ctxName)
 			return nil
 		},
 	}
@@ -4132,40 +4155,43 @@ func capEnableCmd() *cobra.Command {
 func capDisableCmd() *cobra.Command {
 	var contextName string
 	cmd := &cobra.Command{
-		Use:               "disable <capability>",
-		Short:             "Disable a capability for the current context",
+		Use:               "disable <capability>[,capability...]",
+		Short:             "Disable capabilities for the current context",
 		Args:              cobra.ExactArgs(1),
 		SilenceUsage:      true,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			capName := args[0]
+			capNames := splitCommaList(args[0])
 
 			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 			if err != nil {
 				return err
 			}
 
-			// Check if the capability is in the list
-			found := false
-			for _, c := range ctx.Capabilities {
-				if c == capName {
-					found = true
-					break
+			for _, capName := range capNames {
+				// Check if the capability is in the list
+				found := false
+				for _, c := range ctx.Capabilities {
+					if c == capName {
+						found = true
+						break
+					}
 				}
+
+				if !found {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: capability %q is not enabled for context %q\n", capName, ctxName)
+					continue
+				}
+
+				ctx.Capabilities = removeFromSlice(ctx.Capabilities, capName)
+				fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled for context %q\n", capName, ctxName)
 			}
 
-			if !found {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capability %q is not enabled for context %q\n", capName, ctxName)
-				return nil
-			}
-
-			ctx.Capabilities = removeFromSlice(ctx.Capabilities, capName)
 			cfg.Contexts[ctxName] = ctx
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled for context %q\n", capName, ctxName)
 			return nil
 		},
 	}
@@ -4296,16 +4322,17 @@ Examples:
 
 func capCheckCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "check <name> [name...]",
+		Use:   "check <capability>[,capability...]",
 		Short: "Preview merged sandbox overrides for given capabilities",
 		Long: `Resolve one or more capabilities and display the merged sandbox overrides
 that would be applied, along with any credential or composition warnings.
 This is a preview — nothing is launched or modified.`,
-		Args:              cobra.MinimumNArgs(1),
+		Args:              cobra.ExactArgs(1),
 		SilenceUsage:      true,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
+			capNames := splitCommaList(args[0])
 
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -4321,7 +4348,7 @@ This is a preview — nothing is launched or modified.`,
 			userCaps := capability.FromConfigDefs(cfg.Capabilities)
 			registry := capability.MergedRegistry(userCaps)
 
-			set, err := capability.ResolveAll(args, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
+			set, err := capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
 			if err != nil {
 				return err
 			}

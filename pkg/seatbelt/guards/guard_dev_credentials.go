@@ -38,9 +38,12 @@ var credentialPaths = []struct {
 func (g *devCredentialsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	result := seatbelt.GuardResult{}
 
-	// Build opt-out set from ExtraReadable
+	// Build opt-out set from ExtraReadable and ExtraWritable
 	optOut := make(map[string]bool)
 	for _, p := range ctx.ExtraReadable {
+		optOut[p] = true
+	}
+	for _, p := range ctx.ExtraWritable {
 		optOut[p] = true
 	}
 

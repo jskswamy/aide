@@ -2728,9 +2728,10 @@ func sandboxCmd() *cobra.Command {
 
 func sandboxNetworkCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:          "network <mode>",
-		Short:        "Set network mode for a context's sandbox (outbound|none|unrestricted)",
+		Short:        "Set network mode for a context's sandbox (outbound|none|unrestricted) (project-level by default)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -2739,21 +2740,38 @@ func sandboxNetworkCmd() *cobra.Command {
 			if !validModes[mode] {
 				return fmt.Errorf("invalid network mode %q (must be outbound, none, or unrestricted)", mode)
 			}
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				sp := ensureInlineSandbox(&ctx)
+				sp.Network = &config.NetworkPolicy{Mode: mode}
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Set network mode to %q for context %q (global)\n", mode, ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-			sp := ensureInlineSandbox(&ctx)
+			sp := ensureProjectSandbox(po)
 			sp.Network = &config.NetworkPolicy{Mode: mode}
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Set network mode to %q for context %q\n", mode, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Set network mode to %q in project (%s)\n", mode, poPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 
@@ -3336,48 +3354,98 @@ func ensureInlineSandbox(ctx *config.Context) *config.SandboxPolicy {
 	return ctx.Sandbox.Inline
 }
 
+// ensureProjectSandbox ensures the project override has a non-nil SandboxPolicy.
+func ensureProjectSandbox(po *config.ProjectOverride) *config.SandboxPolicy {
+	if po.Sandbox == nil {
+		po.Sandbox = &config.SandboxPolicy{}
+	}
+	return po.Sandbox
+}
+
 func sandboxDenyCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:          "deny <path>",
-		Short:        "Add a path to the denied_extra list",
+		Short:        "Add a path to the denied_extra list (project-level by default)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				sp := ensureInlineSandbox(&ctx)
+				sp.DeniedExtra = append(sp.DeniedExtra, path)
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Added %s to denied_extra for context %q (global)\n", path, ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-			sp := ensureInlineSandbox(&ctx)
+			sp := ensureProjectSandbox(po)
 			sp.DeniedExtra = append(sp.DeniedExtra, path)
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to denied_extra for context %q\n", path, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to denied_extra in project (%s)\n", path, poPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 
 func sandboxAllowCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	var write bool
 	cmd := &cobra.Command{
 		Use:          "allow <path>",
-		Short:        "Add a path to readable_extra or writable_extra",
+		Short:        "Add a path to readable_extra or writable_extra (project-level by default)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				sp := ensureInlineSandbox(&ctx)
+				listName := "readable_extra"
+				if write {
+					sp.WritableExtra = append(sp.WritableExtra, path)
+					listName = "writable_extra"
+				} else {
+					sp.ReadableExtra = append(sp.ReadableExtra, path)
+				}
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Added %s to %s for context %q (global)\n", path, listName, ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-			sp := ensureInlineSandbox(&ctx)
+			sp := ensureProjectSandbox(po)
 			listName := "readable_extra"
 			if write {
 				sp.WritableExtra = append(sp.WritableExtra, path)
@@ -3385,48 +3453,66 @@ func sandboxAllowCmd() *cobra.Command {
 			} else {
 				sp.ReadableExtra = append(sp.ReadableExtra, path)
 			}
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to %s for context %q\n", path, listName, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to %s in project (%s)\n", path, listName, poPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	cmd.Flags().BoolVar(&write, "write", false, "add to writable_extra instead of readable_extra")
 	return cmd
 }
 
 func sandboxResetCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:          "reset",
-		Short:        "Reset sandbox to defaults for a context",
+		Short:        "Reset sandbox to defaults (project-level by default)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				ctx.Sandbox = nil
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Reset sandbox to defaults for context %q (global)\n", ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-			ctx.Sandbox = nil
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			po.Sandbox = nil
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Reset sandbox to defaults for context %q\n", ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Reset sandbox to defaults in project (%s)\n", poPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 
 func sandboxPortsCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:          "ports <port1> [port2] ...",
-		Short:        "Set allowed network ports for a context's sandbox",
+		Short:        "Set allowed network ports for a sandbox (project-level by default)",
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -3441,21 +3527,41 @@ func sandboxPortsCmd() *cobra.Command {
 				}
 				ports = append(ports, p)
 			}
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				sp := ensureInlineSandbox(&ctx)
+				sp.Network = &config.NetworkPolicy{Mode: "outbound", AllowPorts: ports}
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Set allowed ports to %v for context %q (global)\n", ports, ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-			sp := ensureInlineSandbox(&ctx)
-			sp.Network = &config.NetworkPolicy{Mode: "outbound", AllowPorts: ports}
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			sp := ensureProjectSandbox(po)
+			if sp.Network == nil {
+				sp.Network = &config.NetworkPolicy{Mode: "outbound"}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Set allowed ports to %v for context %q\n", ports, ctxName)
+			sp.Network.AllowPorts = ports
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set allowed ports to %v in project (%s)\n", ports, poPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 
@@ -3523,22 +3629,49 @@ func sandboxGuardsCmd() *cobra.Command {
 
 func sandboxGuardCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:          "guard <name>",
-		Short:        "Enable an additional guard for a context's sandbox",
+		Short:        "Enable an additional guard for a sandbox (project-level by default)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				// Reject named profile references — user must edit the profile directly
+				if ctx.Sandbox != nil && !ctx.Sandbox.Disabled && ctx.Sandbox.Inline == nil && ctx.Sandbox.ProfileName != "" {
+					return fmt.Errorf("context %q uses a named sandbox profile %q; modify the profile directly", ctxName, ctx.Sandbox.ProfileName)
+				}
+				sp := ensureInlineSandbox(&ctx)
+				r := sandbox.EnableGuard(sp, name)
+				for _, w := range r.Warnings {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+				}
+				if !r.OK() {
+					return fmt.Errorf("%s", r.Errors[0])
+				}
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				if len(r.Warnings) > 0 {
+					return nil
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Guard %q enabled for context %q (global)\n", name, ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-			// Reject named profile references — user must edit the profile directly
-			if ctx.Sandbox != nil && !ctx.Sandbox.Disabled && ctx.Sandbox.Inline == nil && ctx.Sandbox.ProfileName != "" {
-				return fmt.Errorf("context %q uses a named sandbox profile %q; modify the profile directly", ctxName, ctx.Sandbox.ProfileName)
-			}
-			sp := ensureInlineSandbox(&ctx)
+			sp := ensureProjectSandbox(po)
 			r := sandbox.EnableGuard(sp, name)
 			for _, w := range r.Warnings {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
@@ -3546,39 +3679,66 @@ func sandboxGuardCmd() *cobra.Command {
 			if !r.OK() {
 				return fmt.Errorf("%s", r.Errors[0])
 			}
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
 			}
 			if len(r.Warnings) > 0 {
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q enabled for context %q\n", name, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q enabled in project (%s)\n", name, poPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 
 func sandboxUnguardCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:          "unguard <name>",
-		Short:        "Disable a guard for a context's sandbox",
+		Short:        "Disable a guard for a sandbox (project-level by default)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				// Reject named profile references — user must edit the profile directly
+				if ctx.Sandbox != nil && !ctx.Sandbox.Disabled && ctx.Sandbox.Inline == nil && ctx.Sandbox.ProfileName != "" {
+					return fmt.Errorf("context %q uses a named sandbox profile %q; modify the profile directly", ctxName, ctx.Sandbox.ProfileName)
+				}
+				sp := ensureInlineSandbox(&ctx)
+				r := sandbox.DisableGuard(sp, name)
+				for _, w := range r.Warnings {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+				}
+				if !r.OK() {
+					return fmt.Errorf("%s", r.Errors[0])
+				}
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				if len(r.Warnings) > 0 {
+					return nil
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Guard %q disabled for context %q (global)\n", name, ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-			// Reject named profile references — user must edit the profile directly
-			if ctx.Sandbox != nil && !ctx.Sandbox.Disabled && ctx.Sandbox.Inline == nil && ctx.Sandbox.ProfileName != "" {
-				return fmt.Errorf("context %q uses a named sandbox profile %q; modify the profile directly", ctxName, ctx.Sandbox.ProfileName)
-			}
-			sp := ensureInlineSandbox(&ctx)
+			sp := ensureProjectSandbox(po)
 			r := sandbox.DisableGuard(sp, name)
 			for _, w := range r.Warnings {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
@@ -3586,18 +3746,18 @@ func sandboxUnguardCmd() *cobra.Command {
 			if !r.OK() {
 				return fmt.Errorf("%s", r.Errors[0])
 			}
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
 			}
 			if len(r.Warnings) > 0 {
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q disabled for context %q\n", name, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Guard %q disabled in project (%s)\n", name, poPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 

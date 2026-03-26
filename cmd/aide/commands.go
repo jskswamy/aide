@@ -3301,6 +3301,26 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 	return cfg, contextName, ctx, nil
 }
 
+// resolveProjectOverrideForMutation loads the global config and project override
+// for mutation. Returns the global config (for validation), the project override
+// (empty if .aide.yaml doesn't exist), and the path to write .aide.yaml to.
+func resolveProjectOverrideForMutation() (*config.Config, *config.ProjectOverride, string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("getting working directory: %w", err)
+	}
+	cfg, err := config.Load(config.Dir(), cwd)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("loading config: %w", err)
+	}
+	poPath := config.FindProjectConfigForWrite(cwd)
+	po := cfg.ProjectOverride
+	if po == nil {
+		po = &config.ProjectOverride{}
+	}
+	return cfg, po, poPath, nil
+}
+
 // ensureInlineSandbox ensures the context has an inline SandboxRef with a SandboxPolicy.
 func ensureInlineSandbox(ctx *config.Context) *config.SandboxPolicy {
 	if ctx.Sandbox == nil {
@@ -4099,21 +4119,56 @@ func capEditCmd() *cobra.Command {
 
 func capEnableCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:               "enable <capability>[,capability...]",
-		Short:             "Enable capabilities for the current context",
+		Short:             "Enable capabilities (project-level by default)",
 		Args:              cobra.ExactArgs(1),
 		SilenceUsage:      true,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			capNames := splitCommaList(args[0])
 
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				userCaps := capability.FromConfigDefs(cfg.Capabilities)
+				registry := capability.MergedRegistry(userCaps)
+				for _, capName := range capNames {
+					if _, ok := registry[capName]; !ok {
+						return fmt.Errorf("unknown capability: %q", capName)
+					}
+				}
+				for _, capName := range capNames {
+					already := false
+					for _, c := range ctx.Capabilities {
+						if c == capName {
+							already = true
+							break
+						}
+					}
+					if already {
+						fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled for context %q\n", capName, ctxName)
+						continue
+					}
+					ctx.Capabilities = append(ctx.Capabilities, capName)
+					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled for context %q (global)\n", capName, ctxName)
+				}
+				cfg.Contexts[ctxName] = ctx
+				return config.WriteConfig(cfg)
+			}
+
+			// Project path: write to .aide.yaml
+			cfg, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-
-			// Validate all capabilities exist (built-in or user-defined)
 			userCaps := capability.FromConfigDefs(cfg.Capabilities)
 			registry := capability.MergedRegistry(userCaps)
 			for _, capName := range capNames {
@@ -4121,81 +4176,110 @@ func capEnableCmd() *cobra.Command {
 					return fmt.Errorf("unknown capability: %q", capName)
 				}
 			}
-
 			for _, capName := range capNames {
-				// Check if already enabled
+				// Remove from disabled if present
+				po.DisabledCapabilities = removeFromSlice(po.DisabledCapabilities, capName)
+				// Add if not already present
 				already := false
-				for _, c := range ctx.Capabilities {
+				for _, c := range po.Capabilities {
 					if c == capName {
 						already = true
 						break
 					}
 				}
 				if already {
-					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled for context %q\n", capName, ctxName)
+					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled in project\n", capName)
 					continue
 				}
-
-				ctx.Capabilities = append(ctx.Capabilities, capName)
-				fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled for context %q\n", capName, ctxName)
+				po.Capabilities = append(po.Capabilities, capName)
+				fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled in project (%s)\n", capName, poPath)
 			}
-
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
-			}
-
-			return nil
+			return config.WriteProjectOverride(poPath, po)
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 
 func capDisableCmd() *cobra.Command {
 	var contextName string
+	var global bool
 	cmd := &cobra.Command{
 		Use:               "disable <capability>[,capability...]",
-		Short:             "Disable capabilities for the current context",
+		Short:             "Disable capabilities (project-level by default)",
 		Args:              cobra.ExactArgs(1),
 		SilenceUsage:      true,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			capNames := splitCommaList(args[0])
 
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				for _, capName := range capNames {
+					found := false
+					for _, c := range ctx.Capabilities {
+						if c == capName {
+							found = true
+							break
+						}
+					}
+					if !found {
+						fmt.Fprintf(cmd.ErrOrStderr(), "warning: capability %q is not enabled for context %q\n", capName, ctxName)
+						continue
+					}
+					ctx.Capabilities = removeFromSlice(ctx.Capabilities, capName)
+					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled for context %q (global)\n", capName, ctxName)
+				}
+				cfg.Contexts[ctxName] = ctx
+				return config.WriteConfig(cfg)
+			}
+
+			// Project path
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-
 			for _, capName := range capNames {
-				// Check if the capability is in the list
-				found := false
-				for _, c := range ctx.Capabilities {
+				removed := false
+				for _, c := range po.Capabilities {
 					if c == capName {
-						found = true
+						removed = true
 						break
 					}
 				}
-
-				if !found {
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: capability %q is not enabled for context %q\n", capName, ctxName)
-					continue
+				if removed {
+					po.Capabilities = removeFromSlice(po.Capabilities, capName)
+					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q removed from project (%s)\n", capName, poPath)
+				} else {
+					// Not in project caps — add to disabled to negate global
+					already := false
+					for _, c := range po.DisabledCapabilities {
+						if c == capName {
+							already = true
+							break
+						}
+					}
+					if already {
+						fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already disabled in project\n", capName)
+						continue
+					}
+					po.DisabledCapabilities = append(po.DisabledCapabilities, capName)
+					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled in project (%s)\n", capName, poPath)
 				}
-
-				ctx.Capabilities = removeFromSlice(ctx.Capabilities, capName)
-				fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled for context %q\n", capName, ctxName)
 			}
-
-			cfg.Contexts[ctxName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
-			}
-
-			return nil
+			return config.WriteProjectOverride(poPath, po)
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	return cmd
 }
 

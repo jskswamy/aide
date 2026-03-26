@@ -104,6 +104,52 @@ func init() {
 			Writable:    []string{"~/.npmrc", "~/.yarnrc"},
 			EnvAllow:    []string{"NPM_TOKEN", "NODE_AUTH_TOKEN"},
 		},
+
+		// Language runtimes
+		"go": {
+			Name:        "go",
+			Description: "Go toolchain",
+			Writable:    []string{"~/go"},
+			EnvAllow:    []string{"GOPATH", "GOROOT", "GOBIN"},
+		},
+		"rust": {
+			Name:        "rust",
+			Description: "Rust toolchain",
+			Writable:    []string{"~/.cargo", "~/.rustup"},
+			EnvAllow:    []string{"CARGO_HOME", "RUSTUP_HOME"},
+		},
+		"python": {
+			Name:        "python",
+			Description: "Python toolchain",
+			Writable:    []string{"~/.pyenv"},
+			EnvAllow:    []string{"PYENV_ROOT", "VIRTUAL_ENV"},
+		},
+		"ruby": {
+			Name:        "ruby",
+			Description: "Ruby toolchain",
+			Writable:    []string{"~/.rbenv"},
+			EnvAllow:    []string{"RBENV_ROOT", "GEM_HOME"},
+		},
+		"java": {
+			Name:        "java",
+			Description: "Java/JVM toolchain",
+			Writable:    []string{"~/.sdkman", "~/.gradle", "~/.m2"},
+			EnvAllow:    []string{"JAVA_HOME", "SDKMAN_DIR"},
+		},
+
+		// Dev tools
+		"github": {
+			Name:        "github",
+			Description: "GitHub CLI and credentials",
+			Writable:    []string{"~/.config/gh"},
+			EnvAllow:    []string{"GITHUB_TOKEN", "GH_TOKEN"},
+		},
+		"gpg": {
+			Name:        "gpg",
+			Description: "GPG keys and signing",
+			Writable:    []string{"~/.gnupg"},
+			EnvAllow:    []string{"GNUPGHOME"},
+		},
 	}
 }
 

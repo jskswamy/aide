@@ -819,3 +819,35 @@ capabilities:
 		t.Errorf("Capabilities = %v, want [git-ro docker]", po.Capabilities)
 	}
 }
+
+func TestProjectOverride_DisabledCapabilities_RoundTrip(t *testing.T) {
+	input := `
+capabilities:
+  - k8s
+  - terraform
+disabled_capabilities:
+  - docker
+`
+	var po config.ProjectOverride
+	if err := yaml.Unmarshal([]byte(input), &po); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(po.Capabilities) != 2 || po.Capabilities[0] != "k8s" {
+		t.Errorf("expected capabilities [k8s terraform], got %v", po.Capabilities)
+	}
+	if len(po.DisabledCapabilities) != 1 || po.DisabledCapabilities[0] != "docker" {
+		t.Errorf("expected disabled_capabilities [docker], got %v", po.DisabledCapabilities)
+	}
+
+	data, err := yaml.Marshal(&po)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var po2 config.ProjectOverride
+	if err := yaml.Unmarshal(data, &po2); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
+	}
+	if len(po2.DisabledCapabilities) != 1 || po2.DisabledCapabilities[0] != "docker" {
+		t.Errorf("round-trip failed: got %v", po2.DisabledCapabilities)
+	}
+}

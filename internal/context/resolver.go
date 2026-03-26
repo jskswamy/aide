@@ -132,8 +132,10 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
 	if po.Yolo != nil {
 		rc.Context.Yolo = po.Yolo
 	}
-	if len(po.Capabilities) > 0 {
-		rc.Context.Capabilities = po.Capabilities
+	// Capabilities: additive merge, then subtract disabled
+	if len(po.Capabilities) > 0 || len(po.DisabledCapabilities) > 0 {
+		merged := dedupStrings(append(rc.Context.Capabilities, po.Capabilities...))
+		rc.Context.Capabilities = subtractStrings(merged, po.DisabledCapabilities)
 	}
 	// Env: merge additively, override wins on conflict
 	if len(po.Env) > 0 {
@@ -150,6 +152,34 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride) {
 		rc.Preferences = config.ResolvePreferences(&rc.Preferences, po.Preferences)
 	}
 	rc.MatchReason = fmt.Sprintf("project override on top of %s", rc.MatchReason)
+}
+
+// dedupStrings returns a new slice with duplicate strings removed, preserving order.
+func dedupStrings(s []string) []string {
+	seen := make(map[string]bool, len(s))
+	var result []string
+	for _, v := range s {
+		if !seen[v] {
+			seen[v] = true
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// subtractStrings returns elements in a that are not in b.
+func subtractStrings(a, b []string) []string {
+	remove := make(map[string]bool, len(b))
+	for _, v := range b {
+		remove[v] = true
+	}
+	var result []string
+	for _, v := range a {
+		if !remove[v] {
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 // scoreRule returns a specificity score for a single match rule, or 0 if it

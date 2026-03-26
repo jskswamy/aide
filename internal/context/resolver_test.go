@@ -818,12 +818,90 @@ func TestResolve_ProjectOverrideCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Project override replaces context capabilities
-	if len(rc.Context.Capabilities) != 2 {
-		t.Errorf("expected 2 capabilities from project override, got %d: %v",
+	// Additive merge: docker + k8s + aws
+	if len(rc.Context.Capabilities) != 3 {
+		t.Errorf("expected 3 capabilities from additive merge, got %d: %v",
 			len(rc.Context.Capabilities), rc.Context.Capabilities)
 	}
-	if rc.Context.Capabilities[0] != "k8s" || rc.Context.Capabilities[1] != "aws" {
-		t.Errorf("expected capabilities [k8s aws], got %v", rc.Context.Capabilities)
+}
+
+func TestResolve_ProjectOverrideCapabilities_Additive(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent:        "claude",
+				Capabilities: []string{"docker"},
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Capabilities: []string{"k8s", "aws"},
+		},
+	}
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	caps := rc.Context.Capabilities
+	if len(caps) != 3 {
+		t.Fatalf("expected 3 capabilities, got %d: %v", len(caps), caps)
+	}
+	want := map[string]bool{"docker": true, "k8s": true, "aws": true}
+	for _, c := range caps {
+		if !want[c] {
+			t.Errorf("unexpected capability %q in %v", c, caps)
+		}
+	}
+}
+
+func TestResolve_ProjectOverrideCapabilities_Dedup(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent:        "claude",
+				Capabilities: []string{"docker", "k8s"},
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Capabilities: []string{"k8s", "aws"},
+		},
+	}
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	caps := rc.Context.Capabilities
+	if len(caps) != 3 {
+		t.Fatalf("expected 3 capabilities (deduped), got %d: %v", len(caps), caps)
+	}
+}
+
+func TestResolve_ProjectOverrideDisabledCapabilities(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent:        "claude",
+				Capabilities: []string{"docker", "k8s"},
+			},
+		},
+		DefaultContext: "work",
+		ProjectOverride: &config.ProjectOverride{
+			Capabilities:         []string{"aws"},
+			DisabledCapabilities: []string{"docker"},
+		},
+	}
+	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	caps := rc.Context.Capabilities
+	if len(caps) != 2 {
+		t.Fatalf("expected 2 capabilities after disable, got %d: %v", len(caps), caps)
+	}
+	for _, c := range caps {
+		if c == "docker" {
+			t.Errorf("docker should be disabled, but found in %v", caps)
+		}
 	}
 }

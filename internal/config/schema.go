@@ -270,6 +270,7 @@ type ProjectOverride struct {
 	Preferences  *Preferences      `yaml:"preferences,omitempty"`
 	Yolo         *bool             `yaml:"yolo,omitempty"`
 	Capabilities []string          `yaml:"capabilities,omitempty"`
+	DisabledCapabilities []string  `yaml:"disabled_capabilities,omitempty"`
 }
 
 // Preferences holds global display/behavior settings.

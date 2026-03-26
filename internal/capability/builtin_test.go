@@ -1,6 +1,9 @@
 package capability
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestBuiltins_AllPresent(t *testing.T) {
 	expected := []string{
@@ -17,8 +20,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 12 {
-		t.Errorf("expected 12 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 19 {
+		t.Errorf("expected 19 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -36,6 +39,33 @@ func TestBuiltin_K8s_HasCorrectGuard(t *testing.T) {
 	k8s := Builtins()["k8s"]
 	if len(k8s.Unguard) != 1 || k8s.Unguard[0] != "kubernetes" {
 		t.Errorf("k8s should unguard [kubernetes], got %v", k8s.Unguard)
+	}
+}
+
+func TestBuiltins_LanguageRuntimes(t *testing.T) {
+	bs := Builtins()
+	cases := []struct {
+		name     string
+		writable []string
+	}{
+		{"go", []string{"~/go"}},
+		{"rust", []string{"~/.cargo", "~/.rustup"}},
+		{"python", []string{"~/.pyenv"}},
+		{"ruby", []string{"~/.rbenv"}},
+		{"java", []string{"~/.sdkman", "~/.gradle", "~/.m2"}},
+		{"github", []string{"~/.config/gh"}},
+		{"gpg", []string{"~/.gnupg"}},
+	}
+	for _, tc := range cases {
+		cap, ok := bs[tc.name]
+		if !ok {
+			t.Errorf("missing capability %q", tc.name)
+			continue
+		}
+		if !reflect.DeepEqual(cap.Writable, tc.writable) {
+			t.Errorf("%s writable: got %v, want %v",
+				tc.name, cap.Writable, tc.writable)
+		}
 	}
 }
 

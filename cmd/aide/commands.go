@@ -18,6 +18,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/ui"
@@ -39,6 +40,9 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(sandboxCmd())
 	rootCmd.AddCommand(capCmd())
 	rootCmd.AddCommand(statusCmd())
+	rootCmd.AddCommand(trustCmd())
+	rootCmd.AddCommand(denyCmd())
+	rootCmd.AddCommand(untrustCmd())
 }
 
 func initCmd() *cobra.Command {
@@ -1741,7 +1745,7 @@ Examples:
 					po.Env = make(map[string]string)
 				}
 				po.Env[key] = value
-				if err := config.WriteProjectOverride(poPath, po); err != nil {
+				if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 					return fmt.Errorf("writing project config: %w", err)
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "Set %s in project (%s)\n", key, poPath)
@@ -2108,7 +2112,7 @@ func envRemoveCmd() *cobra.Command {
 				return fmt.Errorf("env var %q not found in project config", key)
 			}
 			delete(po.Env, key)
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from project (%s)\n", key, poPath)
@@ -2805,7 +2809,7 @@ func sandboxNetworkCmd() *cobra.Command {
 			}
 			sp := ensureProjectSandbox(po)
 			sp.Network = &config.NetworkPolicy{Mode: mode}
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Set network mode to %q in project (%s)\n", mode, poPath)
@@ -3437,7 +3441,7 @@ func sandboxDenyCmd() *cobra.Command {
 			}
 			sp := ensureProjectSandbox(po)
 			sp.DeniedExtra = append(sp.DeniedExtra, path)
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to denied_extra in project (%s)\n", path, poPath)
@@ -3495,7 +3499,7 @@ func sandboxAllowCmd() *cobra.Command {
 			} else {
 				sp.ReadableExtra = append(sp.ReadableExtra, path)
 			}
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to %s in project (%s)\n", path, listName, poPath)
@@ -3537,7 +3541,7 @@ func sandboxResetCmd() *cobra.Command {
 				return err
 			}
 			po.Sandbox = nil
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Reset sandbox to defaults in project (%s)\n", poPath)
@@ -3595,7 +3599,7 @@ func sandboxPortsCmd() *cobra.Command {
 				sp.Network = &config.NetworkPolicy{Mode: "outbound"}
 			}
 			sp.Network.AllowPorts = ports
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Set allowed ports to %v in project (%s)\n", ports, poPath)
@@ -3721,7 +3725,7 @@ func sandboxGuardCmd() *cobra.Command {
 			if !r.OK() {
 				return fmt.Errorf("%s", r.Errors[0])
 			}
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			if len(r.Warnings) > 0 {
@@ -3788,7 +3792,7 @@ func sandboxUnguardCmd() *cobra.Command {
 			if !r.OK() {
 				return fmt.Errorf("%s", r.Errors[0])
 			}
-			if err := config.WriteProjectOverride(poPath, po); err != nil {
+			if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 				return fmt.Errorf("writing project config: %w", err)
 			}
 			if len(r.Warnings) > 0 {
@@ -4396,7 +4400,7 @@ func capEnableCmd() *cobra.Command {
 				po.Capabilities = append(po.Capabilities, capName)
 				fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled in project (%s)\n", capName, poPath)
 			}
-			return config.WriteProjectOverride(poPath, po)
+			return config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore())
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
@@ -4477,7 +4481,7 @@ func capDisableCmd() *cobra.Command {
 					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled in project (%s)\n", capName, poPath)
 				}
 			}
-			return config.WriteProjectOverride(poPath, po)
+			return config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore())
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
@@ -4810,5 +4814,73 @@ func capabilityNamesForCompletion() []string {
 // available capability names.
 func capabilityCompletionFunc(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 	return capabilityNamesForCompletion(), cobra.ShellCompDirectiveNoFileComp
+}
+
+func trustCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "trust",
+		Short:        "Trust the .aide.yaml in the current directory",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			absPath, err := filepath.Abs(".aide.yaml")
+			if err != nil {
+				return err
+			}
+			contents, err := os.ReadFile(absPath)
+			if err != nil {
+				return fmt.Errorf(".aide.yaml not found in current directory")
+			}
+			store := trust.DefaultStore()
+			if err := store.Trust(absPath, contents); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Trusted: %s\n", absPath)
+			return nil
+		},
+	}
+}
+
+func denyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "deny",
+		Short:        "Deny the .aide.yaml in the current directory",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			absPath, err := filepath.Abs(".aide.yaml")
+			if err != nil {
+				return err
+			}
+			store := trust.DefaultStore()
+			if err := store.Deny(absPath); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Denied: %s\n", absPath)
+			return nil
+		},
+	}
+}
+
+func untrustCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "untrust",
+		Short:        "Remove trust for .aide.yaml without denying",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			absPath, err := filepath.Abs(".aide.yaml")
+			if err != nil {
+				return err
+			}
+			contents, err := os.ReadFile(absPath)
+			if err != nil {
+				return fmt.Errorf(".aide.yaml not found in current directory")
+			}
+			store := trust.DefaultStore()
+			if err := store.Untrust(absPath, contents); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Untrusted: %s\n", absPath)
+			return nil
+		},
+	}
 }
 

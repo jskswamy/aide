@@ -31,7 +31,8 @@ type Config struct {
 	// --- Project override (populated by loader, not from YAML) ---
 	// Holds .aide.yaml data to be merged on top of the matched context at
 	// resolution time. Not serialized to YAML.
-	ProjectOverride *ProjectOverride `yaml:"-"`
+	ProjectOverride     *ProjectOverride `yaml:"-"`
+	ProjectConfigPath   string           `yaml:"-"` // absolute path to .aide.yaml, if found
 }
 
 // IsMinimal returns true when the config uses the flat single-context format.

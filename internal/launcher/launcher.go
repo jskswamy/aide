@@ -15,6 +15,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
+	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/ui"
 )
 
@@ -41,12 +42,14 @@ var agentYoloFlags = map[string]string{
 
 // Launcher orchestrates the full agent launch flow.
 type Launcher struct {
-	Execer    Execer
-	ConfigDir string       // override for testing (default: config.Dir())
-	LookPath  LookPathFunc // override for testing (default: exec.LookPath)
-	Yolo      bool         // inject agent-specific skip-permissions flag
-	NoYolo    bool         // override: disable yolo mode (overrides config and --yolo)
-	Stderr    io.Writer    // override for testing (default: os.Stderr)
+	Execer               Execer
+	ConfigDir            string       // override for testing (default: config.Dir())
+	LookPath             LookPathFunc // override for testing (default: exec.LookPath)
+	Yolo                 bool         // inject agent-specific skip-permissions flag
+	NoYolo               bool         // override: disable yolo mode (overrides config and --yolo)
+	Stderr               io.Writer    // override for testing (default: os.Stderr)
+	IgnoreProjectConfig  bool         // skip .aide.yaml entirely
+	TrustStore           *trust.Store // override for testing (default: trust.DefaultStore())
 }
 
 // stderr returns the effective stderr writer.
@@ -72,6 +75,13 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	cfg, err := config.Load(l.configDir(), cwd)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// 1b. Trust-gate: check .aide.yaml before applying ProjectOverride.
+	if l.IgnoreProjectConfig {
+		cfg.ProjectOverride = nil
+	} else if cfg.ProjectOverride != nil && cfg.ProjectConfigPath != "" {
+		l.applyTrustGate(cfg)
 	}
 
 	// 2. Detect git remote + project root
@@ -634,4 +644,63 @@ func yoloSource(cliFlag bool, preferences, context, project *bool) string {
 		return "preferences"
 	}
 	return "config"
+}
+
+// trustStore returns the effective trust store.
+func (l *Launcher) trustStore() *trust.Store {
+	if l.TrustStore != nil {
+		return l.TrustStore
+	}
+	return trust.DefaultStore()
+}
+
+// applyTrustGate checks the trust status of .aide.yaml and nils out
+// ProjectOverride if the file is not trusted.
+func (l *Launcher) applyTrustGate(cfg *config.Config) {
+	absPath, err := filepath.Abs(cfg.ProjectConfigPath)
+	if err != nil {
+		return // can't resolve path, proceed without override
+	}
+	contents, err := os.ReadFile(absPath)
+	if err != nil {
+		return // can't read file, proceed without override
+	}
+
+	store := l.trustStore()
+	status := store.Check(absPath, contents)
+	switch status {
+	case trust.Denied:
+		cfg.ProjectOverride = nil
+	case trust.Untrusted:
+		printUntrustedWarning(l.stderr(), absPath, cfg.ProjectOverride)
+		cfg.ProjectOverride = nil
+	case trust.Trusted:
+		// proceed normally
+	}
+}
+
+// printUntrustedWarning prints a warning about untrusted .aide.yaml contents.
+func printUntrustedWarning(w io.Writer, path string, po *config.ProjectOverride) {
+	fmt.Fprintf(w, "! .aide.yaml is not trusted\n\n")
+	if po.Agent != "" {
+		fmt.Fprintf(w, "  Agent:        %s\n", po.Agent)
+	}
+	if len(po.Capabilities) > 0 {
+		fmt.Fprintf(w, "  Capabilities: %s\n", strings.Join(po.Capabilities, ", "))
+	}
+	if po.Sandbox != nil {
+		if len(po.Sandbox.WritableExtra) > 0 {
+			fmt.Fprintf(w, "  Writable:     %v\n", po.Sandbox.WritableExtra)
+		}
+		if len(po.Sandbox.Unguard) > 0 {
+			fmt.Fprintf(w, "  Unguard:      %v\n", po.Sandbox.Unguard)
+		}
+	}
+	if len(po.Env) > 0 {
+		fmt.Fprintf(w, "  Env vars:     %d configured\n", len(po.Env))
+	}
+	fmt.Fprintf(w, "\n")
+	fmt.Fprintf(w, "  Run `aide trust` to approve this configuration.\n")
+	fmt.Fprintf(w, "  Run `aide deny` to permanently block it.\n")
+	fmt.Fprintf(w, "  Run `aide --ignore-project-config` to launch without it.\n")
 }

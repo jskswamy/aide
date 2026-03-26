@@ -35,21 +35,11 @@ func TestBuiltins_EachResolvable(t *testing.T) {
 	}
 }
 
-func TestBuiltins_NoStaleUnguardRefs(t *testing.T) {
-	removedGuards := map[string]bool{
-		"cloud-aws": true, "cloud-gcp": true,
-		"cloud-azure": true, "cloud-digitalocean": true,
-		"cloud-oci": true, "kubernetes": true,
-		"docker": true, "terraform": true, "vault": true,
-		"ssh-keys": true, "npm": true, "netrc": true,
-		"github-cli": true, "password-managers": true,
-	}
+func TestBuiltins_NoUnguardRefs(t *testing.T) {
 	for name, cap := range Builtins() {
-		for _, ug := range cap.Unguard {
-			if removedGuards[ug] {
-				t.Errorf("capability %q has stale Unguard ref %q "+
-					"(guard removed)", name, ug)
-			}
+		if len(cap.Unguard) != 0 {
+			t.Errorf("capability %q has Unguard %v "+
+				"(all guards removed, Unguard should be empty)", name, cap.Unguard)
 		}
 	}
 }

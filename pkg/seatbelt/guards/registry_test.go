@@ -8,8 +8,8 @@ import (
 
 func TestRegistry_AllGuards(t *testing.T) {
 	guards := guards.AllGuards()
-	if len(guards) != 28 {
-		t.Errorf("expected 28 guards, got %d", len(guards))
+	if len(guards) != 10 {
+		t.Errorf("expected 10 guards, got %d", len(guards))
 	}
 
 	// Verify each guard has a non-empty name and type.
@@ -24,12 +24,12 @@ func TestRegistry_AllGuards(t *testing.T) {
 }
 
 func TestRegistry_GuardByName(t *testing.T) {
-	g, ok := guards.GuardByName("ssh-keys")
+	g, ok := guards.GuardByName("aide-secrets")
 	if !ok {
-		t.Fatal("expected to find guard ssh-keys")
+		t.Fatal("expected to find guard aide-secrets")
 	}
-	if g.Name() != "ssh-keys" {
-		t.Errorf("expected name %q, got %q", "ssh-keys", g.Name())
+	if g.Name() != "aide-secrets" {
+		t.Errorf("expected name %q, got %q", "aide-secrets", g.Name())
 	}
 
 	_, ok = guards.GuardByName("does-not-exist")
@@ -50,8 +50,8 @@ func TestRegistry_GuardsByType(t *testing.T) {
 	}
 
 	defaults := guards.ByType("default")
-	if len(defaults) != 20 {
-		t.Errorf("expected 20 default guards, got %d", len(defaults))
+	if len(defaults) != 3 {
+		t.Errorf("expected 3 default guards, got %d", len(defaults))
 	}
 	for _, g := range defaults {
 		if g.Type() != "default" {
@@ -60,36 +60,8 @@ func TestRegistry_GuardsByType(t *testing.T) {
 	}
 
 	optIn := guards.ByType("opt-in")
-	if len(optIn) != 1 {
-		t.Errorf("expected 1 opt-in guards, got %d", len(optIn))
-	}
-	for _, g := range optIn {
-		if g.Type() != "opt-in" {
-			t.Errorf("guard %q has type %q, expected opt-in", g.Name(), g.Type())
-		}
-	}
-}
-
-func TestRegistry_ExpandGuardName_Cloud(t *testing.T) {
-	names := guards.ExpandGuardName("cloud")
-	if len(names) != 5 {
-		t.Errorf("expected 5 cloud guard names, got %d", len(names))
-	}
-	want := map[string]bool{
-		"cloud-aws":          true,
-		"cloud-gcp":          true,
-		"cloud-azure":        true,
-		"cloud-digitalocean": true,
-		"cloud-oci":          true,
-	}
-	for _, n := range names {
-		if !want[n] {
-			t.Errorf("unexpected cloud guard name %q", n)
-		}
-		delete(want, n)
-	}
-	for n := range want {
-		t.Errorf("missing cloud guard name %q", n)
+	if len(optIn) != 0 {
+		t.Errorf("expected 0 opt-in guards, got %d", len(optIn))
 	}
 }
 
@@ -111,9 +83,9 @@ func TestRegistry_ExpandGuardName_AllDefault(t *testing.T) {
 }
 
 func TestRegistry_ExpandGuardName_Regular(t *testing.T) {
-	names := guards.ExpandGuardName("ssh-keys")
-	if len(names) != 1 || names[0] != "ssh-keys" {
-		t.Errorf("expected [\"ssh-keys\"], got %v", names)
+	names := guards.ExpandGuardName("aide-secrets")
+	if len(names) != 1 || names[0] != "aide-secrets" {
+		t.Errorf("expected [\"aide-secrets\"], got %v", names)
 	}
 }
 
@@ -127,38 +99,22 @@ func TestRegistry_DefaultGuardNames(t *testing.T) {
 	if len(names) != expected {
 		t.Errorf("expected %d default guard names, got %d", expected, len(names))
 	}
-
-	// Should not include opt-in guards.
-	optIn := guards.ByType("opt-in")
-	optInSet := make(map[string]bool, len(optIn))
-	for _, g := range optIn {
-		optInSet[g.Name()] = true
-	}
-	for _, n := range names {
-		if optInSet[n] {
-			t.Errorf("opt-in guard %q should not be in DefaultGuardNames", n)
-		}
-	}
 }
 
 func TestRegistry_ResolveActiveGuards(t *testing.T) {
-	// docker is now "default", so use vercel (still opt-in) for testing type ordering
-	names := []string{"vercel", "base", "ssh-keys"}
+	names := []string{"aide-secrets", "base"}
 	guards := guards.ResolveActiveGuards(names)
 
-	if len(guards) != 3 {
-		t.Fatalf("expected 3 guards, got %d", len(guards))
+	if len(guards) != 2 {
+		t.Fatalf("expected 2 guards, got %d", len(guards))
 	}
 
-	// Should be ordered: always (base) → default (ssh-keys) → opt-in (vercel)
+	// Should be ordered: always (base) → default (aide-secrets)
 	if guards[0].Name() != "base" {
 		t.Errorf("expected guards[0] = base (always), got %q", guards[0].Name())
 	}
-	if guards[1].Name() != "ssh-keys" {
-		t.Errorf("expected guards[1] = ssh-keys (default), got %q", guards[1].Name())
-	}
-	if guards[2].Name() != "vercel" {
-		t.Errorf("expected guards[2] = vercel (opt-in), got %q", guards[2].Name())
+	if guards[1].Name() != "aide-secrets" {
+		t.Errorf("expected guards[1] = aide-secrets (default), got %q", guards[1].Name())
 	}
 }
 
@@ -175,7 +131,7 @@ func TestRegistry_ResolveActiveGuards_SkipsUnknown(t *testing.T) {
 }
 
 func TestRegistry_ResolveActiveGuards_Deduplication(t *testing.T) {
-	result := guards.ResolveActiveGuards([]string{"ssh-keys", "base", "ssh-keys", "base"})
+	result := guards.ResolveActiveGuards([]string{"aide-secrets", "base", "aide-secrets", "base"})
 	if len(result) != 2 {
 		t.Errorf("expected 2 unique guards after dedup, got %d", len(result))
 	}

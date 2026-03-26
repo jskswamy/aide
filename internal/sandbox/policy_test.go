@@ -500,7 +500,7 @@ func TestPolicyFromConfig_GlobsNotValidated(t *testing.T) {
 
 func TestPolicyFromConfig_GuardsOverridesDefault(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		Guards: []string{"ssh-keys", "browsers"},
+		Guards: []string{"project-secrets", "aide-secrets"},
 	}
 
 	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
@@ -514,14 +514,14 @@ func TestPolicyFromConfig_GuardsOverridesDefault(t *testing.T) {
 			assertContains(t, policy.Guards, g.Name(), "Guards should contain always guard "+g.Name())
 		}
 	}
-	assertContains(t, policy.Guards, "ssh-keys", "Guards should contain ssh-keys")
-	assertContains(t, policy.Guards, "browsers", "Guards should contain browsers")
+	assertContains(t, policy.Guards, "project-secrets", "Guards should contain project-secrets")
+	assertContains(t, policy.Guards, "aide-secrets", "Guards should contain aide-secrets")
 
 	// Should NOT contain default guards that weren't listed
 	defaults := guards.DefaultGuardNames()
 	for _, name := range defaults {
 		g, _ := guards.GuardByName(name)
-		if g.Type() == "default" && name != "ssh-keys" && name != "browsers" {
+		if g.Type() == "default" && name != "project-secrets" && name != "aide-secrets" {
 			for _, gn := range policy.Guards {
 				if gn == name {
 					t.Errorf("Guards should not contain default guard %q when guards is set", name)
@@ -533,7 +533,7 @@ func TestPolicyFromConfig_GuardsOverridesDefault(t *testing.T) {
 
 func TestPolicyFromConfig_GuardsExtraAdds(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		GuardsExtra: []string{"docker", "npm"},
+		GuardsExtra: []string{"project-secrets"},
 	}
 
 	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
@@ -541,18 +541,16 @@ func TestPolicyFromConfig_GuardsExtraAdds(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should contain all defaults + docker + npm
+	// Should contain all defaults
 	defaults := guards.DefaultGuardNames()
 	for _, name := range defaults {
 		assertContains(t, policy.Guards, name, "Guards should contain default guard "+name)
 	}
-	assertContains(t, policy.Guards, "docker", "Guards should contain docker")
-	assertContains(t, policy.Guards, "npm", "Guards should contain npm")
 }
 
 func TestPolicyFromConfig_UnguardRemoves(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		Unguard: []string{"browsers"},
+		Unguard: []string{"aide-secrets"},
 	}
 
 	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
@@ -561,8 +559,8 @@ func TestPolicyFromConfig_UnguardRemoves(t *testing.T) {
 	}
 
 	for _, g := range policy.Guards {
-		if g == "browsers" {
-			t.Error("Guards should not contain browsers after unguard")
+		if g == "aide-secrets" {
+			t.Error("Guards should not contain aide-secrets after unguard")
 		}
 	}
 }
@@ -583,8 +581,8 @@ func TestPolicyFromConfig_UnguardAlways_Error(t *testing.T) {
 
 func TestPolicyFromConfig_GuardsAndGuardsExtraWarns(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		Guards:      []string{"ssh-keys"},
-		GuardsExtra: []string{"docker"},
+		Guards:      []string{"project-secrets"},
+		GuardsExtra: []string{"aide-secrets"},
 	}
 
 	_, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
@@ -618,23 +616,6 @@ func TestPolicyFromConfig_UnknownGuardName_Error(t *testing.T) {
 	}
 }
 
-func TestPolicyFromConfig_CloudMetaGuard(t *testing.T) {
-	cfg := &config.SandboxPolicy{
-		Guards: []string{"cloud"},
-	}
-
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	assertContains(t, policy.Guards, "cloud-aws", "cloud meta-guard should expand to cloud-aws")
-	assertContains(t, policy.Guards, "cloud-gcp", "cloud meta-guard should expand to cloud-gcp")
-	assertContains(t, policy.Guards, "cloud-azure", "cloud meta-guard should expand to cloud-azure")
-	assertContains(t, policy.Guards, "cloud-digitalocean", "cloud meta-guard should expand to cloud-digitalocean")
-	assertContains(t, policy.Guards, "cloud-oci", "cloud meta-guard should expand to cloud-oci")
-}
-
 func TestValidateSandboxConfig_UnknownGuardInValidation(t *testing.T) {
 	cfg := &config.SandboxPolicy{
 		Guards: []string{"nonexistent"},
@@ -657,8 +638,8 @@ func TestValidateSandboxConfig_UnguardAlwaysInValidation(t *testing.T) {
 
 func TestValidateSandboxConfig_BothGuardsAndGuardsExtra_Warning(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		Guards:      []string{"ssh-keys"},
-		GuardsExtra: []string{"docker"},
+		Guards:      []string{"project-secrets"},
+		GuardsExtra: []string{"aide-secrets"},
 	}
 	result := ValidateSandboxConfigDetailed(cfg)
 	found := false
@@ -673,52 +654,20 @@ func TestValidateSandboxConfig_BothGuardsAndGuardsExtra_Warning(t *testing.T) {
 	}
 }
 
-func TestPolicyFromConfig_GuardsExtraCloudMetaGuard(t *testing.T) {
-	cfg := &config.SandboxPolicy{GuardsExtra: []string{"cloud"}}
-	policy, _, err := PolicyFromConfig(cfg, "/proj", "/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	guardSet := make(map[string]bool)
-	for _, g := range policy.Guards {
-		guardSet[g] = true
-	}
-	for _, want := range []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci"} {
-		if !guardSet[want] {
-			t.Errorf("cloud meta-guard in guards_extra should expand to include %q", want)
-		}
-	}
-}
-
-func TestPolicyFromConfig_UnguardCloudMetaGuard(t *testing.T) {
-	cfg := &config.SandboxPolicy{Unguard: []string{"cloud"}}
-	policy, _, err := PolicyFromConfig(cfg, "/proj", "/rt", "/home/user", "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	for _, name := range []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci"} {
-		for _, g := range policy.Guards {
-			if g == name {
-				t.Errorf("cloud meta-guard in unguard should remove %q", name)
-			}
-		}
-	}
-}
-
 func TestPolicyFromConfig_DuplicateGuardNames(t *testing.T) {
-	cfg := &config.SandboxPolicy{Guards: []string{"ssh-keys", "ssh-keys"}}
+	cfg := &config.SandboxPolicy{Guards: []string{"project-secrets", "project-secrets"}}
 	policy, _, err := PolicyFromConfig(cfg, "/proj", "/rt", "/home/user", "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	count := 0
 	for _, g := range policy.Guards {
-		if g == "ssh-keys" {
+		if g == "project-secrets" {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("expected ssh-keys once after dedup, got %d", count)
+		t.Errorf("expected project-secrets once after dedup, got %d", count)
 	}
 }
 

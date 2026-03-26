@@ -44,16 +44,12 @@ func TestMergeCapNames_Empty(t *testing.T) {
 func TestApplyOverrides_NilConfig(t *testing.T) {
 	var cfg *config.SandboxPolicy
 	overrides := config.SandboxOverrides{
-		Unguard:       []string{"cloud-azure"},
 		ReadableExtra: []string{"~/.azure"},
 	}
 	ApplyOverrides(&cfg, overrides)
 
 	if cfg == nil {
 		t.Fatal("expected non-nil config after ApplyOverrides")
-	}
-	if len(cfg.Unguard) != 1 || cfg.Unguard[0] != "cloud-azure" {
-		t.Errorf("expected Unguard [cloud-azure], got %v", cfg.Unguard)
 	}
 	if len(cfg.ReadableExtra) != 1 || cfg.ReadableExtra[0] != "~/.azure" {
 		t.Errorf("expected ReadableExtra [~/.azure], got %v", cfg.ReadableExtra)
@@ -62,19 +58,14 @@ func TestApplyOverrides_NilConfig(t *testing.T) {
 
 func TestApplyOverrides_ExistingConfig(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		Unguard:     []string{"ssh-keys"},
 		ReadableExtra: []string{"~/.ssh"},
 	}
 	overrides := config.SandboxOverrides{
-		Unguard:       []string{"cloud-azure", "terraform"},
 		ReadableExtra: []string{"~/.azure", "~/.terraform.d"},
 		WritableExtra: []string{"/tmp/tf"},
 	}
 	ApplyOverrides(&cfg, overrides)
 
-	if len(cfg.Unguard) != 3 {
-		t.Errorf("expected 3 unguards, got %v", cfg.Unguard)
-	}
 	if len(cfg.ReadableExtra) != 3 {
 		t.Errorf("expected 3 readable, got %v", cfg.ReadableExtra)
 	}
@@ -107,16 +98,9 @@ func TestResolveCapabilities_BuiltinCaps(t *testing.T) {
 		t.Fatal("expected non-nil capSet")
 	}
 
-	// Azure unguards cloud-azure, terraform unguards terraform
-	unguardSet := make(map[string]bool)
-	for _, u := range overrides.Unguard {
-		unguardSet[u] = true
-	}
-	if !unguardSet["cloud-azure"] {
-		t.Error("expected cloud-azure in Unguard")
-	}
-	if !unguardSet["terraform"] {
-		t.Error("expected terraform in Unguard")
+	// Capabilities no longer have Unguard fields — they use Writable/Readable directly.
+	if len(overrides.Unguard) != 0 {
+		t.Errorf("expected 0 unguards (guards removed), got %v", overrides.Unguard)
 	}
 }
 

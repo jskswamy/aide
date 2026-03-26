@@ -34,23 +34,23 @@ func TestCredentialWarnings_Nil(t *testing.T) {
 	}
 }
 
-func TestCompositionWarnings_CredentialPlusNetwork(t *testing.T) {
+func TestCompositionWarnings_NoWarningsWithoutNetworkUnguards(t *testing.T) {
+	// With redundant guards removed, networkUnguards is empty.
+	// Composition warnings require both credentials and network-capable unguards.
 	caps := []ResolvedCapability{
 		{
 			Name:     "aws",
-			Unguard:  []string{"cloud-aws"},
 			EnvAllow: []string{"AWS_SECRET_ACCESS_KEY"},
 		},
 		{
 			Name:     "k8s",
-			Unguard:  []string{"kubernetes"},
 			EnvAllow: []string{"KUBECONFIG"},
 		},
 	}
 
 	warnings := CompositionWarnings(caps)
-	if len(warnings) != 1 {
-		t.Fatalf("expected 1 composition warning, got %d: %v", len(warnings), warnings)
+	if len(warnings) != 0 {
+		t.Errorf("expected no composition warnings (no network unguards), got %v", warnings)
 	}
 }
 
@@ -58,7 +58,6 @@ func TestCompositionWarnings_NoCredentials(t *testing.T) {
 	caps := []ResolvedCapability{
 		{
 			Name:     "k8s",
-			Unguard:  []string{"kubernetes"},
 			EnvAllow: []string{"KUBECONFIG"},
 		},
 	}

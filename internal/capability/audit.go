@@ -15,19 +15,10 @@ var credentialEnvVars = map[string]bool{
 }
 
 // networkUnguards lists unguard values that imply network/egress access.
-var networkUnguards = map[string]bool{
-	"cloud-aws":          true,
-	"cloud-gcp":          true,
-	"cloud-azure":        true,
-	"cloud-digitalocean": true,
-	"cloud-oci":          true,
-	"docker":             true,
-	"kubernetes":         true,
-	"terraform":          true,
-	"vault":              true,
-	"ssh-keys":           true,
-	"npm":                true,
-}
+// With redundant guards removed, the built-in capabilities no longer use
+// Unguard fields. This map is kept for user-defined capabilities that may
+// still reference custom guards.
+var networkUnguards = map[string]bool{}
 
 // CredentialWarnings returns env var names from envAllow that are known credential bearers.
 func CredentialWarnings(envAllow []string) []string {

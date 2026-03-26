@@ -97,34 +97,43 @@ func TestGuard_NixToolchain_Paths(t *testing.T) {
 		t.Error("expected daemon socket path")
 	}
 
-	// Write paths (reads now covered by filesystem + system-runtime guards)
-	writePaths := []string{
+	// Nix user paths (read+write, self-contained)
+	userPaths := []string{
 		`(subpath "/Users/testuser/.nix-profile")`,
 		`(subpath "/Users/testuser/.local/state/nix")`,
 		`(subpath "/Users/testuser/.cache/nix")`,
 	}
-	for _, p := range writePaths {
+	for _, p := range userPaths {
 		if !strings.Contains(output, p) {
-			t.Errorf("expected write path %q", p)
+			t.Errorf("expected user path %q", p)
 		}
 	}
 
-	// Should be write-only, not read+write
-	if strings.Contains(output, "file-read*") {
-		t.Error("nix user paths should be file-write* only (reads covered by filesystem guard)")
+	// Must have file-read* (self-contained, not relying on filesystem guard)
+	if !strings.Contains(output, "file-read*") {
+		t.Error("nix user paths must include file-read* (guard must be self-contained)")
 	}
 
-	// Read paths should NOT be in nix-toolchain anymore
+	// Nix channel definitions and user config (read-only)
 	readPaths := []string{
+		`(subpath "/Users/testuser/.nix-defexpr")`,
+		`(subpath "/Users/testuser/.config/nix")`,
+	}
+	for _, p := range readPaths {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected read path %q", p)
+		}
+	}
+
+	// System paths should NOT be in nix-toolchain (owned by system-runtime)
+	systemPaths := []string{
 		`"/nix/store"`,
 		`"/nix/var"`,
 		`"/run/current-system"`,
-		`"/Users/testuser/.nix-defexpr"`,
-		`"/Users/testuser/.config/nix"`,
 	}
-	for _, p := range readPaths {
+	for _, p := range systemPaths {
 		if strings.Contains(output, p) {
-			t.Errorf("should NOT contain read path %q (moved to system-runtime/filesystem guards)", p)
+			t.Errorf("should NOT contain system path %q (owned by system-runtime)", p)
 		}
 	}
 }
@@ -149,9 +158,20 @@ func TestGuard_Keychain_Rules(t *testing.T) {
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 
-	// User keychain write paths
+	// User keychain read paths
 	if !strings.Contains(output, `(subpath "/Users/testuser/Library/Keychains")`) {
-		t.Error("expected user Library/Keychains write path")
+		t.Error("expected user Library/Keychains path")
+	}
+	if !strings.Contains(output, `(literal "/Users/testuser/Library/Preferences/com.apple.security.plist")`) {
+		t.Error("expected security plist path")
+	}
+
+	// Should be read-only, not read-write
+	if !strings.Contains(output, "file-read*") {
+		t.Error("expected file-read* for keychain paths")
+	}
+	if strings.Contains(output, "file-write*") {
+		t.Error("keychain paths should be read-only, not writable")
 	}
 
 	// System keychain reads are now covered by system-runtime broad reads

@@ -6,7 +6,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"fmt"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type keychainGuard struct{}
 
@@ -23,13 +27,12 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
 	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
-		// User keychain (read-write) — reads covered by filesystem guard's
-		// ~/Library/Keychains allow, but writes need explicit allow
-		seatbelt.SectionAllow("User keychain (write)"),
-		seatbelt.AllowRule(`(allow file-write*
-    ` + seatbelt.HomeSubpath(home, "Library/Keychains") + `
-    ` + seatbelt.HomeLiteral(home, "Library/Preferences/com.apple.security.plist") + `
-)`),
+		seatbelt.SectionAllow("User keychain (read-only)"),
+		seatbelt.AllowRule(fmt.Sprintf(`(allow file-read*
+    %s
+    %s
+)`, seatbelt.HomeSubpath(home, "Library/Keychains"),
+			seatbelt.HomeLiteral(home, "Library/Preferences/com.apple.security.plist"))),
 
 		// System keychain reads and metadata traversal are now covered
 		// by the system-runtime guard's broad /Library and /private reads.

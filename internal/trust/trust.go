@@ -1,3 +1,5 @@
+// Package trust implements a content-addressed trust store for .aide.yaml files,
+// following the same model as direnv's allow/deny mechanism.
 package trust
 
 import (
@@ -7,8 +9,10 @@ import (
 	"path/filepath"
 )
 
+// Status represents the trust state of a .aide.yaml file.
 type Status int
 
+// Trust statuses.
 const (
 	Untrusted Status = iota
 	Trusted
@@ -87,7 +91,7 @@ func (s *Store) Trust(path string, contents []byte) error {
 		return err
 	}
 	ph := PathHash(path)
-	os.Remove(filepath.Join(s.baseDir, "deny", ph))
+	_ = os.Remove(filepath.Join(s.baseDir, "deny", ph))
 	return nil
 }
 
@@ -116,11 +120,14 @@ func atomicWrite(path string, data []byte) error {
 	}
 	tmp := f.Name()
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 

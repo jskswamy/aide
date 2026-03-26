@@ -681,7 +681,7 @@ func (l *Launcher) applyTrustGate(cfg *config.Config) {
 
 // printUntrustedWarning prints a warning about untrusted .aide.yaml contents.
 func printUntrustedWarning(w io.Writer, path string, po *config.ProjectOverride) {
-	fmt.Fprintf(w, "! .aide.yaml is not trusted\n\n")
+	fmt.Fprintf(w, "! %s is not trusted\n\n", path)
 	if po.Agent != "" {
 		fmt.Fprintf(w, "  Agent:        %s\n", po.Agent)
 	}

@@ -23,15 +23,15 @@ contexts:
   work:
     capabilities:
       - docker
-      - kubernetes
-      - cloud-aws
+      - k8s
+      - aws
 ```
 
-aide reads those capabilities, activates the corresponding guards, and produces a sandbox profile that grants Docker socket access, kubeconfig reads, and AWS credential reads — nothing more.
+aide reads those capabilities and produces a sandbox profile that grants Docker config access, kubeconfig reads, and AWS credential reads — nothing more.
 
 ## On by Default
 
-If no `sandbox:` block appears in your config, aide applies a default policy automatically. With 27 guards active out of the box, the sandbox covers filesystem, network, credentials, cloud providers, toolchains, and common development tools.
+If no `sandbox:` block appears in your config, aide applies a default policy automatically. With 10 guards active out of the box, the sandbox covers filesystem, network, credentials, cloud providers, toolchains, and common development tools.
 
 Run `aide status` to see what is active for the current context.
 
@@ -61,8 +61,8 @@ The preferred way to customize is through capabilities in your context config. F
 contexts:
   work:
     sandbox:
-      guards_extra: [vercel]        # enable additional guards
-      unguard: [browsers]           # disable default guards
+      denied_extra: ["~/sensitive-data"]  # deny additional paths
+      unguard: [dev-credentials]          # disable default guards
 ```
 
 ### Guard configuration fields
@@ -139,25 +139,47 @@ contexts:
     sandbox: false
 ```
 
+## Trust Gate
+
+When a `.aide.yaml` file exists in a project, aide checks its trust status before applying it. This prevents untrusted project configs from modifying your sandbox policy.
+
+| Status | Behavior |
+|--------|----------|
+| Trusted | Config applies normally |
+| Untrusted | Config is shown but not applied; a warning prints |
+| Denied | Config is silently skipped |
+
+Manage trust with:
+
+```sh
+aide trust      # trust the .aide.yaml in the current directory
+aide deny       # permanently block it
+aide untrust    # remove trust without blocking
+```
+
+To launch without applying `.aide.yaml` regardless of trust status:
+
+```sh
+aide --ignore-project-config
+```
+
+When aide itself modifies `.aide.yaml` (via `aide cap enable`, `aide sandbox allow`, etc.), it auto-re-trusts the file if the previous version was trusted.
+
 ## Under the Hood
 
 Capabilities are the user-facing concept, but under the hood aide translates them into **guards** — small, composable policy modules that each protect a specific resource. Guards are the low-level mechanism that generates the actual sandbox profile.
 
 ### Guard inventory
 
-aide ships with 28 built-in guards across three tiers:
+aide ships with 10 built-in guards across two tiers:
 
 **Always guards** (7) — cannot be disabled, form the baseline policy:
 
 `base`, `system-runtime`, `network`, `filesystem`, `keychain`, `node-toolchain`, `nix-toolchain`
 
-**Default guards** (20) — active out of the box, can be disabled with `unguard`:
+**Default guards** (3) — active out of the box, can be disabled with `unguard`:
 
-`ssh-keys`, `cloud-aws`, `cloud-gcp`, `cloud-azure`, `cloud-digitalocean`, `cloud-oci`, `kubernetes`, `terraform`, `vault`, `browsers`, `password-managers`, `aide-secrets`, `mounted-volumes`, `shell-history`, `dev-credentials`, `project-secrets`, `docker`, `github-cli`, `npm`, `netrc`
-
-**Opt-in guards** (1) — must be explicitly enabled:
-
-`vercel`
+`project-secrets`, `dev-credentials`, `aide-secrets`
 
 ### Guard commands
 
@@ -165,8 +187,8 @@ These commands are available for power users who want to inspect or adjust guard
 
 ```bash
 aide sandbox guards                    # List all guards with status
-aide sandbox guard vercel              # Enable a guard
-aide sandbox unguard browsers          # Disable a guard
+aide sandbox guard dev-credentials     # Enable a guard
+aide sandbox unguard dev-credentials          # Disable a guard
 aide sandbox types                     # List guard types
 aide sandbox test                      # Preview generated sandbox profile
 ```
@@ -243,7 +265,7 @@ for _, g := range activeGuards {
 profile, err := p.Render()
 ```
 
-Available guard constructors: `guards.AllGuards()` returns all registered guards. Individual constructors follow the pattern `guards.BaseGuard()`, `guards.SSHKeysGuard()`, `guards.CloudAWSGuard()`, etc.
+Available guard constructors: `guards.AllGuards()` returns all registered guards. Individual constructors follow the pattern `guards.BaseGuard()`, `guards.DevCredentialsGuard()`, `guards.ProjectSecretsGuard()`, etc.
 
 ## Attribution
 

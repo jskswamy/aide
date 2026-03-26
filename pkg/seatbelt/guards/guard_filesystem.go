@@ -54,46 +54,32 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 			fmt.Sprintf("(allow file-read* file-write*\n    %s)", buildRequireAny(writable))))
 	}
 
-	// Scoped $HOME reads — development paths only
+	// Scoped $HOME reads — narrow baseline only
 	if home != "" {
 		rules = append(rules,
-			seatbelt.SectionAllow("Home development paths (read-only)"),
+			// Git configuration (read-only)
+			seatbelt.SectionAllow("Git configuration (read-only)"),
 			seatbelt.AllowRule(`(allow file-read*
-    `+seatbelt.HomeSubpath(home, ".config")+`
-    `+seatbelt.HomeSubpath(home, ".cache")+`
-    `+seatbelt.HomeSubpath(home, ".local")+`
-    `+seatbelt.HomeSubpath(home, ".nix-profile")+`
-    `+seatbelt.HomeSubpath(home, ".nix-defexpr")+`
-    `+seatbelt.HomeSubpath(home, ".ssh")+`
-    `+seatbelt.HomeSubpath(home, ".cargo")+`
-    `+seatbelt.HomeSubpath(home, ".rustup")+`
-    `+seatbelt.HomeSubpath(home, "go")+`
-    `+seatbelt.HomeSubpath(home, ".pyenv")+`
-    `+seatbelt.HomeSubpath(home, ".rbenv")+`
-    `+seatbelt.HomeSubpath(home, ".sdkman")+`
-    `+seatbelt.HomeSubpath(home, ".gradle")+`
-    `+seatbelt.HomeSubpath(home, ".m2")+`
-    `+seatbelt.HomeSubpath(home, ".gnupg")+`
-    `+seatbelt.HomeSubpath(home, "Library/Keychains")+`
-    `+seatbelt.HomeSubpath(home, "Library/Caches")+`
-    `+seatbelt.HomeSubpath(home, "Library/Preferences")+`
+    `+seatbelt.HomeLiteral(home, ".gitconfig")+`
+    `+seatbelt.HomeSubpath(home, ".config/git")+`
 )`),
 
-			// Build cache and GPG directories (read-write) — Go, npm, pip
-			// write to caches; GPG writes lock files, trustdb, random_seed.
-			// Password-managers guard still denies private-keys-v1.d via deny-wins.
-			seatbelt.SectionAllow("Build cache and GPG directories (read-write)"),
+			// aide's own paths
+			seatbelt.SectionAllow("aide configuration (read-only)"),
+			seatbelt.AllowRule(`(allow file-read*
+    `+seatbelt.HomeSubpath(home, ".config/aide")+`
+)`),
+			seatbelt.SectionAllow("aide data (read-write)"),
 			seatbelt.AllowRule(`(allow file-read* file-write*
-    `+seatbelt.HomeSubpath(home, "Library/Caches")+`
-    `+seatbelt.HomeSubpath(home, ".cache")+`
-    `+seatbelt.HomeSubpath(home, ".gnupg")+`
+    `+seatbelt.HomeSubpath(home, ".local/share/aide")+`
 )`),
 
-			// Dotfiles directly in $HOME (e.g., .gitconfig, .npmrc)
-			seatbelt.SectionAllow("Home dotfiles"),
-			seatbelt.AllowRule(fmt.Sprintf(`(allow file-read*
-    (regex #"^%s/\.[^/]+$")
-)`, home)),
+			// Build caches (read-write)
+			seatbelt.SectionAllow("Build caches (read-write)"),
+			seatbelt.AllowRule(`(allow file-read* file-write*
+    `+seatbelt.HomeSubpath(home, ".cache")+`
+    `+seatbelt.HomeSubpath(home, "Library/Caches")+`
+)`),
 
 			// Home directory listing and broad metadata traversal
 			seatbelt.SectionAllow("Home directory traversal"),
@@ -104,15 +90,6 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     `+seatbelt.HomeSubpath(home, "")+`
 )`),
 		)
-
-		// Symlink targets — dotfiles managed by stow/home-manager/etc.
-		// Resolve symlinks in $HOME that point to directories under $HOME
-		// and add their targets so the kernel can follow them.
-		for _, dir := range resolveHomeDotfileSymlinks(home) {
-			rules = append(rules,
-				seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* %s)`,
-					seatbelt.Path(dir))))
-		}
 
 		// ExtraReadable — adds allow rules AND serves as deny opt-out
 		if len(ctx.ExtraReadable) > 0 {

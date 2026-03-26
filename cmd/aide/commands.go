@@ -1694,10 +1694,11 @@ func envCmd() *cobra.Command {
 func envSetCmd() *cobra.Command {
 	var fromSecret string
 	var contextName string
+	var global bool
 
 	cmd := &cobra.Command{
 		Use:   "set KEY [VALUE]",
-		Short: "Set an environment variable on a context",
+		Short: "Set an environment variable (project-level by default)",
 		Long: `Set an environment variable on a context.
 
 Examples:
@@ -1722,7 +1723,32 @@ Examples:
 			if !hasValueArg && !isFromSecret {
 				return fmt.Errorf("must specify either a value argument or --from-secret")
 			}
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if isFromSecret && !global {
+				return fmt.Errorf("--from-secret requires --global (secrets are context-scoped)")
+			}
 
+			// Project path: simple KEY VALUE only (--from-secret requires --global)
+			if !global {
+				value := args[1]
+				_, po, poPath, err := resolveProjectOverrideForMutation()
+				if err != nil {
+					return err
+				}
+				if po.Env == nil {
+					po.Env = make(map[string]string)
+				}
+				po.Env[key] = value
+				if err := config.WriteProjectOverride(poPath, po); err != nil {
+					return fmt.Errorf("writing project config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Set %s in project (%s)\n", key, poPath)
+				return nil
+			}
+
+			// Global path: existing logic below (handles --from-secret)
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
@@ -1812,6 +1838,7 @@ Examples:
 	cmd.Flags().StringVar(&fromSecret, "from-secret", "", "Generate template referencing a secret key")
 	cmd.Flags().Lookup("from-secret").NoOptDefVal = " "
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	return cmd
 }
 
@@ -2045,36 +2072,51 @@ func envListCmd() *cobra.Command {
 
 func envRemoveCmd() *cobra.Command {
 	var contextName string
+	var global bool
 
 	cmd := &cobra.Command{
 		Use:          "remove KEY",
-		Short:        "Remove an environment variable from a context",
+		Short:        "Remove an environment variable (project-level by default)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
-
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			if !global && contextName != "" {
+				return fmt.Errorf("the --context flag requires --global")
+			}
+			if global {
+				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+				if err != nil {
+					return err
+				}
+				if ctx.Env == nil || ctx.Env[key] == "" {
+					return fmt.Errorf("env var %q not found on context %q", key, ctxName)
+				}
+				delete(ctx.Env, key)
+				cfg.Contexts[ctxName] = ctx
+				if err := config.WriteConfig(cfg); err != nil {
+					return fmt.Errorf("writing config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from context %q (global)\n", key, ctxName)
+				return nil
+			}
+			_, po, poPath, err := resolveProjectOverrideForMutation()
 			if err != nil {
 				return err
 			}
-
-			if ctx.Env == nil || ctx.Env[key] == "" {
-				return fmt.Errorf("env var %q not found on context %q", key, ctxName)
+			if po.Env == nil || po.Env[key] == "" {
+				return fmt.Errorf("env var %q not found in project config", key)
 			}
-
-			delete(ctx.Env, key)
-			cfg.Contexts[ctxName] = ctx
-
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
+			delete(po.Env, key)
+			if err := config.WriteProjectOverride(poPath, po); err != nil {
+				return fmt.Errorf("writing project config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from context %q\n", key, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from project (%s)\n", key, poPath)
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target context (requires --global)")
 	return cmd
 }
 

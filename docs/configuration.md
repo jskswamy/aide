@@ -152,10 +152,14 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
 ## Per-Project Override
 
-`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`. aide merges it on top of the matched global context.
+`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`, `capabilities`, `disabled_capabilities`. aide merges it on top of the matched global context.
 
 - `env:` merges additively; project values win on key conflicts.
 - All other fields replace the matched context value entirely.
+
+### Trust gate
+
+`.aide.yaml` files are not applied until trusted. On first encounter, aide shows the file's contents and skips it. Run `aide trust` to approve the file, or `aide deny` to block it permanently. See [Sandbox](sandbox.md#trust-gate) for details.
 
 ---
 

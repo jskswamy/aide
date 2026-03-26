@@ -21,7 +21,6 @@ disable, you declare what tools you need.
 Each capability bundles:
 
 - **Paths** to make readable or writable (e.g., `~/.kube/`)
-- **Guards** to disable (e.g., the `kubernetes` guard)
 - **Environment variables** to pass through the sandbox boundary (e.g., `KUBECONFIG`)
 - **Denies** to block specific paths within the capability's scope
 
@@ -29,8 +28,8 @@ The sandbox remains deny-default. Capabilities punch precise holes in it.
 
 ## Built-in Capabilities
 
-aide ships with 12 built-in capabilities covering cloud providers, containers,
-orchestration, infrastructure tools, SSH, and package registries.
+aide ships with 19 built-in capabilities covering cloud providers, containers,
+orchestration, infrastructure tools, language runtimes, and developer tools.
 
 ### Cloud Providers
 
@@ -58,6 +57,23 @@ orchestration, infrastructure tools, SSH, and package registries.
 | `vault` | HashiCorp Vault secrets | `~/.vault-token` | `VAULT_ADDR`, `VAULT_TOKEN` |
 | `ssh` | SSH keys and agent forwarding | `~/.ssh/` | `SSH_AUTH_SOCK` |
 | `npm` | npm and yarn registries | `~/.npmrc`, `~/.yarnrc` | `NPM_TOKEN`, `NODE_AUTH_TOKEN` |
+
+### Language Runtimes
+
+| Capability | What it unlocks | Paths | Key env vars |
+|------------|----------------|-------|-------------|
+| `go` | Go toolchain | `~/go/` | `GOPATH`, `GOROOT`, `GOBIN` |
+| `rust` | Rust toolchain | `~/.cargo/`, `~/.rustup/` | `CARGO_HOME`, `RUSTUP_HOME` |
+| `python` | Python toolchain | `~/.pyenv/` | `PYENV_ROOT`, `VIRTUAL_ENV` |
+| `ruby` | Ruby toolchain | `~/.rbenv/` | `RBENV_ROOT`, `GEM_HOME` |
+| `java` | Java/JVM toolchain | `~/.sdkman/`, `~/.gradle/`, `~/.m2/` | `JAVA_HOME`, `SDKMAN_DIR` |
+
+### Developer Tools
+
+| Capability | What it unlocks | Paths | Key env vars |
+|------------|----------------|-------|-------------|
+| `github` | GitHub CLI and credentials | `~/.config/gh/` | `GITHUB_TOKEN`, `GH_TOKEN` |
+| `gpg` | GPG keys and signing | `~/.gnupg/` | `GNUPGHOME` |
 
 Run `aide cap list` to see all available capabilities including any custom ones
 you've defined. Run `aide cap show <name>` to inspect a specific capability's

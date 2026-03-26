@@ -29,6 +29,7 @@ sandbox policy.
 | `--yolo` | false | Alias for `--auto-approve` (kept for backwards compatibility) |
 | `--no-yolo` | false | Alias for `--no-auto-approve` (kept for backwards compatibility) |
 | `--clean-env` | false | Start agent with only essential environment variables |
+| `--ignore-project-config` | false | Launch without applying .aide.yaml |
 
 ```
 aide -- --no-permissions
@@ -540,6 +541,48 @@ Rotates age recipients for a secrets file. At least one of `--add-key` or
 
 ```
 aide secrets rotate personal --add-key age1new... --remove-key age1old...
+```
+
+---
+
+## aide trust
+
+```
+aide trust
+```
+
+Trusts the `.aide.yaml` in the current directory. The file's content hash is recorded so that any external modification resets trust.
+
+```
+aide trust
+```
+
+---
+
+## aide deny
+
+```
+aide deny
+```
+
+Permanently blocks the `.aide.yaml` in the current directory from being applied, regardless of content changes.
+
+```
+aide deny
+```
+
+---
+
+## aide untrust
+
+```
+aide untrust
+```
+
+Removes trust for the `.aide.yaml` in the current directory without blocking it. The next launch will show the untrusted warning.
+
+```
+aide untrust
 ```
 
 ---

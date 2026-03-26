@@ -32,7 +32,7 @@ aide    # agent launches sandboxed automatically
    🛡 sandbox: network outbound, code-only
 ```
 
-Code-only mode. Your agent can read your code, run tests, hit the network — but it physically cannot touch your SSH keys, cloud credentials, or browser data. 20 guards active by default, zero configuration.
+Code-only mode. Your agent can read your code, run tests, hit the network — but it physically cannot touch your SSH keys, cloud credentials, or browser data. 10 guards active by default, zero configuration.
 
 **Ready to deploy?** Tell aide what you're doing:
 
@@ -80,6 +80,13 @@ capabilities: [docker, k8s, gcp]
 
 No flags needed next time — `aide` picks up the capabilities from your config.
 
+The first time aide encounters a `.aide.yaml`, it shows the contents and asks you to trust it:
+
+```bash
+aide trust    # approve the project config
+aide deny     # block it permanently
+```
+
 **Create your own:**
 
 ```bash
@@ -87,7 +94,7 @@ aide cap create k8s-dev --extends k8s --deny ~/.kube/prod-config
 aide --with k8s-dev docker    # dev clusters only, production blocked
 ```
 
-12 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, and more. Or define your own.
+19 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, `go`, `rust`, `python`, `ruby`, `java`, `github`, `gpg`, and more. Or define your own.
 
 ### Unified UX — one command, any agent
 
@@ -190,6 +197,13 @@ Capabilities are task-oriented permission bundles. Instead of configuring low-le
 | `vault` | HashiCorp Vault access |
 | `ssh` | SSH keys and agent |
 | `npm` | npm/yarn registry credentials |
+| `go` | Go toolchain (`~/go/`) |
+| `rust` | Rust toolchain (`~/.cargo/`, `~/.rustup/`) |
+| `python` | Python toolchain (`~/.pyenv/`) |
+| `ruby` | Ruby toolchain (`~/.rbenv/`) |
+| `java` | Java/JVM toolchain (`~/.sdkman/`, `~/.gradle/`, `~/.m2/`) |
+| `github` | GitHub CLI credentials (`~/.config/gh/`) |
+| `gpg` | GPG keys and signing (`~/.gnupg/`) |
 
 **Session-scoped** (this launch only):
 

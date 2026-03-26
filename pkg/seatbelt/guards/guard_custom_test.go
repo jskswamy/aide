@@ -178,8 +178,8 @@ func TestGuard_CustomValidation_BuiltinNameCollision(t *testing.T) {
 		t.Error("expected error for built-in name collision")
 	}
 
-	result = guards.ValidateCustomGuard("docker", cfg)
+	result = guards.ValidateCustomGuard("aide-secrets", cfg)
 	if result.OK() {
-		t.Error("expected error for built-in name collision (docker)")
+		t.Error("expected error for built-in name collision (aide-secrets)")
 	}
 }

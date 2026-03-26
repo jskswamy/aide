@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
@@ -336,32 +335,6 @@ func TestProfile_NoKeychainConflict(t *testing.T) {
 	}
 }
 
-func TestProfile_SSHAllowBeatsSubpathDeny(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(profile, "(deny file-read-data") || !strings.Contains(profile, ".ssh") {
-		t.Error("expected deny file-read-data rule covering .ssh directory")
-	}
-	if !strings.Contains(profile, "(allow file-read*") || !strings.Contains(profile, "known_hosts") {
-		t.Error("expected allow file-read* rule for known_hosts")
-	}
-}
-
-func TestProfile_NpmGuardOverridesToolchain(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
-	policy.Guards = append(policy.Guards, "npm")
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(profile, ".npmrc") {
-		t.Error("expected .npmrc in profile")
-	}
-}
-
 func TestGenerateSeatbeltProfile_EmptyGuards_Error(t *testing.T) {
 	policy := Policy{Guards: []string{}, Network: "none"}
 	_, err := generateSeatbeltProfile(policy)
@@ -386,52 +359,6 @@ func TestGenerateSeatbeltProfile_AlwaysGuardsOnly(t *testing.T) {
 	}
 	if !strings.Contains(profile, "(deny default)") {
 		t.Error("always-guards-only should contain (deny default)")
-	}
-}
-
-func TestProfile_RoundTrip_UnguardSSHKeys(t *testing.T) {
-	cfg := &config.SandboxPolicy{Unguard: []string{"ssh-keys"}}
-	homeDir, _ := os.UserHomeDir()
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", homeDir, "/tmp")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	profile, err := generateSeatbeltProfile(*policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// The ssh-keys guard emits a multiline raw block:
-	//   (deny file-read-data
-	//       (subpath "<home>/.ssh")
-	//   )
-	// Check for the specific subpath deny rule targeting .ssh.
-	sshDenySubpath := "(subpath \"" + homeDir + "/.ssh\")"
-	sshDenyPresent := strings.Contains(profile, "(deny file-read-data\n") &&
-		strings.Contains(profile, sshDenySubpath)
-	if sshDenyPresent {
-		t.Error("unguarding ssh-keys should remove .ssh deny from profile")
-	}
-}
-
-func TestProfile_RoundTrip_GuardDocker(t *testing.T) {
-	// Docker is now a default guard. It only emits rules when
-	// ~/.docker/config.json exists. Verify it's in the guard list.
-	homeDir, _ := os.UserHomeDir()
-	dockerConfig := filepath.Join(homeDir, ".docker", "config.json")
-
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if _, statErr := os.Stat(dockerConfig); statErr == nil {
-		if !strings.Contains(profile, ".docker") {
-			t.Error("docker guard (now default) should add .docker deny when config exists")
-		}
-	} else {
-		// Docker config doesn't exist — guard skips, no rules emitted
-		t.Logf("~/.docker/config.json not found, docker guard skipped (expected)")
 	}
 }
 
@@ -481,9 +408,6 @@ func TestProfile_IntentOrdering(t *testing.T) {
 	}
 
 	// Two-tier ordering: Allow(100) rules appear before Deny(200) rules.
-	// "(deny default)" is a DenyOp which has Allow intent (infrastructure),
-	// so it appears in the Allow section. Credential deny rules (file-read-data
-	// denies) have Deny intent and appear later.
 	denyDefaultPos := strings.Index(profile, "(deny default)")
 	if denyDefaultPos == -1 {
 		t.Fatal("expected (deny default) in profile")
@@ -500,8 +424,6 @@ func TestProfile_IntentOrdering(t *testing.T) {
 	if denyFileRead != -1 {
 		// If credential deny rules exist, they should appear after allow rules
 		if denyFileRead < lastAllow {
-			// This is fine — deny-wins means position doesn't matter,
-			// but the profile sorts Allow(100) before Deny(200)
 			t.Error("Deny-intent rules (deny file-read-data) should appear after Allow-intent rules")
 		}
 	}
@@ -512,115 +434,37 @@ func TestProfile_IntentOrdering(t *testing.T) {
 	}
 }
 
-func TestProfile_SSHKnownHostsSurvives(t *testing.T) {
-	// The SSH keys guard now uses per-file discovery: it scans ~/.ssh,
-	// allows safe files (known_hosts, config, *.pub) and denies everything
-	// else individually. It skips entirely if ~/.ssh doesn't exist.
-	// Comprehensive tests live in guards/guard_ssh_keys_test.go.
-	homeDir, _ := os.UserHomeDir()
-	sshDir := filepath.Join(homeDir, ".ssh")
-
+func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
 	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if _, statErr := os.Stat(sshDir); os.IsNotExist(statErr) {
-		// If ~/.ssh doesn't exist, the guard skips entirely
-		t.Skip("~/.ssh does not exist, SSH guard skips; see guards/guard_ssh_keys_test.go")
-		return
-	}
-
-	// SSH guard should only have per-file deny rules, not subpath deny.
-	// The filesystem guard provides a subpath allow for ~/.ssh (for reads)
-	// which is expected. Only check for subpath *deny* targeting .ssh.
-	lines := strings.Split(profile, "\n")
-	scanBlockContext(lines, func(_ int, line, blockType string, _ int) {
-		if strings.Contains(line, "subpath") && strings.Contains(line, ".ssh") && blockType == "deny" {
-			t.Errorf("SSH guard should not use subpath deny, found: %s", strings.TrimSpace(line))
+	// Narrow baseline: filesystem guard provides only minimal scoped reads
+	scopedDirs := []string{".config/aide", ".cache", ".gitconfig"}
+	for _, d := range scopedDirs {
+		if !strings.Contains(profile, d) {
+			t.Errorf("profile should contain scoped home path %q", d)
 		}
-	})
-
-	// ~/.ssh reads are now covered by the filesystem guard's scoped home
-	// reads (subpath allow for ~/.ssh). known_hosts no longer needs
-	// individual allow rules from the SSH guard.
-}
-
-func TestProfile_NpmOptInOverridesNodeToolchain(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
-	policy.Guards = append(policy.Guards, "npm")
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The node-toolchain guard always emits an allow rule for .npmrc.
-	// The npm guard only emits a deny rule if ~/.npmrc actually exists on disk.
-	// With deny-wins semantics, the deny rule (if present) overrides the allow
-	// regardless of position.
-
-	// Node-toolchain allow for .npmrc should always be present
-	npmAllowBlock := -1
+	// Should NOT contain a bare (subpath "$HOME") in file-read* or file-read-data
+	// rules. file-read-metadata on $HOME subpath is intentional (POSIX tools need
+	// lstat on parent directories).
+	homeDir, _ := os.UserHomeDir()
+	bareHomeSubpath := `(subpath "` + homeDir + `")`
 	lines := strings.Split(profile, "\n")
 	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
-		if strings.Contains(line, `.npmrc"`) && blockType == "allow" {
-			npmAllowBlock = blockStart
+		if strings.Contains(line, bareHomeSubpath) && blockType == "allow" {
+			opener := lines[blockStart]
+			// file-write and file-read-metadata on $HOME subpath are intentional
+			if strings.Contains(opener, "file-write") || strings.Contains(opener, "file-read-metadata") {
+				return
+			}
+			t.Errorf("profile should NOT contain bare home subpath allow %s in content-read rules (block: %s)", bareHomeSubpath, strings.TrimSpace(opener))
 		}
 	})
-
-	if npmAllowBlock == -1 {
-		t.Fatal("expected node-toolchain .npmrc allow in profile")
-	}
-
-	// If ~/.npmrc exists, the npm guard should emit a deny rule for it
-	homeDir, _ := os.UserHomeDir()
-	npmrc := filepath.Join(homeDir, ".npmrc")
-	if _, statErr := os.Stat(npmrc); statErr == nil {
-		npmDenyBlock := -1
-		scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
-			if strings.Contains(line, `.npmrc"`) && blockType == "deny" {
-				npmDenyBlock = blockStart
-			}
-		})
-		if npmDenyBlock == -1 {
-			t.Fatal("expected npm guard .npmrc deny in profile when ~/.npmrc exists")
-		}
-	}
-}
-
-func TestProfile_GPGPublicKeyringNotDenied(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// The password-managers guard only denies GPG private key paths that
-	// actually exist on disk. Verify that IF the paths exist, they appear
-	// in the profile; and that the entire .gnupg directory is never denied.
-	homeDir, _ := os.UserHomeDir()
-	gpgPrivDir := filepath.Join(homeDir, ".gnupg", "private-keys-v1.d")
-	gpgSecring := filepath.Join(homeDir, ".gnupg", "secring.gpg")
-
-	if _, statErr := os.Stat(gpgPrivDir); statErr == nil {
-		if !strings.Contains(profile, "private-keys-v1.d") {
-			t.Error("expected deny for .gnupg/private-keys-v1.d when it exists")
-		}
-	}
-	if _, statErr := os.Stat(gpgSecring); statErr == nil {
-		if !strings.Contains(profile, "secring.gpg") {
-			t.Error("expected deny for .gnupg/secring.gpg when it exists")
-		}
-	}
-
-	// Should NOT deny the entire .gnupg directory regardless
-	lines := strings.Split(profile, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "deny") && strings.Contains(line, `.gnupg"`) && !strings.Contains(line, "private-keys") && !strings.Contains(line, "secring") {
-			t.Errorf("should not deny entire .gnupg directory, found: %s", strings.TrimSpace(line))
-		}
-	}
 }
 
 func TestProfile_KeychainNotDenied(t *testing.T) {
@@ -647,11 +491,6 @@ func TestProfile_ClaudeAgentAllowsSurvive(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// With deny-wins semantics, allow rules appear in the Allow(100) section
-	// and deny rules in the Deny(200) section. Position does not matter for
-	// override behavior — deny always wins over allow for the same path.
-	// This test verifies that Claude config paths are present in the profile
-	// as allow rules (they should survive the deny-wins architecture).
 	claudeAllowBlock := -1
 
 	lines := strings.Split(profile, "\n")
@@ -783,91 +622,5 @@ func TestGenerateSeatbeltProfile_BroadSystemReads(t *testing.T) {
 		if strings.Contains(profile, p) {
 			t.Errorf("profile should NOT contain old granular path %s (replaced by broad reads)", p)
 		}
-	}
-}
-
-func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Scoped home reads should include specific dev directories
-	scopedDirs := []string{".config", ".cache", ".ssh", ".cargo", ".rustup", ".local"}
-	for _, d := range scopedDirs {
-		if !strings.Contains(profile, d) {
-			t.Errorf("profile should contain scoped home path %q", d)
-		}
-	}
-
-	// Should NOT contain a bare (subpath "$HOME") in file-read* or file-read-data
-	// rules. file-read-metadata on $HOME subpath is intentional (POSIX tools need
-	// lstat on parent directories).
-	homeDir, _ := os.UserHomeDir()
-	bareHomeSubpath := `(subpath "` + homeDir + `")`
-	lines := strings.Split(profile, "\n")
-	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
-		if strings.Contains(line, bareHomeSubpath) && blockType == "allow" {
-			opener := lines[blockStart]
-			// file-write and file-read-metadata on $HOME subpath are intentional
-			if strings.Contains(opener, "file-write") || strings.Contains(opener, "file-read-metadata") {
-				return
-			}
-			t.Errorf("profile should NOT contain bare home subpath allow %s in content-read rules (block: %s)", bareHomeSubpath, strings.TrimSpace(opener))
-		}
-	})
-}
-
-func TestProfile_NewDefaultGuards(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
-	profile, err := generateSeatbeltProfile(policy)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// New default guards: mounted-volumes, shell-history, dev-credentials, project-secrets.
-	// These guards check for file existence, so some may produce no rules.
-	// Verify the profile renders without error (done above) and contains
-	// at least some deny rules from the credential/history guards.
-	hasDenyFileRead := strings.Contains(profile, "(deny file-read-data")
-	hasDenyFileWrite := strings.Contains(profile, "(deny file-write*")
-
-	if !hasDenyFileRead && !hasDenyFileWrite {
-		t.Error("default profile should contain at least some deny rules from new default guards (shell-history, dev-credentials, etc.)")
-	}
-
-	// Verify the guard names are in the default list
-	defaultNames := guards.DefaultGuardNames()
-	newGuards := []string{"mounted-volumes", "shell-history", "dev-credentials", "project-secrets"}
-	nameSet := make(map[string]bool, len(defaultNames))
-	for _, n := range defaultNames {
-		nameSet[n] = true
-	}
-	for _, g := range newGuards {
-		if !nameSet[g] {
-			t.Errorf("expected %q in DefaultGuardNames()", g)
-		}
-	}
-}
-
-func TestProfile_PromotedGuardsInDefault(t *testing.T) {
-	defaultNames := guards.DefaultGuardNames()
-	nameSet := make(map[string]bool, len(defaultNames))
-	for _, n := range defaultNames {
-		nameSet[n] = true
-	}
-
-	// These guards were promoted from opt-in to default.
-	promoted := []string{"docker", "github-cli", "npm", "netrc", "kubernetes"}
-	for _, g := range promoted {
-		if !nameSet[g] {
-			t.Errorf("expected promoted guard %q in DefaultGuardNames()", g)
-		}
-	}
-
-	// git-integration was removed — it should NOT be in any guard list.
-	if nameSet["git-integration"] {
-		t.Error("git-integration guard was removed and should not be in DefaultGuardNames()")
 	}
 }

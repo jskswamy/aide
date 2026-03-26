@@ -132,7 +132,7 @@ func TestDetectGuardConflicts(t *testing.T) {
 			},
 		},
 		{
-			Name: "npm",
+			Name: "custom-deny",
 			Rules: []seatbelt.Rule{
 				seatbelt.DenyRule(`(deny file-read-data (literal "/Users/test/.npmrc"))`),
 			},
@@ -146,12 +146,12 @@ func TestDetectGuardConflicts(t *testing.T) {
 
 	found := false
 	for _, w := range warnings {
-		if strings.Contains(w, ".npmrc") && strings.Contains(w, "npm") && strings.Contains(w, "node-toolchain") {
+		if strings.Contains(w, ".npmrc") && strings.Contains(w, "custom-deny") && strings.Contains(w, "node-toolchain") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected warning mentioning .npmrc conflict between npm and node-toolchain, got: %v", warnings)
+		t.Errorf("expected warning mentioning .npmrc conflict between custom-deny and node-toolchain, got: %v", warnings)
 	}
 }
 

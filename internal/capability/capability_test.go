@@ -9,7 +9,6 @@ func TestResolveOne_Builtin(t *testing.T) {
 		"k8s": {
 			Name:        "k8s",
 			Description: "Kubernetes cluster access",
-			Unguard:     []string{"kubernetes"},
 			Readable:    []string{"~/.kube"},
 			EnvAllow:    []string{"KUBECONFIG"},
 		},
@@ -22,9 +21,6 @@ func TestResolveOne_Builtin(t *testing.T) {
 	if resolved.Name != "k8s" {
 		t.Errorf("expected name k8s, got %s", resolved.Name)
 	}
-	if len(resolved.Unguard) != 1 || resolved.Unguard[0] != "kubernetes" {
-		t.Errorf("expected unguard [kubernetes], got %v", resolved.Unguard)
-	}
 	if len(resolved.Readable) != 1 || resolved.Readable[0] != "~/.kube" {
 		t.Errorf("expected readable [~/.kube], got %v", resolved.Readable)
 	}
@@ -34,7 +30,6 @@ func TestResolveOne_Extends(t *testing.T) {
 	registry := map[string]Capability{
 		"k8s": {
 			Name:     "k8s",
-			Unguard:  []string{"kubernetes"},
 			Readable: []string{"~/.kube"},
 			EnvAllow: []string{"KUBECONFIG"},
 		},
@@ -53,10 +48,6 @@ func TestResolveOne_Extends(t *testing.T) {
 	if resolved.Name != "k8s-dev" {
 		t.Errorf("expected name k8s-dev, got %s", resolved.Name)
 	}
-	// Should inherit parent's unguard
-	if len(resolved.Unguard) != 1 || resolved.Unguard[0] != "kubernetes" {
-		t.Errorf("expected inherited unguard [kubernetes], got %v", resolved.Unguard)
-	}
 	// Should merge readable (parent + child)
 	if len(resolved.Readable) != 2 {
 		t.Errorf("expected 2 readable paths, got %d: %v", len(resolved.Readable), resolved.Readable)
@@ -73,9 +64,9 @@ func TestResolveOne_Extends(t *testing.T) {
 
 func TestResolveOne_Combines(t *testing.T) {
 	registry := map[string]Capability{
-		"aws":    {Name: "aws", Unguard: []string{"cloud-aws"}, EnvAllow: []string{"AWS_PROFILE"}},
-		"k8s":    {Name: "k8s", Unguard: []string{"kubernetes"}, EnvAllow: []string{"KUBECONFIG"}},
-		"docker": {Name: "docker", Unguard: []string{"docker"}},
+		"aws":    {Name: "aws", EnvAllow: []string{"AWS_PROFILE"}},
+		"k8s":    {Name: "k8s", EnvAllow: []string{"KUBECONFIG"}},
+		"docker": {Name: "docker"},
 		"my-deploy": {
 			Name:     "my-deploy",
 			Combines: []string{"aws", "k8s", "docker"},
@@ -86,9 +77,6 @@ func TestResolveOne_Combines(t *testing.T) {
 	resolved, err := ResolveOne("my-deploy", registry)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(resolved.Unguard) != 3 {
-		t.Errorf("expected 3 unguard entries, got %d: %v", len(resolved.Unguard), resolved.Unguard)
 	}
 	if len(resolved.EnvAllow) != 2 {
 		t.Errorf("expected 2 env_allow entries, got %d: %v", len(resolved.EnvAllow), resolved.EnvAllow)
@@ -131,9 +119,9 @@ func TestResolveOne_UnknownCapability(t *testing.T) {
 
 func TestResolveAll(t *testing.T) {
 	registry := map[string]Capability{
-		"aws":    {Name: "aws", Unguard: []string{"cloud-aws"}, Readable: []string{"~/.aws"}, EnvAllow: []string{"AWS_PROFILE"}},
-		"k8s":    {Name: "k8s", Unguard: []string{"kubernetes"}, Readable: []string{"~/.kube"}, EnvAllow: []string{"KUBECONFIG"}},
-		"docker": {Name: "docker", Unguard: []string{"docker"}, Readable: []string{"~/.docker"}},
+		"aws":    {Name: "aws", Readable: []string{"~/.aws"}, EnvAllow: []string{"AWS_PROFILE"}},
+		"k8s":    {Name: "k8s", Readable: []string{"~/.kube"}, EnvAllow: []string{"KUBECONFIG"}},
+		"docker": {Name: "docker", Readable: []string{"~/.docker"}},
 	}
 
 	set, err := ResolveAll([]string{"aws", "k8s", "docker"}, registry, nil, nil)
@@ -145,9 +133,6 @@ func TestResolveAll(t *testing.T) {
 	}
 
 	overrides := set.ToSandboxOverrides()
-	if len(overrides.Unguard) != 3 {
-		t.Errorf("expected 3 unguard, got %d: %v", len(overrides.Unguard), overrides.Unguard)
-	}
 	if len(overrides.ReadableExtra) != 3 {
 		t.Errorf("expected 3 readable, got %d: %v", len(overrides.ReadableExtra), overrides.ReadableExtra)
 	}
@@ -190,7 +175,7 @@ func TestResolveAll_NeverAllowEnv(t *testing.T) {
 
 func TestResolveAll_DuplicateNames(t *testing.T) {
 	registry := map[string]Capability{
-		"k8s": {Name: "k8s", Unguard: []string{"kubernetes"}},
+		"k8s": {Name: "k8s"},
 	}
 	set, err := ResolveAll([]string{"k8s", "k8s"}, registry, nil, nil)
 	if err != nil {

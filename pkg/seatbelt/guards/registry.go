@@ -24,30 +24,9 @@ func init() {
 	)
 	// default guards
 	builtinGuards = append(builtinGuards,
-		SSHKeysGuard(),
-		CloudAWSGuard(),
-		CloudGCPGuard(),
-		CloudAzureGuard(),
-		CloudDigitalOceanGuard(),
-		CloudOCIGuard(),
-		KubernetesGuard(),
-		TerraformGuard(),
-		VaultGuard(),
-		BrowsersGuard(),
-		PasswordManagersGuard(),
-		AideSecretsGuard(),
-		MountedVolumesGuard(),
-		ShellHistoryGuard(),
-		DevCredentialsGuard(),
 		ProjectSecretsGuard(),
-		DockerGuard(),
-		GithubCLIGuard(),
-		NPMGuard(),
-		NetrcGuard(),
-	)
-	// opt-in guards
-	builtinGuards = append(builtinGuards,
-		VercelGuard(),
+		DevCredentialsGuard(),
+		AideSecretsGuard(),
 	)
 }
 
@@ -80,13 +59,10 @@ func ByType(typ string) []seatbelt.Guard {
 }
 
 // ExpandGuardName expands meta-guard names:
-//   - "cloud"       → the 5 cloud provider guard names
 //   - "all-default" → all guards with type "default"
 //   - anything else → []string{name}
 func ExpandGuardName(name string) []string {
 	switch name {
-	case "cloud":
-		return CloudGuardNames()
 	case "all-default":
 		var names []string
 		for _, g := range builtinGuards {

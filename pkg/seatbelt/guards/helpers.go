@@ -51,11 +51,6 @@ func SplitColonPaths(s string) []string {
 	return result
 }
 
-// CloudGuardNames returns names of all cloud guards (for "cloud" meta-guard).
-func CloudGuardNames() []string {
-	return []string{"cloud-aws", "cloud-gcp", "cloud-azure", "cloud-digitalocean", "cloud-oci"}
-}
-
 // dirExists returns true if path exists and is a directory.
 func dirExists(path string) bool {
 	info, err := os.Stat(path)

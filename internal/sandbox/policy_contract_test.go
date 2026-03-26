@@ -141,8 +141,8 @@ func TestContract_ScopedHomeReads(t *testing.T) {
 	}
 	profile := renderProfileFromConfig(t, &config.SandboxPolicy{})
 
-	// Scoped home reads should include these development directories
-	for _, dir := range []string{".config", ".cache", ".ssh"} {
+	// Narrow baseline: filesystem guard provides minimal scoped reads
+	for _, dir := range []string{".config/aide", ".cache"} {
 		expected := filepath.Join(home, dir)
 		if !strings.Contains(profile, expected) {
 			t.Errorf("default profile should contain scoped home read for %q", expected)
@@ -156,18 +156,25 @@ func TestContract_ScopedHomeReads(t *testing.T) {
 	}
 }
 
-func TestContract_MountedVolumesDenied(t *testing.T) {
-	if _, err := os.Stat("/Volumes"); err != nil {
-		t.Skip("/Volumes not found on this machine")
+func TestContract_NeverAllowOverridesCapability(t *testing.T) {
+	// denied_extra should still deny the path regardless of other config.
+	denied := t.TempDir()
+	profile := renderProfileFromConfig(t, &config.SandboxPolicy{
+		DeniedExtra: []string{denied},
+	})
+	if !strings.Contains(profile, denied) {
+		t.Error("denied_extra should deny the path")
 	}
-
-	profile := renderProfileFromConfig(t, &config.SandboxPolicy{})
-
-	if !strings.Contains(profile, "/Volumes") {
-		t.Error("default profile should contain deny rules for /Volumes")
+	// Verify it's actually a deny rule, not just any mention
+	foundDeny := false
+	for _, line := range strings.Split(profile, "\n") {
+		if strings.Contains(line, "deny") && strings.Contains(line, denied) {
+			foundDeny = true
+			break
+		}
 	}
-	if !strings.Contains(profile, `deny file-read-data (subpath "/Volumes")`) {
-		t.Error("default profile should deny file-read-data for /Volumes")
+	if !foundDeny {
+		t.Error("denied_extra path should appear as a deny rule in the profile")
 	}
 }
 
@@ -190,50 +197,6 @@ func TestContract_CrossGuardSafety_NodeToolchain(t *testing.T) {
 		if strings.Contains(profile, denyPattern) {
 			t.Errorf("node-toolchain path %q should NOT be denied by any guard", full)
 		}
-	}
-}
-
-func TestContract_CapabilityUnguardProducesRule(t *testing.T) {
-	// A capability that unguards cloud-aws should result in AWS paths
-	// not being denied in the profile (cloud-aws guard inactive).
-	home, _ := os.UserHomeDir()
-	awsDir := filepath.Join(home, ".aws")
-	if _, err := os.Stat(awsDir); err != nil {
-		t.Skip("~/.aws not found")
-	}
-
-	profile := renderProfileFromConfig(t, &config.SandboxPolicy{
-		Unguard: []string{"cloud-aws"},
-	})
-	// cloud-aws guard's deny rules should NOT appear
-	if strings.Contains(profile, "deny") && strings.Contains(profile, ".aws/credentials") {
-		t.Error("unguarding cloud-aws should remove .aws deny rules from profile")
-	}
-}
-
-func TestContract_NeverAllowOverridesCapability(t *testing.T) {
-	// Even with cloud-aws unguarded, never_allow (via denied_extra) should
-	// still deny the path. We use a temp dir to avoid depending on ~/.aws
-	// existing, since renderProfileFromConfig uses a synthetic home dir and
-	// validateAndFilterPaths requires the path to exist on disk.
-	denied := t.TempDir()
-	profile := renderProfileFromConfig(t, &config.SandboxPolicy{
-		Unguard:     []string{"cloud-aws"},
-		DeniedExtra: []string{denied},
-	})
-	if !strings.Contains(profile, denied) {
-		t.Error("never_allow (via denied_extra) should still deny the path even with cloud-aws unguarded")
-	}
-	// Verify it's actually a deny rule, not just any mention
-	foundDeny := false
-	for _, line := range strings.Split(profile, "\n") {
-		if strings.Contains(line, "deny") && strings.Contains(line, denied) {
-			foundDeny = true
-			break
-		}
-	}
-	if !foundDeny {
-		t.Error("denied_extra path should appear as a deny rule in the profile")
 	}
 }
 

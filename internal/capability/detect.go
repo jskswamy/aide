@@ -30,11 +30,55 @@ func DetectProject(projectRoot string) []string {
 		suggestions = append(suggestions, "terraform")
 	}
 
+	// Go
+	if fileExists(filepath.Join(projectRoot, "go.mod")) ||
+		fileExists(filepath.Join(projectRoot, "go.sum")) {
+		suggestions = append(suggestions, "go")
+	}
+
+	// Rust
+	if fileExists(filepath.Join(projectRoot, "Cargo.toml")) {
+		suggestions = append(suggestions, "rust")
+	}
+
+	// Python
+	if fileExists(filepath.Join(projectRoot, "pyproject.toml")) ||
+		fileExists(filepath.Join(projectRoot, "requirements.txt")) ||
+		fileExists(filepath.Join(projectRoot, "Pipfile")) ||
+		fileExists(filepath.Join(projectRoot, "setup.py")) {
+		suggestions = append(suggestions, "python")
+	}
+
+	// Ruby
+	if fileExists(filepath.Join(projectRoot, "Gemfile")) ||
+		hasFileWithExtension(projectRoot, ".gemspec") {
+		suggestions = append(suggestions, "ruby")
+	}
+
+	// Java/JVM
+	if fileExists(filepath.Join(projectRoot, "pom.xml")) ||
+		fileExists(filepath.Join(projectRoot, "build.gradle")) ||
+		fileExists(filepath.Join(projectRoot, "build.gradle.kts")) {
+		suggestions = append(suggestions, "java")
+	}
+
 	// Kubernetes
 	if dirExists(filepath.Join(projectRoot, "k8s")) ||
+		dirExists(filepath.Join(projectRoot, "kubernetes")) ||
 		dirExists(filepath.Join(projectRoot, "manifests")) ||
 		hasYAMLWithAPIVersion(projectRoot) {
 		suggestions = append(suggestions, "k8s")
+	}
+
+	// GitHub
+	if dirExists(filepath.Join(projectRoot, ".github", "workflows")) {
+		suggestions = append(suggestions, "github")
+	}
+
+	// Helm
+	if fileExists(filepath.Join(projectRoot, "Chart.yaml")) ||
+		fileExists(filepath.Join(projectRoot, "helmfile.yaml")) {
+		suggestions = append(suggestions, "helm")
 	}
 
 	// AWS SDK detection

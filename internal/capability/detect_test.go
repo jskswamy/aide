@@ -172,6 +172,69 @@ func TestDetectProject_Vault(t *testing.T) {
 	assertContains(t, suggestions, "vault", "expected vault suggestion for .vault-token")
 }
 
+func TestDetect_GoProject(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "go.mod"), []byte("module example"))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "go", "expected go for go.mod")
+}
+
+func TestDetect_RustProject(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"test\""))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "rust", "expected rust for Cargo.toml")
+}
+
+func TestDetect_PythonProject(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = \"test\""))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "python", "expected python for pyproject.toml")
+}
+
+func TestDetect_RubyProject(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "Gemfile"), []byte("source 'https://rubygems.org'"))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "ruby", "expected ruby for Gemfile")
+}
+
+func TestDetect_JavaMavenProject(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "pom.xml"), []byte("<project></project>"))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "java", "expected java for pom.xml")
+}
+
+func TestDetect_JavaGradleProject(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "build.gradle"), []byte("apply plugin: 'java'"))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "java", "expected java for build.gradle")
+}
+
+func TestDetect_GitHubProject(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdirAll(t, filepath.Join(dir, ".github", "workflows"))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "github", "expected github for .github/workflows/")
+}
+
+func TestDetect_HelmProject(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "Chart.yaml"), []byte("apiVersion: v2\nname: test"))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "helm", "expected helm for Chart.yaml")
+}
+
+func TestDetect_KubernetesDirectory(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdirAll(t, filepath.Join(dir, "kubernetes"))
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "k8s", "expected k8s for kubernetes/ directory")
+}
+
 func TestDetectProject_NoMarkers(t *testing.T) {
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "main.go"), []byte("package main"))

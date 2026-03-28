@@ -20,8 +20,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 19 {
-		t.Errorf("expected 19 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 20 {
+		t.Errorf("expected 20 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 

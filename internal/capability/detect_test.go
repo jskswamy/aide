@@ -3,6 +3,7 @@ package capability
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 )
@@ -344,12 +345,54 @@ func TestHasFileWithExtension(t *testing.T) {
 	}
 }
 
-func assertContains(t *testing.T, suggestions []string, want string, msg string) {
-	t.Helper()
+func TestDetectProject_GitRemote(t *testing.T) {
+	tmp := t.TempDir()
+	gitDir := filepath.Join(tmp, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitConfig := "[remote \"origin\"]\n\turl = git@github.com:user/repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(gitConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	suggestions := DetectProject(tmp)
+	if !slices.Contains(suggestions, "git-remote") {
+		t.Errorf("expected git-remote in suggestions, got %v", suggestions)
+	}
+}
+
+func TestDetectProject_GitRemote_NoRemotes(t *testing.T) {
+	tmp := t.TempDir()
+	gitDir := filepath.Join(tmp, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte("[core]\n\tbare = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	suggestions := DetectProject(tmp)
 	for _, s := range suggestions {
-		if s == want {
-			return
+		if s == "git-remote" {
+			t.Error("should NOT suggest git-remote when no remotes configured")
 		}
 	}
-	t.Errorf("%s; got %v", msg, suggestions)
+}
+
+func TestDetectProject_GitRemote_NoGitDir(t *testing.T) {
+	tmp := t.TempDir()
+	suggestions := DetectProject(tmp)
+	for _, s := range suggestions {
+		if s == "git-remote" {
+			t.Error("should NOT suggest git-remote when no .git directory")
+		}
+	}
+}
+
+func assertContains(t *testing.T, suggestions []string, want string, msg string) {
+	t.Helper()
+	if !slices.Contains(suggestions, want) {
+		t.Errorf("%s; got %v", msg, suggestions)
+	}
 }

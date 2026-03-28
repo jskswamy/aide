@@ -17,17 +17,19 @@ type Capability struct {
 	Writable    []string
 	Deny        []string
 	EnvAllow    []string
+	EnableGuard []string
 }
 
 // ResolvedCapability is the flattened result after inheritance resolution.
 type ResolvedCapability struct {
-	Name     string
-	Sources  []string // trace: ["k8s-dev", "k8s"]
-	Unguard  []string
-	Readable []string
-	Writable []string
-	Deny     []string
-	EnvAllow []string
+	Name        string
+	Sources     []string // trace: ["k8s-dev", "k8s"]
+	Unguard     []string
+	Readable    []string
+	Writable    []string
+	Deny        []string
+	EnvAllow    []string
+	EnableGuard []string
 }
 
 // Set is the merged result of multiple activated capabilities.
@@ -96,37 +98,40 @@ func resolveOne(name string, registry map[string]Capability, visited map[string]
 
 func flatten(capDef *Capability) *ResolvedCapability {
 	return &ResolvedCapability{
-		Name:     capDef.Name,
-		Sources:  []string{capDef.Name},
-		Unguard:  copyStrings(capDef.Unguard),
-		Readable: copyStrings(capDef.Readable),
-		Writable: copyStrings(capDef.Writable),
-		Deny:     copyStrings(capDef.Deny),
-		EnvAllow: copyStrings(capDef.EnvAllow),
+		Name:        capDef.Name,
+		Sources:     []string{capDef.Name},
+		Unguard:     copyStrings(capDef.Unguard),
+		Readable:    copyStrings(capDef.Readable),
+		Writable:    copyStrings(capDef.Writable),
+		Deny:        copyStrings(capDef.Deny),
+		EnvAllow:    copyStrings(capDef.EnvAllow),
+		EnableGuard: copyStrings(capDef.EnableGuard),
 	}
 }
 
 func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapability {
 	return &ResolvedCapability{
-		Name:     child.Name,
-		Sources:  append([]string{child.Name}, parent.Sources...),
-		Unguard:  dedup(append(parent.Unguard, child.Unguard...)),
-		Readable: dedup(append(parent.Readable, child.Readable...)),
-		Writable: dedup(append(parent.Writable, child.Writable...)),
-		Deny:     dedup(append(parent.Deny, child.Deny...)),
-		EnvAllow: dedup(append(parent.EnvAllow, child.EnvAllow...)),
+		Name:        child.Name,
+		Sources:     append([]string{child.Name}, parent.Sources...),
+		Unguard:     dedup(append(parent.Unguard, child.Unguard...)),
+		Readable:    dedup(append(parent.Readable, child.Readable...)),
+		Writable:    dedup(append(parent.Writable, child.Writable...)),
+		Deny:        dedup(append(parent.Deny, child.Deny...)),
+		EnvAllow:    dedup(append(parent.EnvAllow, child.EnvAllow...)),
+		EnableGuard: dedup(append(parent.EnableGuard, child.EnableGuard...)),
 	}
 }
 
 func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
 	return &ResolvedCapability{
-		Name:     a.Name,
-		Sources:  append(a.Sources, b.Sources...),
-		Unguard:  dedup(append(a.Unguard, b.Unguard...)),
-		Readable: dedup(append(a.Readable, b.Readable...)),
-		Writable: dedup(append(a.Writable, b.Writable...)),
-		Deny:     dedup(append(a.Deny, b.Deny...)),
-		EnvAllow: dedup(append(a.EnvAllow, b.EnvAllow...)),
+		Name:        a.Name,
+		Sources:     append(a.Sources, b.Sources...),
+		Unguard:     dedup(append(a.Unguard, b.Unguard...)),
+		Readable:    dedup(append(a.Readable, b.Readable...)),
+		Writable:    dedup(append(a.Writable, b.Writable...)),
+		Deny:        dedup(append(a.Deny, b.Deny...)),
+		EnvAllow:    dedup(append(a.EnvAllow, b.EnvAllow...)),
+		EnableGuard: dedup(append(a.EnableGuard, b.EnableGuard...)),
 	}
 }
 
@@ -196,6 +201,7 @@ func (cs *Set) ToSandboxOverrides() SandboxOverrides {
 		o.WritableExtra = append(o.WritableExtra, rc.Writable...)
 		o.DeniedExtra = append(o.DeniedExtra, rc.Deny...)
 		o.EnvAllow = append(o.EnvAllow, rc.EnvAllow...)
+		o.EnableGuard = append(o.EnableGuard, rc.EnableGuard...)
 	}
 
 	// Append never_allow to denied
@@ -221,6 +227,7 @@ func (cs *Set) ToSandboxOverrides() SandboxOverrides {
 	o.WritableExtra = dedup(o.WritableExtra)
 	o.DeniedExtra = dedup(o.DeniedExtra)
 	o.EnvAllow = dedup(o.EnvAllow)
+	o.EnableGuard = dedup(o.EnableGuard)
 
 	return o
 }

@@ -23,6 +23,7 @@ func ApplyOverrides(cfg **config.SandboxPolicy, overrides config.SandboxOverride
 	(*cfg).ReadableExtra = append((*cfg).ReadableExtra, overrides.ReadableExtra...)
 	(*cfg).WritableExtra = append((*cfg).WritableExtra, overrides.WritableExtra...)
 	(*cfg).DeniedExtra = append((*cfg).DeniedExtra, overrides.DeniedExtra...)
+	(*cfg).GuardsExtra = append((*cfg).GuardsExtra, overrides.EnableGuard...)
 }
 
 // MergeCapNames combines context capabilities with --with flags and

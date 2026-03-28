@@ -131,6 +131,7 @@ type SandboxOverrides struct {
 	WritableExtra []string
 	DeniedExtra   []string
 	EnvAllow      []string
+	EnableGuard   []string
 }
 
 // SandboxPolicy defines the OS-native sandbox constraints for an agent.

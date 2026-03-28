@@ -55,13 +55,6 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	// Scoped $HOME reads — narrow baseline only
 	if home != "" {
 		rules = append(rules,
-			// Git configuration (read-only)
-			seatbelt.SectionAllow("Git configuration (read-only)"),
-			seatbelt.AllowRule(`(allow file-read*
-    `+seatbelt.HomeLiteral(home, ".gitconfig")+`
-    `+seatbelt.HomeSubpath(home, ".config/git")+`
-)`),
-
 			// aide's own paths
 			seatbelt.SectionAllow("aide configuration (read-only)"),
 			seatbelt.AllowRule(`(allow file-read*

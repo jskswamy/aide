@@ -185,3 +185,48 @@ func TestResolveAll_DuplicateNames(t *testing.T) {
 		t.Errorf("expected dedup to 1 capability, got %d", len(set.Capabilities))
 	}
 }
+
+func TestResolveOne_EnableGuard(t *testing.T) {
+	registry := map[string]Capability{
+		"git-remote": {
+			Name:        "git-remote",
+			EnableGuard: []string{"git-remote"},
+			EnvAllow:    []string{"SSH_AUTH_SOCK"},
+		},
+	}
+	resolved, err := ResolveOne("git-remote", registry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resolved.EnableGuard) != 1 || resolved.EnableGuard[0] != "git-remote" {
+		t.Errorf("expected EnableGuard [git-remote], got %v", resolved.EnableGuard)
+	}
+}
+
+func TestResolveOne_EnableGuard_Inherits(t *testing.T) {
+	registry := map[string]Capability{
+		"base-remote": {Name: "base-remote", EnableGuard: []string{"git-remote"}},
+		"my-remote":   {Name: "my-remote", Extends: "base-remote", EnvAllow: []string{"SSH_AUTH_SOCK"}},
+	}
+	resolved, err := ResolveOne("my-remote", registry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resolved.EnableGuard) != 1 || resolved.EnableGuard[0] != "git-remote" {
+		t.Errorf("expected inherited EnableGuard [git-remote], got %v", resolved.EnableGuard)
+	}
+}
+
+func TestToSandboxOverrides_EnableGuard(t *testing.T) {
+	registry := map[string]Capability{
+		"git-remote": {Name: "git-remote", EnableGuard: []string{"git-remote"}, EnvAllow: []string{"SSH_AUTH_SOCK"}},
+	}
+	set, err := ResolveAll([]string{"git-remote"}, registry, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	overrides := set.ToSandboxOverrides()
+	if len(overrides.EnableGuard) != 1 || overrides.EnableGuard[0] != "git-remote" {
+		t.Errorf("expected EnableGuard [git-remote] in overrides, got %v", overrides.EnableGuard)
+	}
+}

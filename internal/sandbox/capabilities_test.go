@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -109,5 +110,45 @@ func TestResolveCapabilities_Unknown(t *testing.T) {
 	_, _, err := ResolveCapabilities([]string{"nonexistent"}, cfg)
 	if err == nil {
 		t.Error("expected error for unknown capability")
+	}
+}
+
+func TestApplyOverrides_EnableGuard(t *testing.T) {
+	cfg := &config.SandboxPolicy{}
+	overrides := config.SandboxOverrides{
+		EnableGuard: []string{"git-remote"},
+	}
+	ApplyOverrides(&cfg, overrides)
+	if len(cfg.GuardsExtra) != 1 || cfg.GuardsExtra[0] != "git-remote" {
+		t.Errorf("expected GuardsExtra [git-remote], got %v", cfg.GuardsExtra)
+	}
+}
+
+func TestResolveCapabilities_GitRemote_EnableGuard(t *testing.T) {
+	cfg := &config.Config{}
+	capSet, overrides, err := ResolveCapabilities([]string{"git-remote"}, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capSet == nil {
+		t.Fatal("expected non-nil capSet")
+	}
+
+	// EnableGuard should flow through to overrides
+	if len(overrides.EnableGuard) != 1 || overrides.EnableGuard[0] != "git-remote" {
+		t.Errorf("expected EnableGuard [git-remote], got %v", overrides.EnableGuard)
+	}
+
+	// EnvAllow should include SSH_AUTH_SOCK
+	if !slices.Contains(overrides.EnvAllow, "SSH_AUTH_SOCK") {
+		t.Error("expected SSH_AUTH_SOCK in EnvAllow")
+	}
+
+	// ApplyOverrides should add to GuardsExtra
+	var sandboxCfg *config.SandboxPolicy
+	ApplyOverrides(&sandboxCfg, overrides)
+
+	if len(sandboxCfg.GuardsExtra) != 1 || sandboxCfg.GuardsExtra[0] != "git-remote" {
+		t.Errorf("expected GuardsExtra [git-remote], got %v", sandboxCfg.GuardsExtra)
 	}
 }

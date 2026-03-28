@@ -8,8 +8,8 @@ import (
 
 func TestRegistry_AllGuards(t *testing.T) {
 	guards := guards.AllGuards()
-	if len(guards) != 10 {
-		t.Errorf("expected 10 guards, got %d", len(guards))
+	if len(guards) != 12 {
+		t.Errorf("expected 12 guards, got %d", len(guards))
 	}
 
 	// Verify each guard has a non-empty name and type.
@@ -40,8 +40,8 @@ func TestRegistry_GuardByName(t *testing.T) {
 
 func TestRegistry_GuardsByType(t *testing.T) {
 	always := guards.ByType("always")
-	if len(always) != 7 {
-		t.Errorf("expected 7 always guards, got %d", len(always))
+	if len(always) != 8 {
+		t.Errorf("expected 8 always guards, got %d", len(always))
 	}
 	for _, g := range always {
 		if g.Type() != "always" {
@@ -60,8 +60,8 @@ func TestRegistry_GuardsByType(t *testing.T) {
 	}
 
 	optIn := guards.ByType("opt-in")
-	if len(optIn) != 0 {
-		t.Errorf("expected 0 opt-in guards, got %d", len(optIn))
+	if len(optIn) != 1 {
+		t.Errorf("expected 1 opt-in guards, got %d", len(optIn))
 	}
 }
 

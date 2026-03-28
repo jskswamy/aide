@@ -105,6 +105,12 @@ func DetectProject(projectRoot string) []string {
 		suggestions = append(suggestions, "vault")
 	}
 
+	// Git remote operations
+	gitConfigPath := filepath.Join(projectRoot, ".git", "config")
+	if containsInFileByPath(gitConfigPath, "[remote ") {
+		suggestions = append(suggestions, "git-remote")
+	}
+
 	return suggestions
 }
 

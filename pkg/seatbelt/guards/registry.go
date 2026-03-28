@@ -18,6 +18,7 @@ func init() {
 		SystemRuntimeGuard(),
 		NetworkGuard(),
 		FilesystemGuard(),
+		GitIntegrationGuard(), // git config parsing (read-only)
 		KeychainGuard(),
 		NodeToolchainGuard(),
 		NixToolchainGuard(),
@@ -27,6 +28,10 @@ func init() {
 		ProjectSecretsGuard(),
 		DevCredentialsGuard(),
 		AideSecretsGuard(),
+	)
+	// opt-in guards (activated via capability EnableGuard)
+	builtinGuards = append(builtinGuards,
+		GitRemoteGuard(),
 	)
 }
 

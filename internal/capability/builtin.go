@@ -132,6 +132,12 @@ func init() {
 			Writable:    []string{"~/.config/gh"},
 			EnvAllow:    []string{"GITHUB_TOKEN", "GH_TOKEN"},
 		},
+		"git-remote": {
+			Name:        "git-remote",
+			Description: "Git remote operations (push, fetch, pull) via SSH and HTTPS",
+			EnableGuard: []string{"git-remote"},
+			EnvAllow:    []string{"SSH_AUTH_SOCK"},
+		},
 		"gpg": {
 			Name:        "gpg",
 			Description: "GPG keys and signing",

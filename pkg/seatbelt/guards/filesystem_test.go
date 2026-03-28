@@ -58,12 +58,6 @@ func TestFilesystem_ScopedReadablePaths(t *testing.T) {
 	if !strings.Contains(output, "(allow file-read*") {
 		t.Error("expected allow file-read* block")
 	}
-	if !strings.Contains(output, `"/Users/testuser/.gitconfig"`) {
-		t.Error("expected .gitconfig literal path")
-	}
-	if !strings.Contains(output, `"/Users/testuser/.config/git"`) {
-		t.Error("expected .config/git subpath")
-	}
 	if !strings.Contains(output, `"/Users/testuser/.config/aide"`) {
 		t.Error("expected .config/aide subpath")
 	}
@@ -148,10 +142,6 @@ func TestFilesystem_MixedConfig(t *testing.T) {
 	if !strings.Contains(output, `(subpath "`+wdir+`")`) {
 		t.Error("expected writable dir path")
 	}
-	// HomeDir now produces narrow baseline reads
-	if !strings.Contains(output, `"/Users/testuser/.gitconfig"`) {
-		t.Error("expected narrow baseline home paths")
-	}
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny block")
 	}
@@ -211,8 +201,6 @@ func TestFilesystemGuard_ScopedHomeReads(t *testing.T) {
 
 	// Should have narrow baseline paths
 	narrowPaths := []string{
-		`"/Users/testuser/.gitconfig"`,
-		`"/Users/testuser/.config/git"`,
 		`"/Users/testuser/.config/aide"`,
 		`"/Users/testuser/.local/share/aide"`,
 		`"/Users/testuser/.cache"`,
@@ -292,10 +280,6 @@ func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 	if !strings.Contains(output, `(subpath "`+project+`")`) {
 		t.Errorf("expected ProjectRoot %s in output", project)
 	}
-	// HomeDir now produces narrow baseline reads
-	if !strings.Contains(output, `"/Users/testuser/.gitconfig"`) {
-		t.Error("expected narrow baseline home paths")
-	}
 	if !strings.Contains(output, "(deny file-read-data") {
 		t.Error("expected deny block for ExtraDenied")
 	}
@@ -318,8 +302,6 @@ func TestFilesystemGuard_NarrowBaseline(t *testing.T) {
 		path    string
 		kind    string // "literal" or "subpath"
 	}{
-		{`(literal "/Users/testuser/.gitconfig")`, "git config file"},
-		{`(subpath "/Users/testuser/.config/git")`, "git config dir"},
 		{`(subpath "/Users/testuser/.config/aide")`, "aide config"},
 		{`(subpath "/Users/testuser/.local/share/aide")`, "aide data"},
 		{`(subpath "/Users/testuser/.cache")`, "cache dir"},

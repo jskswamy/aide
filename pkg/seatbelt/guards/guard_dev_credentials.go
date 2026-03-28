@@ -33,6 +33,7 @@ var credentialPaths = []struct {
 	{".config/glab-cli", true},            // GitLab CLI token
 	{".pypirc", false},                    // PyPI upload credentials
 	{".gem/credentials", false},           // RubyGems push token
+	{".git-credentials", false},           // Git plaintext credential store
 }
 
 func (g *devCredentialsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {

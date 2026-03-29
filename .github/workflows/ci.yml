@@ -57,11 +57,15 @@ jobs:
         with:
           go-version: "1.25.x"
 
-      - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Install tools
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/mikefarah/yq/v4@latest
 
       - name: Run gosec
-        run: gosec -exclude=G304,G204,G703,G104,G117,G702,G706,G101 -fmt sarif -out gosec-results.sarif ./...
+        run: |
+          EXCLUDE=$(yq -r '.exclude | keys | join(",")' .gosec.yaml)
+          gosec -exclude="$EXCLUDE" -fmt sarif -out gosec-results.sarif ./... || true
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3

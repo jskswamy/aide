@@ -24,14 +24,17 @@ lint:
 		echo "golangci-lint not installed, skipping lint"; \
 	fi
 
-# gosec rules excluded per .gosec.yaml (CLI-tool false positives)
-GOSEC_EXCLUDE := G304,G204,G703,G104,G117,G702,G706,G101
+# gosec rules excluded per .gosec.yaml (single source of truth)
+GOSEC_EXCLUDE := $(shell yq -r '.exclude | keys | join(",")' .gosec.yaml 2>/dev/null)
 
 gosec:
-	@if command -v gosec >/dev/null 2>&1; then \
-		gosec -exclude=$(GOSEC_EXCLUDE) ./...; \
-	else \
+	@if ! command -v gosec >/dev/null 2>&1; then \
 		echo "gosec not installed, skipping security scan"; \
+	elif [ -z "$(GOSEC_EXCLUDE)" ]; then \
+		echo "warning: could not read .gosec.yaml (is yq installed?), running gosec without exclusions"; \
+		gosec ./...; \
+	else \
+		gosec -exclude=$(GOSEC_EXCLUDE) ./...; \
 	fi
 
 clean:

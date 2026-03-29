@@ -37,6 +37,9 @@ var credentialPaths = []struct {
 }
 
 func (g *devCredentialsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	if ctx == nil || ctx.HomeDir == "" {
+		return seatbelt.GuardResult{}
+	}
 	result := seatbelt.GuardResult{}
 
 	// Build opt-out set from ExtraReadable and ExtraWritable

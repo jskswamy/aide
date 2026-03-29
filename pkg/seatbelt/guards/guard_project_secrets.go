@@ -34,6 +34,9 @@ func (g *projectSecretsGuard) Description() string {
 }
 
 func (g *projectSecretsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	if ctx == nil {
+		return seatbelt.GuardResult{}
+	}
 	result := seatbelt.GuardResult{}
 	if ctx.ProjectRoot == "" {
 		return result

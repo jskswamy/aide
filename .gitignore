@@ -9,8 +9,9 @@
 # Git worktrees
 .worktrees/
 
-# Go build output
+# Go build output and devshell tool binaries
 bin/
+.gobin/
 /aide
 *.exe
 

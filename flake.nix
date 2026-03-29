@@ -19,7 +19,6 @@
             pkgs.go
             pkgs.gnumake
             pkgs.golangci-lint
-            pkgs.gosec
             pkgs.gitleaks
             stable.pre-commit
           ];
@@ -27,6 +26,10 @@
           shellHook = ''
             # Export GOROOT so Go works outside the devshell (e.g. Claude Code sandbox)
             export GOROOT="${pkgs.go}/share/go"
+
+            # Use project-local GOBIN so Go-installed tools match the devshell Go version
+            export GOBIN="$PWD/.gobin"
+            export PATH="$GOBIN:$PATH"
 
             # Auto-install git hooks (one-time)
             _sentinel=".git/hooks/.aide-dev-setup-done"
@@ -36,10 +39,13 @@
               touch "$_sentinel" 2>/dev/null
             fi
 
-            # Install Go tools not available in nixpkgs
-            if ! command -v govulncheck &>/dev/null; then
-              echo "Installing govulncheck..."
+            # Install Go security tools (built against the devshell Go version)
+            _gobin_sentinel="$GOBIN/.installed-$(go version | awk '{print $3}')"
+            if [ ! -f "$_gobin_sentinel" ]; then
+              echo "Installing Go security tools for $(go version | awk '{print $3}')..."
+              go install github.com/securego/gosec/v2/cmd/gosec@latest 2>/dev/null
               go install golang.org/x/vuln/cmd/govulncheck@latest 2>/dev/null
+              touch "$_gobin_sentinel" 2>/dev/null
             fi
 
             echo "aide dev environment ready (Go $(go version | awk '{print $3}' | sed 's/go//'))"

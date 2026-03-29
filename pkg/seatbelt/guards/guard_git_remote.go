@@ -9,6 +9,7 @@ import (
 
 type gitRemoteGuard struct{}
 
+// GitRemoteGuard returns an opt-in guard for git remote operations (SSH, credentials, network).
 func GitRemoteGuard() seatbelt.Guard { return &gitRemoteGuard{} }
 
 func (g *gitRemoteGuard) Name() string { return "git-remote" }

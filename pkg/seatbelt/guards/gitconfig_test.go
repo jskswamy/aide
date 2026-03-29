@@ -213,15 +213,15 @@ func TestParseGitConfig_IncludeIfGitdirTildeTrailingSlash(t *testing.T) {
 func TestParseGitConfig_SymlinkResolution(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
-	real := filepath.Join(tmp, "real")
+	realDir := filepath.Join(tmp, "real")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(real, 0o755); err != nil {
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	realConfig := filepath.Join(real, "gitconfig-work")
+	realConfig := filepath.Join(realDir, "gitconfig-work")
 	if err := os.WriteFile(realConfig, []byte("[user]\n\temail = work@company.com\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

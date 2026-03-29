@@ -31,6 +31,7 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     (subpath "/System")
     (subpath "/Library")
     (subpath "/nix")
+    (subpath "/etc")
     (subpath "/private")
     (subpath "/Applications")
     (subpath "/run")

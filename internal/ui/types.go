@@ -3,11 +3,12 @@ package ui
 
 // CapabilityDisplay holds per-capability information for banner rendering.
 type CapabilityDisplay struct {
-	Name     string
-	Paths    []string // readable/writable paths granted
-	EnvVars  []string // env vars passed through
-	Source   string   // "context config", "--with", "--without"
-	Disabled bool     // true if --without excluded this
+	Name      string
+	Paths     []string // readable/writable paths granted
+	EnvVars   []string // env vars passed through
+	Source    string   // "context config", "--with", "--without"
+	Disabled  bool     // true if --without excluded this
+	Suggested bool     // true if detected but not enabled
 }
 
 // BannerData holds all information needed to render an aide banner.
@@ -25,6 +26,7 @@ type BannerData struct {
 	Warnings      []string
 	Capabilities  []CapabilityDisplay
 	DisabledCaps  []CapabilityDisplay // --without caps
+	SuggestedCaps []CapabilityDisplay // detected but not enabled
 	NeverAllow    []string
 	CredWarnings  []string // "AWS_SECRET_ACCESS_KEY (via aws)"
 	CompWarnings  []string // composition warnings

@@ -390,6 +390,65 @@ func TestDetectProject_GitRemote_NoGitDir(t *testing.T) {
 	}
 }
 
+func TestDetectProject_MultipleDetections(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Create markers for multiple capabilities
+	if err := os.WriteFile(filepath.Join(tmp, "go.mod"), []byte("module test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, ".github", "workflows"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(tmp, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "config"),
+		[]byte("[remote \"origin\"]\n\turl = git@github.com:user/repo.git\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	suggestions := DetectProject(tmp)
+
+	// Should detect go, github, and git-remote
+	expected := map[string]bool{"go": false, "github": false, "git-remote": false}
+	for _, s := range suggestions {
+		if _, ok := expected[s]; ok {
+			expected[s] = true
+		}
+	}
+	for name, found := range expected {
+		if !found {
+			t.Errorf("expected %q to be detected, got suggestions: %v", name, suggestions)
+		}
+	}
+}
+
+func TestDetectProject_SuggestionFiltering(t *testing.T) {
+	// Simulate the launcher's filtering: detected minus enabled = suggested
+	detected := []string{"go", "github", "git-remote"}
+	enabled := map[string]bool{"github": true}
+
+	var suggested []string
+	for _, name := range detected {
+		if !enabled[name] {
+			suggested = append(suggested, name)
+		}
+	}
+
+	if len(suggested) != 2 {
+		t.Errorf("expected 2 suggestions, got %d: %v", len(suggested), suggested)
+	}
+
+	// github should NOT be in suggested
+	for _, s := range suggested {
+		if s == "github" {
+			t.Error("github should not be suggested when already enabled")
+		}
+	}
+}
+
 func assertContains(t *testing.T, suggestions []string, want string, msg string) {
 	t.Helper()
 	if !slices.Contains(suggestions, want) {

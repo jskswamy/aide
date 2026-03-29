@@ -476,12 +476,29 @@ func (l *Launcher) buildBannerData(
 		})
 	}
 
-	// Project detection: if no capabilities active, suggest based on project files
-	if len(data.Capabilities) == 0 && len(data.DisabledCaps) == 0 {
-		suggestions := capability.DetectProject(projectRoot)
-		if len(suggestions) > 0 {
-			data.Warnings = append(data.Warnings,
-				fmt.Sprintf("Detected project tools. Suggested: aide --with %s", strings.Join(suggestions, " ")))
+	// Project detection: always detect and show missing capabilities
+	if suggestions := capability.DetectProject(projectRoot); len(suggestions) > 0 {
+		// Build set of already-enabled capability names
+		enabled := make(map[string]bool, len(data.Capabilities))
+		for _, c := range data.Capabilities {
+			enabled[c.Name] = true
+		}
+		// Show only capabilities that are detected but not yet enabled
+		registry := capability.MergedRegistry(nil)
+		for _, name := range suggestions {
+			if enabled[name] {
+				continue
+			}
+			if cap, ok := registry[name]; ok {
+				paths := append([]string{}, cap.Readable...)
+				paths = append(paths, cap.Writable...)
+				data.SuggestedCaps = append(data.SuggestedCaps, ui.CapabilityDisplay{
+					Name:      name,
+					Paths:     paths,
+					Suggested: true,
+					Source:    "detected",
+				})
+			}
 		}
 	}
 

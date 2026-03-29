@@ -232,3 +232,18 @@ func TestClaudeAgent(t *testing.T) {
 		}
 	}
 }
+
+func TestGuard_NixToolchain_EtcNixCoverage(t *testing.T) {
+	// /etc/nix paths are covered by system-runtime guard's (subpath "/etc")
+	// and (subpath "/private") rules, not by the nix-toolchain guard.
+	// This test verifies the coverage exists.
+	sysGuard := guards.SystemRuntimeGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser", GOOS: "darwin"}
+	result := sysGuard.Rules(ctx)
+	output := renderTestRules(result.Rules)
+
+	// Verify /etc subpath is present (covers /etc/nix/registry.json)
+	if !strings.Contains(output, `(subpath "/etc")`) {
+		t.Error("expected system-runtime to have (subpath \"/etc\") for nix system paths")
+	}
+}

@@ -20,6 +20,9 @@ func (g *aideSecretsGuard) Type() string        { return "default" }
 func (g *aideSecretsGuard) Description() string { return "Blocks access to aide's encrypted secrets" }
 
 func (g *aideSecretsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	if ctx == nil || ctx.HomeDir == "" {
+		return seatbelt.GuardResult{}
+	}
 	result := seatbelt.GuardResult{}
 	secretsDir := ctx.HomePath(".config/aide/secrets")
 

@@ -20,6 +20,9 @@ func (g *nixToolchainGuard) Type() string        { return "always" }
 func (g *nixToolchainGuard) Description() string { return "Nix store and profile access" }
 
 func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	if ctx == nil || ctx.HomeDir == "" {
+		return seatbelt.GuardResult{}
+	}
 	if !dirExists("/nix/store") {
 		return seatbelt.GuardResult{
 			Skipped: []string{"/nix/store not found — nix not installed"},

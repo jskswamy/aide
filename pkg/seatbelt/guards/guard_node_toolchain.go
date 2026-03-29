@@ -20,6 +20,9 @@ func (g *nodeToolchainGuard) Description() string {
 }
 
 func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	if ctx == nil || ctx.HomeDir == "" {
+		return seatbelt.GuardResult{}
+	}
 	home := ctx.HomeDir
 
 	return seatbelt.GuardResult{Rules: []seatbelt.Rule{

@@ -20,6 +20,9 @@ func (g *systemRuntimeGuard) Description() string {
 }
 
 func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	if ctx == nil {
+		return seatbelt.GuardResult{}
+	}
 	rules := []seatbelt.Rule{
 		// 1. Broad system reads — all top-level system directories
 		seatbelt.SectionAllow("Broad system reads"),

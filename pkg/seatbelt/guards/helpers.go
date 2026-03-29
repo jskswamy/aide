@@ -3,6 +3,7 @@ package guards
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
@@ -61,4 +62,29 @@ func dirExists(path string) bool {
 func pathExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// ExpandTilde expands ~ and ~/ prefixes to the home directory.
+// Uses string concatenation instead of filepath.Join to preserve
+// trailing slashes, which is important for gitdir: prefix matching patterns.
+func ExpandTilde(path, homeDir string) string {
+	if strings.HasPrefix(path, "~/") {
+		// Use string concatenation instead of filepath.Join to preserve
+		// trailing slashes. filepath.Join cleans paths, stripping
+		// trailing / which breaks gitdir: prefix matching patterns.
+		return homeDir + "/" + path[2:]
+	}
+	if path == "~" {
+		return homeDir
+	}
+	return path
+}
+
+// ResolveSymlink resolves symlinks in a path, returning the original path if resolution fails.
+func ResolveSymlink(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return resolved
 }

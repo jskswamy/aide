@@ -53,25 +53,25 @@ func ParseGitConfig(homeDir, projectRoot string, envLookup func(string) (string,
 // and GIT_CONFIG_SYSTEM environment variables when provided via envLookup.
 func ParseGitConfigWithEnv(homeDir, projectRoot string, envLookup func(string) (string, bool)) *GitConfigResult {
 	result := &GitConfigResult{}
-	globalConfig := resolveSymlink(filepath.Join(homeDir, ".gitconfig"))
-	xdgConfig := resolveSymlink(xdgGitConfigPath(homeDir, envLookup))
-	systemConfig := resolveSymlink("/etc/gitconfig")
+	globalConfig := ResolveSymlink(filepath.Join(homeDir, ".gitconfig"))
+	xdgConfig := ResolveSymlink(xdgGitConfigPath(homeDir, envLookup))
+	systemConfig := ResolveSymlink("/etc/gitconfig")
 
 	if val, ok := envLookup("GIT_CONFIG_GLOBAL"); ok && val != "" {
-		globalConfig = resolveSymlink(expandTilde(val, homeDir))
+		globalConfig = ResolveSymlink(ExpandTilde(val, homeDir))
 	}
 	if val, ok := envLookup("GIT_CONFIG_SYSTEM"); ok && val != "" {
-		systemConfig = resolveSymlink(expandTilde(val, homeDir))
+		systemConfig = ResolveSymlink(ExpandTilde(val, homeDir))
 	}
 
 	result.ConfigFiles = []string{
 		globalConfig, xdgConfig, systemConfig,
-		resolveSymlink(filepath.Join(homeDir, ".config", "git", "ignore")),
-		resolveSymlink(filepath.Join(homeDir, ".config", "git", "attributes")),
+		ResolveSymlink(filepath.Join(homeDir, ".config", "git", "ignore")),
+		ResolveSymlink(filepath.Join(homeDir, ".config", "git", "attributes")),
 	}
 
-	result.ExcludesFile = resolveSymlink(filepath.Join(homeDir, ".gitignore"))
-	result.AttributesFile = resolveSymlink(filepath.Join(homeDir, ".config", "git", "attributes"))
+	result.ExcludesFile = ResolveSymlink(filepath.Join(homeDir, ".gitignore"))
+	result.AttributesFile = ResolveSymlink(filepath.Join(homeDir, ".config", "git", "attributes"))
 
 	parsed := parseConfigFile(globalConfig)
 	if parsed == nil {
@@ -83,10 +83,10 @@ func ParseGitConfigWithEnv(homeDir, projectRoot string, envLookup func(string) (
 	}
 
 	if val := configValue(parsed, "core", "", "excludesFile"); val != "" {
-		result.ExcludesFile = resolveSymlink(expandTilde(val, homeDir))
+		result.ExcludesFile = ResolveSymlink(ExpandTilde(val, homeDir))
 	}
 	if val := configValue(parsed, "core", "", "attributesFile"); val != "" {
-		result.AttributesFile = resolveSymlink(expandTilde(val, homeDir))
+		result.AttributesFile = ResolveSymlink(ExpandTilde(val, homeDir))
 	}
 	extractGPGConfig(parsed, result)
 
@@ -132,11 +132,11 @@ func resolveIncludes(cfg *gitconfig.Config, homeDir, projectRoot string, result 
 	if includeSection != nil {
 		for _, opt := range includeSection.Options {
 			if opt.Key == "path" {
-				path := expandTilde(opt.Value, homeDir)
+				path := ExpandTilde(opt.Value, homeDir)
 				if !filepath.IsAbs(path) {
 					path = filepath.Join(homeDir, path)
 				}
-				resolved := resolveSymlink(path)
+				resolved := ResolveSymlink(path)
 				result.ConfigFiles = append(result.ConfigFiles, resolved)
 				if parsed := parseConfigFile(resolved); parsed != nil {
 					extractCoreOverrides(parsed, homeDir, result)
@@ -154,11 +154,11 @@ func resolveIncludes(cfg *gitconfig.Config, homeDir, projectRoot string, result 
 		if path == "" {
 			continue
 		}
-		path = expandTilde(path, homeDir)
+		path = ExpandTilde(path, homeDir)
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(homeDir, path)
 		}
-		resolved := resolveSymlink(path)
+		resolved := ResolveSymlink(path)
 		result.ConfigFiles = append(result.ConfigFiles, resolved)
 		if parsed := parseConfigFile(resolved); parsed != nil {
 			extractCoreOverrides(parsed, homeDir, result)
@@ -174,10 +174,10 @@ func resolveIncludes(cfg *gitconfig.Config, homeDir, projectRoot string, result 
 // [includeIf]) would be missed.
 func extractCoreOverrides(cfg *gitconfig.Config, homeDir string, result *GitConfigResult) {
 	if val := configValue(cfg, "core", "", "excludesFile"); val != "" {
-		result.ExcludesFile = resolveSymlink(expandTilde(val, homeDir))
+		result.ExcludesFile = ResolveSymlink(ExpandTilde(val, homeDir))
 	}
 	if val := configValue(cfg, "core", "", "attributesFile"); val != "" {
-		result.AttributesFile = resolveSymlink(expandTilde(val, homeDir))
+		result.AttributesFile = ResolveSymlink(ExpandTilde(val, homeDir))
 	}
 	extractGPGConfig(cfg, result)
 }
@@ -207,7 +207,7 @@ func evaluateIncludeCondition(condition, projectRoot, homeDir string) bool {
 
 func matchGitDir(pattern, projectRoot, homeDir string, caseInsensitive bool) bool {
 	gitDir := filepath.Join(projectRoot, ".git")
-	pattern = expandTilde(pattern, homeDir)
+	pattern = ExpandTilde(pattern, homeDir)
 
 	// Trailing / in gitdir: patterns means "match as prefix" (any repo
 	// under this directory). expandTilde uses string concatenation
@@ -226,27 +226,6 @@ func matchGitDir(pattern, projectRoot, homeDir string, caseInsensitive bool) boo
 		return strings.EqualFold(gitDir, pattern)
 	}
 	return gitDir == pattern
-}
-
-func expandTilde(path, homeDir string) string {
-	if strings.HasPrefix(path, "~/") {
-		// Use string concatenation instead of filepath.Join to preserve
-		// trailing slashes. filepath.Join cleans paths, stripping
-		// trailing / which breaks gitdir: prefix matching patterns.
-		return homeDir + "/" + path[2:]
-	}
-	if path == "~" {
-		return homeDir
-	}
-	return path
-}
-
-func resolveSymlink(path string) string {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path
-	}
-	return resolved
 }
 
 func xdgGitConfigPath(homeDir string, envLookup func(string) (string, bool)) string {

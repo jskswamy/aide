@@ -67,7 +67,7 @@ func initCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("reading existing config for backup: %w", err)
 				}
-				if err := os.WriteFile(bakPath, data, 0o644); err != nil {
+				if err := os.WriteFile(bakPath, data, 0o600); err != nil {
 					return fmt.Errorf("writing backup: %w", err)
 				}
 				fmt.Fprintf(out, "Backed up existing config to %s\n\n", bakPath)
@@ -174,11 +174,11 @@ func initCmd() *cobra.Command {
 
 			// Ensure config directory exists
 			configDir := config.Dir()
-			if err := os.MkdirAll(configDir, 0o755); err != nil {
+			if err := os.MkdirAll(configDir, 0o750); err != nil {
 				return fmt.Errorf("creating config directory: %w", err)
 			}
 
-			if err := os.WriteFile(configPath, []byte(yamlContent), 0o644); err != nil {
+			if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 

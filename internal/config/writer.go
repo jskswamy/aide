@@ -23,12 +23,12 @@ func WriteConfigTo(cfg *Config, path string) error {
 	}
 
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return fmt.Errorf("writing temp config file: %w", err)
 	}
 

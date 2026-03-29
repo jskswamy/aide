@@ -1,0 +1,126 @@
+# gosec exclusion configuration for aide
+#
+# aide is a CLI tool that manages coding agent contexts, launches
+# subprocesses, reads user config files, and handles encrypted secrets.
+# Many gosec rules target web-application vulnerabilities that do not
+# apply to a local CLI running as the invoking user.
+#
+# This file is the single source of truth for suppressed rules.
+# CI and local scans both derive their -exclude flags from it.
+#
+# Rules that are fixed in code (not excluded):
+#   G301 — directory permissions tightened to 0750
+#   G306 — file permissions tightened to 0600
+#   G302 — already using 0700 for dirs (correct)
+#   G115 — integer overflow fixed with bounds check
+
+exclude:
+  G304:
+    description: "Potential file inclusion via variable"
+    count: 18
+    reason: >
+      aide's core purpose is reading user-specified config files
+      (.aide.yaml, gitconfig, encrypted secrets, sandbox policies).
+      Every flagged call reads a path resolved internally from config
+      directories or project roots — never from untrusted network input.
+      A CLI tool running as the invoking user already has access to
+      everything it can read; path validation would be security theater.
+    affected:
+      - internal/config/config.go
+      - internal/config/project_writer.go
+      - internal/secrets/manager.go
+      - internal/secrets/rotate.go
+      - pkg/seatbelt/guards/gitconfig.go
+      - cmd/aide/commands.go
+      - internal/launcher/launcher.go
+      - internal/sandbox/linux.go
+      - internal/capability/detect.go
+
+  G204:
+    description: "Subprocess launched with variable"
+    count: 7
+    reason: >
+      aide is an agent launcher — exec.Command and syscall.Exec with
+      variable arguments is its primary function. It launches agents
+      (claude, aider, etc.) by name, runs git for context detection,
+      and opens $EDITOR for secrets editing. The binary names come from
+      PATH resolution or internal config, not untrusted input.
+    affected:
+      - internal/launcher/launcher.go
+      - internal/sandbox/linux.go
+      - internal/context/git.go
+      - internal/secrets/manager.go
+      - cmd/aide/commands.go
+
+  G703:
+    description: "Path traversal via taint analysis"
+    count: 11
+    reason: >
+      gosec flags filepath.Join where one component is a variable,
+      plus os.Stat/os.MkdirAll/os.RemoveAll on those paths. In aide,
+      the "tainted" variables are internally generated — PIDs from
+      os.Getpid(), config-derived directory paths, secret file names
+      from the project config. None come from user-supplied strings
+      via stdin or network.
+    affected:
+      - cmd/aide/commands.go
+      - internal/launcher/runtime.go
+      - internal/secrets/age.go
+      - internal/secrets/manager.go
+      - internal/secrets/rotate.go
+
+  G104:
+    description: "Errors unhandled"
+    count: 4
+    reason: >
+      All instances are fmt.Fprintf calls writing TUI banner output
+      to the terminal. If the terminal write fails, there is nothing
+      useful the program can do. The golangci-lint errcheck linter
+      already excludes fmt.Fprint* for this exact reason.
+    affected:
+      - internal/ui/banner.go
+
+  G117:
+    description: "Marshaled struct field matches secret pattern"
+    count: 2
+    reason: >
+      The flagged field is ProjectOverride.Secret, which stores a
+      file path reference to an encrypted .enc.yaml file — not an
+      actual credential value. The field name is semantically accurate
+      ("which secret file does this project use?"), and the value is
+      safe to serialize.
+    affected:
+      - internal/config/project_writer.go
+      - internal/config/writer.go
+
+  G702:
+    description: "Command injection via taint analysis"
+    count: 1
+    reason: >
+      Same location as G204. Agent scanning uses exec.LookPath to
+      find agent binaries on PATH. The binary name is determined by
+      aide's internal agent registry, not user-injectable input.
+    affected:
+      - cmd/aide/commands.go
+
+  G706:
+    description: "Log injection via taint analysis"
+    count: 1
+    reason: >
+      The logged path is a PID-based runtime directory under
+      os.TempDir() (e.g., /tmp/aide-12345). An attacker would need
+      to control the temp directory naming to inject log content,
+      which is not realistic for a local CLI tool.
+    affected:
+      - internal/launcher/runtime.go
+
+  G101:
+    description: "Potential hardcoded credentials"
+    count: 1
+    reason: >
+      The variable named "secret" in paths.go stores a file path
+      (e.g., "my-project.enc.yaml"), not a credential. gosec flags
+      any variable matching secret/password/token patterns regardless
+      of actual content.
+    affected:
+      - internal/config/paths.go

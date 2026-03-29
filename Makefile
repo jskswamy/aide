@@ -1,4 +1,4 @@
-.PHONY: all build install test vet lint clean devcontainer-build test-linux test-integration test-all
+.PHONY: all build install test vet lint gosec clean devcontainer-build test-linux test-integration test-all
 
 all: build vet test
 
@@ -22,6 +22,16 @@ lint:
 		golangci-lint run ./...; \
 	else \
 		echo "golangci-lint not installed, skipping lint"; \
+	fi
+
+# gosec rules excluded per .gosec.yaml (CLI-tool false positives)
+GOSEC_EXCLUDE := G304,G204,G703,G104,G117,G702,G706,G101
+
+gosec:
+	@if command -v gosec >/dev/null 2>&1; then \
+		gosec -exclude=$(GOSEC_EXCLUDE) ./...; \
+	else \
+		echo "gosec not installed, skipping security scan"; \
 	fi
 
 clean:

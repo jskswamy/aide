@@ -150,6 +150,9 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 	// Landlock v4+ (kernel 6.7+) supports port-level network restrictions.
 	// When AllowPorts is set, only connections to those ports are permitted.
 	for _, port := range policy.AllowPorts {
+		if port < 0 || port > 65535 {
+			return fmt.Errorf("invalid port %d: must be 0-65535", port)
+		}
 		rules = append(rules, landlock.ConnectTCP(uint16(port)))
 	}
 

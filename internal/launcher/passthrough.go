@@ -215,11 +215,11 @@ func firstRunHintDir() string {
 // writeFirstRunHint writes a sentinel file to suppress future hints.
 func writeFirstRunHint(agentName string) error {
 	dir := firstRunHintDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 	sentinel := filepath.Join(dir, ".first-run-done")
-	return os.WriteFile(sentinel, []byte(agentName+"\n"), 0o644)
+	return os.WriteFile(sentinel, []byte(agentName+"\n"), 0o600)
 }
 
 // IsFirstRun returns true if the first-run sentinel file does not exist.

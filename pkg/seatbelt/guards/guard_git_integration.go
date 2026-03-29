@@ -9,6 +9,7 @@ import (
 
 type gitIntegrationGuard struct{}
 
+// GitIntegrationGuard returns a guard for read-only access to git configuration files.
 func GitIntegrationGuard() seatbelt.Guard { return &gitIntegrationGuard{} }
 
 func (g *gitIntegrationGuard) Name() string { return "git-integration" }

@@ -20,6 +20,7 @@ type GitConfigResult struct {
 	Warnings       []string
 }
 
+// AllPaths returns a deduplicated list of all file paths from git configuration.
 func (r *GitConfigResult) AllPaths() []string {
 	seen := make(map[string]bool)
 	var out []string

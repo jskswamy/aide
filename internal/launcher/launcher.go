@@ -489,9 +489,9 @@ func (l *Launcher) buildBannerData(
 			if enabled[name] {
 				continue
 			}
-			if cap, ok := registry[name]; ok {
-				paths := append([]string{}, cap.Readable...)
-				paths = append(paths, cap.Writable...)
+			if capDef, ok := registry[name]; ok {
+				paths := append([]string{}, capDef.Readable...)
+				paths = append(paths, capDef.Writable...)
 				data.SuggestedCaps = append(data.SuggestedCaps, ui.CapabilityDisplay{
 					Name:      name,
 					Paths:     paths,

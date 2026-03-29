@@ -20,6 +20,7 @@
             pkgs.gnumake
             pkgs.golangci-lint
             pkgs.gitleaks
+            pkgs.yq-go
             stable.pre-commit
           ];
 

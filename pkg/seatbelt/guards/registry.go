@@ -32,6 +32,8 @@ func init() {
 	// opt-in guards (activated via capability EnableGuard)
 	builtinGuards = append(builtinGuards,
 		GitRemoteGuard(),
+		PermissiveIPCGuard(),
+		XcodeSimulatorGuard(),
 	)
 }
 

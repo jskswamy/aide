@@ -53,6 +53,7 @@ type CapabilityDef struct {
 	Writable    []string `yaml:"writable,omitempty"`
 	Deny        []string `yaml:"deny,omitempty"`
 	EnvAllow    []string `yaml:"env_allow,omitempty"`
+	EnableGuard []string `yaml:"enable_guard,omitempty"`
 }
 
 // AgentDef defines an agent binary. Agents carry no env or secrets (DD-5).

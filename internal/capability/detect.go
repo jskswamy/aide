@@ -111,6 +111,17 @@ func DetectProject(projectRoot string) []string {
 		suggestions = append(suggestions, "git-remote")
 	}
 
+	// Xcode — .xcodeproj, .xcworkspace, or Package.swift with platform targets
+	if hasDirWithExtension(projectRoot, ".xcodeproj") ||
+		hasDirWithExtension(projectRoot, ".xcworkspace") ||
+		containsInFile(projectRoot, "Package.swift", ".iOS") ||
+		containsInFile(projectRoot, "Package.swift", ".macOS") ||
+		containsInFile(projectRoot, "Package.swift", ".watchOS") ||
+		containsInFile(projectRoot, "Package.swift", ".tvOS") ||
+		containsInFile(projectRoot, "Package.swift", ".visionOS") {
+		suggestions = append(suggestions, "xcode")
+	}
+
 	return suggestions
 }
 
@@ -216,6 +227,21 @@ func checkYAMLsForAPIVersion(dir string) bool {
 			if containsInFileByPath(path, "apiVersion:") {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// hasDirWithExtension returns true if any directory entry in dir has
+// the given extension (e.g., ".xcodeproj", ".xcworkspace").
+func hasDirWithExtension(dir string, ext string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() && filepath.Ext(e.Name()) == ext {
+			return true
 		}
 	}
 	return false

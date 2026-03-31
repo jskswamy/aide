@@ -455,3 +455,66 @@ func assertContains(t *testing.T, suggestions []string, want string, msg string)
 		t.Errorf("%s; got %v", msg, suggestions)
 	}
 }
+
+func TestDetectProject_Xcodeproj(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdirAll(t, filepath.Join(dir, "MyApp.xcodeproj"))
+
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "xcode", "expected xcode suggestion for .xcodeproj")
+}
+
+func TestDetectProject_Xcworkspace(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdirAll(t, filepath.Join(dir, "MyApp.xcworkspace"))
+
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "xcode", "expected xcode suggestion for .xcworkspace")
+}
+
+func TestDetectProject_SwiftPackageWithPlatform(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "Package.swift"), []byte(`
+// swift-tools-version:5.9
+import PackageDescription
+let package = Package(
+    name: "MyApp",
+    platforms: [.iOS(.v17)],
+    targets: [.target(name: "MyApp")]
+)
+`))
+
+	suggestions := DetectProject(dir)
+	assertContains(t, suggestions, "xcode", "expected xcode suggestion for Package.swift with iOS platform")
+}
+
+func TestDetectProject_SwiftPackageNoPlatform(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "Package.swift"), []byte(`
+// swift-tools-version:5.9
+import PackageDescription
+let package = Package(
+    name: "MyCLI",
+    targets: [.executableTarget(name: "MyCLI")]
+)
+`))
+
+	suggestions := DetectProject(dir)
+	for _, s := range suggestions {
+		if s == "xcode" {
+			t.Error("pure Swift package without platform markers should not suggest xcode")
+		}
+	}
+}
+
+func TestDetectProject_NoXcode(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "main.go"), []byte("package main"))
+
+	suggestions := DetectProject(dir)
+	for _, s := range suggestions {
+		if s == "xcode" {
+			t.Error("Go project should not suggest xcode")
+		}
+	}
+}

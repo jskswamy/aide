@@ -15,6 +15,7 @@ func FromConfigDefs(defs map[string]config.CapabilityDef) map[string]Capability 
 			Writable:    def.Writable,
 			Deny:        def.Deny,
 			EnvAllow:    def.EnvAllow,
+			EnableGuard: def.EnableGuard,
 		}
 	}
 	return out

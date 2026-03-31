@@ -20,8 +20,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 20 {
-		t.Errorf("expected 20 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 21 {
+		t.Errorf("expected 21 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -82,5 +82,30 @@ func TestBuiltin_Helm_NoUnguard(t *testing.T) {
 	helm := Builtins()["helm"]
 	if len(helm.Unguard) != 0 {
 		t.Errorf("helm should have no Unguard, got %v", helm.Unguard)
+	}
+}
+
+func TestBuiltin_Xcode(t *testing.T) {
+	xcode, ok := Builtins()["xcode"]
+	if !ok {
+		t.Fatal("missing built-in capability xcode")
+	}
+	if len(xcode.EnableGuard) != 2 {
+		t.Errorf("expected 2 EnableGuard entries, got %d: %v", len(xcode.EnableGuard), xcode.EnableGuard)
+	}
+
+	guardSet := make(map[string]bool)
+	for _, g := range xcode.EnableGuard {
+		guardSet[g] = true
+	}
+	if !guardSet["permissive-ipc"] {
+		t.Error("expected permissive-ipc in EnableGuard")
+	}
+	if !guardSet["xcode-simulator"] {
+		t.Error("expected xcode-simulator in EnableGuard")
+	}
+
+	if len(xcode.Writable) == 0 {
+		t.Error("expected writable paths for xcode")
 	}
 }

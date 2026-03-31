@@ -144,6 +144,17 @@ func init() {
 			Writable:    []string{"~/.gnupg"},
 			EnvAllow:    []string{"GNUPGHOME"},
 		},
+
+		// Apple
+		"xcode": {
+			Name:        "xcode",
+			Description: "Xcode, Simulator, and xcodebuild",
+			Writable: []string{
+				"/Applications/Xcode.app",
+				"~/Library/Logs/CoreSimulator",
+			},
+			EnableGuard: []string{"permissive-ipc", "xcode-simulator"},
+		},
 	}
 }
 

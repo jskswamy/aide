@@ -73,6 +73,10 @@ type Policy struct {
 	// ExtraReadable holds user-configured extra readable paths from config.
 	ExtraReadable []string
 
+	// ExtraAllow holds non-filesystem Seatbelt operations to allow
+	// (e.g. "mach-lookup", "iokit-open", "signal").
+	ExtraAllow []string
+
 	// Whether the agent may spawn child processes.
 	AllowSubprocess bool
 
@@ -174,6 +178,7 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 		ExtraWritable:   policy.ExtraWritable,
 		ExtraReadable:   policy.ExtraReadable,
 		AllowSubprocess: policy.AllowSubprocess,
+		ExtraAllow:      policy.ExtraAllow,
 	}
 
 	var results []seatbelt.GuardResult

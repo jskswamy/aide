@@ -18,6 +18,7 @@ type Capability struct {
 	Deny        []string
 	EnvAllow    []string
 	EnableGuard []string
+	Allow       []string
 }
 
 // ResolvedCapability is the flattened result after inheritance resolution.
@@ -30,6 +31,7 @@ type ResolvedCapability struct {
 	Deny        []string
 	EnvAllow    []string
 	EnableGuard []string
+	Allow       []string
 }
 
 // Set is the merged result of multiple activated capabilities.
@@ -106,6 +108,7 @@ func flatten(capDef *Capability) *ResolvedCapability {
 		Deny:        copyStrings(capDef.Deny),
 		EnvAllow:    copyStrings(capDef.EnvAllow),
 		EnableGuard: copyStrings(capDef.EnableGuard),
+		Allow:       copyStrings(capDef.Allow),
 	}
 }
 
@@ -119,6 +122,7 @@ func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapabili
 		Deny:        dedup(append(parent.Deny, child.Deny...)),
 		EnvAllow:    dedup(append(parent.EnvAllow, child.EnvAllow...)),
 		EnableGuard: dedup(append(parent.EnableGuard, child.EnableGuard...)),
+		Allow:       dedup(append(parent.Allow, child.Allow...)),
 	}
 }
 
@@ -132,6 +136,7 @@ func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
 		Deny:        dedup(append(a.Deny, b.Deny...)),
 		EnvAllow:    dedup(append(a.EnvAllow, b.EnvAllow...)),
 		EnableGuard: dedup(append(a.EnableGuard, b.EnableGuard...)),
+		Allow:       dedup(append(a.Allow, b.Allow...)),
 	}
 }
 
@@ -202,6 +207,7 @@ func (cs *Set) ToSandboxOverrides() SandboxOverrides {
 		o.DeniedExtra = append(o.DeniedExtra, rc.Deny...)
 		o.EnvAllow = append(o.EnvAllow, rc.EnvAllow...)
 		o.EnableGuard = append(o.EnableGuard, rc.EnableGuard...)
+		o.Allow = append(o.Allow, rc.Allow...)
 	}
 
 	// Append never_allow to denied
@@ -228,6 +234,7 @@ func (cs *Set) ToSandboxOverrides() SandboxOverrides {
 	o.DeniedExtra = dedup(o.DeniedExtra)
 	o.EnvAllow = dedup(o.EnvAllow)
 	o.EnableGuard = dedup(o.EnableGuard)
+	o.Allow = dedup(o.Allow)
 
 	return o
 }

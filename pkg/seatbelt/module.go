@@ -57,6 +57,7 @@ type Context struct {
 	ExtraWritable []string // consumed by filesystem guard (user-configured writable paths)
 	ExtraReadable []string // consumed by filesystem guard (user-configured readable paths)
 	AllowSubprocess bool // consumed by system-runtime guard
+	ExtraAllow    []string // non-filesystem operations to allow (e.g. "mach-lookup", "iokit-open")
 }
 
 // HomePath returns homeDir joined with a relative path.

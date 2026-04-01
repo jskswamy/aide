@@ -94,6 +94,7 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 			c.ExtraWritable = policy.ExtraWritable
 			c.ExtraReadable = policy.ExtraReadable
 			c.AllowSubprocess = policy.AllowSubprocess
+			c.ExtraAllow = policy.ExtraAllow
 		})
 
 	for _, g := range activeGuards {

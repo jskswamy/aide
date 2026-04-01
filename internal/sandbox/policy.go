@@ -123,6 +123,10 @@ func PolicyFromConfig(
 		policy.CleanEnv = *cfg.CleanEnv
 	}
 
+	if len(cfg.Allow) > 0 {
+		policy.ExtraAllow = cfg.Allow
+	}
+
 	return &policy, warnings, nil
 }
 

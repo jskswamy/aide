@@ -53,6 +53,7 @@ type CapabilityDef struct {
 	Writable    []string `yaml:"writable,omitempty"`
 	Deny        []string `yaml:"deny,omitempty"`
 	EnvAllow    []string `yaml:"env_allow,omitempty"`
+	Allow       []string `yaml:"allow,omitempty"`
 }
 
 // AgentDef defines an agent binary. Agents carry no env or secrets (DD-5).
@@ -132,6 +133,7 @@ type SandboxOverrides struct {
 	DeniedExtra   []string
 	EnvAllow      []string
 	EnableGuard   []string
+	Allow         []string
 }
 
 // SandboxPolicy defines the OS-native sandbox constraints for an agent.
@@ -155,6 +157,7 @@ type SandboxPolicy struct {
 	Guards      []string `yaml:"guards,omitempty"`
 	GuardsExtra []string `yaml:"guards_extra,omitempty"`
 	Unguard     []string `yaml:"unguard,omitempty"`
+	Allow       []string `yaml:"allow,omitempty"`
 }
 
 // UnmarshalYAML handles both `sandbox: false` (bool) and `sandbox: { ... }` (map).

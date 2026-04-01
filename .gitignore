@@ -6,6 +6,9 @@
 .claude/
 !.claude/commands/
 
+# Project config (user-specific)
+.aide.yaml
+
 # Git worktrees
 .worktrees/
 

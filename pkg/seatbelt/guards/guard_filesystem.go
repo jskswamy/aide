@@ -91,6 +91,14 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		}
 	}
 
+	// Non-filesystem operations (from capability Allow field)
+	if len(ctx.ExtraAllow) > 0 {
+		rules = append(rules, seatbelt.SectionAllow("Non-filesystem operations (via capability)"))
+		for _, op := range ctx.ExtraAllow {
+			rules = append(rules, seatbelt.AllowRule(fmt.Sprintf("(allow %s)", op)))
+		}
+	}
+
 	// Denied paths
 	if len(ctx.ExtraDenied) > 0 {
 		expanded := seatbelt.ExpandGlobs(ctx.ExtraDenied)

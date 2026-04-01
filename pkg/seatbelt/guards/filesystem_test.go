@@ -288,6 +288,44 @@ func TestGuard_Filesystem_CtxPaths(t *testing.T) {
 	}
 }
 
+func TestFilesystem_ExtraAllow(t *testing.T) {
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:     "/Users/test",
+		ProjectRoot: "/tmp/project",
+		GOOS:        "darwin",
+		ExtraAllow:  []string{"mach-lookup", "iokit-open", "signal"},
+	}
+	result := g.Rules(ctx)
+	profile := renderTestRules(result.Rules)
+
+	expected := []string{
+		"(allow mach-lookup)",
+		"(allow iokit-open)",
+		"(allow signal)",
+	}
+	for _, want := range expected {
+		if !strings.Contains(profile, want) {
+			t.Errorf("expected %q in profile, got:\n%s", want, profile)
+		}
+	}
+}
+
+func TestFilesystem_ExtraAllow_Empty(t *testing.T) {
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:     "/Users/test",
+		ProjectRoot: "/tmp/project",
+		GOOS:        "darwin",
+	}
+	result := g.Rules(ctx)
+	profile := renderTestRules(result.Rules)
+
+	if strings.Contains(profile, "Non-filesystem operations") {
+		t.Error("should not emit non-filesystem section when ExtraAllow is empty")
+	}
+}
+
 func TestFilesystemGuard_NarrowBaseline(t *testing.T) {
 	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{

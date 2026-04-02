@@ -1,4 +1,4 @@
-.PHONY: all build install test vet lint gosec clean devcontainer-build test-linux test-integration test-all
+.PHONY: all build install test vet generate lint gosec clean devcontainer-build test-linux test-integration test-all
 
 all: build vet test
 
@@ -16,6 +16,9 @@ test-integration:
 
 vet:
 	go vet ./...
+
+generate:
+	go generate ./...
 
 lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then \

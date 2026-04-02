@@ -52,8 +52,9 @@ jobs:
         run: |
           FAILED=0
           for PKG in pkg/seatbelt internal/sandbox internal/secrets; do
-            # Exclude generated mocks from per-package calculation
-            COV=$(go tool cover -func=coverage.out | grep "github.com/jskswamy/aide/${PKG}/" | grep -v "/mocks/" | awk '{sum += $3; n++} END {if (n>0) print sum/n; else print 0}' | tr -d '%')
+            # Filter coverage.out to exclude mocks, then compute per-package
+            grep -v '/mocks/' coverage.out > coverage-nomocks.out
+            COV=$(go tool cover -func=coverage-nomocks.out | grep "github.com/jskswamy/aide/${PKG}/" | awk '{sum += $3; n++} END {if (n>0) print sum/n; else print 0}' | tr -d '%')
             if [ -z "$COV" ] || [ "$COV" = "0" ]; then
               echo "::warning::No coverage data for ${PKG}"
               continue

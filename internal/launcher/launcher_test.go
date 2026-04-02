@@ -165,7 +165,7 @@ env:
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(_ string, _ []string, env []string) error {
 			capturedEnv = env
 			return nil
 		})
@@ -206,7 +206,7 @@ agent: /usr/local/bin/my-agent
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -253,7 +253,7 @@ env:
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(_ string, _ []string, env []string) error {
 			capturedEnv = env
 			return nil
 		})
@@ -305,7 +305,7 @@ default_context: default
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -474,7 +474,7 @@ env:
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(_ string, _ []string, env []string) error {
 			capturedEnv = env
 			return nil
 		})
@@ -513,7 +513,7 @@ env:
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -584,7 +584,7 @@ agent: /usr/local/bin/my-agent
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -666,7 +666,7 @@ agent: claude
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -755,7 +755,7 @@ default_context: default
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -796,7 +796,7 @@ env:
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -842,7 +842,7 @@ sandbox:
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -884,7 +884,7 @@ env:
 	mockExec2 := mocks.NewMockExecer(ctrl2)
 	mockExec2.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, _ []string, _ []string) error {
 			capturedBinary2 = binary
 			return nil
 		})
@@ -992,7 +992,7 @@ yolo: true
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -1044,7 +1044,7 @@ yolo: true
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -1091,7 +1091,7 @@ agent: claude
 	mockExec2 := mocks.NewMockExecer(ctrl)
 	mockExec2.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary2 = binary
 			capturedArgs2 = args
 			return nil
@@ -1267,7 +1267,7 @@ default_context: work
 	mockExecCLY := mocks.NewMockExecer(ctrlCLY)
 	mockExecCLY.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinaryCLY = binary
 			capturedArgsCLY = args
 			return nil

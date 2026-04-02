@@ -684,8 +684,12 @@ func TestEdit_WithMockEditor(t *testing.T) {
 	tmpDir := t.TempDir()
 	secretsDir := filepath.Join(tmpDir, "secrets")
 	runtimeDir := filepath.Join(tmpDir, "runtime")
-	os.MkdirAll(runtimeDir, 0o700)
-	os.MkdirAll(secretsDir, 0o700)
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	// Generate age key
 	identity, err := age.GenerateX25519Identity()

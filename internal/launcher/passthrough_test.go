@@ -31,7 +31,7 @@ func TestPassthrough_SingleAgent(t *testing.T) {
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -62,7 +62,7 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -144,7 +144,7 @@ func TestPassthrough_AgentOverride(t *testing.T) {
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -255,7 +255,7 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -292,7 +292,7 @@ func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinary = binary
 			capturedArgs = args
 			return nil
@@ -383,7 +383,7 @@ func TestPassthrough_AppliesSandbox(t *testing.T) {
 	mockExecAS := mocks.NewMockExecer(ctrlAS)
 	mockExecAS.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinaryAS = binary
 			capturedArgsAS = args
 			return nil
@@ -435,7 +435,7 @@ func TestPassthrough_ExecAgent_UsesCwd(t *testing.T) {
 	mockExecEC := mocks.NewMockExecer(ctrlEC)
 	mockExecEC.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(_ string, args []string, _ []string) error {
 			capturedArgsEC = args
 			return nil
 		})
@@ -479,7 +479,7 @@ func TestPassthrough_NoOptOut_AlwaysSandboxed(t *testing.T) {
 	mockExecNO := mocks.NewMockExecer(ctrlNO)
 	mockExecNO.EXPECT().
 		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, env []string) error {
+		DoAndReturn(func(binary string, args []string, _ []string) error {
 			capturedBinaryNO = binary
 			capturedArgsNO = args
 			return nil

@@ -1,0 +1,24 @@
+# Coverage thresholds enforced by vladopajic/go-test-coverage.
+# Two tiers: 60% overall floor, 80% for security-critical packages.
+
+profile: coverage.out
+
+threshold:
+  file:    0
+  package: 60
+  total:   60
+
+override:
+  - threshold: 80
+    path: pkg/seatbelt
+  - threshold: 80
+    path: internal/sandbox
+  - threshold: 79
+    path: internal/secrets
+  - threshold: 50
+    path: internal/ui
+
+exclude:
+  paths:
+    - cmd/aide
+    - /mocks/

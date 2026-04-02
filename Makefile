@@ -1,4 +1,4 @@
-.PHONY: all build install test vet generate lint gosec clean devcontainer-build test-linux test-integration test-all
+.PHONY: all build install test vet generate lint gosec coverage clean devcontainer-build test-linux test-integration test-all
 
 all: build vet test
 
@@ -40,8 +40,15 @@ gosec:
 		gosec -exclude=$(GOSEC_EXCLUDE) ./...; \
 	fi
 
+# Run tests with coverage and enforce thresholds from .testcoverage.yml
+GOBIN := $(shell pwd)/.gobin
+coverage:
+	go test -race -coverprofile=coverage.out ./...
+	@GOBIN=$(GOBIN) go install github.com/vladopajic/go-test-coverage/v2@latest
+	$(GOBIN)/go-test-coverage --config .testcoverage.yml
+
 clean:
-	rm -rf bin/
+	rm -rf bin/ coverage.out
 
 # Devcontainer for Linux testing (not the aide application image)
 devcontainer-build:

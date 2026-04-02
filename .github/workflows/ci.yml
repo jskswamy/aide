@@ -37,37 +37,10 @@ jobs:
       - name: Run tests
         run: go test -race -coverprofile=coverage.out ./...
 
-      - name: Check coverage threshold
-        run: |
-          # Exclude cmd/aide/ (Cobra wiring) and generated mocks from total
-          grep -v "github.com/jskswamy/aide/cmd/" coverage.out | grep -v "/mocks/" > coverage-filtered.out
-          TOTAL=$(go tool cover -func=coverage-filtered.out | grep total | awk '{print $3}' | tr -d '%')
-          echo "Total coverage (excluding cmd/aide and mocks): ${TOTAL}%"
-          if [ "$(echo "$TOTAL < 60" | bc -l)" -eq 1 ]; then
-            echo "::error::Coverage ${TOTAL}% is below minimum threshold of 60%"
-            exit 1
-          fi
-
-      - name: Check security-critical package coverage
-        run: |
-          FAILED=0
-          for PKG in pkg/seatbelt internal/sandbox internal/secrets; do
-            # Filter coverage.out to exclude mocks, then compute per-package
-            grep -v '/mocks/' coverage.out > coverage-nomocks.out
-            COV=$(go tool cover -func=coverage-nomocks.out | grep "github.com/jskswamy/aide/${PKG}/" | awk '{sum += $3; n++} END {if (n>0) print sum/n; else print 0}' | tr -d '%')
-            if [ -z "$COV" ] || [ "$COV" = "0" ]; then
-              echo "::warning::No coverage data for ${PKG}"
-              continue
-            fi
-            echo "${PKG}: ${COV}%"
-            if [ "$(echo "$COV < 80" | bc -l)" -eq 1 ]; then
-              echo "::error::${PKG} coverage ${COV}% is below security-critical threshold of 80%"
-              FAILED=1
-            fi
-          done
-          if [ "$FAILED" -eq 1 ]; then
-            exit 1
-          fi
+      - name: Check coverage thresholds
+        uses: vladopajic/go-test-coverage@v2
+        with:
+          config: .testcoverage.yml
 
       - name: Check generated mocks are up to date
         run: |

@@ -13,6 +13,8 @@ import (
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
+//go:generate mockgen -destination=mocks/mock_sandbox.go -package=mocks github.com/jskswamy/aide/internal/sandbox Sandbox
+
 // Sandbox applies a security policy to a command before execution.
 // OS-specific implementations live in darwin.go and linux.go.
 type Sandbox interface {

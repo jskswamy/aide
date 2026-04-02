@@ -9,23 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
+	"github.com/jskswamy/aide/internal/launcher/mocks"
 	"github.com/jskswamy/aide/internal/secrets"
 )
-
-// mockExecer captures exec arguments instead of actually executing.
-type mockExecer struct {
-	binary string
-	args   []string
-	env    []string
-	err    error // error to return from Exec
-}
-
-func (m *mockExecer) Exec(binary string, args []string, env []string) error {
-	m.binary = binary
-	m.args = args
-	m.env = env
-	return m.err
-}
 
 // repoTestdataDir returns the absolute path to the repo-root testdata/ directory.
 func repoTestdataDir(t *testing.T) string {
@@ -106,9 +94,21 @@ env:
   BAZ: qux
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			capturedEnv = env
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -116,17 +116,17 @@ env:
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBinary, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBinary != "/usr/local/bin/my-agent" {
 		t.Errorf("expected binary /usr/local/bin/my-agent, got %s", innerBinary)
 	}
 
-	foo, ok := envValue(mock.env, "FOO")
+	foo, ok := envValue(capturedEnv, "FOO")
 	if !ok || foo != "bar" {
 		t.Errorf("expected FOO=bar in env, got ok=%v val=%q", ok, foo)
 	}
 
-	baz, ok := envValue(mock.env, "BAZ")
+	baz, ok := envValue(capturedEnv, "BAZ")
 	if !ok || baz != "qux" {
 		t.Errorf("expected BAZ=qux in env, got ok=%v val=%q", ok, baz)
 	}
@@ -160,9 +160,17 @@ env:
   PLAIN: literal-value
 `, encFile))
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -170,7 +178,7 @@ env:
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	apiKey, ok := envValue(mock.env, "API_KEY")
+	apiKey, ok := envValue(capturedEnv, "API_KEY")
 	if !ok {
 		t.Fatal("expected API_KEY in env")
 	}
@@ -178,7 +186,7 @@ env:
 		t.Errorf("expected resolved API_KEY, got %q", apiKey)
 	}
 
-	plain, ok := envValue(mock.env, "PLAIN")
+	plain, ok := envValue(capturedEnv, "PLAIN")
 	if !ok || plain != "literal-value" {
 		t.Errorf("expected PLAIN=literal-value, got ok=%v val=%q", ok, plain)
 	}
@@ -192,9 +200,19 @@ func TestLauncher_ArgsForwarded(t *testing.T) {
 agent: /usr/local/bin/my-agent
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -204,7 +222,7 @@ agent: /usr/local/bin/my-agent
 	}
 
 	// Unwrap sandbox to get the inner binary and args.
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	// innerArgs[0] should be the binary, followed by extra args
 	expectedArgs := append([]string{"/usr/local/bin/my-agent"}, extraArgs...)
 	if len(innerArgs) != len(expectedArgs) {
@@ -230,9 +248,17 @@ env:
 	// Set a non-essential env var to verify it gets filtered.
 	t.Setenv("MY_RANDOM_VAR", "should-be-gone")
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -241,17 +267,17 @@ env:
 	}
 
 	// The non-essential var should NOT be in the env.
-	if _, ok := envValue(mock.env, "MY_RANDOM_VAR"); ok {
+	if _, ok := envValue(capturedEnv, "MY_RANDOM_VAR"); ok {
 		t.Error("expected MY_RANDOM_VAR to be filtered with cleanEnv=true")
 	}
 
 	// Essential vars like PATH and HOME should be present.
-	if _, ok := envValue(mock.env, "PATH"); !ok {
+	if _, ok := envValue(capturedEnv, "PATH"); !ok {
 		t.Error("expected PATH in env with cleanEnv=true")
 	}
 
 	// The custom var from config should be present.
-	if val, ok := envValue(mock.env, "CUSTOM_VAR"); !ok || val != "custom-value" {
+	if val, ok := envValue(capturedEnv, "CUSTOM_VAR"); !ok || val != "custom-value" {
 		t.Errorf("expected CUSTOM_VAR=custom-value, got ok=%v val=%q", ok, val)
 	}
 }
@@ -273,9 +299,19 @@ contexts:
 default_context: default
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -284,7 +320,7 @@ default_context: default
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBinary, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBinary != "/usr/local/bin/codex" {
 		t.Errorf("expected binary /usr/local/bin/codex, got %s", innerBinary)
 	}
@@ -306,9 +342,10 @@ contexts:
       - remote: "github.com/company/*"
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -342,9 +379,11 @@ secret: /nonexistent/secrets.enc.yaml
 	// Set up age key so DiscoverAgeKey succeeds but DecryptSecretsFile fails.
 	t.Setenv("SOPS_AGE_KEY_FILE", keyFile)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -354,11 +393,6 @@ secret: /nonexistent/secrets.enc.yaml
 	}
 	if !strings.Contains(err.Error(), "decrypting secrets") {
 		t.Errorf("expected decrypting secrets error, got: %v", err)
-	}
-
-	// Verify the mock was NOT called (we didn't reach exec).
-	if mock.binary != "" {
-		t.Error("expected exec not to be called on error")
 	}
 
 	// We can't directly check the runtime dir is cleaned up because it's
@@ -435,9 +469,17 @@ env:
   SECRET_VAL: "{{ index .secrets \"anthropic_api_key\" }}"
 `, encFile))
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -445,7 +487,7 @@ env:
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	val, ok := envValue(mock.env, "SECRET_VAL")
+	val, ok := envValue(capturedEnv, "SECRET_VAL")
 	if !ok {
 		t.Fatal("expected SECRET_VAL in env")
 	}
@@ -465,9 +507,19 @@ env:
   FOO: bar
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		// Mock LookPath to resolve "my-agent" to an absolute path.
 		LookPath: func(file string) (string, error) {
@@ -483,7 +535,7 @@ env:
 	}
 
 	// Binary should be resolved to the absolute path (may be wrapped in sandbox).
-	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBin, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBin != "/usr/local/bin/my-agent" {
 		t.Errorf("expected inner binary /usr/local/bin/my-agent, got %s", innerBin)
 	}
@@ -497,9 +549,11 @@ func TestLauncher_AgentNotOnPATH(t *testing.T) {
 agent: nonexistent-agent
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			return "", fmt.Errorf("%s: not found", file)
@@ -513,9 +567,6 @@ agent: nonexistent-agent
 	if !strings.Contains(err.Error(), "not found on PATH") {
 		t.Errorf("expected 'not found on PATH' error, got: %v", err)
 	}
-	if mock.binary != "" {
-		t.Error("expected exec not to be called when agent not found")
-	}
 }
 
 func TestLauncher_AbsolutePathSkipsLookPath(t *testing.T) {
@@ -527,9 +578,19 @@ agent: /usr/local/bin/my-agent
 `)
 
 	lookPathCalled := false
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		LookPath: func(_ string) (string, error) {
 			lookPathCalled = true
@@ -544,7 +605,7 @@ agent: /usr/local/bin/my-agent
 	if lookPathCalled {
 		t.Error("LookPath should not be called for absolute paths")
 	}
-	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBin, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBin != "/usr/local/bin/my-agent" {
 		t.Errorf("expected inner binary /usr/local/bin/my-agent, got %s", innerBin)
 	}
@@ -599,9 +660,19 @@ func TestLauncher_YoloInjectsFlag(t *testing.T) {
 agent: claude
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			if file == "claude" {
@@ -617,7 +688,7 @@ agent: claude
 	}
 
 	// Unwrap sandbox to check inner args: binary, then yolo flag, then user args.
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	expected := []string{"/usr/local/bin/claude", "--dangerously-skip-permissions", "--model", "opus"}
 	if len(innerArgs) != len(expected) {
 		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
@@ -637,9 +708,11 @@ func TestLauncher_AgentOverrideUnknown(t *testing.T) {
 agent: claude
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			// vim is not on PATH either
@@ -656,9 +729,6 @@ agent: claude
 	}
 	if !strings.Contains(err.Error(), "unknown agent") {
 		t.Errorf("expected 'unknown agent' error, got: %v", err)
-	}
-	if mock.binary != "" {
-		t.Error("expected exec not to be called for unknown agent")
 	}
 }
 
@@ -679,9 +749,19 @@ contexts:
 default_context: default
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			return "/usr/local/bin/" + file, nil
@@ -692,7 +772,7 @@ default_context: default
 	if err != nil {
 		t.Fatalf("Launch with known agent override failed: %v", err)
 	}
-	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBin, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBin != "/usr/local/bin/codex" {
 		t.Errorf("expected inner binary /usr/local/bin/codex, got %s", innerBin)
 	}
@@ -710,9 +790,19 @@ env:
   FOO: bar
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -723,12 +813,12 @@ env:
 	// With default-on sandbox, the binary should be wrapped by the platform sandbox.
 	// On darwin: sandbox-exec, on linux: bwrap (or landlock re-exec).
 	// Regardless of platform, the inner binary should be our agent.
-	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBinary, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBinary != "/usr/local/bin/my-agent" {
 		t.Errorf("expected inner binary /usr/local/bin/my-agent, got %s", innerBinary)
 	}
 	// Verify the outer binary is a sandbox wrapper (not the agent directly)
-	if mock.binary == "/usr/local/bin/my-agent" {
+	if capturedBinary == "/usr/local/bin/my-agent" {
 		t.Error("expected sandbox wrapping (default-on), but agent was executed directly")
 	}
 }
@@ -746,9 +836,19 @@ sandbox:
   network: outbound
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 	}
 
@@ -758,11 +858,11 @@ sandbox:
 
 	// With explicit sandbox config, on darwin it should be wrapped with sandbox-exec.
 	if runtime.GOOS == "darwin" {
-		if mock.binary != "/usr/bin/sandbox-exec" {
-			t.Errorf("expected binary /usr/bin/sandbox-exec (sandbox applied), got %s", mock.binary)
+		if capturedBinary != "/usr/bin/sandbox-exec" {
+			t.Errorf("expected binary /usr/bin/sandbox-exec (sandbox applied), got %s", capturedBinary)
 		}
-		if len(mock.args) < 3 || mock.args[1] != "-f" {
-			t.Errorf("expected sandbox-exec -f <profile> args, got %v", mock.args)
+		if len(capturedArgs) < 3 || capturedArgs[1] != "-f" {
+			t.Errorf("expected sandbox-exec -f <profile> args, got %v", capturedArgs)
 		}
 	}
 }
@@ -779,9 +879,17 @@ env:
   FOO: bar
 `)
 
-	mock := &mockExecer{}
+	ctrl2 := gomock.NewController(t)
+	var capturedBinary2 string
+	mockExec2 := mocks.NewMockExecer(ctrl2)
+	mockExec2.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary2 = binary
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec2,
 		ConfigDir: configDir,
 	}
 
@@ -790,8 +898,8 @@ env:
 	}
 
 	// With sandbox: false, the binary should be the agent directly, NOT sandbox-exec.
-	if mock.binary != "/usr/local/bin/my-agent" {
-		t.Errorf("expected binary /usr/local/bin/my-agent (no sandbox), got %s", mock.binary)
+	if capturedBinary2 != "/usr/local/bin/my-agent" {
+		t.Errorf("expected binary /usr/local/bin/my-agent (no sandbox), got %s", capturedBinary2)
 	}
 }
 
@@ -803,9 +911,11 @@ func TestLauncher_YoloUnsupportedAgent(t *testing.T) {
 agent: vim
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		Yolo:      true,
 	}
@@ -825,9 +935,11 @@ func TestLaunch_BannerPrintsToStderr(t *testing.T) {
 	writeMinimalConfig(t, configDir, `agent: /usr/local/bin/my-agent`)
 
 	var stderrBuf bytes.Buffer
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		Stderr:    &stderrBuf,
 	}
@@ -848,9 +960,11 @@ func TestLaunch_ShowInfoFalse(t *testing.T) {
 	writeMinimalConfig(t, configDir, "agents:\n  my-agent:\n    binary: /usr/local/bin/my-agent\ncontexts:\n  default:\n    agent: my-agent\ndefault_context: default\npreferences:\n  show_info: false\n")
 
 	var stderrBuf bytes.Buffer
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		Stderr:    &stderrBuf,
 	}
@@ -872,9 +986,19 @@ yolo: true
 `)
 
 	var stderrBuf bytes.Buffer
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			if file == "claude" {
@@ -889,7 +1013,7 @@ yolo: true
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	found := false
 	for _, a := range innerArgs {
 		if a == "--dangerously-skip-permissions" {
@@ -914,9 +1038,19 @@ yolo: true
 `)
 
 	var stderrBuf bytes.Buffer
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			if file == "claude" {
@@ -932,7 +1066,7 @@ yolo: true
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	for _, a := range innerArgs {
 		if a == "--dangerously-skip-permissions" {
 			t.Error("--no-yolo should suppress yolo flag injection")
@@ -951,9 +1085,19 @@ func TestLauncher_NoYoloOverridesCliYolo(t *testing.T) {
 agent: claude
 `)
 
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary2 string
+	var capturedArgs2 []string
+	mockExec2 := mocks.NewMockExecer(ctrl)
+	mockExec2.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary2 = binary
+			capturedArgs2 = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExec2,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			if file == "claude" {
@@ -969,8 +1113,8 @@ agent: claude
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
-	for _, a := range innerArgs {
+	_, innerArgs2 := unwrapSandbox(t, capturedBinary2, capturedArgs2)
+	for _, a := range innerArgs2 {
 		if a == "--dangerously-skip-permissions" {
 			t.Error("--no-yolo should override --yolo")
 		}
@@ -1047,9 +1191,11 @@ yolo: true
 `)
 
 	var stderrBuf bytes.Buffer
-	mock := &mockExecer{}
+	ctrlYW := gomock.NewController(t)
+	mockExecYW := mocks.NewMockExecer(ctrlYW)
+	mockExecYW.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExecYW,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			if file == "claude" {
@@ -1082,9 +1228,11 @@ agent: vim
 yolo: true
 `)
 
-	mock := &mockExecer{}
+	ctrlCYU := gomock.NewController(t)
+	mockExecCYU := mocks.NewMockExecer(ctrlCYU)
+	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExecCYU,
 		ConfigDir: configDir,
 	}
 
@@ -1113,9 +1261,19 @@ default_context: work
 `)
 
 	var stderrBuf bytes.Buffer
-	mock := &mockExecer{}
+	ctrlCLY := gomock.NewController(t)
+	var capturedBinaryCLY string
+	var capturedArgsCLY []string
+	mockExecCLY := mocks.NewMockExecer(ctrlCLY)
+	mockExecCLY.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinaryCLY = binary
+			capturedArgsCLY = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExecCLY,
 		ConfigDir: configDir,
 		LookPath: func(file string) (string, error) {
 			if file == "claude" {
@@ -1130,7 +1288,7 @@ default_context: work
 		t.Fatalf("Launch failed: %v", err)
 	}
 
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinaryCLY, capturedArgsCLY)
 	found := false
 	for _, a := range innerArgs {
 		if a == "--dangerously-skip-permissions" {
@@ -1151,9 +1309,11 @@ func TestLaunch_ResolveFlagOverridesShowInfoFalse(t *testing.T) {
 	writeMinimalConfig(t, configDir, "agents:\n  my-agent:\n    binary: /usr/local/bin/my-agent\ncontexts:\n  default:\n    agent: my-agent\ndefault_context: default\npreferences:\n  show_info: false\n")
 
 	var stderrBuf bytes.Buffer
-	mock := &mockExecer{}
+	ctrlRF := gomock.NewController(t)
+	mockExecRF := mocks.NewMockExecer(ctrlRF)
+	mockExecRF.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	l := &Launcher{
-		Execer:    mock,
+		Execer:    mockExecRF,
 		ConfigDir: configDir,
 		Stderr:    &stderrBuf,
 	}

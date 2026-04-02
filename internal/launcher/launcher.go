@@ -19,6 +19,8 @@ import (
 	"github.com/jskswamy/aide/internal/ui"
 )
 
+//go:generate mockgen -destination=mocks/mock_execer.go -package=mocks github.com/jskswamy/aide/internal/launcher Execer
+
 // Execer abstracts process execution for testability.
 type Execer interface {
 	Exec(binary string, args []string, env []string) error

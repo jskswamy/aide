@@ -1,27 +1,16 @@
-package seatbelt
+package seatbelt_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+	"github.com/jskswamy/aide/pkg/seatbelt/mocks"
+	"go.uber.org/mock/gomock"
 )
 
-// testModule is a simple module for testing.
-type testModule struct {
-	name   string
-	rules  []Rule
-	result GuardResult
-}
-
-func (m *testModule) Name() string { return m.name }
-func (m *testModule) Rules(_ *Context) GuardResult {
-	if len(m.result.Rules) > 0 || len(m.result.Protected) > 0 || len(m.result.Skipped) > 0 {
-		return m.result
-	}
-	return GuardResult{Rules: m.rules}
-}
-
 func TestProfile_Render_EmptyProfile(t *testing.T) {
-	p := New("/home/user")
+	p := seatbelt.New("/home/user")
 	result, err := p.Render()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -32,10 +21,14 @@ func TestProfile_Render_EmptyProfile(t *testing.T) {
 }
 
 func TestProfile_Render_SingleModule(t *testing.T) {
-	p := New("/home/user").Use(&testModule{
-		name:  "test",
-		rules: []Rule{AllowOp("process-exec")},
-	})
+	ctrl := gomock.NewController(t)
+	mockMod := mocks.NewMockModule(ctrl)
+	mockMod.EXPECT().Name().Return("test").AnyTimes()
+	mockMod.EXPECT().Rules(gomock.Any()).Return(seatbelt.GuardResult{
+		Rules: []seatbelt.Rule{seatbelt.AllowOp("process-exec")},
+	}).AnyTimes()
+
+	p := seatbelt.New("/home/user").Use(mockMod)
 	result, err := p.Render()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -49,10 +42,20 @@ func TestProfile_Render_SingleModule(t *testing.T) {
 }
 
 func TestProfile_Render_ModuleOrder(t *testing.T) {
-	p := New("/home/user").Use(
-		&testModule{name: "first", rules: []Rule{AllowOp("process-exec")}},
-		&testModule{name: "second", rules: []Rule{AllowOp("process-fork")}},
-	)
+	ctrl := gomock.NewController(t)
+	mockFirst := mocks.NewMockModule(ctrl)
+	mockFirst.EXPECT().Name().Return("first").AnyTimes()
+	mockFirst.EXPECT().Rules(gomock.Any()).Return(seatbelt.GuardResult{
+		Rules: []seatbelt.Rule{seatbelt.AllowOp("process-exec")},
+	}).AnyTimes()
+
+	mockSecond := mocks.NewMockModule(ctrl)
+	mockSecond.EXPECT().Name().Return("second").AnyTimes()
+	mockSecond.EXPECT().Rules(gomock.Any()).Return(seatbelt.GuardResult{
+		Rules: []seatbelt.Rule{seatbelt.AllowOp("process-fork")},
+	}).AnyTimes()
+
+	p := seatbelt.New("/home/user").Use(mockFirst, mockSecond)
 	result, err := p.Render()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -65,14 +68,22 @@ func TestProfile_Render_ModuleOrder(t *testing.T) {
 }
 
 func TestProfile_WithContext(t *testing.T) {
-	var captured Context
-	captureModule := &contextCapture{captured: &captured}
-	p := New("/home/user").
-		WithContext(func(ctx *Context) {
+	ctrl := gomock.NewController(t)
+	mockMod := mocks.NewMockModule(ctrl)
+	mockMod.EXPECT().Name().Return("capture").AnyTimes()
+
+	var captured seatbelt.Context
+	mockMod.EXPECT().Rules(gomock.Any()).DoAndReturn(func(ctx *seatbelt.Context) seatbelt.GuardResult {
+		captured = *ctx
+		return seatbelt.GuardResult{}
+	}).AnyTimes()
+
+	p := seatbelt.New("/home/user").
+		WithContext(func(ctx *seatbelt.Context) {
 			ctx.ProjectRoot = "/tmp/project"
 			ctx.TempDir = "/tmp"
 		}).
-		Use(captureModule)
+		Use(mockMod)
 	_, _ = p.Render()
 	if captured.HomeDir != "/home/user" {
 		t.Errorf("expected HomeDir=/home/user, got %q", captured.HomeDir)
@@ -82,26 +93,17 @@ func TestProfile_WithContext(t *testing.T) {
 	}
 }
 
-type contextCapture struct {
-	captured *Context
-}
-
-func (c *contextCapture) Name() string { return "capture" }
-func (c *contextCapture) Rules(ctx *Context) GuardResult {
-	*c.captured = *ctx
-	return GuardResult{}
-}
-
 func TestRenderReturnsProfileResult(t *testing.T) {
-	m := &testModule{
-		name: "test-guard",
-		result: GuardResult{
-			Rules:     []Rule{AllowRule(`(allow file-read* (subpath "/usr"))`)},
-			Protected: []string{"/home/.ssh/id_rsa"},
-			Skipped:   []string{"~/.config/op not found"},
-		},
-	}
-	p := New("/home/user").Use(m)
+	ctrl := gomock.NewController(t)
+	mockMod := mocks.NewMockModule(ctrl)
+	mockMod.EXPECT().Name().Return("test-guard").AnyTimes()
+	mockMod.EXPECT().Rules(gomock.Any()).Return(seatbelt.GuardResult{
+		Rules:     []seatbelt.Rule{seatbelt.AllowRule(`(allow file-read* (subpath "/usr"))`)},
+		Protected: []string{"/home/.ssh/id_rsa"},
+		Skipped:   []string{"~/.config/op not found"},
+	}).AnyTimes()
+
+	p := seatbelt.New("/home/user").Use(mockMod)
 	result, err := p.Render()
 	if err != nil {
 		t.Fatal(err)

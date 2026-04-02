@@ -181,6 +181,50 @@ func TestDiscoverAgeKey_PriorityOrder(t *testing.T) {
 	}
 }
 
+func TestFileReadable(t *testing.T) {
+	t.Run("regular file", func(t *testing.T) {
+		f := filepath.Join(t.TempDir(), "test.txt")
+		if err := os.WriteFile(f, []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !fileReadable(f) {
+			t.Error("fileReadable() = false for existing regular file")
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		d := t.TempDir()
+		if fileReadable(d) {
+			t.Error("fileReadable() = true for directory")
+		}
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		if fileReadable("/nonexistent/path/file.txt") {
+			t.Error("fileReadable() = true for missing file")
+		}
+	})
+}
+
+func TestDefaultKeyPath(t *testing.T) {
+	t.Run("with XDG_CONFIG_HOME", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+		got := defaultKeyPath()
+		want := "/custom/config/sops/age/keys.txt"
+		if got != want {
+			t.Errorf("defaultKeyPath() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("without XDG_CONFIG_HOME", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		got := defaultKeyPath()
+		if !strings.HasSuffix(got, ".config/sops/age/keys.txt") {
+			t.Errorf("defaultKeyPath() = %q, want suffix .config/sops/age/keys.txt", got)
+		}
+	})
+}
+
 func TestDiscoverAgeKey_NoneFound(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("SOPS_AGE_KEY", "")

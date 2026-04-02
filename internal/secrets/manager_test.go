@@ -1,12 +1,17 @@
 package secrets
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"filippo.io/age"
+	"go.uber.org/mock/gomock"
+
+	smocks "github.com/jskswamy/aide/internal/secrets/mocks"
 )
 
 // testCreateManager sets up an isolated Manager for create tests.
@@ -423,6 +428,116 @@ func TestEdit_TempFileCleanup(t *testing.T) {
 	}
 }
 
+func TestValidateName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"valid simple", "personal", false},
+		{"valid with hyphen", "my-secrets", false},
+		{"valid with underscore", "my_secrets", false},
+		{"valid with numbers", "secret123", false},
+		{"empty", "", true},
+		{"starts with hyphen", "-invalid", true},
+		{"starts with underscore", "_invalid", true},
+		{"has spaces", "my secrets", true},
+		{"has dots", "my.secrets", true},
+		{"has slash", "path/name", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateName(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateName(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateContent(t *testing.T) {
+	tests := []struct {
+		name    string
+		content []byte
+		wantErr bool
+	}{
+		{"valid", []byte("key: value\n"), false},
+		{"empty", []byte(""), true},
+		{"whitespace only", []byte("   \n  \n"), true},
+		{"comments only", []byte("# comment\n# another\n"), true},
+		{"comments with value", []byte("# comment\nkey: value\n"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateContent(tt.content)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateContent() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateFlatYAML(t *testing.T) {
+	tests := []struct {
+		name    string
+		content []byte
+		wantErr bool
+	}{
+		{"flat map", []byte("key: value\nnum: 42\n"), false},
+		{"boolean value", []byte("flag: true\n"), false},
+		{"nested map", []byte("parent:\n  child: value\n"), true},
+		{"list value", []byte("items:\n  - one\n  - two\n"), true},
+		{"invalid yaml", []byte("not: valid: yaml: {{{\n"), true},
+		{"scalar only", []byte("just a string\n"), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateFlatYAML(tt.content)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateFlatYAML() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveEditor(t *testing.T) {
+	t.Run("EDITOR set", func(t *testing.T) {
+		t.Setenv("EDITOR", "/usr/bin/nano")
+		t.Setenv("VISUAL", "")
+		got := resolveEditor()
+		if got != "/usr/bin/nano" {
+			t.Errorf("resolveEditor() = %q, want /usr/bin/nano", got)
+		}
+	})
+
+	t.Run("VISUAL set no EDITOR", func(t *testing.T) {
+		t.Setenv("EDITOR", "")
+		t.Setenv("VISUAL", "/usr/bin/code")
+		got := resolveEditor()
+		if got != "/usr/bin/code" {
+			t.Errorf("resolveEditor() = %q, want /usr/bin/code", got)
+		}
+	})
+
+	t.Run("EDITOR takes precedence", func(t *testing.T) {
+		t.Setenv("EDITOR", "/usr/bin/nano")
+		t.Setenv("VISUAL", "/usr/bin/code")
+		got := resolveEditor()
+		if got != "/usr/bin/nano" {
+			t.Errorf("resolveEditor() = %q, want /usr/bin/nano", got)
+		}
+	})
+
+	t.Run("fallback to vi", func(t *testing.T) {
+		t.Setenv("EDITOR", "")
+		t.Setenv("VISUAL", "")
+		got := resolveEditor()
+		if got != "vi" {
+			t.Errorf("resolveEditor() = %q, want vi", got)
+		}
+	})
+}
+
 func TestEdit_InvalidYAMLRejected(t *testing.T) {
 	mgr, tmpDir := testCreateManager(t)
 	secretsDir := filepath.Join(tmpDir, "secrets")
@@ -457,4 +572,212 @@ func TestEdit_InvalidYAMLRejected(t *testing.T) {
 	if string(originalBytes) != string(afterBytes) {
 		t.Error("original file was modified despite invalid edit content")
 	}
+}
+
+func TestCreate_WithMockEditor(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockEditor := smocks.NewMockEditorRunner(ctrl)
+
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Generate a real age key pair for encryption.
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubKey := identity.Recipient().String()
+
+	// Mock editor writes valid YAML to the temp file.
+	mockEditor.EXPECT().
+		Run(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, args []string, _ io.Reader, _, _ io.Writer) error {
+			return os.WriteFile(args[0], []byte("api_key: sk-test-123\n"), 0o600)
+		})
+
+	t.Setenv("EDITOR", "fake-editor")
+	mgr := NewManagerWithEditor(secretsDir, runtimeDir, mockEditor)
+	err = mgr.Create("test", secretsDir, pubKey)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	// Verify encrypted file was created.
+	encPath := filepath.Join(secretsDir, "test.enc.yaml")
+	if _, err := os.Stat(encPath); os.IsNotExist(err) {
+		t.Error("encrypted file not created")
+	}
+}
+
+func TestCreate_EditorError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockEditor := smocks.NewMockEditorRunner(ctrl)
+
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockEditor.EXPECT().
+		Run(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(fmt.Errorf("editor crashed"))
+
+	t.Setenv("EDITOR", "fake-editor")
+	mgr := NewManagerWithEditor(secretsDir, runtimeDir, mockEditor)
+	err = mgr.Create("test", secretsDir, identity.Recipient().String())
+	if err == nil {
+		t.Fatal("Create() expected error when editor fails")
+	}
+	if !strings.Contains(err.Error(), "editor exited with error") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestCreate_EditorEmptyContent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockEditor := smocks.NewMockEditorRunner(ctrl)
+
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockEditor.EXPECT().
+		Run(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, args []string, _ io.Reader, _, _ io.Writer) error {
+			return os.WriteFile(args[0], []byte("# just comments\n"), 0o600)
+		})
+
+	t.Setenv("EDITOR", "fake-editor")
+	mgr := NewManagerWithEditor(secretsDir, runtimeDir, mockEditor)
+	err = mgr.Create("test", secretsDir, identity.Recipient().String())
+	if err == nil {
+		t.Fatal("Create() expected error for empty content")
+	}
+	if !strings.Contains(err.Error(), "no secrets entered") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEdit_WithMockEditor(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockEditor := smocks.NewMockEditorRunner(ctrl)
+
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	os.MkdirAll(runtimeDir, 0o700)
+	os.MkdirAll(secretsDir, 0o700)
+
+	// Generate age key
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubKey := identity.Recipient().String()
+
+	// Create an initial encrypted file
+	mgr := NewManagerWithEditor(secretsDir, runtimeDir, mockEditor)
+	err = mgr.CreateFromContent("test", secretsDir, pubKey, []byte("old_key: old_value\n"))
+	if err != nil {
+		t.Fatalf("CreateFromContent() setup error = %v", err)
+	}
+
+	// Set up env for decryption
+	t.Setenv("SOPS_AGE_KEY", identity.String())
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+	t.Setenv("EDITOR", "fake-editor")
+
+	// Mock editor modifies the temp file with new content
+	mockEditor.EXPECT().
+		Run(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, args []string, _ io.Reader, _, _ io.Writer) error {
+			return os.WriteFile(args[0], []byte("new_key: new_value\n"), 0o600)
+		})
+
+	err = mgr.Edit("test", secretsDir)
+	if err != nil {
+		t.Fatalf("Edit() error = %v", err)
+	}
+
+	// Verify the file was re-encrypted by decrypting it
+	secrets, err := DecryptSecretsFile(
+		filepath.Join(secretsDir, "test.enc.yaml"),
+		&AgeIdentity{Source: SourceEnvKey, KeyData: identity.String()},
+	)
+	if err != nil {
+		t.Fatalf("DecryptSecretsFile() error = %v", err)
+	}
+	if secrets["new_key"] != "new_value" {
+		t.Errorf("expected new_key=new_value, got %v", secrets)
+	}
+}
+
+func TestSecureTempDir(t *testing.T) {
+	t.Run("with runtime dir", func(t *testing.T) {
+		runtimeDir := t.TempDir()
+		mgr := NewManager("", runtimeDir)
+		dir, cleanup, err := mgr.secureTempDir("test-")
+		if err != nil {
+			t.Fatalf("secureTempDir() error = %v", err)
+		}
+		defer cleanup()
+
+		if !strings.HasPrefix(dir, runtimeDir) {
+			t.Errorf("temp dir %q not under runtimeDir %q", dir, runtimeDir)
+		}
+
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o700 {
+			t.Errorf("temp dir permissions = %o, want 700", info.Mode().Perm())
+		}
+	})
+
+	t.Run("cleanup removes dir", func(t *testing.T) {
+		runtimeDir := t.TempDir()
+		mgr := NewManager("", runtimeDir)
+		dir, cleanup, err := mgr.secureTempDir("test-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		cleanup()
+
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Error("cleanup did not remove temp dir")
+		}
+	})
+
+	t.Run("fallback to os temp", func(t *testing.T) {
+		mgr := NewManager("", "")
+		dir, cleanup, err := mgr.secureTempDir("test-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cleanup()
+
+		if dir == "" {
+			t.Error("expected non-empty dir")
+		}
+	})
 }

@@ -3,7 +3,6 @@ package secrets
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -33,6 +32,7 @@ const yamlTemplate = `# aide secrets file: %s
 type Manager struct {
 	secretsDir string
 	runtimeDir string
+	editor     EditorRunner
 }
 
 // NewManager creates a new secrets Manager.
@@ -40,6 +40,16 @@ func NewManager(secretsDir, runtimeDir string) *Manager {
 	return &Manager{
 		secretsDir: secretsDir,
 		runtimeDir: runtimeDir,
+		editor:     &RealEditorRunner{},
+	}
+}
+
+// NewManagerWithEditor creates a Manager with a custom EditorRunner (for testing).
+func NewManagerWithEditor(secretsDir, runtimeDir string, editor EditorRunner) *Manager {
+	return &Manager{
+		secretsDir: secretsDir,
+		runtimeDir: runtimeDir,
+		editor:     editor,
 	}
 }
 
@@ -69,12 +79,8 @@ func (m *Manager) Create(name, secretsDir, agePublicKey string) error {
 	}
 
 	// Open editor.
-	editor := resolveEditor()
-	cmd := exec.Command(editor, tmpFile)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	editorBin := resolveEditor()
+	if err := m.editor.Run(editorBin, []string{tmpFile}, os.Stdin, os.Stdout, os.Stderr); err != nil {
 		return fmt.Errorf("editor exited with error: %w", err)
 	}
 
@@ -297,12 +303,8 @@ func (m *Manager) Edit(name, secretsDir string) error {
 	}
 
 	// Open editor.
-	editor := resolveEditor()
-	cmd := exec.Command(editor, tmpFile)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	editorBin := resolveEditor()
+	if err := m.editor.Run(editorBin, []string{tmpFile}, os.Stdin, os.Stdout, os.Stderr); err != nil {
 		return fmt.Errorf("editor exited with error: %w", err)
 	}
 

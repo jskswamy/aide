@@ -8,6 +8,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"go.uber.org/mock/gomock"
+
+	"github.com/jskswamy/aide/internal/launcher/mocks"
 )
 
 // mockLookPath creates a LookPathFunc that finds only the given binaries.
@@ -21,9 +25,19 @@ func mockLookPath(available map[string]string) LookPathFunc {
 }
 
 func TestPassthrough_SingleAgent(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 
@@ -35,16 +49,26 @@ func TestPassthrough_SingleAgent(t *testing.T) {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
-	innerBinary, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBinary, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBinary != "/usr/local/bin/claude" {
 		t.Errorf("expected inner binary /usr/local/bin/claude, got %s", innerBinary)
 	}
 }
 
 func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{"codex": "/usr/bin/codex"}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -56,7 +80,7 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	expected := []string{"/usr/bin/codex", "--model", "opus", "help me"}
 	if len(innerArgs) != len(expected) {
 		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
@@ -69,9 +93,11 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 }
 
 func TestPassthrough_NoAgents(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: exec should not be called when no agents found.
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{}),
 	}
 
@@ -88,9 +114,11 @@ func TestPassthrough_NoAgents(t *testing.T) {
 }
 
 func TestPassthrough_MultipleAgents(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: exec should not be called when multiple agents found.
 	l := &Launcher{
-		Execer: mock,
+		Execer: mockExec,
 		LookPath: mockLookPath(map[string]string{
 			"claude": "/usr/local/bin/claude",
 			"codex":  "/usr/local/bin/codex",
@@ -110,9 +138,19 @@ func TestPassthrough_MultipleAgents(t *testing.T) {
 }
 
 func TestPassthrough_AgentOverride(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer: mock,
+		Execer: mockExec,
 		LookPath: mockLookPath(map[string]string{
 			"claude": "/usr/local/bin/claude",
 			"codex":  "/usr/local/bin/codex",
@@ -127,7 +165,7 @@ func TestPassthrough_AgentOverride(t *testing.T) {
 		t.Fatalf("Passthrough with --agent failed: %v", err)
 	}
 
-	innerBinary, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	innerBinary, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBinary != "/usr/local/bin/codex" {
 		t.Errorf("expected inner binary /usr/local/bin/codex, got %s", innerBinary)
 	}
@@ -138,9 +176,11 @@ func TestPassthrough_AgentOverride(t *testing.T) {
 }
 
 func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{}), // nothing on PATH
 	}
 
@@ -150,9 +190,6 @@ func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found on PATH") {
 		t.Errorf("expected 'not found on PATH' error, got: %v", err)
-	}
-	if mock.binary != "" {
-		t.Error("expected exec not to be called for missing agent")
 	}
 }
 
@@ -165,9 +202,11 @@ func TestPassthrough_FirstRunSentinel(t *testing.T) {
 		t.Error("expected IsFirstRun=true before passthrough")
 	}
 
-	mock := &mockExecer{}
+	ctrlFR := gomock.NewController(t)
+	mockExecFR := mocks.NewMockExecer(ctrlFR)
+	mockExecFR.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExecFR,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 
@@ -210,9 +249,19 @@ func TestScanAgents(t *testing.T) {
 }
 
 func TestPassthrough_YoloInjectsFlag(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 		Yolo:     true,
 	}
@@ -225,7 +274,7 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 	}
 
 	expected := []string{"/usr/local/bin/claude", "--dangerously-skip-permissions", "--model", "opus"}
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if len(innerArgs) != len(expected) {
 		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
 	}
@@ -237,10 +286,20 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 }
 
 func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
 	var stderrBuf bytes.Buffer
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 		Yolo:     true,
 		NoYolo:   true,
@@ -254,7 +313,7 @@ func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
-	_, innerArgs := unwrapSandbox(t, mock.binary, mock.args)
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	for _, a := range innerArgs {
 		if a == "--dangerously-skip-permissions" {
 			t.Error("--no-yolo should suppress yolo flag in passthrough")
@@ -266,10 +325,12 @@ func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
 }
 
 func TestPassthrough_YoloWarningShown(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	var stderrBuf bytes.Buffer
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 		Yolo:     true,
 		Stderr:   &stderrBuf,
@@ -291,9 +352,11 @@ func TestPassthrough_YoloWarningShown(t *testing.T) {
 }
 
 func TestPassthrough_YoloUnsupportedAgent(t *testing.T) {
-	mock := &mockExecer{}
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExec,
 		LookPath: mockLookPath(map[string]string{"aider": "/usr/local/bin/aider"}),
 		Yolo:     true,
 	}
@@ -314,10 +377,20 @@ func TestPassthrough_AppliesSandbox(t *testing.T) {
 		t.Skip("sandbox-exec only available on macOS")
 	}
 
-	mock := &mockExecer{}
+	ctrlAS := gomock.NewController(t)
+	var capturedBinaryAS string
+	var capturedArgsAS []string
+	mockExecAS := mocks.NewMockExecer(ctrlAS)
+	mockExecAS.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinaryAS = binary
+			capturedArgsAS = args
+			return nil
+		})
 	cwd := t.TempDir()
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExecAS,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -329,26 +402,26 @@ func TestPassthrough_AppliesSandbox(t *testing.T) {
 	}
 
 	// On darwin, the binary should be rewritten to sandbox-exec
-	if mock.binary != "/usr/bin/sandbox-exec" {
-		t.Errorf("expected binary /usr/bin/sandbox-exec, got %s", mock.binary)
+	if capturedBinaryAS != "/usr/bin/sandbox-exec" {
+		t.Errorf("expected binary /usr/bin/sandbox-exec, got %s", capturedBinaryAS)
 	}
 	// Args should include -f <profile> and the original binary
-	if len(mock.args) < 4 {
-		t.Fatalf("expected at least 4 args (sandbox-exec -f <profile> <binary>), got %d: %v", len(mock.args), mock.args)
+	if len(capturedArgsAS) < 4 {
+		t.Fatalf("expected at least 4 args (sandbox-exec -f <profile> <binary>), got %d: %v", len(capturedArgsAS), capturedArgsAS)
 	}
-	if mock.args[0] != "sandbox-exec" {
-		t.Errorf("args[0] = %q, want %q", mock.args[0], "sandbox-exec")
+	if capturedArgsAS[0] != "sandbox-exec" {
+		t.Errorf("args[0] = %q, want %q", capturedArgsAS[0], "sandbox-exec")
 	}
-	if mock.args[1] != "-f" {
-		t.Errorf("args[1] = %q, want %q", mock.args[1], "-f")
+	if capturedArgsAS[1] != "-f" {
+		t.Errorf("args[1] = %q, want %q", capturedArgsAS[1], "-f")
 	}
 	// args[2] should be the profile path
-	if !strings.Contains(mock.args[2], "sandbox.sb") {
-		t.Errorf("args[2] = %q, expected sandbox.sb profile path", mock.args[2])
+	if !strings.Contains(capturedArgsAS[2], "sandbox.sb") {
+		t.Errorf("args[2] = %q, expected sandbox.sb profile path", capturedArgsAS[2])
 	}
 	// args[3] should be the original binary
-	if mock.args[3] != "/usr/local/bin/claude" {
-		t.Errorf("args[3] = %q, want %q", mock.args[3], "/usr/local/bin/claude")
+	if capturedArgsAS[3] != "/usr/local/bin/claude" {
+		t.Errorf("args[3] = %q, want %q", capturedArgsAS[3], "/usr/local/bin/claude")
 	}
 }
 
@@ -357,10 +430,18 @@ func TestPassthrough_ExecAgent_UsesCwd(t *testing.T) {
 		t.Skip("sandbox-exec only available on macOS")
 	}
 
-	mock := &mockExecer{}
+	ctrlEC := gomock.NewController(t)
+	var capturedArgsEC []string
+	mockExecEC := mocks.NewMockExecer(ctrlEC)
+	mockExecEC.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedArgsEC = args
+			return nil
+		})
 	cwd := t.TempDir()
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExecEC,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -373,10 +454,10 @@ func TestPassthrough_ExecAgent_UsesCwd(t *testing.T) {
 
 	// The sandbox profile should be written; read it and verify it contains the cwd
 	// as a writable path (not "." or some other hardcoded value).
-	if len(mock.args) < 3 {
-		t.Fatalf("expected sandbox args, got: %v", mock.args)
+	if len(capturedArgsEC) < 3 {
+		t.Fatalf("expected sandbox args, got: %v", capturedArgsEC)
 	}
-	profilePath := mock.args[2]
+	profilePath := capturedArgsEC[2]
 	profileData, err := os.ReadFile(profilePath)
 	if err != nil {
 		t.Fatalf("failed to read sandbox profile at %s: %v", profilePath, err)
@@ -392,10 +473,20 @@ func TestPassthrough_ExecAgent_UsesCwd(t *testing.T) {
 func TestPassthrough_NoOptOut_AlwaysSandboxed(t *testing.T) {
 	// Verify that execAgent always applies sandbox — there is no parameter or
 	// field on Launcher that can disable sandbox in passthrough mode.
-	mock := &mockExecer{}
+	ctrlNO := gomock.NewController(t)
+	var capturedBinaryNO string
+	var capturedArgsNO []string
+	mockExecNO := mocks.NewMockExecer(ctrlNO)
+	mockExecNO.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, env []string) error {
+			capturedBinaryNO = binary
+			capturedArgsNO = args
+			return nil
+		})
 	cwd := t.TempDir()
 	l := &Launcher{
-		Execer:   mock,
+		Execer:   mockExecNO,
 		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -408,11 +499,11 @@ func TestPassthrough_NoOptOut_AlwaysSandboxed(t *testing.T) {
 	}
 
 	// The binary should be a sandbox wrapper, not the agent directly
-	innerBin, _ := unwrapSandbox(t, mock.binary, mock.args)
+	innerBin, _ := unwrapSandbox(t, capturedBinaryNO, capturedArgsNO)
 	if innerBin != "/usr/local/bin/claude" {
 		t.Errorf("expected inner binary /usr/local/bin/claude, got %s", innerBin)
 	}
-	if mock.binary == "/usr/local/bin/claude" {
+	if capturedBinaryNO == "/usr/local/bin/claude" {
 		t.Error("expected sandbox wrapping, but agent was executed directly")
 	}
 }

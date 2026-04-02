@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+//go:generate mockgen -destination=mocks/mock_module.go -package=mocks github.com/jskswamy/aide/pkg/seatbelt Module,Guard
+
 // Module contributes Seatbelt rules to a profile.
 type Module interface {
 	// Name returns a human-readable name for section comments.

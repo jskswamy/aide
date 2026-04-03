@@ -79,27 +79,6 @@ func TestMergeEnv_EmptyInputs(t *testing.T) {
 	}
 }
 
-func TestRedactValue(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"short", "short***"},
-		{"12345678", "12345678***"},
-		{"123456789", "12345678***"},
-		{"sk-ant-api03-very-long-key", "sk-ant-a***"},
-		{"", "***"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := redactValue(tt.input)
-			if got != tt.want {
-				t.Errorf("redactValue(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestStringSetDiff(t *testing.T) {
 	tests := []struct {
 		name string
@@ -148,90 +127,6 @@ func TestWrapTemplateError(t *testing.T) {
 			t.Error("wrapTemplateError() should return non-nil error")
 		}
 	})
-}
-
-func TestNetworkDisplayName(t *testing.T) {
-	tests := []struct {
-		mode string
-		want string
-	}{
-		{"outbound", "outbound only"},
-		{"none", "none"},
-		{"unrestricted", "unrestricted"},
-		{"", ""},          // empty string passes through as-is (default case)
-		{"custom", "custom"}, // unknown mode passes through
-	}
-	for _, tt := range tests {
-		t.Run(tt.mode, func(t *testing.T) {
-			got := networkDisplayName(tt.mode)
-			if got != tt.want {
-				t.Errorf("networkDisplayName(%q) = %q, want %q", tt.mode, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestClassifyEnvSource(t *testing.T) {
-	tests := []struct {
-		name      string
-		val       string
-		wantSrc   string
-		wantKey   string
-	}{
-		{
-			name:    "dot secrets pattern",
-			val:     "{{ .secrets.MY_KEY }}",
-			wantSrc: "secrets.MY_KEY",
-			wantKey: "MY_KEY",
-		},
-		{
-			name:    "index secrets pattern",
-			val:     `{{ index .secrets "db_pass" }}`,
-			wantSrc: "secrets.db_pass",
-			wantKey: "db_pass",
-		},
-		{
-			name:    "secrets without extractable key",
-			val:     "{{ index .secrets }}",
-			wantSrc: "secret",
-			wantKey: "",
-		},
-		{
-			name:    "project_root template",
-			val:     "{{ .project_root }}/bin",
-			wantSrc: "project_root",
-			wantKey: "",
-		},
-		{
-			name:    "runtime_dir template",
-			val:     "{{ .runtime_dir }}",
-			wantSrc: "runtime_dir",
-			wantKey: "",
-		},
-		{
-			name:    "generic template",
-			val:     "{{ .something_else }}",
-			wantSrc: "template",
-			wantKey: "",
-		},
-		{
-			name:    "literal value",
-			val:     "just-a-plain-value",
-			wantSrc: "literal",
-			wantKey: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotSrc, gotKey := classifyEnvSource(tt.val)
-			if gotSrc != tt.wantSrc {
-				t.Errorf("classifyEnvSource(%q) source = %q, want %q", tt.val, gotSrc, tt.wantSrc)
-			}
-			if gotKey != tt.wantKey {
-				t.Errorf("classifyEnvSource(%q) key = %q, want %q", tt.val, gotKey, tt.wantKey)
-			}
-		})
-	}
 }
 
 func TestApplyTrustGate(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/ui"
 )
@@ -155,7 +156,7 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	guardResults := sandbox.EvaluateGuards(&policy)
 	availableNames := sandbox.AvailableGuardNames(policy.Guards)
 	si := &ui.SandboxInfo{
-		Network: networkDisplayName(string(policy.Network)),
+		Network: display.NetworkDisplayName(string(policy.Network)),
 	}
 	for _, g := range guardResults {
 		if len(g.Rules) > 0 {

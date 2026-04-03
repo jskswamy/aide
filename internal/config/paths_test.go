@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,65 @@ func TestResolveSecretPathFrom_Absolute(t *testing.T) {
 	want := "/custom/path/keys.yaml"
 	if got != want {
 		t.Errorf("ResolveSecretPathFrom should return absolute path as-is, got %q, want %q", got, want)
+	}
+}
+
+func TestConfigHome(t *testing.T) {
+	t.Run("with XDG_CONFIG_HOME", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+		got := configHome()
+		if got != "/custom/config" {
+			t.Errorf("configHome() = %q, want /custom/config", got)
+		}
+	})
+
+	t.Run("without XDG_CONFIG_HOME", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		got := configHome()
+		if got == "" {
+			t.Error("configHome() returned empty string")
+		}
+	})
+}
+
+func TestConvenienceWrappers(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+
+	t.Run("SecretsDir", func(t *testing.T) {
+		got := SecretsDir()
+		if got == "" {
+			t.Error("SecretsDir() returned empty string")
+		}
+	})
+
+	t.Run("FilePath", func(t *testing.T) {
+		got := FilePath()
+		if got == "" {
+			t.Error("FilePath() returned empty string")
+		}
+	})
+
+	t.Run("ResolveSecretPath absolute", func(t *testing.T) {
+		got := ResolveSecretPath("/abs/path.enc.yaml")
+		if got != "/abs/path.enc.yaml" {
+			t.Errorf("got %q, want /abs/path.enc.yaml", got)
+		}
+	})
+
+	t.Run("ResolveSecretPath bare name", func(t *testing.T) {
+		got := ResolveSecretPath("work")
+		if !strings.HasSuffix(got, "work.enc.yaml") {
+			t.Errorf("got %q, want suffix work.enc.yaml", got)
+		}
+	})
+}
+
+func TestRuntimeDir(t *testing.T) {
+	got := RuntimeDir(12345)
+	if got == "" {
+		t.Error("RuntimeDir() returned empty string")
+	}
+	if !strings.Contains(got, "aide-12345") {
+		t.Errorf("RuntimeDir() = %q, want it to contain aide-12345", got)
 	}
 }

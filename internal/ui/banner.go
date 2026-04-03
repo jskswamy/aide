@@ -104,8 +104,6 @@ func sandboxNetworkLabel(data *BannerData) string {
 // used in the banner. Guard details are internal — the banner shows
 // capabilities only. Keeping the types (SandboxInfo, GuardDisplay) for
 // the aide sandbox guards CLI command.
-//
-//nolint:unused // retained for aide sandbox guards command
 func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
 	boldGreenC := color.New(color.FgGreen, color.Bold)
 	yellowC := color.New(color.FgYellow)

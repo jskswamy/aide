@@ -267,3 +267,19 @@ mcp:
 		t.Errorf("context personal mcp_servers[0] = %q, want %q", reloaded.Contexts["personal"].MCPServers[0], "myserver")
 	}
 }
+
+func TestWriteConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := &Config{DefaultContext: "personal"}
+	err := WriteConfig(cfg)
+	if err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+
+	path := FilePath()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Errorf("config file not created at %s", path)
+	}
+}

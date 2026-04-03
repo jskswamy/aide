@@ -841,6 +841,94 @@ func TestRenderClean_ExtraWritable(t *testing.T) {
 	}
 }
 
+func TestRenderGuardSection(t *testing.T) {
+	t.Run("active guards with protected and allowed", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := &SandboxInfo{
+			Active: []GuardDisplay{
+				{
+					Name:      "filesystem",
+					Protected: []string{"/home/.ssh", "/home/.aws"},
+					Allowed:   []string{"/home/.ssh/known_hosts"},
+				},
+			},
+		}
+		renderGuardSection(&buf, info, "  ")
+		out := buf.String()
+		if !strings.Contains(out, "filesystem") {
+			t.Errorf("expected 'filesystem' in output, got %q", out)
+		}
+		if !strings.Contains(out, "denied:") {
+			t.Errorf("expected 'denied:' in output, got %q", out)
+		}
+		if !strings.Contains(out, "allowed:") {
+			t.Errorf("expected 'allowed:' in output, got %q", out)
+		}
+	})
+
+	t.Run("active guard with overrides", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := &SandboxInfo{
+			Active: []GuardDisplay{
+				{
+					Name: "dev-credentials",
+					Overrides: []GuardOverride{
+						{EnvVar: "KUBECONFIG", Value: "/custom/kubeconfig", DefaultPath: "~/.kube/config"},
+					},
+				},
+			},
+		}
+		renderGuardSection(&buf, info, "  ")
+		out := buf.String()
+		if !strings.Contains(out, "override:") {
+			t.Errorf("expected 'override:' in output, got %q", out)
+		}
+	})
+
+	t.Run("skipped guards", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := &SandboxInfo{
+			Skipped: []GuardDisplay{
+				{Name: "dev-credentials", Reason: "disabled by user"},
+			},
+		}
+		renderGuardSection(&buf, info, "  ")
+		out := buf.String()
+		if !strings.Contains(out, "dev-credentials") {
+			t.Errorf("expected guard name in output, got %q", out)
+		}
+	})
+
+	t.Run("available guards", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := &SandboxInfo{
+			Available: []string{"custom-guard"},
+		}
+		renderGuardSection(&buf, info, "  ")
+		out := buf.String()
+		if !strings.Contains(out, "custom-guard") {
+			t.Errorf("expected available guard in output, got %q", out)
+		}
+	})
+
+	t.Run("hint shown for many protected", func(t *testing.T) {
+		var buf bytes.Buffer
+		info := &SandboxInfo{
+			Active: []GuardDisplay{
+				{
+					Name:      "filesystem",
+					Protected: []string{"a", "b", "c", "d"},
+				},
+			},
+		}
+		renderGuardSection(&buf, info, "  ")
+		out := buf.String()
+		if !strings.Contains(out, "aide sandbox") {
+			t.Errorf("expected hint in output when >3 protected, got %q", out)
+		}
+	})
+}
+
 func TestRenderBanner_ErrorOnBadTemplate(t *testing.T) {
 	var buf bytes.Buffer
 	err := RenderBanner(&buf, "nonexistent", &BannerData{AgentName: "claude"})

@@ -195,3 +195,109 @@ func mapKeys(m map[string]string) []string {
 	}
 	return keys
 }
+
+func TestResolveSecretsPath(t *testing.T) {
+	t.Run("absolute path", func(t *testing.T) {
+		got := resolveSecretsPath("/absolute/path/secrets.enc.yaml")
+		if got != "/absolute/path/secrets.enc.yaml" {
+			t.Errorf("resolveSecretsPath() = %q, want absolute path unchanged", got)
+		}
+	})
+
+	t.Run("relative path with XDG", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+		got := resolveSecretsPath("work.enc.yaml")
+		want := "/custom/config/aide/secrets/work.enc.yaml"
+		if got != want {
+			t.Errorf("resolveSecretsPath() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("relative path without XDG", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		got := resolveSecretsPath("personal.enc.yaml")
+		if !strings.HasSuffix(got, ".config/aide/secrets/personal.enc.yaml") {
+			t.Errorf("resolveSecretsPath() = %q, want suffix .config/aide/secrets/personal.enc.yaml", got)
+		}
+	})
+}
+
+func TestSetupDecryptEnv(t *testing.T) {
+	t.Run("yubikey source", func(t *testing.T) {
+		cleanup, err := setupDecryptEnv(&AgeIdentity{Source: SourceYubiKey})
+		if err != nil {
+			t.Fatalf("setupDecryptEnv() error = %v", err)
+		}
+		cleanup()
+	})
+
+	t.Run("env key source", func(t *testing.T) {
+		t.Setenv("SOPS_AGE_KEY", "original")
+		t.Setenv("SOPS_AGE_KEY_FILE", "original-file")
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{
+			Source:  SourceEnvKey,
+			KeyData: "AGE-SECRET-KEY-1TEST",
+		})
+		if err != nil {
+			t.Fatalf("setupDecryptEnv() error = %v", err)
+		}
+
+		if got := os.Getenv("SOPS_AGE_KEY"); got != "AGE-SECRET-KEY-1TEST" {
+			t.Errorf("SOPS_AGE_KEY = %q, want AGE-SECRET-KEY-1TEST", got)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "" {
+			t.Errorf("SOPS_AGE_KEY_FILE = %q, want empty", got)
+		}
+
+		cleanup()
+	})
+
+	t.Run("key file source", func(t *testing.T) {
+		t.Setenv("SOPS_AGE_KEY", "original")
+		t.Setenv("SOPS_AGE_KEY_FILE", "original-file")
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{
+			Source:  SourceEnvKeyFile,
+			KeyData: "/path/to/key.txt",
+		})
+		if err != nil {
+			t.Fatalf("setupDecryptEnv() error = %v", err)
+		}
+
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "/path/to/key.txt" {
+			t.Errorf("SOPS_AGE_KEY_FILE = %q, want /path/to/key.txt", got)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY"); got != "" {
+			t.Errorf("SOPS_AGE_KEY = %q, want empty", got)
+		}
+
+		cleanup()
+	})
+
+	t.Run("default file source", func(t *testing.T) {
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{
+			Source:  SourceDefaultFile,
+			KeyData: "/default/keys.txt",
+		})
+		if err != nil {
+			t.Fatalf("setupDecryptEnv() error = %v", err)
+		}
+
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "/default/keys.txt" {
+			t.Errorf("SOPS_AGE_KEY_FILE = %q, want /default/keys.txt", got)
+		}
+
+		cleanup()
+	})
+
+	t.Run("unknown source", func(t *testing.T) {
+		_, err := setupDecryptEnv(&AgeIdentity{Source: AgeKeySource(99)})
+		if err == nil {
+			t.Error("setupDecryptEnv() expected error for unknown source")
+		}
+	})
+}

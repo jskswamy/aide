@@ -13,6 +13,7 @@ import (
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
@@ -435,7 +436,7 @@ func (l *Launcher) buildBannerData(
 	if len(rc.Context.Env) > 0 {
 		data.Env = make(map[string]string, len(rc.Context.Env))
 		for k, v := range rc.Context.Env {
-			source, _ := classifyEnvSource(v)
+			source, _ := display.ClassifyEnvSource(v)
 			data.Env[k] = "← " + source
 		}
 	}
@@ -444,7 +445,7 @@ func (l *Launcher) buildBannerData(
 	if prefs.InfoDetail == "detailed" && len(resolvedEnv) > 0 {
 		data.EnvResolved = make(map[string]string, len(resolvedEnv))
 		for k, v := range resolvedEnv {
-			data.EnvResolved[k] = redactValue(v)
+			data.EnvResolved[k] = display.RedactValue(v)
 		}
 	}
 
@@ -514,7 +515,7 @@ func (l *Launcher) buildBannerData(
 			guardResults := sandbox.EvaluateGuards(policy)
 			availableNames := sandbox.AvailableGuardNames(policy.Guards)
 			si := &ui.SandboxInfo{
-				Network: networkDisplayName(string(policy.Network)),
+				Network: display.NetworkDisplayName(string(policy.Network)),
 			}
 			if len(policy.AllowPorts) > 0 {
 				portStrs := make([]string, len(policy.AllowPorts))
@@ -556,65 +557,6 @@ func (l *Launcher) buildBannerData(
 	data.ExtraDenied = stringSetDiff(configDeniedExtra, capOverrides.DeniedExtra)
 
 	return data
-}
-
-// networkDisplayName converts raw network mode to user-friendly display.
-func networkDisplayName(mode string) string {
-	switch mode {
-	case "outbound":
-		return "outbound only"
-	case "none":
-		return "none"
-	case "unrestricted":
-		return "unrestricted"
-	default:
-		return mode
-	}
-}
-
-// classifyEnvSource determines the source type of an env template value.
-func classifyEnvSource(val string) (source string, secretKey string) {
-	if strings.Contains(val, ".secrets.") || strings.Contains(val, "index .secrets") {
-		// Extract the key name from template patterns like {{ .secrets.foo }} or {{ index .secrets "foo" }}
-		if idx := strings.Index(val, ".secrets."); idx >= 0 {
-			rest := val[idx+len(".secrets."):]
-			end := strings.IndexAny(rest, " \t}\"")
-			if end > 0 {
-				return "secrets." + rest[:end], rest[:end]
-			}
-		}
-		if idx := strings.Index(val, "index .secrets"); idx >= 0 {
-			// Find the quoted key name
-			rest := val[idx:]
-			qStart := strings.Index(rest, "\"")
-			if qStart >= 0 {
-				rest2 := rest[qStart+1:]
-				qEnd := strings.Index(rest2, "\"")
-				if qEnd > 0 {
-					return "secrets." + rest2[:qEnd], rest2[:qEnd]
-				}
-			}
-		}
-		return "secret", ""
-	}
-	if strings.Contains(val, ".project_root") {
-		return "project_root", ""
-	}
-	if strings.Contains(val, ".runtime_dir") {
-		return "runtime_dir", ""
-	}
-	if strings.Contains(val, "{{") {
-		return "template", ""
-	}
-	return "literal", ""
-}
-
-// redactValue shows the first 8 chars of a value then ***.
-func redactValue(s string) string {
-	if len(s) <= 8 {
-		return s + "***"
-	}
-	return s[:8] + "***"
 }
 
 // resolveEffectiveYolo computes the effective yolo state considering CLI flags

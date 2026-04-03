@@ -17,6 +17,7 @@ import (
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/sandbox"
@@ -251,7 +252,7 @@ func whichCmd() *cobra.Command {
 			if len(resolved.Context.Env) > 0 {
 				data.Env = make(map[string]string, len(resolved.Context.Env))
 				for k, v := range resolved.Context.Env {
-					source, _ := classifyEnvSource(v)
+					source, _ := display.ClassifyEnvSource(v)
 					data.Env[k] = "← " + source
 				}
 			}
@@ -280,9 +281,9 @@ func whichCmd() *cobra.Command {
 				if len(resolved.Context.Env) > 0 {
 					data.EnvResolved = make(map[string]string, len(resolved.Context.Env))
 					for k, v := range resolved.Context.Env {
-						_, secretKey := classifyEnvSource(v)
-						displayVal := resolveEnvDisplay(v, "", secretKey, secretMap)
-						data.EnvResolved[k] = redactValue(displayVal)
+						_, secretKey := display.ClassifyEnvSource(v)
+						displayVal := display.ResolveEnvDisplay(v, "", secretKey, secretMap)
+						data.EnvResolved[k] = display.RedactValue(displayVal)
 					}
 				}
 			}
@@ -299,7 +300,7 @@ func whichCmd() *cobra.Command {
 					guardResults := sandbox.EvaluateGuards(policy)
 					availableNames := sandbox.AvailableGuardNames(policy.Guards)
 					si := &ui.SandboxInfo{
-						Network: networkDisplayName(string(policy.Network)),
+						Network: display.NetworkDisplayName(string(policy.Network)),
 					}
 					if len(policy.AllowPorts) > 0 {
 						portStrs := make([]string, len(policy.AllowPorts))
@@ -345,58 +346,6 @@ func whichCmd() *cobra.Command {
 	}
 
 	return cmd
-}
-
-// networkDisplayName converts raw network mode to user-friendly display.
-func networkDisplayName(mode string) string {
-	switch mode {
-	case "outbound":
-		return "outbound only"
-	case "none":
-		return "none"
-	case "unrestricted":
-		return "unrestricted"
-	default:
-		return mode
-	}
-}
-
-func classifyEnvSource(val string) (source string, secretKey string) {
-	reSecretsDot := regexp.MustCompile(`\{\{\s*\.secrets\.(\w+)\s*\}\}`)
-	reSecretsIndex := regexp.MustCompile(`\{\{\s*index\s+\.secrets\s+"(\w+)"\s*\}\}`)
-
-	if m := reSecretsDot.FindStringSubmatch(val); m != nil {
-		return fmt.Sprintf("from secrets.%s", m[1]), m[1]
-	}
-	if m := reSecretsIndex.FindStringSubmatch(val); m != nil {
-		return fmt.Sprintf("from secrets.%s", m[1]), m[1]
-	}
-	if strings.Contains(val, ".project_root") {
-		return "from project_root", ""
-	}
-	if strings.Contains(val, ".runtime_dir") {
-		return "from runtime_dir", ""
-	}
-	if strings.Contains(val, "{{") {
-		return "template", ""
-	}
-	return "literal", ""
-}
-
-func resolveEnvDisplay(val, _, secretKey string, secretMap map[string]string) string {
-	if secretKey != "" && secretMap != nil {
-		if sv, ok := secretMap[secretKey]; ok {
-			return redactValue(sv)
-		}
-	}
-	return val
-}
-
-func redactValue(s string) string {
-	if len(s) <= 8 {
-		return s + "***"
-	}
-	return s[:8] + "***"
 }
 
 func validateCmd() *cobra.Command {
@@ -2063,7 +2012,7 @@ func envListCmd() *cobra.Command {
 
 			for _, k := range keys {
 				v := envMap[k]
-				annotation := envAnnotation(v)
+				annotation := display.EnvAnnotation(v)
 				fmt.Fprintf(out, "  %-*s   %s\n", maxKeyLen, k, annotation)
 			}
 			return nil
@@ -2122,23 +2071,6 @@ func envRemoveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context (requires --global)")
 	return cmd
-}
-
-func envAnnotation(val string) string {
-	reSecretsDot := regexp.MustCompile(`\{\{\s*\.secrets\.(\w+)\s*\}\}`)
-	if m := reSecretsDot.FindStringSubmatch(val); m != nil {
-		return fmt.Sprintf("\u2190 secrets.%s", m[1])
-	}
-	if strings.Contains(val, ".project_root") {
-		return "\u2190 project_root"
-	}
-	if strings.Contains(val, ".runtime_dir") {
-		return "\u2190 runtime_dir"
-	}
-	if strings.Contains(val, "{{") {
-		return "\u2190 template"
-	}
-	return fmt.Sprintf("= %s", val)
 }
 
 func setupCmd() *cobra.Command {
@@ -3099,7 +3031,7 @@ func sandboxCreateCmd() *cobra.Command {
 					if p == "" {
 						continue
 					}
-					expanded := expandHome(p)
+					expanded := display.ExpandHome(p)
 					if _, err := os.Stat(expanded); err != nil {
 						fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 					} else {
@@ -3119,7 +3051,7 @@ func sandboxCreateCmd() *cobra.Command {
 					if p == "" {
 						continue
 					}
-					expanded := expandHome(p)
+					expanded := display.ExpandHome(p)
 					if _, err := os.Stat(expanded); err != nil {
 						fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 					} else {
@@ -3192,7 +3124,7 @@ func sandboxEditCmd() *cobra.Command {
 			}
 
 			for _, p := range addWritable {
-				expanded := expandHome(p)
+				expanded := display.ExpandHome(p)
 				if _, err := os.Stat(expanded); err != nil {
 					fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 				}
@@ -3200,7 +3132,7 @@ func sandboxEditCmd() *cobra.Command {
 			}
 
 			for _, p := range addDenied {
-				expanded := expandHome(p)
+				expanded := display.ExpandHome(p)
 				if _, err := os.Stat(expanded); err != nil {
 					fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 				}
@@ -3208,15 +3140,15 @@ func sandboxEditCmd() *cobra.Command {
 			}
 
 			for _, p := range removeWritable {
-				sp.WritableExtra = removeFromSlice(sp.WritableExtra, p)
+				sp.WritableExtra = display.RemoveFromSlice(sp.WritableExtra, p)
 			}
 
 			for _, p := range removeDenied {
-				sp.DeniedExtra = removeFromSlice(sp.DeniedExtra, p)
+				sp.DeniedExtra = display.RemoveFromSlice(sp.DeniedExtra, p)
 			}
 
 			for _, p := range addReadable {
-				expanded := expandHome(p)
+				expanded := display.ExpandHome(p)
 				if _, err := os.Stat(expanded); err != nil {
 					fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 				}
@@ -3224,7 +3156,7 @@ func sandboxEditCmd() *cobra.Command {
 			}
 
 			for _, p := range removeReadable {
-				sp.ReadableExtra = removeFromSlice(sp.ReadableExtra, p)
+				sp.ReadableExtra = display.RemoveFromSlice(sp.ReadableExtra, p)
 			}
 
 			if network != "" {
@@ -3303,40 +3235,6 @@ func sandboxRemoveCmd() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-// splitCommaList splits a comma-separated string into its parts,
-// matching the behaviour of pflag's StringSliceVar used by --with.
-func splitCommaList(s string) []string {
-	var result []string
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-	return result
-}
-
-func removeFromSlice(slice []string, item string) []string {
-	var result []string
-	for _, s := range slice {
-		if s != item {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, path[2:])
-	}
-	return path
 }
 
 // resolveContextForMutation loads config, resolves the context name, and returns
@@ -4295,10 +4193,10 @@ func capEditCmd() *cobra.Command {
 
 			// Apply removals
 			for _, r := range removeDeny {
-				capDef.Deny = removeFromSlice(capDef.Deny, r)
+				capDef.Deny = display.RemoveFromSlice(capDef.Deny, r)
 			}
 			for _, r := range removeEnvAllow {
-				capDef.EnvAllow = removeFromSlice(capDef.EnvAllow, r)
+				capDef.EnvAllow = display.RemoveFromSlice(capDef.EnvAllow, r)
 			}
 
 			cfg.Capabilities[name] = capDef
@@ -4333,7 +4231,7 @@ func capEnableCmd() *cobra.Command {
 		SilenceUsage:      true,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			capNames := splitCommaList(args[0])
+			capNames := display.SplitCommaList(args[0])
 
 			if !global && contextName != "" {
 				return fmt.Errorf("the --context flag requires --global")
@@ -4384,7 +4282,7 @@ func capEnableCmd() *cobra.Command {
 			}
 			for _, capName := range capNames {
 				// Remove from disabled if present
-				po.DisabledCapabilities = removeFromSlice(po.DisabledCapabilities, capName)
+				po.DisabledCapabilities = display.RemoveFromSlice(po.DisabledCapabilities, capName)
 				// Add if not already present
 				already := false
 				for _, c := range po.Capabilities {
@@ -4418,7 +4316,7 @@ func capDisableCmd() *cobra.Command {
 		SilenceUsage:      true,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			capNames := splitCommaList(args[0])
+			capNames := display.SplitCommaList(args[0])
 
 			if !global && contextName != "" {
 				return fmt.Errorf("the --context flag requires --global")
@@ -4441,7 +4339,7 @@ func capDisableCmd() *cobra.Command {
 						fmt.Fprintf(cmd.ErrOrStderr(), "warning: capability %q is not enabled for context %q\n", capName, ctxName)
 						continue
 					}
-					ctx.Capabilities = removeFromSlice(ctx.Capabilities, capName)
+					ctx.Capabilities = display.RemoveFromSlice(ctx.Capabilities, capName)
 					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled for context %q (global)\n", capName, ctxName)
 				}
 				cfg.Contexts[ctxName] = ctx
@@ -4462,7 +4360,7 @@ func capDisableCmd() *cobra.Command {
 					}
 				}
 				if removed {
-					po.Capabilities = removeFromSlice(po.Capabilities, capName)
+					po.Capabilities = display.RemoveFromSlice(po.Capabilities, capName)
 					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q removed from project (%s)\n", capName, poPath)
 				} else {
 					// Not in project caps — add to disabled to negate global
@@ -4553,13 +4451,13 @@ Examples:
 				// --remove mode
 				if envMode {
 					before := len(cfg.NeverAllowEnv)
-					cfg.NeverAllowEnv = removeFromSlice(cfg.NeverAllowEnv, entry)
+					cfg.NeverAllowEnv = display.RemoveFromSlice(cfg.NeverAllowEnv, entry)
 					if len(cfg.NeverAllowEnv) == before {
 						return fmt.Errorf("env var %q not found in never_allow_env", entry)
 					}
 				} else {
 					before := len(cfg.NeverAllow)
-					cfg.NeverAllow = removeFromSlice(cfg.NeverAllow, entry)
+					cfg.NeverAllow = display.RemoveFromSlice(cfg.NeverAllow, entry)
 					if len(cfg.NeverAllow) == before {
 						return fmt.Errorf("path %q not found in never_allow", entry)
 					}
@@ -4622,7 +4520,7 @@ This is a preview — nothing is launched or modified.`,
 		ValidArgsFunction: capabilityCompletionFunc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			capNames := splitCommaList(args[0])
+			capNames := display.SplitCommaList(args[0])
 
 			cwd, err := os.Getwd()
 			if err != nil {

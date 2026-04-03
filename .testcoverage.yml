@@ -13,8 +13,10 @@ override:
     path: pkg/seatbelt
   - threshold: 80
     path: internal/sandbox
-  - threshold: 79
+  - threshold: 80
     path: internal/secrets
+  - threshold: 80
+    path: internal/config
   - threshold: 50
     path: internal/ui
 

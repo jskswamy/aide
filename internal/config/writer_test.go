@@ -268,6 +268,36 @@ mcp:
 	}
 }
 
+func TestWriteConfig_RenameFailure_CleansTmpFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink/permission test not reliable on Windows")
+	}
+
+	dir := t.TempDir()
+
+	// Create a subdirectory at the target path so rename(file, dir) fails
+	targetPath := filepath.Join(dir, "config.yaml")
+	if err := os.MkdirAll(targetPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	// Put a file inside so the directory isn't empty (rename won't overwrite non-empty dir)
+	if err := os.WriteFile(filepath.Join(targetPath, "blocker"), []byte("x"), 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &Config{Agent: "claude"}
+	err := WriteConfigTo(cfg, targetPath)
+	if err == nil {
+		t.Fatal("expected error when rename target is a non-empty directory, got nil")
+	}
+
+	// Verify the .tmp file was cleaned up
+	tmpPath := targetPath + ".tmp"
+	if _, statErr := os.Stat(tmpPath); !os.IsNotExist(statErr) {
+		t.Errorf("expected .tmp file to be cleaned up, but it still exists")
+	}
+}
+
 func TestWriteConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

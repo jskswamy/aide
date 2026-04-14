@@ -820,6 +820,246 @@ capabilities:
 	}
 }
 
+// --- SandboxPolicy.UnmarshalYAML edge cases ---
+
+func TestSandboxPolicy_UnmarshalYAML_BoolFalse(t *testing.T) {
+	input := `sandbox: false`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Sandbox == nil {
+		t.Fatal("Sandbox is nil")
+	}
+	if !cfg.Sandbox.Disabled {
+		t.Error("expected Sandbox.Disabled to be true for sandbox: false")
+	}
+}
+
+func TestSandboxPolicy_UnmarshalYAML_BoolTrue_Error(t *testing.T) {
+	input := `sandbox: true`
+	var cfg config.Config
+	err := yaml.Unmarshal([]byte(input), &cfg)
+	if err == nil {
+		t.Fatal("expected error for sandbox: true, got nil")
+	}
+}
+
+func TestSandboxPolicy_UnmarshalYAML_AliasStruct(t *testing.T) {
+	input := `
+writable: ["/tmp"]
+readable: ["/etc"]
+network: outbound
+`
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sp.Disabled {
+		t.Error("expected Disabled=false for struct form")
+	}
+	if len(sp.Writable) != 1 || sp.Writable[0] != "/tmp" {
+		t.Errorf("Writable = %v, want [/tmp]", sp.Writable)
+	}
+}
+
+// --- SandboxRef.MarshalYAML edge cases ---
+
+func TestSandboxRef_MarshalYAML_Disabled(t *testing.T) {
+	ref := config.SandboxRef{Disabled: true}
+	data, err := yaml.Marshal(&ref)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(data) != "false\n" {
+		t.Errorf("MarshalYAML(disabled) = %q, want %q", string(data), "false\n")
+	}
+}
+
+func TestSandboxRef_MarshalYAML_ProfileName(t *testing.T) {
+	ref := config.SandboxRef{ProfileName: "strict"}
+	data, err := yaml.Marshal(&ref)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out map[string]string
+	if err := yaml.Unmarshal(data, &out); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if out["profile"] != "strict" {
+		t.Errorf("profile = %q, want %q", out["profile"], "strict")
+	}
+}
+
+func TestSandboxRef_MarshalYAML_Nil(t *testing.T) {
+	ref := config.SandboxRef{}
+	data, err := yaml.Marshal(&ref)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(data) != "null\n" {
+		t.Errorf("MarshalYAML(empty) = %q, want %q", string(data), "null\n")
+	}
+}
+
+func TestSandboxRef_MarshalYAML_Inline(t *testing.T) {
+	ref := config.SandboxRef{
+		Inline: &config.SandboxPolicy{
+			Writable: []string{"/tmp"},
+			Network:  &config.NetworkPolicy{Mode: "outbound"},
+		},
+	}
+	data, err := yaml.Marshal(&ref)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Should serialize the inline policy directly, not wrapped in "inline:"
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal(data, &sp); err != nil {
+		t.Fatalf("unmarshal result as SandboxPolicy: %v", err)
+	}
+	if len(sp.Writable) != 1 || sp.Writable[0] != "/tmp" {
+		t.Errorf("Writable = %v, want [/tmp]", sp.Writable)
+	}
+}
+
+// --- SandboxRef.UnmarshalYAML edge cases ---
+
+func TestSandboxRef_UnmarshalYAML_BoolFalse(t *testing.T) {
+	input := `sandbox: false`
+	type wrapper struct {
+		Sandbox *config.SandboxRef `yaml:"sandbox"`
+	}
+	var w wrapper
+	if err := yaml.Unmarshal([]byte(input), &w); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if w.Sandbox == nil {
+		t.Fatal("Sandbox is nil")
+	}
+	if !w.Sandbox.Disabled {
+		t.Error("expected Disabled=true for sandbox: false")
+	}
+}
+
+func TestSandboxRef_UnmarshalYAML_BoolTrue_Error(t *testing.T) {
+	input := `sandbox: true`
+	type wrapper struct {
+		Sandbox *config.SandboxRef `yaml:"sandbox"`
+	}
+	var w wrapper
+	err := yaml.Unmarshal([]byte(input), &w)
+	if err == nil {
+		t.Fatal("expected error for sandbox: true, got nil")
+	}
+}
+
+func TestSandboxRef_UnmarshalYAML_String(t *testing.T) {
+	input := `sandbox: "strict"`
+	type wrapper struct {
+		Sandbox *config.SandboxRef `yaml:"sandbox"`
+	}
+	var w wrapper
+	if err := yaml.Unmarshal([]byte(input), &w); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if w.Sandbox == nil {
+		t.Fatal("Sandbox is nil")
+	}
+	if w.Sandbox.ProfileName != "strict" {
+		t.Errorf("ProfileName = %q, want %q", w.Sandbox.ProfileName, "strict")
+	}
+}
+
+func TestSandboxRef_UnmarshalYAML_RefStruct(t *testing.T) {
+	input := `sandbox:
+  profile: "production"
+`
+	type wrapper struct {
+		Sandbox *config.SandboxRef `yaml:"sandbox"`
+	}
+	var w wrapper
+	if err := yaml.Unmarshal([]byte(input), &w); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if w.Sandbox == nil {
+		t.Fatal("Sandbox is nil")
+	}
+	if w.Sandbox.ProfileName != "production" {
+		t.Errorf("ProfileName = %q, want %q", w.Sandbox.ProfileName, "production")
+	}
+}
+
+func TestSandboxRef_UnmarshalYAML_InlinePolicy(t *testing.T) {
+	input := `sandbox:
+  writable: ["/tmp"]
+  network: outbound
+`
+	type wrapper struct {
+		Sandbox *config.SandboxRef `yaml:"sandbox"`
+	}
+	var w wrapper
+	if err := yaml.Unmarshal([]byte(input), &w); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if w.Sandbox == nil {
+		t.Fatal("Sandbox is nil")
+	}
+	if w.Sandbox.Inline == nil {
+		t.Fatal("Sandbox.Inline is nil")
+	}
+	if len(w.Sandbox.Inline.Writable) != 1 || w.Sandbox.Inline.Writable[0] != "/tmp" {
+		t.Errorf("Inline.Writable = %v, want [/tmp]", w.Sandbox.Inline.Writable)
+	}
+	if w.Sandbox.Inline.Network == nil || w.Sandbox.Inline.Network.Mode != "outbound" {
+		t.Errorf("Inline.Network = %v, want mode=outbound", w.Sandbox.Inline.Network)
+	}
+}
+
+// --- ResolvePreferences project override edge cases ---
+
+func TestResolvePreferences_ProjectOverridesShowInfo(t *testing.T) {
+	tr := true
+	f := false
+	global := &config.Preferences{ShowInfo: &tr, InfoStyle: "boxed", InfoDetail: "verbose"}
+	project := &config.Preferences{ShowInfo: &f}
+	result := config.ResolvePreferences(global, project)
+	if result.ShowInfo == nil || *result.ShowInfo {
+		t.Errorf("ShowInfo = %v, want false (project override)", result.ShowInfo)
+	}
+	// Global style/detail should still apply
+	if result.InfoStyle != "boxed" {
+		t.Errorf("InfoStyle = %q, want %q", result.InfoStyle, "boxed")
+	}
+	if result.InfoDetail != "verbose" {
+		t.Errorf("InfoDetail = %q, want %q", result.InfoDetail, "verbose")
+	}
+}
+
+func TestResolvePreferences_ProjectOverridesInfoDetail(t *testing.T) {
+	global := &config.Preferences{InfoDetail: "verbose"}
+	project := &config.Preferences{InfoDetail: "minimal"}
+	result := config.ResolvePreferences(global, project)
+	if result.InfoDetail != "minimal" {
+		t.Errorf("InfoDetail = %q, want %q", result.InfoDetail, "minimal")
+	}
+}
+
+func TestResolvePreferences_ProjectOnlyNoGlobal(t *testing.T) {
+	f := false
+	project := &config.Preferences{ShowInfo: &f, InfoStyle: "clean", InfoDetail: "minimal"}
+	result := config.ResolvePreferences(nil, project)
+	if result.ShowInfo == nil || *result.ShowInfo {
+		t.Errorf("ShowInfo = %v, want false", result.ShowInfo)
+	}
+	if result.InfoStyle != "clean" {
+		t.Errorf("InfoStyle = %q, want %q", result.InfoStyle, "clean")
+	}
+	if result.InfoDetail != "minimal" {
+		t.Errorf("InfoDetail = %q, want %q", result.InfoDetail, "minimal")
+	}
+}
+
 func TestProjectOverride_DisabledCapabilities_RoundTrip(t *testing.T) {
 	input := `
 capabilities:
@@ -849,5 +1089,12 @@ disabled_capabilities:
 	}
 	if len(po2.DisabledCapabilities) != 1 || po2.DisabledCapabilities[0] != "docker" {
 		t.Errorf("round-trip failed: got %v", po2.DisabledCapabilities)
+	}
+}
+
+func TestSandboxOverrides_HasNetworkMode(t *testing.T) {
+	o := config.SandboxOverrides{NetworkMode: "unrestricted"}
+	if o.NetworkMode != "unrestricted" {
+		t.Errorf("expected NetworkMode unrestricted, got %q", o.NetworkMode)
 	}
 }

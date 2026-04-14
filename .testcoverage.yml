@@ -24,3 +24,9 @@ exclude:
   paths:
     - cmd/aide
     - /mocks/
+    # Linux-only code requiring Landlock kernel — untestable on macOS/CI
+    - internal/sandbox/linux.go
+    # macOS Seatbelt sandbox — requires real sandbox-exec, untestable in CI
+    - internal/sandbox/sandbox.go
+    # Interactive editor launch — requires $EDITOR and TTY
+    - internal/secrets/editor.go

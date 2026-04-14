@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"filippo.io/age"
 )
 
 // testdataDir returns the absolute path to the repo-root testdata/ directory.
@@ -185,6 +187,170 @@ func TestDecryptSecretsFile_InvalidFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for corrupted file, got nil")
 	}
+}
+
+func TestDecryptSecretsFile_ScalarTypes(t *testing.T) {
+	// Create an encrypted file containing nil, int, float, and bool values,
+	// then decrypt it and verify the type conversion branches.
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatalf("failed to generate age key: %v", err)
+	}
+	pubKey := identity.Recipient().String()
+	t.Setenv("SOPS_AGE_KEY", identity.String())
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	// YAML with various scalar types: int, bool, float, and nil (~).
+	content := []byte("int_val: 42\nbool_val: true\nfloat_val: 3.14\nnil_val: ~\nstr_val: hello\n")
+	encrypted, err := encryptWithAge(content, pubKey)
+	if err != nil {
+		t.Fatalf("encryptWithAge failed: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	encFile := filepath.Join(tmpDir, "scalars.enc.yaml")
+	if err := os.WriteFile(encFile, encrypted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ident := &AgeIdentity{Source: SourceEnvKey, KeyData: identity.String()}
+	secrets, err := DecryptSecretsFile(encFile, ident)
+	if err != nil {
+		t.Fatalf("DecryptSecretsFile failed: %v", err)
+	}
+
+	// Verify type conversions.
+	if secrets["int_val"] != "42" {
+		t.Errorf("int_val = %q, want %q", secrets["int_val"], "42")
+	}
+	if secrets["bool_val"] != "true" {
+		t.Errorf("bool_val = %q, want %q", secrets["bool_val"], "true")
+	}
+	if secrets["float_val"] != "3.14" {
+		t.Errorf("float_val = %q, want %q", secrets["float_val"], "3.14")
+	}
+	if secrets["nil_val"] != "" {
+		t.Errorf("nil_val = %q, want empty string", secrets["nil_val"])
+	}
+	if secrets["str_val"] != "hello" {
+		t.Errorf("str_val = %q, want %q", secrets["str_val"], "hello")
+	}
+}
+
+func TestDecryptSecretsFile_NestedMapRejected(t *testing.T) {
+	// Create an encrypted file containing a nested map value,
+	// which should be rejected by the type conversion logic.
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatalf("failed to generate age key: %v", err)
+	}
+	pubKey := identity.Recipient().String()
+	t.Setenv("SOPS_AGE_KEY", identity.String())
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	content := []byte("flat_key: value\nnested:\n  child: deep\n")
+	encrypted, err := encryptWithAge(content, pubKey)
+	if err != nil {
+		t.Fatalf("encryptWithAge failed: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	encFile := filepath.Join(tmpDir, "nested.enc.yaml")
+	if err := os.WriteFile(encFile, encrypted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ident := &AgeIdentity{Source: SourceEnvKey, KeyData: identity.String()}
+	_, err = DecryptSecretsFile(encFile, ident)
+	if err == nil {
+		t.Fatal("expected error for nested map value, got nil")
+	}
+	if !strings.Contains(err.Error(), "non-string value") {
+		t.Errorf("error should mention non-string value, got: %v", err)
+	}
+}
+
+func TestSetupDecryptEnv_RestoresEnv(t *testing.T) {
+	// Verify that cleanup actually restores environment variables
+	// to their original state, including unsetting vars that did not exist.
+	t.Run("restores previously set vars", func(t *testing.T) {
+		t.Setenv("SOPS_AGE_KEY", "original-key")
+		t.Setenv("SOPS_AGE_KEY_FILE", "original-file")
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{
+			Source:  SourceEnvKey,
+			KeyData: "AGE-SECRET-KEY-1NEWKEY",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Env should be changed.
+		if got := os.Getenv("SOPS_AGE_KEY"); got != "AGE-SECRET-KEY-1NEWKEY" {
+			t.Errorf("before cleanup: SOPS_AGE_KEY = %q, want new value", got)
+		}
+
+		cleanup()
+
+		// After cleanup, should be restored.
+		if got := os.Getenv("SOPS_AGE_KEY"); got != "original-key" {
+			t.Errorf("after cleanup: SOPS_AGE_KEY = %q, want original-key", got)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "original-file" {
+			t.Errorf("after cleanup: SOPS_AGE_KEY_FILE = %q, want original-file", got)
+		}
+	})
+
+	t.Run("restores key file source vars", func(t *testing.T) {
+		t.Setenv("SOPS_AGE_KEY", "orig-key")
+		t.Setenv("SOPS_AGE_KEY_FILE", "orig-file")
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{
+			Source:  SourceEnvKeyFile,
+			KeyData: "/new/path/key.txt",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "/new/path/key.txt" {
+			t.Errorf("before cleanup: SOPS_AGE_KEY_FILE = %q", got)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY"); got != "" {
+			t.Errorf("before cleanup: SOPS_AGE_KEY should be empty, got %q", got)
+		}
+
+		cleanup()
+
+		if got := os.Getenv("SOPS_AGE_KEY"); got != "orig-key" {
+			t.Errorf("after cleanup: SOPS_AGE_KEY = %q, want orig-key", got)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "orig-file" {
+			t.Errorf("after cleanup: SOPS_AGE_KEY_FILE = %q, want orig-file", got)
+		}
+	})
+
+	t.Run("restores default file source vars", func(t *testing.T) {
+		t.Setenv("SOPS_AGE_KEY", "orig-key-2")
+		t.Setenv("SOPS_AGE_KEY_FILE", "orig-file-2")
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{
+			Source:  SourceDefaultFile,
+			KeyData: "/default/keys.txt",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cleanup()
+
+		if got := os.Getenv("SOPS_AGE_KEY"); got != "orig-key-2" {
+			t.Errorf("after cleanup: SOPS_AGE_KEY = %q, want orig-key-2", got)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "orig-file-2" {
+			t.Errorf("after cleanup: SOPS_AGE_KEY_FILE = %q, want orig-file-2", got)
+		}
+	})
 }
 
 // mapKeys returns the keys of a map for diagnostic output.

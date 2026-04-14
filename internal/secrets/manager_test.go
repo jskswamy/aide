@@ -735,6 +735,102 @@ func TestEdit_WithMockEditor(t *testing.T) {
 	}
 }
 
+func TestCreate_InvalidNameViaCreate(t *testing.T) {
+	// Test that Create (not CreateFromContent) rejects invalid names early.
+	tmpDir := t.TempDir()
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager("", runtimeDir)
+
+	err := mgr.Create("", filepath.Join(tmpDir, "secrets"), "age1fake")
+	if err == nil {
+		t.Fatal("expected error for empty name in Create, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid secrets name") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestCreate_AlreadyExistsViaCreate(t *testing.T) {
+	// Test that Create (not CreateFromContent) rejects already-existing file.
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	runtimeDir := filepath.Join(tmpDir, "runtime")
+	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-create the encrypted file.
+	encPath := filepath.Join(secretsDir, "existing.enc.yaml")
+	if err := os.WriteFile(encPath, []byte("placeholder"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := NewManager(secretsDir, runtimeDir)
+	err := mgr.Create("existing", secretsDir, "age1fake")
+	if err == nil {
+		t.Fatal("expected error for existing file in Create, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEdit_InvalidNameViaEdit(t *testing.T) {
+	// Test that Edit rejects invalid names early.
+	tmpDir := t.TempDir()
+	mgr := NewManager("", tmpDir)
+
+	err := mgr.Edit("../bad-name", filepath.Join(tmpDir, "secrets"))
+	if err == nil {
+		t.Fatal("expected error for invalid name in Edit, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid secrets name") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEdit_FileNotFoundViaEdit(t *testing.T) {
+	// Test that Edit returns error for non-existent file.
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager(secretsDir, tmpDir)
+
+	err := mgr.Edit("nonexistent", secretsDir)
+	if err == nil {
+		t.Fatal("expected error for nonexistent file in Edit, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSecureTempDir_InvalidBaseDir(t *testing.T) {
+	mgr := NewManager("", "/nonexistent/path/for/test")
+	_, _, err := mgr.secureTempDir("test-")
+	if err == nil {
+		t.Fatal("expected error for non-existent base dir, got nil")
+	}
+}
+
+func TestEditFromContent_InvalidName(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr := NewManager("", tmpDir)
+
+	err := mgr.EditFromContent("", filepath.Join(tmpDir, "secrets"), []byte("key: val\n"))
+	if err == nil {
+		t.Fatal("expected error for empty name in EditFromContent, got nil")
+	}
+}
+
 func TestSecureTempDir(t *testing.T) {
 	t.Run("with runtime dir", func(t *testing.T) {
 		runtimeDir := t.TempDir()
@@ -784,4 +880,52 @@ func TestSecureTempDir(t *testing.T) {
 			t.Error("expected non-empty dir")
 		}
 	})
+}
+
+func TestEditFromContent_FileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr := NewManager("", tmpDir)
+
+	err := mgr.EditFromContent("nonexistent", filepath.Join(tmpDir, "secrets"), []byte("key: val\n"))
+	if err == nil {
+		t.Fatal("expected error for missing encrypted file")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestEditFromContent_EmptyContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Create a dummy encrypted file so the stat check passes
+	if err := os.WriteFile(filepath.Join(secretsDir, "test.enc.yaml"), []byte("dummy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := NewManager("", tmpDir)
+	err := mgr.EditFromContent("test", secretsDir, []byte(""))
+	if err == nil {
+		t.Fatal("expected error for empty content")
+	}
+}
+
+func TestEditFromContent_NestedYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretsDir, "test.enc.yaml"), []byte("dummy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := NewManager("", tmpDir)
+	err := mgr.EditFromContent("test", secretsDir, []byte("key:\n  nested: val\n"))
+	if err == nil {
+		t.Fatal("expected error for nested YAML")
+	}
 }

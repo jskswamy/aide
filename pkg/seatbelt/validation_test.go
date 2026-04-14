@@ -59,3 +59,60 @@ func TestValidationResult_MergeNil(t *testing.T) {
 		t.Error("merge nil should not add errors")
 	}
 }
+
+func TestValidationResult_String_NoIssues(t *testing.T) {
+	r := &ValidationResult{}
+	got := r.String()
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+}
+
+func TestValidationResult_String_ErrorsOnly(t *testing.T) {
+	r := &ValidationResult{}
+	r.AddError("bad field")
+	r.AddError("missing value")
+	got := r.String()
+	want := "error: bad field; error: missing value"
+	if got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestValidationResult_String_WarningsOnly(t *testing.T) {
+	r := &ValidationResult{}
+	r.AddWarning("deprecated field")
+	got := r.String()
+	want := "warning: deprecated field"
+	if got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestValidationResult_String_Both(t *testing.T) {
+	r := &ValidationResult{}
+	r.AddError("err1")
+	r.AddWarning("warn1")
+	got := r.String()
+	want := "error: err1; warning: warn1"
+	if got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestValidationResult_MergePreservesExisting(t *testing.T) {
+	r := &ValidationResult{}
+	r.AddError("e1")
+
+	other := &ValidationResult{}
+	other.AddWarning("w-from-other")
+
+	r.Merge(other)
+
+	if len(r.Errors) != 1 || r.Errors[0] != "e1" {
+		t.Errorf("expected original error preserved, got %v", r.Errors)
+	}
+	if len(r.Warnings) != 1 || r.Warnings[0] != "w-from-other" {
+		t.Errorf("expected merged warning, got %v", r.Warnings)
+	}
+}

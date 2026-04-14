@@ -1098,3 +1098,24 @@ func TestSandboxOverrides_HasNetworkMode(t *testing.T) {
 		t.Errorf("expected NetworkMode unrestricted, got %q", o.NetworkMode)
 	}
 }
+
+func TestProjectOverride_ParsesCapabilityVariants(t *testing.T) {
+	raw := []byte(`
+capabilities:
+  - python
+  - node
+capability_variants:
+  python: [uv]
+  node: [pnpm, corepack]
+`)
+	var po config.ProjectOverride
+	if err := yaml.Unmarshal(raw, &po); err != nil {
+		t.Fatal(err)
+	}
+	if got := po.CapabilityVariants["python"]; len(got) != 1 || got[0] != "uv" {
+		t.Errorf("python variants = %v, want [uv]", got)
+	}
+	if got := po.CapabilityVariants["node"]; len(got) != 2 || got[0] != "pnpm" || got[1] != "corepack" {
+		t.Errorf("node variants = %v, want [pnpm corepack]", got)
+	}
+}

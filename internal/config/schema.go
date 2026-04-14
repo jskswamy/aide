@@ -277,6 +277,11 @@ type ProjectOverride struct {
 	Yolo         *bool             `yaml:"yolo,omitempty"`
 	Capabilities []string          `yaml:"capabilities,omitempty"`
 	DisabledCapabilities []string  `yaml:"disabled_capabilities,omitempty"`
+	// CapabilityVariants pins specific variants for named capabilities,
+	// bypassing the detection/consent flow. Keys must appear in
+	// Capabilities (or be activated via --with). Values are variant
+	// names declared on the built-in or user-defined capability.
+	CapabilityVariants map[string][]string `yaml:"capability_variants,omitempty"`
 }
 
 // Preferences holds global display/behavior settings.

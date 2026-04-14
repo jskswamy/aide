@@ -12,6 +12,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/consent"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/sandbox"
@@ -54,6 +55,13 @@ type Launcher struct {
 	IgnoreProjectConfig  bool         // skip .aide.yaml entirely
 	UnrestrictedNetwork  bool         // force unrestricted network, clear port rules (-N flag)
 	TrustStore           *trust.Store // override for testing (default: trust.DefaultStore())
+
+	// Variant selection inputs (optional; zero value disables variant flow).
+	VariantOverrides map[string][]string
+	ConsentStore     *consent.Store
+	Prompter         capability.Prompter
+	AutoYes          bool
+	Interactive      bool
 }
 
 // stderr returns the effective stderr writer.
@@ -234,7 +242,16 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// Merge capability overrides into sandbox config before PolicyFromConfig.
-	resolvedCapSet, capOverrides, err := sandbox.ResolveCapabilities(capNames, cfg)
+	variantOpts := sandbox.VariantSelectionOptions{
+		ProjectRoot:  projectRoot,
+		CLIOverrides: l.VariantOverrides,
+		YAMLPins:     yamlVariantPins(cfg.ProjectOverride),
+		Consent:      l.ConsentStore,
+		Prompter:     l.Prompter,
+		Interactive:  l.Interactive,
+		AutoYes:      l.AutoYes,
+	}
+	resolvedCapSet, capOverrides, err := sandbox.ResolveCapabilitiesWithVariants(capNames, cfg, variantOpts)
 	if err != nil {
 		cleanup()
 		return fmt.Errorf("resolving capabilities: %w", err)
@@ -678,4 +695,18 @@ func printUntrustedWarning(w io.Writer, path string, po *config.ProjectOverride)
 	fmt.Fprintf(w, "  Run `aide trust` to approve this configuration.\n")
 	fmt.Fprintf(w, "  Run `aide deny` to permanently block it.\n")
 	fmt.Fprintf(w, "  Run `aide --ignore-project-config` to launch without it.\n")
+}
+
+// yamlVariantPins extracts capability_variants from a ProjectOverride
+// into the shape VariantSelectionOptions expects. Returns nil when the
+// override is nil or has no pins.
+func yamlVariantPins(po *config.ProjectOverride) map[string][]string {
+	if po == nil || len(po.CapabilityVariants) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(po.CapabilityVariants))
+	for k, v := range po.CapabilityVariants {
+		out[k] = append([]string(nil), v...)
+	}
+	return out
 }

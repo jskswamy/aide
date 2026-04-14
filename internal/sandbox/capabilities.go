@@ -8,8 +8,11 @@
 package sandbox
 
 import (
+	"fmt"
+
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/consent"
 )
 
 // ApplyOverrides merges external overrides (from capabilities or other
@@ -56,10 +59,25 @@ func MergeCapNames(contextCaps, withCaps, withoutCaps []string) []string {
 	return capNames
 }
 
-// ResolveCapabilities resolves capability names against the config
-// registry and returns the merged SandboxOverrides. Returns a nil
-// Set and zero overrides when capNames is empty.
-func ResolveCapabilities(capNames []string, cfg *config.Config) (*capability.Set, config.SandboxOverrides, error) {
+// VariantSelectionOptions carries everything the variant-aware
+// resolver needs beyond the plain (capNames, cfg) pair. Zero value
+// is valid — it disables detection and consent, and produces the
+// same result as the plain ResolveCapabilities.
+type VariantSelectionOptions struct {
+	ProjectRoot  string
+	CLIOverrides map[string][]string // from --variant flag
+	YAMLPins     map[string][]string // from .aide.yaml capability_variants
+	Consent      *consent.Store
+	Prompter     capability.Prompter
+	Interactive  bool
+	AutoYes      bool
+}
+
+// ResolveCapabilitiesWithVariants resolves capNames, then for each
+// capability that declares Variants runs capability.SelectVariants,
+// merges the chosen variants' paths onto the resolved capability, and
+// returns the resulting SandboxOverrides.
+func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts VariantSelectionOptions) (*capability.Set, config.SandboxOverrides, error) {
 	if len(capNames) == 0 {
 		return nil, config.SandboxOverrides{}, nil
 	}
@@ -69,5 +87,39 @@ func ResolveCapabilities(capNames []string, cfg *config.Config) (*capability.Set
 	if err != nil {
 		return nil, config.SandboxOverrides{}, err
 	}
+
+	// For each resolved capability, if its defining built-in (or user
+	// def) has Variants, run selection and replace the resolved entry
+	// with the variant-merged version.
+	for i := range capSet.Capabilities {
+		rc := &capSet.Capabilities[i]
+		def, ok := registry[rc.Name]
+		if !ok || len(def.Variants) == 0 {
+			continue
+		}
+		selected, _, selErr := capability.SelectVariants(capability.SelectInput{
+			Capability:  def,
+			ProjectRoot: opts.ProjectRoot,
+			Overrides:   opts.CLIOverrides[rc.Name],
+			YAMLPins:    opts.YAMLPins[rc.Name],
+			Consent:     opts.Consent,
+			Prompter:    opts.Prompter,
+			Interactive: opts.Interactive,
+			AutoYes:     opts.AutoYes,
+		})
+		if selErr != nil {
+			return nil, config.SandboxOverrides{}, fmt.Errorf("selecting variants for %q: %w", rc.Name, selErr)
+		}
+		merged := capability.MergeSelectedVariants(rc, selected)
+		capSet.Capabilities[i] = *merged
+	}
 	return capSet, capSet.ToSandboxOverrides(), nil
+}
+
+// ResolveCapabilities is a backward-compatible wrapper that runs the
+// variant-aware resolver with zero options (no detection, no consent).
+// Retained so existing callers that do not yet handle variants keep
+// working unchanged.
+func ResolveCapabilities(capNames []string, cfg *config.Config) (*capability.Set, config.SandboxOverrides, error) {
+	return ResolveCapabilitiesWithVariants(capNames, cfg, VariantSelectionOptions{})
 }

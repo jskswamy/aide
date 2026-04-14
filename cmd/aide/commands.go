@@ -13,9 +13,11 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/consent"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/launcher"
@@ -3933,7 +3935,80 @@ func capCmd() *cobra.Command {
 	cmd.AddCommand(capAuditCmd())
 	cmd.AddCommand(capSuggestForPathCmd())
 	cmd.AddCommand(capVariantsCmd())
+	cmd.AddCommand(capConsentCmd())
 	return cmd
+}
+
+func capConsentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "consent",
+		Short: "Manage detection consents (granted variant selections)",
+	}
+	cmd.AddCommand(capConsentListCmd())
+	cmd.AddCommand(capConsentRevokeCmd())
+	return cmd
+}
+
+func capConsentListCmd() *cobra.Command {
+	var projectFlag string
+	cmd := &cobra.Command{
+		Use:          "list",
+		Short:        "List granted consents for a project (default: current directory)",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			project := projectFlag
+			if project == "" {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("getting working directory: %w", err)
+				}
+				project = cwd
+			}
+			store := consent.DefaultStore()
+			grants, err := store.List(project)
+			if err != nil {
+				return fmt.Errorf("listing consents: %w", err)
+			}
+			if len(grants) == 0 {
+				fmt.Fprintf(out, "no consents recorded for %s\n", project)
+				return nil
+			}
+			for _, g := range grants {
+				fmt.Fprintf(out, "%s  variants=%s  confirmed_at=%s  markers=%s\n",
+					g.Capability,
+					strings.Join(g.Variants, ","),
+					g.ConfirmedAt.Format(time.RFC3339),
+					g.Summary,
+				)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&projectFlag, "project", "", "Project root (defaults to current directory)")
+	return cmd
+}
+
+func capConsentRevokeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "revoke <capability>",
+		Short:        "Revoke all consents for a capability in the current project",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+			store := consent.DefaultStore()
+			if err := store.Revoke(cwd, args[0]); err != nil {
+				return fmt.Errorf("revoking: %w", err)
+			}
+			fmt.Fprintf(out, "revoked all %s consents for %s\n", args[0], cwd)
+			return nil
+		},
+	}
 }
 
 func capListCmd() *cobra.Command {

@@ -124,6 +124,51 @@ func TestApplyOverrides_EnableGuard(t *testing.T) {
 	}
 }
 
+func TestApplyOverrides_NetworkMode(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Network: &config.NetworkPolicy{
+			Mode:      "outbound",
+			DenyPorts: []int{22},
+		},
+	}
+	overrides := config.SandboxOverrides{
+		NetworkMode: "unrestricted",
+	}
+	ApplyOverrides(&cfg, overrides)
+
+	if cfg.Network == nil || cfg.Network.Mode != "unrestricted" {
+		t.Errorf("expected network mode unrestricted, got %v", cfg.Network)
+	}
+	// Port deny list from config must be preserved
+	if len(cfg.Network.DenyPorts) != 1 || cfg.Network.DenyPorts[0] != 22 {
+		t.Errorf("expected deny_ports [22] preserved, got %v", cfg.Network.DenyPorts)
+	}
+}
+
+func TestApplyOverrides_NetworkMode_NilNetwork(t *testing.T) {
+	cfg := &config.SandboxPolicy{}
+	overrides := config.SandboxOverrides{
+		NetworkMode: "unrestricted",
+	}
+	ApplyOverrides(&cfg, overrides)
+
+	if cfg.Network == nil || cfg.Network.Mode != "unrestricted" {
+		t.Errorf("expected network mode unrestricted, got %v", cfg.Network)
+	}
+}
+
+func TestApplyOverrides_NetworkMode_Empty(t *testing.T) {
+	cfg := &config.SandboxPolicy{
+		Network: &config.NetworkPolicy{Mode: "outbound"},
+	}
+	overrides := config.SandboxOverrides{}
+	ApplyOverrides(&cfg, overrides)
+
+	if cfg.Network.Mode != "outbound" {
+		t.Errorf("expected network mode unchanged, got %q", cfg.Network.Mode)
+	}
+}
+
 func TestResolveCapabilities_GitRemote_EnableGuard(t *testing.T) {
 	cfg := &config.Config{}
 	capSet, overrides, err := ResolveCapabilities([]string{"git-remote"}, cfg)
@@ -150,5 +195,63 @@ func TestResolveCapabilities_GitRemote_EnableGuard(t *testing.T) {
 
 	if len(sandboxCfg.GuardsExtra) != 1 || sandboxCfg.GuardsExtra[0] != "git-remote" {
 		t.Errorf("expected GuardsExtra [git-remote], got %v", sandboxCfg.GuardsExtra)
+	}
+}
+
+func TestNetworkCapability_EndToEnd(t *testing.T) {
+	cfg := &config.Config{
+		Capabilities: map[string]config.CapabilityDef{},
+	}
+
+	// Simulate --with network
+	capNames := MergeCapNames(nil, []string{"network"}, nil)
+	_, overrides, err := ResolveCapabilities(capNames, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overrides.NetworkMode != "unrestricted" {
+		t.Errorf("expected NetworkMode unrestricted, got %q", overrides.NetworkMode)
+	}
+
+	// Apply to a sandbox config with port deny list
+	sandboxCfg := &config.SandboxPolicy{
+		Network: &config.NetworkPolicy{
+			Mode:      "outbound",
+			DenyPorts: []int{22},
+		},
+	}
+	ApplyOverrides(&sandboxCfg, overrides)
+
+	// Network mode should be unrestricted but deny ports preserved
+	if sandboxCfg.Network.Mode != "unrestricted" {
+		t.Errorf("expected unrestricted, got %q", sandboxCfg.Network.Mode)
+	}
+	if len(sandboxCfg.Network.DenyPorts) != 1 {
+		t.Errorf("expected deny_ports preserved, got %v", sandboxCfg.Network.DenyPorts)
+	}
+}
+
+func TestUnrestrictedNetworkFlag_ClearsPortRules(t *testing.T) {
+	sandboxCfg := &config.SandboxPolicy{
+		Network: &config.NetworkPolicy{
+			Mode:       "outbound",
+			AllowPorts: []int{443, 8443},
+			DenyPorts:  []int{22},
+		},
+	}
+
+	// Simulate -N flag behavior
+	sandboxCfg.Network.Mode = "unrestricted"
+	sandboxCfg.Network.AllowPorts = nil
+	sandboxCfg.Network.DenyPorts = nil
+
+	if sandboxCfg.Network.Mode != "unrestricted" {
+		t.Errorf("expected unrestricted, got %q", sandboxCfg.Network.Mode)
+	}
+	if sandboxCfg.Network.AllowPorts != nil {
+		t.Error("expected AllowPorts nil")
+	}
+	if sandboxCfg.Network.DenyPorts != nil {
+		t.Error("expected DenyPorts nil")
 	}
 }

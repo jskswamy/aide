@@ -25,6 +25,12 @@ func ApplyOverrides(cfg **config.SandboxPolicy, overrides config.SandboxOverride
 	(*cfg).DeniedExtra = append((*cfg).DeniedExtra, overrides.DeniedExtra...)
 	(*cfg).GuardsExtra = append((*cfg).GuardsExtra, overrides.EnableGuard...)
 	(*cfg).Allow = append((*cfg).Allow, overrides.Allow...)
+	if overrides.NetworkMode != "" {
+		if (*cfg).Network == nil {
+			(*cfg).Network = &config.NetworkPolicy{}
+		}
+		(*cfg).Network.Mode = overrides.NetworkMode
+	}
 }
 
 // MergeCapNames combines context capabilities with --with flags and

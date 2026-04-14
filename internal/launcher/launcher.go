@@ -52,6 +52,7 @@ type Launcher struct {
 	NoYolo               bool         // override: disable yolo mode (overrides config and --yolo)
 	Stderr               io.Writer    // override for testing (default: os.Stderr)
 	IgnoreProjectConfig  bool         // skip .aide.yaml entirely
+	UnrestrictedNetwork  bool         // force unrestricted network, clear port rules (-N flag)
 	TrustStore           *trust.Store // override for testing (default: trust.DefaultStore())
 }
 
@@ -239,6 +240,19 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving capabilities: %w", err)
 	}
 	sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
+
+	// -N flag: force unrestricted network and clear port rules.
+	if l.UnrestrictedNetwork {
+		if sandboxCfg == nil {
+			sandboxCfg = &config.SandboxPolicy{}
+		}
+		if sandboxCfg.Network == nil {
+			sandboxCfg.Network = &config.NetworkPolicy{}
+		}
+		sandboxCfg.Network.Mode = "unrestricted"
+		sandboxCfg.Network.AllowPorts = nil
+		sandboxCfg.Network.DenyPorts = nil
+	}
 
 	homeDir, _ := os.UserHomeDir()
 	var pathWarnings []string

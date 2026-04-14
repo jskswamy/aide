@@ -939,3 +939,23 @@ func TestRenderBanner_ErrorOnBadTemplate(t *testing.T) {
 		t.Error("fallback should render compact")
 	}
 }
+
+func TestSandboxNetworkLabel_Unrestricted(t *testing.T) {
+	data := &BannerData{
+		Sandbox: &SandboxInfo{Network: "unrestricted"},
+	}
+	label := sandboxNetworkLabel(data)
+	if label != "unrestricted" {
+		t.Errorf("expected unrestricted, got %q", label)
+	}
+}
+
+func TestSandboxNetworkLabel_Default(t *testing.T) {
+	data := &BannerData{
+		Sandbox: &SandboxInfo{},
+	}
+	label := sandboxNetworkLabel(data)
+	if label != "outbound" {
+		t.Errorf("expected outbound, got %q", label)
+	}
+}

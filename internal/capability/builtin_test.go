@@ -20,8 +20,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 20 {
-		t.Errorf("expected 20 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 21 {
+		t.Errorf("expected 21 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -82,5 +82,18 @@ func TestBuiltin_Helm_NoUnguard(t *testing.T) {
 	helm := Builtins()["helm"]
 	if len(helm.Unguard) != 0 {
 		t.Errorf("helm should have no Unguard, got %v", helm.Unguard)
+	}
+}
+
+func TestBuiltin_Network_Exists(t *testing.T) {
+	cap, ok := Builtins()["network"]
+	if !ok {
+		t.Fatal("missing built-in capability 'network'")
+	}
+	if cap.NetworkMode != "unrestricted" {
+		t.Errorf("expected NetworkMode unrestricted, got %q", cap.NetworkMode)
+	}
+	if cap.Description == "" {
+		t.Error("expected non-empty description")
 	}
 }

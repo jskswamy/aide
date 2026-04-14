@@ -1,6 +1,7 @@
 package capability
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -268,5 +269,82 @@ func TestCapability_NetworkMode_EmptyWhenNotSet(t *testing.T) {
 	o := set.ToSandboxOverrides()
 	if o.NetworkMode != "" {
 		t.Errorf("expected empty NetworkMode, got %q", o.NetworkMode)
+	}
+}
+
+func TestMergeSelectedVariants_UnionWithDedup(t *testing.T) {
+	base := &ResolvedCapability{
+		Name:     "python",
+		Sources:  []string{"python"},
+		Writable: []string{"/shared"},
+		EnvAllow: []string{"VIRTUAL_ENV"},
+	}
+	selected := []Variant{
+		{
+			Name:     "uv",
+			Writable: []string{"~/.local/share/uv", "/shared"}, // /shared is a duplicate
+			EnvAllow: []string{"UV_CACHE_DIR"},
+		},
+	}
+	out := MergeSelectedVariants(base, selected)
+
+	// Base must not mutate.
+	if len(base.Writable) != 1 {
+		t.Errorf("base mutated; Writable = %v", base.Writable)
+	}
+
+	wantWritable := map[string]bool{"/shared": true, "~/.local/share/uv": true}
+	if len(out.Writable) != len(wantWritable) {
+		t.Errorf("out.Writable = %v, want 2 deduped entries", out.Writable)
+	}
+	for _, w := range out.Writable {
+		if !wantWritable[w] {
+			t.Errorf("unexpected writable: %s", w)
+		}
+	}
+
+	wantEnv := map[string]bool{"VIRTUAL_ENV": true, "UV_CACHE_DIR": true}
+	for _, e := range out.EnvAllow {
+		if !wantEnv[e] {
+			t.Errorf("unexpected env: %s", e)
+		}
+	}
+
+	// Sources trail includes the variant stamp.
+	if !slices.Contains(out.Sources, "python/uv") {
+		t.Errorf("out.Sources = %v, missing python/uv stamp", out.Sources)
+	}
+}
+
+func TestMergeSelectedVariants_NoSelected_ReturnsEquivalent(t *testing.T) {
+	base := &ResolvedCapability{
+		Name:     "python",
+		Sources:  []string{"python"},
+		Writable: []string{"/a"},
+	}
+	out := MergeSelectedVariants(base, nil)
+	if len(out.Writable) != 1 || out.Writable[0] != "/a" {
+		t.Errorf("out.Writable = %v, want [/a]", out.Writable)
+	}
+	// Mutating out must not affect base.
+	out.Writable = append(out.Writable, "/b")
+	if len(base.Writable) != 1 {
+		t.Errorf("base mutated via returned slice aliasing")
+	}
+}
+
+func TestMergeSelectedVariants_DoesNotAliasNonVariantSlices(t *testing.T) {
+	base := &ResolvedCapability{
+		Name:    "k",
+		Unguard: []string{"a"},
+		Deny:    []string{"b"},
+		Allow:   []string{"c"},
+	}
+	out := MergeSelectedVariants(base, nil)
+	out.Unguard = append(out.Unguard, "x")
+	out.Deny = append(out.Deny, "y")
+	out.Allow = append(out.Allow, "z")
+	if len(base.Unguard) != 1 || len(base.Deny) != 1 || len(base.Allow) != 1 {
+		t.Errorf("base aliased: Unguard=%v Deny=%v Allow=%v", base.Unguard, base.Deny, base.Allow)
 	}
 }

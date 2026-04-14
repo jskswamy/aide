@@ -109,8 +109,54 @@ func init() {
 		"python": {
 			Name:        "python",
 			Description: "Python toolchain",
-			Writable:    []string{"~/.pyenv"},
-			EnvAllow:    []string{"PYENV_ROOT", "VIRTUAL_ENV"},
+			Variants: []Variant{
+				{
+					Name:        "uv",
+					Description: "uv — fast Python package/project manager",
+					Markers: []Marker{
+						{File: "uv.lock"},
+					},
+					Writable: []string{
+						"~/.local/share/uv",
+						"~/.cache/uv",
+					},
+					EnvAllow: []string{"UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR", "VIRTUAL_ENV"},
+				},
+				{
+					Name:        "pyenv",
+					Description: "pyenv — Simple Python version management",
+					Markers: []Marker{
+						{File: ".python-version"},
+					},
+					Writable: []string{"~/.pyenv"},
+					EnvAllow: []string{"PYENV_ROOT", "VIRTUAL_ENV"},
+				},
+				{
+					Name:        "conda",
+					Description: "Conda / Mamba — scientific Python",
+					Markers: []Marker{
+						{File: "environment.yml"},
+					},
+					Writable: []string{"~/.conda", "~/miniconda3", "~/anaconda3"},
+					EnvAllow: []string{"CONDA_PREFIX", "CONDA_DEFAULT_ENV"},
+				},
+				{
+					Name:        "poetry",
+					Description: "Poetry — dependency management and packaging",
+					Markers: []Marker{
+						{File: "poetry.lock"},
+					},
+					Writable: []string{"~/.cache/pypoetry", "~/Library/Caches/pypoetry"},
+					EnvAllow: []string{"POETRY_HOME"},
+				},
+				{
+					Name:        "venv",
+					Description: "Standard library venv — no managed interpreter",
+					// No markers → never auto-selected; used as safe default.
+					EnvAllow: []string{"VIRTUAL_ENV"},
+				},
+			},
+			DefaultVariants: []string{"venv"},
 		},
 		"ruby": {
 			Name:        "ruby",

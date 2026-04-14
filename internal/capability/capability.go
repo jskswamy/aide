@@ -143,6 +143,35 @@ func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapabili
 	}
 }
 
+// MergeSelectedVariants layers the paths/env/guard contributions from
+// selected Variants onto a ResolvedCapability, returning a new
+// ResolvedCapability that contains the union (deduplicated). The
+// input ResolvedCapability is not mutated.
+// Fields that variants cannot contribute to (Unguard, Deny, Allow,
+// NetworkMode) are copied through without modification so the returned
+// ResolvedCapability is fully decoupled from rc.
+func MergeSelectedVariants(rc *ResolvedCapability, selected []Variant) *ResolvedCapability {
+	out := *rc
+	out.Sources = append([]string(nil), rc.Sources...)
+	out.Readable = copyStrings(rc.Readable)
+	out.Writable = copyStrings(rc.Writable)
+	out.EnvAllow = copyStrings(rc.EnvAllow)
+	out.EnableGuard = copyStrings(rc.EnableGuard)
+	out.Unguard = copyStrings(rc.Unguard)
+	out.Deny = copyStrings(rc.Deny)
+	out.Allow = copyStrings(rc.Allow)
+	for _, v := range selected {
+		if v.Name != "" {
+			out.Sources = append(out.Sources, rc.Name+"/"+v.Name)
+		}
+		out.Readable = dedup(append(out.Readable, v.Readable...))
+		out.Writable = dedup(append(out.Writable, v.Writable...))
+		out.EnvAllow = dedup(append(out.EnvAllow, v.EnvAllow...))
+		out.EnableGuard = dedup(append(out.EnableGuard, v.EnableGuard...))
+	}
+	return &out
+}
+
 func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
 	networkMode := a.NetworkMode
 	if b.NetworkMode != "" {

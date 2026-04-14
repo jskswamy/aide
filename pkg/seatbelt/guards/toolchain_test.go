@@ -166,17 +166,25 @@ func TestGuard_Keychain_Rules(t *testing.T) {
 		t.Error("expected security plist path")
 	}
 
-	// Should be read-only, not read-write
+	// Read access on full Keychains subpath
 	if !strings.Contains(output, "file-read*") {
 		t.Error("expected file-read* for keychain paths")
 	}
-	if strings.Contains(output, "file-write*") {
-		t.Error("keychain paths should be read-only, not writable")
+	// Write access scoped to user keychain subpath for credential storage
+	if !strings.Contains(output, "file-write*") {
+		t.Error("expected file-write* for keychain")
+	}
+	if !strings.Contains(output, `(allow file-write*`) {
+		t.Error("expected explicit file-write* allow rule")
 	}
 
 	// System keychain reads are now covered by system-runtime broad reads
 	if strings.Contains(output, `(literal "/Library/Keychains/System.keychain")`) {
 		t.Error("system keychain read should be removed (covered by system-runtime)")
+	}
+	// Write must NOT apply to system keychain
+	if strings.Contains(output, `(subpath "/Library/Keychains")`) {
+		t.Error("write access must not extend to system keychain")
 	}
 
 	// Mach services and IPC should still be present

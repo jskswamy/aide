@@ -170,6 +170,29 @@ aide cap list               # See all available capabilities
 
 No config file required. If one agent exists on PATH with its API key in the environment, `aide` launches it sandboxed — zero setup.
 
+### Passing args to your agent
+
+Everything after `--` is forwarded directly to the agent:
+
+```bash
+# Add an MCP server through aide's sandbox
+aide -- mcp add --transport http 1mcp "http://127.0.0.1:3050/mcp" --scope user
+
+# Run a one-shot prompt
+aide -- -p "fix the failing tests and commit"
+
+# Start with a specific model
+aide -- --model sonnet
+
+# Resume the last conversation
+aide -- --resume
+
+# Combine with aide flags
+aide --with docker -- -p "build and push the image"
+```
+
+This works with any agent — aide resolves context and sandbox, then execs the agent with your args appended.
+
 ## How It Works
 
 1. Run `aide` in any project directory.

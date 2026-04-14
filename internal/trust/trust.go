@@ -1,12 +1,15 @@
 // Package trust implements a content-addressed trust store for .aide.yaml files,
-// following the same model as direnv's allow/deny mechanism.
+// following the same model as direnv's allow/deny mechanism. It is a sibling
+// aggregate to the consent package under the User Approval bounded context;
+// both delegate storage to internal/approvalstore.
 package trust
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
 	"path/filepath"
+
+	"github.com/jskswamy/aide/internal/approvalstore"
 )
 
 // Status represents the trust state of a .aide.yaml file.
@@ -30,24 +33,24 @@ func (s Status) String() string {
 	}
 }
 
-// Store manages trust/deny state for .aide.yaml files.
+// Store manages trust/deny state for .aide.yaml files. Internally it owns
+// two approvalstore.Store instances rooted at baseDir/trust and baseDir/deny.
 type Store struct {
-	baseDir string
+	trust *approvalstore.Store
+	deny  *approvalstore.Store
 }
 
 // NewStore creates a trust store at the given base directory.
 func NewStore(baseDir string) *Store {
-	return &Store{baseDir: baseDir}
+	return &Store{
+		trust: approvalstore.NewStore(filepath.Join(baseDir, "trust")),
+		deny:  approvalstore.NewStore(filepath.Join(baseDir, "deny")),
+	}
 }
 
-// DefaultStore returns a Store using XDG_DATA_HOME/aide.
+// DefaultStore returns a Store rooted at approvalstore.DefaultRoot().
 func DefaultStore() *Store {
-	base := os.Getenv("XDG_DATA_HOME")
-	if base == "" {
-		home, _ := os.UserHomeDir()
-		base = filepath.Join(home, ".local", "share")
-	}
-	return NewStore(filepath.Join(base, "aide"))
+	return NewStore(approvalstore.DefaultRoot())
 }
 
 // FileHash computes SHA-256(path + "\n" + contents).
@@ -69,12 +72,10 @@ func PathHash(path string) string {
 
 // Check returns the trust status for a file with given content.
 func (s *Store) Check(path string, contents []byte) Status {
-	ph := PathHash(path)
-	if fileExists(filepath.Join(s.baseDir, "deny", ph)) {
+	if s.deny.Has(PathHash(path)) {
 		return Denied
 	}
-	fh := FileHash(path, contents)
-	if fileExists(filepath.Join(s.baseDir, "trust", fh)) {
+	if s.trust.Has(FileHash(path, contents)) {
 		return Trusted
 	}
 	return Untrusted
@@ -82,56 +83,22 @@ func (s *Store) Check(path string, contents []byte) Status {
 
 // Trust marks a file+content as trusted, removing any deny.
 func (s *Store) Trust(path string, contents []byte) error {
-	fh := FileHash(path, contents)
-	trustDir := filepath.Join(s.baseDir, "trust")
-	if err := os.MkdirAll(trustDir, 0o700); err != nil {
+	if err := s.trust.Add(FileHash(path, contents), []byte(path)); err != nil {
 		return err
 	}
-	if err := atomicWrite(filepath.Join(trustDir, fh), []byte(path)); err != nil {
-		return err
-	}
-	ph := PathHash(path)
-	_ = os.Remove(filepath.Join(s.baseDir, "deny", ph))
-	return nil
+	return s.deny.Remove(PathHash(path))
 }
 
-// Deny marks a path as denied, removing any trust.
+// Deny marks a path as denied, removing any trust at the same path. Because
+// trust is keyed by content-hash but deny is keyed by path-hash, Deny cannot
+// remove the trust record without knowing the content — that is delegated to
+// the subsequent Check() which gives Denied precedence regardless of any
+// stale trust record at the same path.
 func (s *Store) Deny(path string) error {
-	ph := PathHash(path)
-	denyDir := filepath.Join(s.baseDir, "deny")
-	if err := os.MkdirAll(denyDir, 0o700); err != nil {
-		return err
-	}
-	return atomicWrite(filepath.Join(denyDir, ph), []byte(path))
+	return s.deny.Add(PathHash(path), []byte(path))
 }
 
 // Untrust removes trust without creating a deny.
 func (s *Store) Untrust(path string, contents []byte) error {
-	fh := FileHash(path, contents)
-	return os.Remove(filepath.Join(s.baseDir, "trust", fh))
-}
-
-// atomicWrite writes data to a temp file then renames.
-func atomicWrite(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".aide-trust-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	return s.trust.Remove(FileHash(path, contents))
 }

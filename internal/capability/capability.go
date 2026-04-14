@@ -20,6 +20,15 @@ type Capability struct {
 	EnableGuard []string
 	Allow       []string
 	NetworkMode string
+	// Variants, if non-empty, refines this capability into per-toolchain
+	// implementations. The detector walks the list and a consent prompt
+	// picks which variants to activate. Variants are an implementation
+	// detail — they do not appear in `aide cap list` except as a hint.
+	Variants []Variant
+	// DefaultVariants names the Variant(s) activated when no markers
+	// match or when the user declines the consent prompt. It is the
+	// safe fallback for a capability; members must exist in Variants.
+	DefaultVariants []string
 }
 
 // ResolvedCapability is the flattened result after inheritance resolution.

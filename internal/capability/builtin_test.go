@@ -86,14 +86,14 @@ func TestBuiltin_Helm_NoUnguard(t *testing.T) {
 }
 
 func TestBuiltin_Network_Exists(t *testing.T) {
-	cap, ok := Builtins()["network"]
+	netCap, ok := Builtins()["network"]
 	if !ok {
 		t.Fatal("missing built-in capability 'network'")
 	}
-	if cap.NetworkMode != "unrestricted" {
-		t.Errorf("expected NetworkMode unrestricted, got %q", cap.NetworkMode)
+	if netCap.NetworkMode != "unrestricted" {
+		t.Errorf("expected NetworkMode unrestricted, got %q", netCap.NetworkMode)
 	}
-	if cap.Description == "" {
+	if netCap.Description == "" {
 		t.Error("expected non-empty description")
 	}
 }

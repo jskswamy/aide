@@ -1,9 +1,10 @@
 ---
 name: setup-guide
 description: |
-  Use this skill when the user wants to set up or initialize aide.
+  Use this skill when the user wants to set up, initialize, or get started with aide in a project.
   Triggers on: "set up aide", "configure aide", "initialize aide", "aide init",
-  "new project aide", "get started with aide", "install aide".
+  "new project aide", "get started with aide", "install aide", "how do I use aide",
+  "what is aide", "aide setup".
   Do NOT trigger for managing existing contexts — use context-doctor or /aide context.
 allowed-tools:
   - Bash

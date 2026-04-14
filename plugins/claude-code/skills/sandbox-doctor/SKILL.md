@@ -1,10 +1,14 @@
 ---
 name: sandbox-doctor
 description: |
-  Use this skill when the user reports sandbox or permission issues with their aide-managed agent.
-  Triggers on: "permission denied", "operation not permitted", "agent hanging", "agent stuck",
-  "can't write to", "can't read", "sandbox blocking", "sandbox error", "seatbelt", "sandbox-exec".
-  Do NOT trigger for general file permission issues unrelated to aide or sandboxing.
+  Use this skill PROACTIVELY when you observe "Operation not permitted" or "permission denied"
+  in Bash tool output that appears to be a macOS sandbox (seatbelt) denial — do not wait for the
+  user to report it. Also use when the user explicitly reports sandbox or permission issues.
+  Triggers on: "Operation not permitted", "permission denied", "sandbox blocking", "sandbox error",
+  "seatbelt", "sandbox-exec", "agent hanging", "agent stuck", "can't write to", "can't read".
+  Do NOT trigger for general file permission issues unrelated to aide or sandboxing (e.g., wrong
+  file ownership, missing sudo). The key indicator is "Operation not permitted" which is the macOS
+  seatbelt denial message.
 allowed-tools:
   - Bash
   - Read
@@ -13,7 +17,7 @@ allowed-tools:
 
 # Sandbox Doctor
 
-You are the aide sandbox diagnostic assistant. The user is experiencing a sandbox-related issue.
+You are the aide sandbox diagnostic assistant. You may have been invoked proactively because you observed a sandbox denial in Bash tool output, or the user explicitly reported a sandbox issue.
 
 ## Constraints
 

@@ -3,7 +3,6 @@ package trust
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -145,73 +144,64 @@ func TestStatusString(t *testing.T) {
 }
 
 func TestDefaultStore(t *testing.T) {
+	// DefaultStore now delegates baseDir to approvalstore.DefaultRoot();
+	// we observe its behavior via the public Trust/Check API, with the
+	// XDG root redirected to a temp dir for hermeticity.
 	t.Run("with XDG_DATA_HOME", func(t *testing.T) {
-		t.Setenv("XDG_DATA_HOME", "/custom/data")
+		root := t.TempDir()
+		t.Setenv("XDG_DATA_HOME", root)
 		s := DefaultStore()
-		if s.baseDir != "/custom/data/aide" {
-			t.Errorf("DefaultStore().baseDir = %q, want /custom/data/aide", s.baseDir)
+		path := "/tmp/default-store-xdg"
+		content := []byte("content")
+		if err := s.Trust(path, content); err != nil {
+			t.Fatal(err)
+		}
+		// The namespace contract: baseDir/aide/trust/<fileHash>
+		expected := filepath.Join(root, "aide", "trust", FileHash(path, content))
+		if _, err := os.Stat(expected); err != nil {
+			t.Errorf("expected trust record at %s: %v", expected, err)
 		}
 	})
 
 	t.Run("without XDG_DATA_HOME", func(t *testing.T) {
+		home := t.TempDir()
 		t.Setenv("XDG_DATA_HOME", "")
+		t.Setenv("HOME", home)
 		s := DefaultStore()
-		if !strings.HasSuffix(s.baseDir, ".local/share/aide") {
-			t.Errorf("DefaultStore().baseDir = %q, want suffix .local/share/aide", s.baseDir)
+		path := "/tmp/default-store-home"
+		content := []byte("content")
+		if err := s.Trust(path, content); err != nil {
+			t.Fatal(err)
+		}
+		expected := filepath.Join(home, ".local", "share", "aide", "trust", FileHash(path, content))
+		if _, err := os.Stat(expected); err != nil {
+			t.Errorf("expected trust record at %s: %v", expected, err)
 		}
 	})
 }
 
-func TestFileExists(t *testing.T) {
-	t.Run("exists", func(t *testing.T) {
-		f := filepath.Join(t.TempDir(), "test")
-		if err := os.WriteFile(f, []byte("data"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if !fileExists(f) {
-			t.Error("fileExists() = false for existing file")
-		}
-	})
+func TestStore_Namespaces_TrustAndDeny(t *testing.T) {
+	base := t.TempDir()
+	s := NewStore(base)
 
-	t.Run("missing", func(t *testing.T) {
-		if fileExists("/nonexistent/path") {
-			t.Error("fileExists() = true for missing path")
-		}
-	})
+	_ = s.Trust("/tmp/a", []byte("content-a"))
+	_ = s.Deny("/tmp/b")
 
-	t.Run("directory", func(t *testing.T) {
-		d := t.TempDir()
-		if !fileExists(d) {
-			t.Error("fileExists() = false for directory")
-		}
-	})
-}
+	trustDir := filepath.Join(base, "trust")
+	denyDir := filepath.Join(base, "deny")
+	if _, err := os.Stat(trustDir); err != nil {
+		t.Errorf("trust/ namespace missing: %v", err)
+	}
+	if _, err := os.Stat(denyDir); err != nil {
+		t.Errorf("deny/ namespace missing: %v", err)
+	}
 
-func TestAtomicWrite(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "testfile")
-		err := atomicWrite(path, []byte("hello"))
-		if err != nil {
-			t.Fatalf("atomicWrite() error = %v", err)
-		}
-		got, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(got) != "hello" {
-			t.Errorf("file content = %q, want %q", got, "hello")
-		}
-	})
-
-	t.Run("read-only directory", func(t *testing.T) {
-		dir := filepath.Join(t.TempDir(), "readonly")
-		if err := os.MkdirAll(dir, 0o500); err != nil {
-			t.Fatal(err)
-		}
-		err := atomicWrite(filepath.Join(dir, "fail"), []byte("data"))
-		if err == nil {
-			t.Error("atomicWrite() expected error for read-only directory")
-		}
-	})
+	trustEntries, _ := os.ReadDir(trustDir)
+	denyEntries, _ := os.ReadDir(denyDir)
+	if len(trustEntries) != 1 {
+		t.Errorf("trust/ entry count = %d, want 1", len(trustEntries))
+	}
+	if len(denyEntries) != 1 {
+		t.Errorf("deny/ entry count = %d, want 1", len(denyEntries))
+	}
 }

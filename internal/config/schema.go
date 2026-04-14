@@ -134,6 +134,7 @@ type SandboxOverrides struct {
 	EnvAllow      []string
 	EnableGuard   []string
 	Allow         []string
+	NetworkMode   string // "unrestricted" or "" (no override)
 }
 
 // SandboxPolicy defines the OS-native sandbox constraints for an agent.

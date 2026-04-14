@@ -26,6 +26,7 @@ func main() {
 	var withCaps []string
 	var withoutCaps []string
 	var ignoreProjectConfig bool
+	var unrestrictedNetwork bool
 
 	rootCmd := &cobra.Command{
 		Use:   "aide [flags] [-- agent-args...]",
@@ -47,6 +48,7 @@ agents on your PATH.`,
 				Yolo:                yolo || autoApprove,
 				NoYolo:              noYolo || noAutoApprove,
 				IgnoreProjectConfig: ignoreProjectConfig,
+				UnrestrictedNetwork: unrestrictedNetwork,
 			}
 
 			// Check if a config file exists.
@@ -73,6 +75,8 @@ agents on your PATH.`,
 	rootCmd.Flags().StringSliceVar(&withCaps, "with", nil, "Activate capabilities for this session (e.g., --with k8s,docker)")
 	rootCmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "Disable context capabilities for this session")
 	rootCmd.Flags().BoolVar(&ignoreProjectConfig, "ignore-project-config", false, "Launch without applying .aide.yaml")
+	rootCmd.Flags().BoolVarP(&unrestrictedNetwork, "unrestricted-network", "N", false,
+		"Allow unrestricted network access, ignoring config port rules")
 	rootCmd.PersistentFlags().BoolVar(&resolve, "resolve", false, "Show detailed startup info")
 
 	registerCommands(rootCmd)

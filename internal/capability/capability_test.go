@@ -230,3 +230,43 @@ func TestToSandboxOverrides_EnableGuard(t *testing.T) {
 		t.Errorf("expected EnableGuard [git-remote] in overrides, got %v", overrides.EnableGuard)
 	}
 }
+
+func TestCapability_NetworkMode_Resolves(t *testing.T) {
+	registry := map[string]Capability{
+		"network": {
+			Name:        "network",
+			NetworkMode: "unrestricted",
+		},
+	}
+	resolved, err := ResolveOne("network", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.NetworkMode != "unrestricted" {
+		t.Errorf("expected NetworkMode unrestricted, got %q", resolved.NetworkMode)
+	}
+}
+
+func TestCapability_NetworkMode_ToSandboxOverrides(t *testing.T) {
+	set := &Set{
+		Capabilities: []ResolvedCapability{
+			{Name: "network", NetworkMode: "unrestricted"},
+		},
+	}
+	o := set.ToSandboxOverrides()
+	if o.NetworkMode != "unrestricted" {
+		t.Errorf("expected NetworkMode unrestricted, got %q", o.NetworkMode)
+	}
+}
+
+func TestCapability_NetworkMode_EmptyWhenNotSet(t *testing.T) {
+	set := &Set{
+		Capabilities: []ResolvedCapability{
+			{Name: "k8s"},
+		},
+	}
+	o := set.ToSandboxOverrides()
+	if o.NetworkMode != "" {
+		t.Errorf("expected empty NetworkMode, got %q", o.NetworkMode)
+	}
+}

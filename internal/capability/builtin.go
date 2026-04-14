@@ -144,6 +144,13 @@ func init() {
 			Writable:    []string{"~/.gnupg"},
 			EnvAllow:    []string{"GNUPGHOME"},
 		},
+
+		// Network
+		"network": {
+			Name:        "network",
+			Description: "Unrestricted network access (inbound and outbound)",
+			NetworkMode: "unrestricted",
+		},
 	}
 }
 

@@ -19,6 +19,7 @@ type Capability struct {
 	EnvAllow    []string
 	EnableGuard []string
 	Allow       []string
+	NetworkMode string
 }
 
 // ResolvedCapability is the flattened result after inheritance resolution.
@@ -32,6 +33,7 @@ type ResolvedCapability struct {
 	EnvAllow    []string
 	EnableGuard []string
 	Allow       []string
+	NetworkMode string
 }
 
 // Set is the merged result of multiple activated capabilities.
@@ -109,10 +111,15 @@ func flatten(capDef *Capability) *ResolvedCapability {
 		EnvAllow:    copyStrings(capDef.EnvAllow),
 		EnableGuard: copyStrings(capDef.EnableGuard),
 		Allow:       copyStrings(capDef.Allow),
+		NetworkMode: capDef.NetworkMode,
 	}
 }
 
 func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapability {
+	networkMode := parent.NetworkMode
+	if child.NetworkMode != "" {
+		networkMode = child.NetworkMode
+	}
 	return &ResolvedCapability{
 		Name:        child.Name,
 		Sources:     append([]string{child.Name}, parent.Sources...),
@@ -123,10 +130,15 @@ func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapabili
 		EnvAllow:    dedup(append(parent.EnvAllow, child.EnvAllow...)),
 		EnableGuard: dedup(append(parent.EnableGuard, child.EnableGuard...)),
 		Allow:       dedup(append(parent.Allow, child.Allow...)),
+		NetworkMode: networkMode,
 	}
 }
 
 func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
+	networkMode := a.NetworkMode
+	if b.NetworkMode != "" {
+		networkMode = b.NetworkMode
+	}
 	return &ResolvedCapability{
 		Name:        a.Name,
 		Sources:     append(a.Sources, b.Sources...),
@@ -137,6 +149,7 @@ func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
 		EnvAllow:    dedup(append(a.EnvAllow, b.EnvAllow...)),
 		EnableGuard: dedup(append(a.EnableGuard, b.EnableGuard...)),
 		Allow:       dedup(append(a.Allow, b.Allow...)),
+		NetworkMode: networkMode,
 	}
 }
 
@@ -208,6 +221,9 @@ func (cs *Set) ToSandboxOverrides() SandboxOverrides {
 		o.EnvAllow = append(o.EnvAllow, rc.EnvAllow...)
 		o.EnableGuard = append(o.EnableGuard, rc.EnableGuard...)
 		o.Allow = append(o.Allow, rc.Allow...)
+		if o.NetworkMode == "" && rc.NetworkMode != "" {
+			o.NetworkMode = rc.NetworkMode
+		}
 	}
 
 	// Append never_allow to denied

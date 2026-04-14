@@ -3932,6 +3932,7 @@ func capCmd() *cobra.Command {
 	cmd.AddCommand(capCheckCmd())
 	cmd.AddCommand(capAuditCmd())
 	cmd.AddCommand(capSuggestForPathCmd())
+	cmd.AddCommand(capVariantsCmd())
 	return cmd
 }
 
@@ -3980,7 +3981,15 @@ func capListCmd() *cobra.Command {
 					// User override of a built-in
 					source = "custom"
 				}
-				fmt.Fprintf(out, "%-20s %-12s %s\n", name, source, entry.Description)
+				desc := entry.Description
+				if len(entry.Variants) > 0 {
+					names := make([]string, len(entry.Variants))
+					for i, v := range entry.Variants {
+						names[i] = v.Name
+					}
+					desc = fmt.Sprintf("%s (%d variants: %s)", desc, len(entry.Variants), strings.Join(names, ", "))
+				}
+				fmt.Fprintf(out, "%-20s %-12s %s\n", name, source, desc)
 			}
 
 			return nil
@@ -4035,6 +4044,65 @@ func capShowCmd() *cobra.Command {
 			capShowSection(out, "Deny", resolved.Deny)
 			capShowSection(out, "EnvAllow", resolved.EnvAllow)
 
+			if len(entry.Variants) > 0 {
+				fmt.Fprintln(out, "")
+				fmt.Fprintln(out, "Variants:")
+				for _, v := range entry.Variants {
+					fmt.Fprintf(out, "  %s", v.Name)
+					if v.Description != "" {
+						fmt.Fprintf(out, " — %s", v.Description)
+					}
+					fmt.Fprintln(out)
+					for _, m := range v.Markers {
+						fmt.Fprintf(out, "    marker: %s\n", m.MatchSummary())
+					}
+					if len(v.Readable) > 0 {
+						fmt.Fprintf(out, "    readable: %s\n", strings.Join(v.Readable, ", "))
+					}
+					if len(v.Writable) > 0 {
+						fmt.Fprintf(out, "    writable: %s\n", strings.Join(v.Writable, ", "))
+					}
+					if len(v.EnvAllow) > 0 {
+						fmt.Fprintf(out, "    env: %s\n", strings.Join(v.EnvAllow, ", "))
+					}
+				}
+				if len(entry.DefaultVariants) > 0 {
+					fmt.Fprintf(out, "\nDefault variants: %s\n", strings.Join(entry.DefaultVariants, ", "))
+				}
+			}
+
+			return nil
+		},
+	}
+}
+
+func capVariantsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "variants",
+		Short:        "List every (capability/variant) pair across all capabilities",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+			userCaps := capability.FromConfigDefs(cfg.Capabilities)
+			registry := capability.MergedRegistry(userCaps)
+			pairs := make([]string, 0)
+			for capName, entry := range registry {
+				for _, v := range entry.Variants {
+					pairs = append(pairs, capName+"/"+v.Name)
+				}
+			}
+			sort.Strings(pairs)
+			for _, p := range pairs {
+				fmt.Fprintln(out, p)
+			}
 			return nil
 		},
 	}

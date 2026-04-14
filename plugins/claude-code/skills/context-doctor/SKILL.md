@@ -1,9 +1,11 @@
 ---
 name: context-doctor
 description: |
-  Use this skill when the user reports context or agent selection issues with aide.
+  Use this skill when the user reports that aide launched the wrong agent, matched the wrong
+  context, or they want to understand which aide context applies to the current directory.
   Triggers on: "wrong agent", "wrong context", "why is it using", "launched the wrong agent",
-  "expected claude but got", "context mismatch", "aide which", "which context".
+  "expected claude but got", "context mismatch", "aide which", "which context",
+  "why did aide pick", "not the right agent".
   Do NOT trigger for general agent setup — use setup-guide for that.
 allowed-tools:
   - Bash

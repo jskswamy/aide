@@ -1,10 +1,12 @@
 ---
 name: config-review
 description: |
-  Use this skill when the user wants to review, validate, or improve their aide configuration.
-  Triggers on: "review config", "review aide config", "is my config correct",
-  "optimize aide", "harden sandbox", "aide validate", "check aide setup".
-  Routes to /aide doctor for full diagnostic or /aide sandbox, /aide context for specific areas.
+  Use this skill PROACTIVELY at session start when working in a project that uses aide (look for
+  aide config, .aide directory, or aide CLI on PATH). Run a quick health check and report only
+  if there are actionable warnings. Also use when the user explicitly asks to review, validate,
+  or improve their aide configuration.
+  Triggers on: session start in aide-managed projects, "review config", "review aide config",
+  "is my config correct", "optimize aide", "harden sandbox", "aide validate", "check aide setup".
 allowed-tools:
   - Bash
   - Read

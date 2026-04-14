@@ -1,9 +1,12 @@
 ---
 name: secrets-doctor
 description: |
-  Use this skill when the user reports API authentication or missing credential issues with an aide-managed agent.
+  Use this skill when the user reports API authentication or missing credential issues in an
+  aide-managed project, or when you observe authentication failures (401, 403, missing API key
+  errors) that may be caused by aide's secret/env configuration.
   Triggers on: "can't access API", "missing key", "missing API key", "authentication failed",
-  "API error", "unauthorized", "401", "403", "invalid credentials", "no API key".
+  "API error", "unauthorized", "401", "403", "invalid credentials", "no API key",
+  "ANTHROPIC_API_KEY not set", "key not found".
   Do NOT trigger for general coding authentication issues unrelated to aide context/secrets.
 allowed-tools:
   - Bash

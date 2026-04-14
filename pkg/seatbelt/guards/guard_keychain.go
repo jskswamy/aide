@@ -30,12 +30,21 @@ func (g *keychainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 
 	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
-		seatbelt.SectionAllow("User keychain (read-only)"),
+		seatbelt.SectionAllow("User keychain (read)"),
 		seatbelt.AllowRule(fmt.Sprintf(`(allow file-read*
     %s
     %s
 )`, seatbelt.HomeSubpath(home, "Library/Keychains"),
 			seatbelt.HomeLiteral(home, "Library/Preferences/com.apple.security.plist"))),
+
+		// Write access to user keychain for credential storage (OAuth token refresh).
+		// Subpath required: securityd creates .sb-* temp files and SQLite WAL/SHM
+		// alongside login.keychain-db. API-level isolation (securityd ACLs) prevents
+		// cross-app credential access even with file-write.
+		seatbelt.SectionAllow("User keychain (write)"),
+		seatbelt.AllowRule(fmt.Sprintf(`(allow file-write*
+    %s
+)`, seatbelt.HomeSubpath(home, "Library/Keychains"))),
 
 		// System keychain reads and metadata traversal are now covered
 		// by the system-runtime guard's broad /Library and /private reads.

@@ -112,6 +112,11 @@ func askMatchRule(out io.Writer, reader *bufio.Reader, cwd string) (config.Match
 
 // resolveContextForMutation loads config, resolves the context name, and returns
 // the config, context name, and context for modification.
+//
+// This helper does not use cmdEnv because it has no *cobra.Command in scope —
+// callers invoke it from several RunE bodies with arguments other than cmd.
+// The preamble it performs is identical in shape to cmdEnv but is duplicated
+// here intentionally to keep the signature *cobra.Command-free.
 func resolveContextForMutation(contextName string) (*config.Config, string, config.Context, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -139,6 +144,9 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 // resolveProjectOverrideForMutation loads the global config and project override
 // for mutation. Returns the global config (for validation), the project override
 // (empty if .aide.yaml doesn't exist), and the path to write .aide.yaml to.
+//
+// Like resolveContextForMutation, this helper has no *cobra.Command in scope
+// and so performs its own preamble rather than using cmdEnv.
 func resolveProjectOverrideForMutation() (*config.Config, *config.ProjectOverride, string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -158,6 +166,14 @@ func resolveProjectOverrideForMutation() (*config.Config, *config.ProjectOverrid
 
 // capabilityNamesForCompletion returns a sorted list of all capability names
 // (built-in + user-defined from config) for shell tab completion.
+//
+// This helper is called from the cobra flag completion callback in main.go,
+// which receives (*cobra.Command, []string, string) — the *cobra.Command it
+// gets is the one being completed against, and wiring cmdEnv through the
+// completion path would push Env construction into every tab-completion call.
+// The direct config.Load here is both best-effort (errors swallowed so a
+// partially loadable config still yields the built-in completions) and
+// performance-sensitive, so it stays inline.
 func capabilityNamesForCompletion() []string {
 	builtins := capability.Builtins()
 	names := make([]string, 0, len(builtins))

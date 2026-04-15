@@ -22,7 +22,8 @@
   {{cyan "ports:    "}}{{.}}
 {{- end}}
 {{- range .Capabilities}}
-    {{boldGreen "✓"}} {{printf "%-10s" .Name}} {{truncate .Paths 3}}
+    {{boldGreen "✓"}} {{printf "%-10s" (print .Name (variantSuffix .Variants))}}{{freshMarker .FreshGrant}} {{truncate .Paths 3}}
+{{- if .ProvenanceTag}}  {{dim (printf "(%s)" .ProvenanceTag)}}{{end}}
 {{- if and .Source (ne .Source "context config")}}  {{dim (printf "← %s" .Source)}}{{end}}
 {{- end}}
 {{- if .ExtraWritable}}

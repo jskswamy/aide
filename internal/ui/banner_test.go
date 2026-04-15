@@ -1001,3 +1001,86 @@ func TestSandboxNetworkLabel_Default(t *testing.T) {
 		t.Errorf("expected outbound, got %q", label)
 	}
 }
+
+func TestRenderClean_ProvenanceTags(t *testing.T) {
+	cases := []struct {
+		tag  string // ProvenanceTag value
+		want string // substring expected in clean render
+	}{
+		{"detected", "(detected)"},
+		{"pinned", "(pinned)"},
+		{"--variant", "(--variant)"},
+		{"default", "(default)"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.tag, func(t *testing.T) {
+			data := &BannerData{
+				ContextName: "default",
+				AgentName:   "claude",
+				AgentPath:   "/usr/bin/claude",
+				Sandbox: &SandboxInfo{
+					Network: "outbound only",
+					Ports:   "all",
+				},
+				Capabilities: []CapabilityDisplay{{
+					Name:          "python",
+					Paths:         []string{"~/.local/share/uv"},
+					Variants:      []string{"uv"},
+					ProvenanceTag: tc.tag,
+				}},
+			}
+
+			var buf bytes.Buffer
+			prev := color.NoColor
+			color.NoColor = true
+			defer func() { color.NoColor = prev }()
+
+			if err := RenderBanner(&buf, "clean", data); err != nil {
+				t.Fatalf("RenderBanner: %v", err)
+			}
+			out := buf.String()
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("clean render missing %q; got:\n%s", tc.want, out)
+			}
+			if !strings.Contains(out, "python[uv]") {
+				t.Errorf("clean render missing variant suffix; got:\n%s", out)
+			}
+		})
+	}
+}
+
+func TestRenderClean_NoProvenanceTagForNoVariantCap(t *testing.T) {
+	data := &BannerData{
+		ContextName: "default",
+		AgentName:   "claude",
+		AgentPath:   "/usr/bin/claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+		},
+		Capabilities: []CapabilityDisplay{{
+			Name:  "github",
+			Paths: []string{"~/.config/gh"},
+			// No Variants, no ProvenanceTag
+		}},
+	}
+
+	var buf bytes.Buffer
+	prev := color.NoColor
+	color.NoColor = true
+	defer func() { color.NoColor = prev }()
+
+	if err := RenderBanner(&buf, "clean", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+	// A cap with no variant and no provenance should not carry any
+	// parenthetical tag. Constrain the search to lines containing 'github'
+	// to avoid false positives from match reasons / other content.
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "github") && strings.Contains(line, "(detected)") {
+			t.Errorf("no-variant cap line unexpectedly has (detected) tag: %q", line)
+		}
+	}
+}

@@ -252,7 +252,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		Interactive:  l.Interactive,
 		AutoYes:      l.AutoYes,
 	}
-	resolvedCapSet, capOverrides, err := sandbox.ResolveCapabilitiesWithVariants(capNames, cfg, variantOpts)
+	resolvedCapSet, capOverrides, capProvenance, err := sandbox.ResolveCapabilitiesWithVariants(capNames, cfg, variantOpts)
 	if err != nil {
 		cleanup()
 		return fmt.Errorf("resolving capabilities: %w", err)
@@ -312,7 +312,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefs.InfoDetail = "detailed"
 	}
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
-		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, &prefs, resolvedCapSet, capOverrides, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra)
+		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra)
 		bannerData.Yolo = effectiveYolo
 		bannerData.AutoApprove = effectiveYolo
 		if err := ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData); err != nil {
@@ -446,10 +446,11 @@ func (l *Launcher) buildBannerData(
 	pathWarnings []string,
 	sbDisabled bool,
 	sandboxCfg *config.SandboxPolicy,
-	projectRoot, rtDirPath, homeDir string,
+	projectRoot, rtDirPath, homeDir, cwd string,
 	prefs *config.Preferences,
 	resolvedCapSet *capability.Set,
 	capOverrides capability.SandboxOverrides,
+	capProvenance map[string]capability.Provenance,
 	contextCapSet map[string]bool,
 	withoutCaps []string,
 	cfg *config.Config,
@@ -483,6 +484,7 @@ func (l *Launcher) buildBannerData(
 
 	// Populate capability display data
 	if resolvedCapSet != nil && len(resolvedCapSet.Capabilities) > 0 {
+		effectiveStyle := prefs.InfoStyle
 		for _, rc := range resolvedCapSet.Capabilities {
 			paths := append([]string{}, rc.Readable...)
 			paths = append(paths, rc.Writable...)
@@ -490,12 +492,30 @@ func (l *Launcher) buildBannerData(
 			if contextCapSet[rc.Name] {
 				source = "context config"
 			}
-			data.Capabilities = append(data.Capabilities, ui.CapabilityDisplay{
-				Name:    rc.Name,
-				Paths:   paths,
-				EnvVars: rc.EnvAllow,
-				Source:  source,
-			})
+			prov := capProvenance[rc.Name]
+			disp := ui.CapabilityDisplay{
+				Name:            rc.Name,
+				Paths:           paths,
+				EnvVars:         rc.EnvAllow,
+				Source:          source,
+				Variants:        prov.Variants,
+				ProvenanceTag:   ui.ProvenanceTag(prov.Reason),
+				FreshGrant:      prov.Reason == "consent:granted",
+				EvidenceSummary: prov.EvidenceSummary,
+			}
+			// Tier 3: ConfirmedAt — only look up when boxed style is in effect.
+			if effectiveStyle == "boxed" && len(prov.Variants) > 0 && l.ConsentStore != nil {
+				grants, gerr := l.ConsentStore.List(cwd)
+				if gerr == nil {
+					for _, g := range grants {
+						if g.Capability == rc.Name {
+							disp.ConfirmedAt = g.ConfirmedAt
+							break
+						}
+					}
+				}
+			}
+			data.Capabilities = append(data.Capabilities, disp)
 		}
 		data.NeverAllow = cfg.NeverAllow
 		data.CredWarnings = capability.CredentialWarnings(capOverrides.EnvAllow)

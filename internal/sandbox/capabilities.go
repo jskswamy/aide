@@ -79,17 +79,18 @@ type VariantSelectionOptions struct {
 // capability that declares Variants runs capability.SelectVariants,
 // merges the chosen variants' paths onto the resolved capability, and
 // returns the resulting SandboxOverrides.
-func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts VariantSelectionOptions) (*capability.Set, config.SandboxOverrides, error) {
+func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts VariantSelectionOptions) (*capability.Set, config.SandboxOverrides, map[string]capability.Provenance, error) {
 	if len(capNames) == 0 {
-		return nil, config.SandboxOverrides{}, nil
+		return nil, config.SandboxOverrides{}, nil, nil
 	}
 	userDefined := capability.FromConfigDefs(cfg.Capabilities)
 	registry := capability.MergedRegistry(userDefined)
 	capSet, err := capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
 	if err != nil {
-		return nil, config.SandboxOverrides{}, err
+		return nil, config.SandboxOverrides{}, nil, err
 	}
 
+	provenance := make(map[string]capability.Provenance)
 	// For each resolved capability, if its defining built-in (or user
 	// def) has Variants, run selection and replace the resolved entry
 	// with the variant-merged version.
@@ -99,7 +100,7 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 		if !ok || len(def.Variants) == 0 {
 			continue
 		}
-		selected, _, selErr := capability.SelectVariants(capability.SelectInput{
+		selected, prov, selErr := capability.SelectVariants(capability.SelectInput{
 			Capability:  def,
 			ProjectRoot: opts.ProjectRoot,
 			FS:          opts.FS,
@@ -111,12 +112,13 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 			AutoYes:     opts.AutoYes,
 		})
 		if selErr != nil {
-			return nil, config.SandboxOverrides{}, fmt.Errorf("selecting variants for %q: %w", rc.Name, selErr)
+			return nil, config.SandboxOverrides{}, nil, fmt.Errorf("selecting variants for %q: %w", rc.Name, selErr)
 		}
+		provenance[rc.Name] = prov
 		merged := capability.MergeSelectedVariants(rc, selected)
 		capSet.Capabilities[i] = *merged
 	}
-	return capSet, capSet.ToSandboxOverrides(), nil
+	return capSet, capSet.ToSandboxOverrides(), provenance, nil
 }
 
 // ResolveCapabilities is a backward-compatible wrapper that runs the
@@ -124,5 +126,6 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 // Retained so existing callers that do not yet handle variants keep
 // working unchanged.
 func ResolveCapabilities(capNames []string, cfg *config.Config) (*capability.Set, config.SandboxOverrides, error) {
-	return ResolveCapabilitiesWithVariants(capNames, cfg, VariantSelectionOptions{})
+	set, overrides, _, err := ResolveCapabilitiesWithVariants(capNames, cfg, VariantSelectionOptions{})
+	return set, overrides, err
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/consent"
@@ -299,5 +300,31 @@ func TestSelect_UnknownVariant_InOverrides_ReturnsError(t *testing.T) {
 	var uve *UnknownVariantError
 	if !errors.As(err, &uve) {
 		t.Errorf("err = %v, want *UnknownVariantError", err)
+	}
+}
+
+func TestSelectVariants_ProvenanceIncludesEvidenceSummary(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := newTestCap()
+	cstore := consent.NewStore(t.TempDir())
+	_, prov, err := SelectVariants(SelectInput{
+		Capability:  c,
+		ProjectRoot: dir,
+		Consent:     cstore,
+		Prompter:    &fakePrompter{returnedVariants: []string{"uv"}},
+		Interactive: true,
+		AutoYes:     true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prov.EvidenceSummary == "" {
+		t.Errorf("EvidenceSummary should be non-empty after successful detection+grant")
+	}
+	if !strings.Contains(prov.EvidenceSummary, "uv.lock") {
+		t.Errorf("EvidenceSummary should mention uv.lock; got %q", prov.EvidenceSummary)
 	}
 }

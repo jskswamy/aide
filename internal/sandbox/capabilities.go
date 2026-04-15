@@ -9,6 +9,7 @@ package sandbox
 
 import (
 	"fmt"
+	"io/fs"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
@@ -65,6 +66,7 @@ func MergeCapNames(contextCaps, withCaps, withoutCaps []string) []string {
 // same result as the plain ResolveCapabilities.
 type VariantSelectionOptions struct {
 	ProjectRoot  string
+	FS           fs.FS               // propagates into SelectInput.FS; nil falls back to os.DirFS(ProjectRoot)
 	CLIOverrides map[string][]string // from --variant flag
 	YAMLPins     map[string][]string // from .aide.yaml capability_variants
 	Consent      *consent.Store
@@ -100,6 +102,7 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 		selected, _, selErr := capability.SelectVariants(capability.SelectInput{
 			Capability:  def,
 			ProjectRoot: opts.ProjectRoot,
+			FS:          opts.FS,
 			Overrides:   opts.CLIOverrides[rc.Name],
 			YAMLPins:    opts.YAMLPins[rc.Name],
 			Consent:     opts.Consent,

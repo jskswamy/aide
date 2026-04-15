@@ -244,6 +244,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// Merge capability overrides into sandbox config before PolicyFromConfig.
 	variantOpts := sandbox.VariantSelectionOptions{
 		ProjectRoot:  projectRoot,
+		FS:           os.DirFS(projectRoot),
 		CLIOverrides: l.VariantOverrides,
 		YAMLPins:     yamlVariantPins(cfg.ProjectOverride),
 		Consent:      l.ConsentStore,

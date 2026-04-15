@@ -59,11 +59,11 @@ func capConsentListCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			project := projectFlag
 			if project == "" {
-				cwd, err := os.Getwd()
+				env, err := cmdEnv(cmd)
 				if err != nil {
-					return fmt.Errorf("getting working directory: %w", err)
+					return fmt.Errorf("loading config: %w", err)
 				}
-				project = cwd
+				project = env.CWD()
 			}
 			store := consent.DefaultStore()
 			grants, err := store.List(project)
@@ -97,15 +97,15 @@ func capConsentRevokeCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			cwd, err := os.Getwd()
+			env, err := cmdEnv(cmd)
 			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
+				return fmt.Errorf("loading config: %w", err)
 			}
 			store := consent.DefaultStore()
-			if err := store.Revoke(cwd, args[0]); err != nil {
+			if err := store.Revoke(env.CWD(), args[0]); err != nil {
 				return fmt.Errorf("revoking: %w", err)
 			}
-			fmt.Fprintf(out, "revoked all %s consents for %s\n", args[0], cwd)
+			fmt.Fprintf(out, "revoked all %s consents for %s\n", args[0], env.CWD())
 			return nil
 		},
 	}
@@ -118,18 +118,13 @@ func capListCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			userCaps := capability.FromConfigDefs(cfg.Capabilities)
-			registry := capability.MergedRegistry(userCaps)
+			registry := env.Registry()
+			userCaps := capability.FromConfigDefs(env.Config().Capabilities)
 			builtins := capability.Builtins()
 
 			// Collect and sort names
@@ -183,18 +178,12 @@ func capShowCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			name := args[0]
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			userCaps := capability.FromConfigDefs(cfg.Capabilities)
-			registry := capability.MergedRegistry(userCaps)
+			registry := env.Registry()
 
 			if _, ok := registry[name]; !ok {
 				return fmt.Errorf("unknown capability: %q", name)
@@ -258,16 +247,11 @@ func capVariantsCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
-			userCaps := capability.FromConfigDefs(cfg.Capabilities)
-			registry := capability.MergedRegistry(userCaps)
+			registry := env.Registry()
 			pairs := make([]string, 0)
 			for capName, entry := range registry {
 				for _, v := range entry.Variants {
@@ -315,15 +299,8 @@ func capCreateCmd() *cobra.Command {
 				return fmt.Errorf("--extends and --combines are mutually exclusive; use one or the other")
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
-			if err != nil {
-				cfg = &config.Config{}
-			}
+			env, _ := cmdEnv(cmd)
+			cfg := env.Config()
 			if cfg.Capabilities == nil {
 				cfg.Capabilities = make(map[string]config.CapabilityDef)
 			}
@@ -404,15 +381,11 @@ func capEditCmd() *cobra.Command {
 				return fmt.Errorf("capability %q is a built-in capability and cannot be edited", name)
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 
 			if cfg.Capabilities == nil {
 				return fmt.Errorf("capability %q not found in user-defined capabilities", name)
@@ -653,15 +626,11 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 
 			// --list mode: show all entries
 			if list {
@@ -765,19 +734,10 @@ This is a preview — nothing is launched or modified.`,
 			out := cmd.OutOrStdout()
 			capNames := display.SplitCommaList(args[0])
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
-			if err != nil {
-				// Allow check to work even without config (built-ins only)
-				cfg = &config.Config{}
-			}
-
-			userCaps := capability.FromConfigDefs(cfg.Capabilities)
-			registry := capability.MergedRegistry(userCaps)
+			// Allow check to work even without config (built-ins only)
+			env, _ := cmdEnv(cmd)
+			cfg := env.Config()
+			registry := env.Registry()
 
 			set, err := capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
 			if err != nil {
@@ -848,19 +808,9 @@ func capSuggestForPathCmd() *cobra.Command {
 				targetPath = filepath.Join(home, targetPath[2:])
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
-			if err != nil {
-				// Allow suggest to work even without config (built-ins only)
-				cfg = &config.Config{}
-			}
-
-			userCaps := capability.FromConfigDefs(cfg.Capabilities)
-			registry := capability.MergedRegistry(userCaps)
+			// Allow suggest to work even without config (built-ins only)
+			env, _ := cmdEnv(cmd)
+			registry := env.Registry()
 
 			suggestions := capability.SuggestForPath(targetPath, registry)
 			sort.Strings(suggestions)

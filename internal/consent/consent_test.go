@@ -5,25 +5,25 @@ import (
 	"testing"
 )
 
-func TestConsentHash_OrderInsensitive(t *testing.T) {
-	a := ConsentHash("/p", "python", []string{"uv", "conda"}, "digest")
-	b := ConsentHash("/p", "python", []string{"conda", "uv"}, "digest")
+func TestHash_OrderInsensitive(t *testing.T) {
+	a := Hash("/p", "python", []string{"uv", "conda"}, "digest")
+	b := Hash("/p", "python", []string{"conda", "uv"}, "digest")
 	if a != b {
-		t.Errorf("ConsentHash order-sensitive: %s vs %s", a, b)
+		t.Errorf("Hash order-sensitive: %s vs %s", a, b)
 	}
 }
 
-func TestConsentHash_ChangesOnScope(t *testing.T) {
-	base := ConsentHash("/p", "python", []string{"uv"}, "d")
+func TestHash_ChangesOnScope(t *testing.T) {
+	base := Hash("/p", "python", []string{"uv"}, "d")
 	changes := []string{
-		ConsentHash("/q", "python", []string{"uv"}, "d"),
-		ConsentHash("/p", "node", []string{"uv"}, "d"),
-		ConsentHash("/p", "python", []string{"pyenv"}, "d"),
-		ConsentHash("/p", "python", []string{"uv"}, "other"),
+		Hash("/q", "python", []string{"uv"}, "d"),
+		Hash("/p", "node", []string{"uv"}, "d"),
+		Hash("/p", "python", []string{"pyenv"}, "d"),
+		Hash("/p", "python", []string{"uv"}, "other"),
 	}
 	for i, c := range changes {
 		if c == base {
-			t.Errorf("change %d did not alter ConsentHash", i)
+			t.Errorf("change %d did not alter Hash", i)
 		}
 	}
 }

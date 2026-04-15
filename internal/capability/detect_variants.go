@@ -26,10 +26,10 @@ import (
 // The returned Evidence.Variants is sorted ascending so that the
 // downstream digest and consent-key computations are stable across
 // process runs.
-func DetectEvidence(fsys fs.FS, cap Capability) consent.Evidence {
-	selected := make([]string, 0, len(cap.Variants))
+func DetectEvidence(fsys fs.FS, c Capability) consent.Evidence {
+	selected := make([]string, 0, len(c.Variants))
 	matches := make([]consent.MarkerMatch, 0)
-	for _, v := range cap.Variants {
+	for _, v := range c.Variants {
 		if len(v.Markers) == 0 {
 			continue
 		}

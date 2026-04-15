@@ -17,8 +17,11 @@ import (
 // evidence) tuple.
 type Status int
 
+// Consent status values returned by Store.Check.
 const (
+	// NotGranted indicates no matching grant is stored for the tuple.
 	NotGranted Status = iota
+	// Granted indicates a matching grant exists.
 	Granted
 )
 
@@ -75,11 +78,11 @@ func DefaultStore() *Store {
 	return NewStore(approvalstore.DefaultRoot())
 }
 
-// ConsentHash computes the content-addressed key for a grant. The
+// Hash computes the content-addressed key for a grant. The
 // variants slice is sorted internally so ordering does not affect the
 // hash. The encoding is length-prefixed to be injective: scope fields
 // that differ only in where their separators fall cannot collide.
-func ConsentHash(projectRoot, capability string, variants []string, evidenceDigest string) string {
+func Hash(projectRoot, capability string, variants []string, evidenceDigest string) string {
 	sorted := append([]string(nil), variants...)
 	sort.Strings(sorted)
 	h := sha256.New()
@@ -94,7 +97,7 @@ func ConsentHash(projectRoot, capability string, variants []string, evidenceDige
 // Check returns Granted when a record exists matching the exact
 // (project, capability, evidence.Variants, evidence.Digest()) tuple.
 func (s *Store) Check(projectRoot, capability string, evidence Evidence) Status {
-	key := ConsentHash(projectRoot, capability, evidence.Variants, evidence.Digest())
+	key := Hash(projectRoot, capability, evidence.Variants, evidence.Digest())
 	if s.set.Has(key) {
 		return Granted
 	}
@@ -111,7 +114,7 @@ func (s *Store) Grant(g Grant) error {
 	if g.ConfirmedAt.IsZero() {
 		g.ConfirmedAt = time.Now().UTC()
 	}
-	key := ConsentHash(g.ProjectRoot, g.Capability, g.Variants, g.Evidence.Digest())
+	key := Hash(g.ProjectRoot, g.Capability, g.Variants, g.Evidence.Digest())
 	body := fmt.Sprintf(
 		"project: %s\ncapability: %s\nvariants: %s\nevidence_digest: %s\nevidence_summary: %s\nconfirmed_at: %s\n",
 		g.ProjectRoot,

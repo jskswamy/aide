@@ -103,7 +103,7 @@ func TestDetectProject_Golden(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := writeFixture(t, tc.files)
-			got := DetectProject(dir)
+			got := DetectProject(os.DirFS(dir))
 
 			// Golden match is by set, not order; DetectProject's output
 			// order is not part of its contract.

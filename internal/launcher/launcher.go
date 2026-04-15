@@ -512,7 +512,7 @@ func (l *Launcher) buildBannerData(
 	}
 
 	// Project detection: always detect and show missing capabilities
-	if suggestions := capability.DetectProject(projectRoot); len(suggestions) > 0 {
+	if suggestions := capability.DetectProject(os.DirFS(projectRoot)); len(suggestions) > 0 {
 		// Build set of already-enabled capability names
 		enabled := make(map[string]bool, len(data.Capabilities))
 		for _, c := range data.Capabilities {

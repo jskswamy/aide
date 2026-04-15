@@ -28,6 +28,11 @@ func colorFuncMap() template.FuncMap {
 		"networkLabel":  sandboxNetworkLabel,
 		"truncate":      truncateList,
 
+		// Variant + provenance helpers (Tier 1 + Tier 2)
+		"variantSuffix": variantSuffix,
+		"freshMarker":   freshMarker,
+		"provenanceTag": provenanceTag,
+
 		// Utility helpers
 		"join":     strings.Join,
 		"hasItems": func(s []string) bool { return len(s) > 0 },
@@ -62,4 +67,47 @@ func colorFuncMap() template.FuncMap {
 				len(d.ExtraDenied) > 0
 		},
 	}
+}
+
+// variantSuffix returns "[uv]" or "[pnpm + corepack]" for a non-empty
+// slice; "" for nil or empty. Multi-variant joins with " + ".
+func variantSuffix(variants []string) string {
+	if len(variants) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(variants, " + ") + "]"
+}
+
+// freshMarker returns " 🆕" when fresh is true; "" otherwise. Kept as
+// a helper so the symbol is centralised (easy to swap for an ASCII
+// fallback in a future NO_COLOR or !isatty pass).
+func freshMarker(fresh bool) string {
+	if fresh {
+		return " 🆕"
+	}
+	return ""
+}
+
+// provenanceTag maps a capability.Provenance.Reason string to the
+// short human-readable tag shown in Tier 2 (clean + boxed):
+//
+//	"detected" — consent:granted, consent:stable
+//	"pinned"   — yaml-pin
+//	"--variant" — cli-override
+//	"default"  — any default:* reason
+//
+// Unknown reasons map to "".
+func provenanceTag(reason string) string {
+	switch reason {
+	case "consent:granted", "consent:stable":
+		return "detected"
+	case "yaml-pin":
+		return "pinned"
+	case "cli-override":
+		return "--variant"
+	case "default:no-evidence", "default:declined",
+		"default:skipped", "default:non-interactive":
+		return "default"
+	}
+	return ""
 }

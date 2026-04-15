@@ -166,3 +166,60 @@ func TestAgentDisplay_DifferentPath(t *testing.T) {
 		t.Errorf("agentDisplay = %q, expected both name and path", got)
 	}
 }
+
+func TestVariantSuffix(t *testing.T) {
+	cases := []struct {
+		name     string
+		variants []string
+		want     string
+	}{
+		{"nil returns empty", nil, ""},
+		{"empty slice returns empty", []string{}, ""},
+		{"single variant", []string{"uv"}, "[uv]"},
+		{"multiple variants joined with plus", []string{"pnpm", "corepack"}, "[pnpm + corepack]"},
+		{"three variants", []string{"uv", "conda", "poetry"}, "[uv + conda + poetry]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := variantSuffix(tc.variants)
+			if got != tc.want {
+				t.Errorf("variantSuffix(%v) = %q; want %q", tc.variants, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFreshMarker(t *testing.T) {
+	if got := freshMarker(true); got != " 🆕" {
+		t.Errorf("freshMarker(true) = %q; want %q", got, " 🆕")
+	}
+	if got := freshMarker(false); got != "" {
+		t.Errorf("freshMarker(false) = %q; want empty", got)
+	}
+}
+
+func TestProvenanceTag(t *testing.T) {
+	cases := []struct {
+		reason string
+		want   string
+	}{
+		{"consent:granted", "detected"},
+		{"consent:stable", "detected"},
+		{"yaml-pin", "pinned"},
+		{"cli-override", "--variant"},
+		{"default:no-evidence", "default"},
+		{"default:declined", "default"},
+		{"default:skipped", "default"},
+		{"default:non-interactive", "default"},
+		{"unknown-reason", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.reason, func(t *testing.T) {
+			got := provenanceTag(tc.reason)
+			if got != tc.want {
+				t.Errorf("provenanceTag(%q) = %q; want %q", tc.reason, got, tc.want)
+			}
+		})
+	}
+}

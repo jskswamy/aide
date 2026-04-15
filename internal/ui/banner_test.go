@@ -950,6 +950,48 @@ func TestSandboxNetworkLabel_Unrestricted(t *testing.T) {
 	}
 }
 
+func TestRenderCompact_VariantAndFresh(t *testing.T) {
+	data := &BannerData{
+		ContextName: "default",
+		AgentName:   "claude",
+		AgentPath:   "/usr/bin/claude",
+		Sandbox: &SandboxInfo{
+			Disabled: false,
+			Network:  "outbound only",
+			Ports:    "all",
+		},
+		Capabilities: []CapabilityDisplay{
+			{
+				Name:       "python",
+				Paths:      []string{"~/.local/share/uv"},
+				Variants:   []string{"uv"},
+				FreshGrant: true,
+			},
+			{
+				Name:  "github",
+				Paths: []string{"~/.config/gh"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	prev := color.NoColor
+	color.NoColor = true
+	defer func() { color.NoColor = prev }()
+
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "python[uv]") {
+		t.Errorf("compact render missing variant suffix; got:\n%s", out)
+	}
+	if !strings.Contains(out, "🆕") {
+		t.Errorf("compact render missing fresh-grant marker; got:\n%s", out)
+	}
+}
+
 func TestSandboxNetworkLabel_Default(t *testing.T) {
 	data := &BannerData{
 		Sandbox: &SandboxInfo{},

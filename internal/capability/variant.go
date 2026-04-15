@@ -20,6 +20,11 @@ import (
 // purposes of matching only; we never read past this boundary.
 const markerMaxReadSize = 64 * 1024
 
+// globContainsMaxFiles caps the number of files a single GlobContains
+// marker will scan. Prevents DoS via a wildcard that matches a huge
+// directory.
+const globContainsMaxFiles = 50
+
 // Variant is a refinement of a Capability: a specific toolchain
 // implementation (e.g. uv within python) with its own markers and
 // path/env contributions.
@@ -33,12 +38,14 @@ type Variant struct {
 	EnableGuard []string
 }
 
-// Marker is a detection rule. Exactly one of File, Contains, or
-// GlobPath must be set.
+// Marker is a detection rule. Exactly one of File, Contains,
+// GlobPath, DirExists, or GlobContains must be set.
 type Marker struct {
-	File     string
-	Contains ContainsSpec
-	GlobPath string
+	File         string
+	Contains     ContainsSpec
+	GlobPath     string
+	DirExists    string           // directory at this relative path exists
+	GlobContains GlobContainsSpec // any file matching Glob contains Pattern
 }
 
 // ContainsSpec describes a substring check within a file.
@@ -47,8 +54,15 @@ type ContainsSpec struct {
 	Pattern string
 }
 
-// Validate ensures exactly one of Marker's three field groups is set.
-// Contains requires both File and Pattern to be non-empty.
+// GlobContainsSpec describes a combined glob + substring check.
+// Useful for "any yaml at depth-0 or depth-1 contains apiVersion:".
+type GlobContainsSpec struct {
+	Glob    string
+	Pattern string
+}
+
+// Validate ensures exactly one of Marker's field groups is set.
+// Contains and GlobContains each require both of their sub-fields.
 func (m Marker) Validate() error {
 	n := 0
 	if m.File != "" {
@@ -63,8 +77,17 @@ func (m Marker) Validate() error {
 	if m.GlobPath != "" {
 		n++
 	}
+	if m.DirExists != "" {
+		n++
+	}
+	if m.GlobContains.Glob != "" || m.GlobContains.Pattern != "" {
+		if m.GlobContains.Glob == "" || m.GlobContains.Pattern == "" {
+			return errors.New("marker: GlobContains requires both Glob and Pattern")
+		}
+		n++
+	}
 	if n != 1 {
-		return errors.New("marker: exactly one of File, Contains, or GlobPath must be set")
+		return errors.New("marker: exactly one of File, Contains, GlobPath, DirExists, or GlobContains must be set")
 	}
 	return nil
 }
@@ -85,6 +108,22 @@ func (m Marker) Match(projectRoot string) bool {
 		matches, _ := filepath.Glob(filepath.Join(projectRoot, m.GlobPath))
 		return len(matches) > 0
 	}
+	if m.DirExists != "" {
+		fi, err := os.Stat(filepath.Join(projectRoot, m.DirExists))
+		return err == nil && fi.IsDir()
+	}
+	if m.GlobContains.Glob != "" {
+		matches, _ := filepath.Glob(filepath.Join(projectRoot, m.GlobContains.Glob))
+		if len(matches) > globContainsMaxFiles {
+			matches = matches[:globContainsMaxFiles]
+		}
+		for _, p := range matches {
+			if containsInBoundedFile(p, m.GlobContains.Pattern) {
+				return true
+			}
+		}
+		return false
+	}
 	return false
 }
 
@@ -98,6 +137,10 @@ func (m Marker) MatchSummary() string {
 		return m.Contains.File + ":" + m.Contains.Pattern
 	case m.GlobPath != "":
 		return m.GlobPath
+	case m.DirExists != "":
+		return m.DirExists + "/"
+	case m.GlobContains.Glob != "":
+		return m.GlobContains.Glob + ":" + m.GlobContains.Pattern
 	}
 	return "<empty-marker>"
 }
@@ -115,4 +158,31 @@ func containsInBoundedFile(path, pattern string) bool {
 	buf := make([]byte, markerMaxReadSize)
 	n, _ := f.Read(buf)
 	return strings.Contains(string(buf[:n]), pattern)
+}
+
+// AnyMarkerMatches reports whether at least one marker in ms matches
+// somewhere under projectRoot. An empty list returns false. Use for
+// top-level Capability.Markers (presence-of-evidence semantics).
+func AnyMarkerMatches(projectRoot string, ms []Marker) bool {
+	for _, m := range ms {
+		if m.Match(projectRoot) {
+			return true
+		}
+	}
+	return false
+}
+
+// AllMarkersMatch reports whether every marker in ms matches under
+// projectRoot. An empty list returns false. Use for Variant.Markers
+// (specificity-of-evidence semantics).
+func AllMarkersMatch(projectRoot string, ms []Marker) bool {
+	if len(ms) == 0 {
+		return false
+	}
+	for _, m := range ms {
+		if !m.Match(projectRoot) {
+			return false
+		}
+	}
+	return true
 }

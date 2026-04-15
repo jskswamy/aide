@@ -1,6 +1,7 @@
 package capability
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -103,5 +104,111 @@ func TestMarker_ContainsMatch_ReadBoundary(t *testing.T) {
 	if outside.Match(dir) {
 		t.Errorf("pattern past %d-byte read window matched; bounded-read design says it should not",
 			markerMaxReadSize)
+	}
+}
+
+func TestMarker_DirExists_Match(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "k8s"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := Marker{DirExists: "k8s"}
+	if !m.Match(dir) {
+		t.Errorf("DirExists marker did not match existing directory")
+	}
+}
+
+func TestMarker_DirExists_RejectsFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "k8s", "")
+	m := Marker{DirExists: "k8s"}
+	if m.Match(dir) {
+		t.Errorf("DirExists matched a file at the same name; want directory only")
+	}
+}
+
+func TestMarker_DirExists_Missing(t *testing.T) {
+	m := Marker{DirExists: "k8s"}
+	if m.Match(t.TempDir()) {
+		t.Errorf("DirExists matched a missing directory")
+	}
+}
+
+func TestMarker_GlobContains_Match(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\n")
+	m := Marker{GlobContains: GlobContainsSpec{Glob: "*.yaml", Pattern: "apiVersion:"}}
+	if !m.Match(dir) {
+		t.Errorf("GlobContains did not match yaml containing pattern")
+	}
+}
+
+func TestMarker_GlobContains_NoMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "deploy.yaml", "name: foo\n")
+	m := Marker{GlobContains: GlobContainsSpec{Glob: "*.yaml", Pattern: "apiVersion:"}}
+	if m.Match(dir) {
+		t.Errorf("GlobContains matched yaml without pattern")
+	}
+}
+
+func TestMarker_GlobContains_FilesCap(t *testing.T) {
+	dir := t.TempDir()
+	// 60 yaml files, none contain apiVersion. Scan must not exceed the cap
+	// and must not return a false positive.
+	for i := 0; i < 60; i++ {
+		writeFile(t, dir, fmt.Sprintf("f%02d.yaml", i), "name: foo\n")
+	}
+	m := Marker{GlobContains: GlobContainsSpec{Glob: "*.yaml", Pattern: "apiVersion:"}}
+	if m.Match(dir) {
+		t.Errorf("GlobContains matched despite no file containing pattern")
+	}
+}
+
+func TestAnyMarkerMatches_Empty(t *testing.T) {
+	if AnyMarkerMatches(t.TempDir(), nil) {
+		t.Errorf("AnyMarkerMatches on empty list returned true")
+	}
+}
+
+func TestAnyMarkerMatches_FirstMatchWins(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "Dockerfile", "")
+	ms := []Marker{{File: "Dockerfile"}, {File: "never.txt"}}
+	if !AnyMarkerMatches(dir, ms) {
+		t.Errorf("AnyMarkerMatches did not return true on first-marker match")
+	}
+}
+
+func TestAnyMarkerMatches_NoneMatch(t *testing.T) {
+	dir := t.TempDir()
+	ms := []Marker{{File: "a"}, {File: "b"}}
+	if AnyMarkerMatches(dir, ms) {
+		t.Errorf("AnyMarkerMatches returned true when none matched")
+	}
+}
+
+func TestAllMarkersMatch_Empty(t *testing.T) {
+	if AllMarkersMatch(t.TempDir(), nil) {
+		t.Errorf("AllMarkersMatch on empty list returned true; want false")
+	}
+}
+
+func TestAllMarkersMatch_AllMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "")
+	writeFile(t, dir, "b", "")
+	ms := []Marker{{File: "a"}, {File: "b"}}
+	if !AllMarkersMatch(dir, ms) {
+		t.Errorf("AllMarkersMatch did not return true when all matched")
+	}
+}
+
+func TestAllMarkersMatch_OneFails(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "")
+	ms := []Marker{{File: "a"}, {File: "b"}}
+	if AllMarkersMatch(dir, ms) {
+		t.Errorf("AllMarkersMatch returned true with one marker failing")
 	}
 }

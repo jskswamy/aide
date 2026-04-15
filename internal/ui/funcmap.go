@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -29,9 +30,10 @@ func colorFuncMap() template.FuncMap {
 		"truncate":      truncateList,
 
 		// Variant + provenance helpers (Tier 1 + Tier 2)
-		"variantSuffix": variantSuffix,
-		"freshMarker":   freshMarker,
-		"provenanceTag": provenanceTag,
+		"variantSuffix":     variantSuffix,
+		"freshMarker":       freshMarker,
+		"provenanceTag":     provenanceTag,
+		"formatConfirmedAt": formatConfirmedAt,
 
 		// Utility helpers
 		"join":     strings.Join,
@@ -110,4 +112,14 @@ func provenanceTag(reason string) string {
 		return "default"
 	}
 	return ""
+}
+
+// formatConfirmedAt formats a consent ConfirmedAt timestamp for the
+// boxed banner. Returns "" for the zero time so templates can omit
+// the line via {{with}}.
+func formatConfirmedAt(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Local().Format("2006-01-02 · 15:04")
 }

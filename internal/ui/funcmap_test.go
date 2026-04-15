@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -221,5 +222,18 @@ func TestProvenanceTag(t *testing.T) {
 				t.Errorf("provenanceTag(%q) = %q; want %q", tc.reason, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFormatConfirmedAt(t *testing.T) {
+	if got := formatConfirmedAt(time.Time{}); got != "" {
+		t.Errorf("zero time should format to empty; got %q", got)
+	}
+	ts := time.Date(2026, 4, 15, 14, 22, 0, 0, time.UTC)
+	got := formatConfirmedAt(ts)
+	// Local() means the exact string depends on test-run timezone;
+	// assert both date is present.
+	if !strings.Contains(got, "2026-04-15") {
+		t.Errorf("formatted string missing date: %q", got)
 	}
 }

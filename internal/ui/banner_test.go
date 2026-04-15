@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -1082,5 +1083,85 @@ func TestRenderClean_NoProvenanceTagForNoVariantCap(t *testing.T) {
 		if strings.Contains(line, "github") && strings.Contains(line, "(detected)") {
 			t.Errorf("no-variant cap line unexpectedly has (detected) tag: %q", line)
 		}
+	}
+}
+
+func TestRenderBoxed_EvidenceAndConfirmed(t *testing.T) {
+	confirmedAt := time.Date(2026, 4, 15, 14, 22, 0, 0, time.UTC)
+	data := &BannerData{
+		ContextName: "default",
+		AgentName:   "claude",
+		AgentPath:   "/usr/bin/claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+		},
+		Capabilities: []CapabilityDisplay{{
+			Name:            "python",
+			Paths:           []string{"~/.local/share/uv"},
+			EnvVars:         []string{"UV_CACHE_DIR"},
+			Variants:        []string{"uv"},
+			ProvenanceTag:   "detected",
+			FreshGrant:      true,
+			EvidenceSummary: "uv.lock, [tool.uv] in pyproject.toml",
+			ConfirmedAt:     confirmedAt,
+		}},
+	}
+
+	var buf bytes.Buffer
+	prev := color.NoColor
+	color.NoColor = true
+	defer func() { color.NoColor = prev }()
+
+	if err := RenderBanner(&buf, "boxed", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+
+	wants := []string{
+		"python[uv]",
+		"🆕",
+		"(detected)",
+		"evidence:  uv.lock, [tool.uv] in pyproject.toml",
+		"confirmed: 2026-04-15", // timezone may shift the time portion; date is stable
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("boxed render missing %q; got:\n%s", w, out)
+		}
+	}
+}
+
+func TestRenderBoxed_NoEvidenceLinesWhenAbsent(t *testing.T) {
+	data := &BannerData{
+		ContextName: "default",
+		AgentName:   "claude",
+		AgentPath:   "/usr/bin/claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+		},
+		Capabilities: []CapabilityDisplay{{
+			Name:  "github",
+			Paths: []string{"~/.config/gh"},
+			// No EvidenceSummary, no ConfirmedAt
+		}},
+	}
+
+	var buf bytes.Buffer
+	prev := color.NoColor
+	color.NoColor = true
+	defer func() { color.NoColor = prev }()
+
+	if err := RenderBanner(&buf, "boxed", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+
+	if strings.Contains(out, "evidence:") {
+		t.Errorf("boxed render should omit evidence: line when EvidenceSummary is empty; got:\n%s", out)
+	}
+	if strings.Contains(out, "confirmed:") {
+		t.Errorf("boxed render should omit confirmed: line when ConfirmedAt is zero; got:\n%s", out)
 	}
 }

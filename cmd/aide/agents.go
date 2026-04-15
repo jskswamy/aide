@@ -3,7 +3,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -40,19 +39,13 @@ func agentsAddCmd() *cobra.Command {
 				binary = name
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, loadErr := config.Load(config.Dir(), cwd)
-			if loadErr != nil {
-				cfg = &config.Config{
-					Agents:   make(map[string]config.AgentDef),
-					Contexts: make(map[string]config.Context),
-				}
-			}
+			env, _ := cmdEnv(cmd)
+			cfg := env.Config()
 			if cfg.Agents == nil {
 				cfg.Agents = make(map[string]config.AgentDef)
+			}
+			if cfg.Contexts == nil {
+				cfg.Contexts = make(map[string]config.Context)
 			}
 
 			if _, ok := cfg.Agents[name]; ok {
@@ -88,14 +81,11 @@ func agentsRemoveCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 			if _, ok := cfg.Agents[name]; !ok {
 				return fmt.Errorf("agent %q not found", name)
 			}
@@ -139,14 +129,11 @@ func agentsEditCmd() *cobra.Command {
 				return fmt.Errorf("--binary flag is required")
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 			if _, ok := cfg.Agents[name]; !ok {
 				return fmt.Errorf("agent %q not found. Use 'aide agents add %s' to create it", name, name)
 			}
@@ -175,17 +162,13 @@ func agentsListCmd() *cobra.Command {
 		Short:        "List configured and available agents",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-
+			env, _ := cmdEnv(cmd)
 			out := cmd.OutOrStdout()
-			cfg, _ := config.Load(config.Dir(), cwd)
+			cfg := env.Config()
 
 			configured := make(map[string]bool)
 
-			if cfg != nil && len(cfg.Agents) > 0 {
+			if len(cfg.Agents) > 0 {
 				agentContexts := make(map[string][]string)
 				for ctxName, ctx := range cfg.Contexts {
 					agentContexts[ctx.Agent] = append(agentContexts[ctx.Agent], ctxName)

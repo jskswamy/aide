@@ -313,7 +313,8 @@ func whichCmd() *cobra.Command {
 			}
 
 			// aide which always renders regardless of show_info
-			if err := ui.RenderBanner(out, prefs.InfoStyle, data); err != nil {
+			style := effectiveBannerStyle(prefs.InfoStyle, isInteractiveTerminal(os.Stdout), os.Getenv("AIDE_INFO_STYLE"))
+			if err := ui.RenderBanner(out, style, data); err != nil {
 				return fmt.Errorf("rendering banner: %w", err)
 			}
 			return nil

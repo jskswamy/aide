@@ -136,6 +136,13 @@ func parseVariantFlag(raw []string, activeCaps []string) (map[string][]string, e
 	return out, nil
 }
 
+// effectiveBannerStyle is a thin forwarder to ui.EffectiveBannerStyle,
+// kept in package main so CLI-layer callsites and tests can invoke it
+// without an extra import. See ui.EffectiveBannerStyle for semantics.
+func effectiveBannerStyle(preference string, isTTY bool, explicitOverride string) string {
+	return ui.EffectiveBannerStyle(preference, isTTY, explicitOverride)
+}
+
 // isInteractiveTerminal reports whether f is a character device (TTY).
 // Returns false when stdin is a pipe or redirected file, so CI runs
 // default to non-interactive variant selection.

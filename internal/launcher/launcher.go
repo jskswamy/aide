@@ -36,6 +36,17 @@ func (s *SyscallExecer) Exec(binary string, args []string, env []string) error {
 	return syscall.Exec(binary, args, env)
 }
 
+// isStdoutTTY reports whether os.Stdout is a character device (TTY).
+// Used by banner-style resolution so CI/redirected runs force compact
+// mode regardless of the user's configured preference.
+func isStdoutTTY() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
 // agentYoloFlags maps agent names to their "skip all permissions" flags.
 var agentYoloFlags = map[string]string{
 	"claude":  "--dangerously-skip-permissions",
@@ -315,7 +326,8 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra)
 		bannerData.Yolo = effectiveYolo
 		bannerData.AutoApprove = effectiveYolo
-		if err := ui.RenderBanner(l.stderr(), prefs.InfoStyle, bannerData); err != nil {
+		style := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
+		if err := ui.RenderBanner(l.stderr(), style, bannerData); err != nil {
 			fmt.Fprintf(l.stderr(), "warning: banner render failed: %v\n", err)
 		}
 		fmt.Fprintln(l.stderr())
@@ -484,7 +496,7 @@ func (l *Launcher) buildBannerData(
 
 	// Populate capability display data
 	if resolvedCapSet != nil && len(resolvedCapSet.Capabilities) > 0 {
-		effectiveStyle := prefs.InfoStyle
+		effectiveStyle := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
 		for _, rc := range resolvedCapSet.Capabilities {
 			paths := append([]string{}, rc.Readable...)
 			paths = append(paths, rc.Writable...)

@@ -15,6 +15,21 @@ import (
 //go:embed templates/*.tmpl
 var templateFS embed.FS
 
+// EffectiveBannerStyle resolves which banner style to render given
+// the user's configured preference, whether stdout is a terminal,
+// and any explicit override (--info-style flag or AIDE_INFO_STYLE
+// env). Explicit overrides always win; otherwise non-TTY output
+// forces compact mode to keep CI logs quiet.
+func EffectiveBannerStyle(preference string, isTTY bool, explicitOverride string) string {
+	if explicitOverride != "" {
+		return explicitOverride
+	}
+	if !isTTY {
+		return "compact"
+	}
+	return preference
+}
+
 // RenderBanner renders the banner using the given style. Valid styles are
 // "compact" (default), "boxed", and "clean".
 func RenderBanner(w io.Writer, style string, data *BannerData) error {

@@ -188,11 +188,8 @@ func secretsListCmd() *cobra.Command {
 			}
 
 			// Load config to find context references
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, _ := config.Load(config.Dir(), cwd)
+			env, _ := cmdEnv(cmd)
+			cfg := env.Config()
 
 			// Build a map of secret -> context names
 			secretsToContexts := make(map[string][]string)

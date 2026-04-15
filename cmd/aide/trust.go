@@ -23,16 +23,12 @@ func validateCmd() *cobra.Command {
 		Short:        "Validate aide configuration",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Config error: %s\n", err)
 				return err
 			}
+			cfg := env.Config()
 
 			var errors []string
 			var warnings []string

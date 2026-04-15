@@ -20,6 +20,10 @@ type Capability struct {
 	EnableGuard []string
 	Allow       []string
 	NetworkMode string
+	// Markers are top-level detection rules evaluated with OR semantics:
+	// any match means this capability applies to the project. Distinct
+	// from Variant.Markers (which uses AND).
+	Markers []Marker
 	// Variants, if non-empty, refines this capability into per-toolchain
 	// implementations. The detector walks the list and a consent prompt
 	// picks which variants to activate. Variants are an implementation

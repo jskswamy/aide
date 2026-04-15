@@ -100,15 +100,12 @@ func sandboxShowCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cwd := env.CWD()
+			cfg := env.Config()
 
 			// Resolve context
 			remoteURL := aidectx.DetectRemote(cwd, "origin")
@@ -191,15 +188,12 @@ func sandboxTestCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cwd := env.CWD()
+			cfg := env.Config()
 
 			// Resolve context
 			remoteURL := aidectx.DetectRemote(cwd, "origin")
@@ -274,15 +268,11 @@ func sandboxListCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 
 			fmt.Fprintf(out, "%-16s %-12s %s\n", "NAME", "SOURCE", "DETAILS")
 			fmt.Fprintf(out, "%-16s %-12s %s\n", "default", "(built-in)", "network=outbound")
@@ -331,15 +321,8 @@ func sandboxCreateCmd() *cobra.Command {
 				return fmt.Errorf("cannot use reserved profile name %q", name)
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
-			if err != nil {
-				cfg = &config.Config{}
-			}
+			env, _ := cmdEnv(cmd)
+			cfg := env.Config()
 			if cfg.Sandboxes == nil {
 				cfg.Sandboxes = make(map[string]config.SandboxPolicy)
 			}
@@ -442,15 +425,11 @@ func sandboxEditCmd() *cobra.Command {
 				return fmt.Errorf("cannot edit built-in profile %q", name)
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 			if cfg.Sandboxes == nil {
 				return fmt.Errorf("sandbox profile %q not found", name)
 			}
@@ -538,15 +517,11 @@ func sandboxRemoveCmd() *cobra.Command {
 				return fmt.Errorf("cannot remove built-in profile %q", name)
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 
 			if cfg.Sandboxes == nil {
 				return fmt.Errorf("sandbox profile %q not found", name)

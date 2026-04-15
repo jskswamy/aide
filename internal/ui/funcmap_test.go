@@ -237,3 +237,12 @@ func TestFormatConfirmedAt(t *testing.T) {
 		t.Errorf("formatted string missing date: %q", got)
 	}
 }
+
+func TestSuggestedEvidence(t *testing.T) {
+	if got := suggestedEvidence(""); got != "" {
+		t.Errorf("empty hint should return empty; got %q", got)
+	}
+	if got := suggestedEvidence("uv.lock"); got != " evidence: uv.lock" {
+		t.Errorf("got %q; want \" evidence: uv.lock\"", got)
+	}
+}

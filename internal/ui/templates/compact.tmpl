@@ -37,7 +37,7 @@
      {{dim "○"}} {{printf "%-10s" .Name}} disabled for this session  ← --without
 {{- end}}
 {{- range .SuggestedCaps}}
-     {{dim "○"}} {{printf "%-10s" .Name}} {{truncate .Paths 3}}  {{dim (printf "detected — aide --with %s" .Name)}}
+     {{dim "○"}} {{printf "%-10s" .Name}} {{truncate .Paths 3}}  {{dim (printf "detected%s — aide --with %s" (suggestedEvidence .DetectionHint) .Name)}}
 {{- end}}
 {{- range .NeverAllow}}
      {{red "✗"}} denied    {{.}} (never-allow)

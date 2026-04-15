@@ -193,15 +193,12 @@ func whichCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			resolve, _ := cmd.Flags().GetBool("resolve")
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cwd := env.CWD()
+			cfg := env.Config()
 
 			remoteURL := aidectx.DetectRemote(cwd, "origin")
 			resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
@@ -355,9 +352,10 @@ Examples:
 				return fmt.Errorf("either an agent name or --context is required")
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
+			env, _ := cmdEnv(cmd)
+			cwd := env.CWD()
+			if cwd == "" {
+				return fmt.Errorf("getting working directory")
 			}
 
 			matchPath := cwd
@@ -365,13 +363,7 @@ Examples:
 				matchPath = matchPattern
 			}
 
-			cfg, err := config.Load(config.Dir(), cwd)
-			if err != nil {
-				cfg = &config.Config{
-					Agents:   make(map[string]config.AgentDef),
-					Contexts: make(map[string]config.Context),
-				}
-			}
+			cfg := env.Config()
 			if cfg.Agents == nil {
 				cfg.Agents = make(map[string]config.AgentDef)
 			}
@@ -507,20 +499,15 @@ func setupCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			reader := bufio.NewReader(os.Stdin)
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
+			env, _ := cmdEnv(cmd)
+			cwd := env.CWD()
+			if cwd == "" {
+				return fmt.Errorf("getting working directory")
 			}
 
 			fmt.Fprintf(out, "\nSetting up aide for %s\n", cwd)
 
-			cfg, _ := config.Load(config.Dir(), cwd)
-			if cfg == nil {
-				cfg = &config.Config{
-					Agents:   make(map[string]config.AgentDef),
-					Contexts: make(map[string]config.Context),
-				}
-			}
+			cfg := env.Config()
 			if cfg.Agents == nil {
 				cfg.Agents = make(map[string]config.AgentDef)
 			}
@@ -1113,15 +1100,12 @@ func statusCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cwd := env.CWD()
+			cfg := env.Config()
 
 			remoteURL := aidectx.DetectRemote(cwd, "origin")
 			resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
@@ -1150,8 +1134,7 @@ func statusCmd() *cobra.Command {
 			}
 
 			// Build capability registry and resolve capabilities
-			userCaps := capability.FromConfigDefs(cfg.Capabilities)
-			registry := capability.MergedRegistry(userCaps)
+			registry := env.Registry()
 
 			capNames := resolved.Context.Capabilities
 			var capSet *capability.Set

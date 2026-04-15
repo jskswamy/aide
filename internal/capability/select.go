@@ -15,6 +15,7 @@
 package capability
 
 import (
+	"os"
 	"time"
 
 	"github.com/jskswamy/aide/internal/consent"
@@ -92,7 +93,7 @@ func SelectVariants(in SelectInput) ([]Variant, Provenance, error) {
 		return selected, Provenance{Variants: names(selected), Reason: "yaml-pin"}, nil
 	}
 
-	evidence := DetectEvidence(in.Capability, in.ProjectRoot)
+	evidence := DetectEvidence(os.DirFS(in.ProjectRoot), in.Capability)
 
 	// No evidence → DefaultVariants.
 	if len(evidence.Variants) == 0 {

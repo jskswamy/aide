@@ -9,6 +9,7 @@
 package capability
 
 import (
+	"io/fs"
 	"sort"
 
 	"github.com/jskswamy/aide/internal/consent"
@@ -25,7 +26,7 @@ import (
 // The returned Evidence.Variants is sorted ascending so that the
 // downstream digest and consent-key computations are stable across
 // process runs.
-func DetectEvidence(cap Capability, projectRoot string) consent.Evidence {
+func DetectEvidence(fsys fs.FS, cap Capability) consent.Evidence {
 	selected := make([]string, 0, len(cap.Variants))
 	matches := make([]consent.MarkerMatch, 0)
 	for _, v := range cap.Variants {
@@ -34,7 +35,7 @@ func DetectEvidence(cap Capability, projectRoot string) consent.Evidence {
 		}
 		allMatch := true
 		for _, m := range v.Markers {
-			ok := m.Match(projectRoot)
+			ok := m.Match(fsys)
 			matches = append(matches, consent.MarkerMatch{
 				Kind:    markerKind(m),
 				Target:  m.MatchSummary(),
@@ -60,6 +61,10 @@ func markerKind(m Marker) string {
 		return "contains"
 	case m.GlobPath != "":
 		return "glob"
+	case m.DirExists != "":
+		return "dir"
+	case m.GlobContains.Glob != "":
+		return "glob-contains"
 	}
 	return ""
 }

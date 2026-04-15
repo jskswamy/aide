@@ -19,7 +19,7 @@ func TestDetectEvidence_MatchesAllFiringVariants(t *testing.T) {
 			{Name: "poetry", Markers: []Marker{{File: "poetry.lock"}}},
 		},
 	}
-	ev := DetectEvidence(cap, dir)
+	ev := DetectEvidence(os.DirFS(dir), cap)
 	wantVariants := map[string]bool{"uv": true, "conda": true}
 	if len(ev.Variants) != len(wantVariants) {
 		t.Fatalf("len(Variants) = %d, want %d (%v)", len(ev.Variants), len(wantVariants), ev.Variants)
@@ -39,7 +39,7 @@ func TestDetectEvidence_NoMatches_EmptyVariants(t *testing.T) {
 			{Name: "uv", Markers: []Marker{{File: "uv.lock"}}},
 		},
 	}
-	ev := DetectEvidence(cap, dir)
+	ev := DetectEvidence(os.DirFS(dir), cap)
 	if len(ev.Variants) != 0 {
 		t.Errorf("len(Variants) = %d, want 0", len(ev.Variants))
 	}
@@ -60,7 +60,7 @@ func TestDetectEvidence_AllMarkersRequiredPerVariant(t *testing.T) {
 			}},
 		},
 	}
-	ev := DetectEvidence(cap, dir)
+	ev := DetectEvidence(os.DirFS(dir), cap)
 	if len(ev.Variants) != 0 {
 		t.Errorf("variant selected despite missing marker; got %v", ev.Variants)
 	}
@@ -79,7 +79,7 @@ func TestDetectEvidence_SkipsVariantsWithoutMarkers(t *testing.T) {
 			{Name: "venv"}, // no markers — skipped
 		},
 	}
-	ev := DetectEvidence(cap, dir)
+	ev := DetectEvidence(os.DirFS(dir), cap)
 	if len(ev.Variants) != 0 {
 		t.Errorf("variant with no markers was selected: %v", ev.Variants)
 	}
@@ -98,7 +98,7 @@ func TestDetectEvidence_SortedVariants(t *testing.T) {
 			{Name: "conda", Markers: []Marker{{File: "environment.yml"}}},
 		},
 	}
-	ev := DetectEvidence(cap, dir)
+	ev := DetectEvidence(os.DirFS(dir), cap)
 	if len(ev.Variants) != 2 {
 		t.Fatalf("len(Variants) = %d, want 2", len(ev.Variants))
 	}

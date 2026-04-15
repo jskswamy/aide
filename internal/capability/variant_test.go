@@ -97,8 +97,12 @@ func TestMarker_ContainsMatch_ReadBoundary(t *testing.T) {
 	}
 
 	// Pattern past the 64 KiB boundary -> does not match (documented behavior).
-	pad := make([]byte, markerMaxReadSize)
-	body := append(pad, []byte("[tool.uv]")...)
+	// Build a buffer of (read-cap bytes of padding) + (pattern past the cap)
+	// by explicit copy, not append, so gocritic's appendAssign rule has no
+	// reason to complain about sharing the pad slice's backing array.
+	pattern := []byte("[tool.uv]")
+	body := make([]byte, markerMaxReadSize+len(pattern))
+	copy(body[markerMaxReadSize:], pattern)
 	writeFile(t, dir, "outside.toml", string(body))
 	outside := Marker{Contains: ContainsSpec{File: "outside.toml", Pattern: "[tool.uv]"}}
 	if outside.Match(os.DirFS(dir)) {

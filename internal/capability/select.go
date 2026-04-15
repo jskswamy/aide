@@ -25,9 +25,13 @@ import (
 // PromptDecision is the user's answer to a consent prompt.
 type PromptDecision int
 
+// Prompt decision values returned by Prompter implementations.
 const (
+	// PromptYes approves the detected variant set (or a Customize-selected subset).
 	PromptYes PromptDecision = iota
+	// PromptNo rejects the grant; callers fall back to DefaultVariants.
 	PromptNo
+	// PromptSkip defers the decision for this launch; no grant is recorded.
 	PromptSkip
 )
 
@@ -177,11 +181,11 @@ func SelectVariants(in SelectInput) ([]Variant, Provenance, error) {
 	}
 }
 
-func variantsByName(cap Capability, wanted []string) ([]Variant, error) {
+func variantsByName(c Capability, wanted []string) ([]Variant, error) {
 	out := make([]Variant, 0, len(wanted))
 	for _, n := range wanted {
 		found := false
-		for _, v := range cap.Variants {
+		for _, v := range c.Variants {
 			if v.Name == n {
 				out = append(out, v)
 				found = true
@@ -190,9 +194,9 @@ func variantsByName(cap Capability, wanted []string) ([]Variant, error) {
 		}
 		if !found {
 			return nil, &UnknownVariantError{
-				Capability: cap.Name,
+				Capability: c.Name,
 				Variant:    n,
-				Available:  allVariantNames(cap),
+				Available:  allVariantNames(c),
 			}
 		}
 	}
@@ -207,9 +211,9 @@ func names(vs []Variant) []string {
 	return out
 }
 
-func allVariantNames(cap Capability) []string {
-	out := make([]string, len(cap.Variants))
-	for i, v := range cap.Variants {
+func allVariantNames(c Capability) []string {
+	out := make([]string, len(c.Variants))
+	for i, v := range c.Variants {
 		out[i] = v.Name
 	}
 	return out
@@ -239,7 +243,7 @@ func joinCSV(s []string) string {
 	return out
 }
 
-func previousVariants(store *consent.Store, project, cap string) []string {
+func previousVariants(store *consent.Store, project, capName string) []string {
 	if store == nil {
 		return nil
 	}
@@ -248,7 +252,7 @@ func previousVariants(store *consent.Store, project, cap string) []string {
 		return nil
 	}
 	for _, g := range grants {
-		if g.Capability == cap {
+		if g.Capability == capName {
 			return g.Variants
 		}
 	}

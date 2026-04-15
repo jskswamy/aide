@@ -14,7 +14,7 @@ type fakePrompter struct {
 	called           int
 }
 
-func (f *fakePrompter) PromptVariantConsent(in PromptInput) PromptResult {
+func (f *fakePrompter) PromptVariantConsent(_ PromptInput) PromptResult {
 	f.called++
 	return PromptResult{
 		Decision: PromptYes,
@@ -24,13 +24,13 @@ func (f *fakePrompter) PromptVariantConsent(in PromptInput) PromptResult {
 
 type fakePrompterNo struct{}
 
-func (f *fakePrompterNo) PromptVariantConsent(in PromptInput) PromptResult {
+func (f *fakePrompterNo) PromptVariantConsent(_ PromptInput) PromptResult {
 	return PromptResult{Decision: PromptNo}
 }
 
 type fakePrompterSkip struct{}
 
-func (f *fakePrompterSkip) PromptVariantConsent(in PromptInput) PromptResult {
+func (f *fakePrompterSkip) PromptVariantConsent(_ PromptInput) PromptResult {
 	return PromptResult{Decision: PromptSkip}
 }
 
@@ -52,12 +52,12 @@ func TestSelect_StateA_FirstTime_PromptsAndGrants(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	p := &fakePrompter{returnedVariants: []string{"uv"}}
 
 	got, prov, err := SelectVariants(SelectInput{
-		Capability:  cap,
+		Capability: c,
 		ProjectRoot: dir,
 		Consent:     cstore,
 		Prompter:    p,
@@ -79,7 +79,7 @@ func TestSelect_StateA_FirstTime_PromptsAndGrants(t *testing.T) {
 	// Second call with same project must be silent and return consent:stable.
 	p.called = 0
 	got2, prov2, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: p, Interactive: true,
 	})
 	if p.called != 0 {
@@ -95,11 +95,11 @@ func TestSelect_StateA_FirstTime_PromptsAndGrants(t *testing.T) {
 
 // State D: YAML pin bypasses consent flow entirely.
 func TestSelect_StateD_YAMLPinBypassesConsent(t *testing.T) {
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	p := &fakePrompter{}
 	got, prov, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: t.TempDir(),
+		Capability: c, ProjectRoot: t.TempDir(),
 		YAMLPins: []string{"uv"},
 		Consent:  cstore, Prompter: p, Interactive: true,
 	})
@@ -116,11 +116,11 @@ func TestSelect_StateD_YAMLPinBypassesConsent(t *testing.T) {
 
 // State E: CLI override wins over YAML pin and consent.
 func TestSelect_StateE_CLIOverrideWins(t *testing.T) {
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	p := &fakePrompter{}
 	got, prov, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: t.TempDir(),
+		Capability: c, ProjectRoot: t.TempDir(),
 		Overrides: []string{"pyenv"},
 		YAMLPins:  []string{"uv"},
 		Consent:   cstore, Prompter: p, Interactive: true,
@@ -142,12 +142,12 @@ func TestSelect_StateC_EvidenceChanged_Reprompts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	p := &fakePrompter{returnedVariants: []string{"uv"}}
 
 	if _, _, err := (SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: p, Interactive: true,
 	})); err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func TestSelect_StateC_EvidenceChanged_Reprompts(t *testing.T) {
 	p.called = 0
 
 	got, prov, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: p, Interactive: true,
 	})
 	if p.called != 1 {
@@ -187,10 +187,10 @@ func TestSelect_NonInteractive_FallsThroughToDefault(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	got, prov, err := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: nil, Interactive: false,
 	})
 	if err != nil {
@@ -209,10 +209,10 @@ func TestSelect_PromptNoKeepsDefault(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	got, prov, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: &fakePrompterNo{}, Interactive: true,
 	})
 	if len(got) != 1 || got[0].Name != "venv" {
@@ -228,10 +228,10 @@ func TestSelect_PromptSkipKeepsDefault(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	got, prov, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: &fakePrompterSkip{}, Interactive: true,
 	})
 	if len(got) != 1 || got[0].Name != "venv" {
@@ -245,10 +245,10 @@ func TestSelect_PromptSkipKeepsDefault(t *testing.T) {
 // No markers fire -> DefaultVariants + no-evidence reason.
 func TestSelect_NoEvidence_UsesDefault(t *testing.T) {
 	dir := t.TempDir() // no marker files
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	got, prov, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: &fakePrompter{}, Interactive: true,
 	})
 	if len(got) != 1 || got[0].Name != "venv" {
@@ -265,12 +265,12 @@ func TestSelect_AutoYes_BypassesPrompt(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	p := &fakePrompter{returnedVariants: []string{"uv"}}
 
 	got, prov, _ := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: dir, Consent: cstore,
+		Capability: c, ProjectRoot: dir, Consent: cstore,
 		Prompter: p, Interactive: true, AutoYes: true,
 	})
 	if p.called != 0 {
@@ -286,10 +286,10 @@ func TestSelect_AutoYes_BypassesPrompt(t *testing.T) {
 
 // Unknown variant in CLI override returns UnknownVariantError.
 func TestSelect_UnknownVariant_InOverrides_ReturnsError(t *testing.T) {
-	cap := newTestCap()
+	c := newTestCap()
 	cstore := consent.NewStore(t.TempDir())
 	_, _, err := SelectVariants(SelectInput{
-		Capability: cap, ProjectRoot: t.TempDir(),
+		Capability: c, ProjectRoot: t.TempDir(),
 		Overrides: []string{"nosuch"},
 		Consent:   cstore, Interactive: true,
 	})

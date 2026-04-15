@@ -85,7 +85,7 @@ func runCapConsent(t *testing.T, projectDir string, args ...string) string {
 	return buf.String()
 }
 
-func seedConsent(t *testing.T, xdgRoot, project string) {
+func seedConsent(t *testing.T, _, project string) {
 	t.Helper()
 	// approvalstore.DefaultRoot looks under XDG_DATA_HOME/aide
 	store := consent.DefaultStore()

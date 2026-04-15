@@ -34,6 +34,7 @@ func colorFuncMap() template.FuncMap {
 		"freshMarker":       freshMarker,
 		"provenanceTag":     provenanceTag,
 		"formatConfirmedAt": formatConfirmedAt,
+		"suggestedEvidence": suggestedEvidence,
 
 		// Utility helpers
 		"join":     strings.Join,
@@ -64,6 +65,7 @@ func colorFuncMap() template.FuncMap {
 		"hasCapOrExtra": func(d *BannerData) bool {
 			return len(d.Capabilities) > 0 ||
 				len(d.DisabledCaps) > 0 ||
+				len(d.SuggestedCaps) > 0 ||
 				len(d.ExtraWritable) > 0 ||
 				len(d.ExtraReadable) > 0 ||
 				len(d.ExtraDenied) > 0
@@ -122,4 +124,15 @@ func formatConfirmedAt(t time.Time) string {
 		return ""
 	}
 	return t.Local().Format("2006-01-02 · 15:04")
+}
+
+// suggestedEvidence returns " evidence: <hint>" when a DetectionHint is
+// set, or "" otherwise. Templates write
+// "detected{{suggestedEvidence .DetectionHint}}" and get either
+// "detected" or "detected evidence: <hint>".
+func suggestedEvidence(hint string) string {
+	if hint == "" {
+		return ""
+	}
+	return " evidence: " + hint
 }

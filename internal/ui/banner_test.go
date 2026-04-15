@@ -1165,3 +1165,37 @@ func TestRenderBoxed_NoEvidenceLinesWhenAbsent(t *testing.T) {
 		t.Errorf("boxed render should omit confirmed: line when ConfirmedAt is zero; got:\n%s", out)
 	}
 }
+
+func TestRenderClean_SuggestedCapWithDetectionHint(t *testing.T) {
+	data := &BannerData{
+		ContextName: "default",
+		AgentName:   "claude",
+		AgentPath:   "/usr/bin/claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Ports:   "all",
+		},
+		SuggestedCaps: []CapabilityDisplay{{
+			Name:          "git-remote",
+			Paths:         []string{"ssh"},
+			DetectionHint: "[remote in .git/config",
+		}},
+	}
+
+	var buf bytes.Buffer
+	prev := color.NoColor
+	color.NoColor = true
+	defer func() { color.NoColor = prev }()
+
+	if err := RenderBanner(&buf, "clean", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "[remote in .git/config") {
+		t.Errorf("clean render missing detection hint; got:\n%s", out)
+	}
+	if !strings.Contains(out, "aide --with git-remote") {
+		t.Errorf("clean render missing enable hint; got:\n%s", out)
+	}
+}

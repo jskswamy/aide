@@ -89,14 +89,12 @@ Examples:
 			}
 
 			// Global path: existing logic below (handles --from-secret)
-			cwd, err := os.Getwd()
+			env, err := cmdEnv(cmd)
 			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
+				return err
 			}
-			cfg, err := config.Load(config.Dir(), cwd)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
+			cwd := env.CWD()
+			cfg := env.Config()
 
 			var targetName string
 			if contextName != "" {
@@ -274,14 +272,12 @@ func envListCmd() *cobra.Command {
 		Short:        "List environment variables for a context",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cwd, err := os.Getwd()
+			env, err := cmdEnv(cmd)
 			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
+				return err
 			}
-			cfg, err := config.Load(config.Dir(), cwd)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
+			cwd := env.CWD()
+			cfg := env.Config()
 
 			var targetName string
 			var envMap map[string]string

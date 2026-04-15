@@ -10,8 +10,7 @@ package capability
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"strings"
 )
 
@@ -92,33 +91,32 @@ func (m Marker) Validate() error {
 	return nil
 }
 
-// Match reports whether the marker matches within projectRoot.
-func (m Marker) Match(projectRoot string) bool {
+// Match reports whether the marker matches within fsys. fsys is
+// typically os.DirFS(projectRoot) in production or fstest.MapFS in
+// tests; paths are relative to the fsys root.
+func (m Marker) Match(fsys fs.FS) bool {
 	if m.File != "" {
-		fi, err := os.Stat(filepath.Join(projectRoot, m.File))
+		fi, err := fs.Stat(fsys, m.File)
 		return err == nil && !fi.IsDir()
 	}
 	if m.Contains.File != "" {
-		return containsInBoundedFile(
-			filepath.Join(projectRoot, m.Contains.File),
-			m.Contains.Pattern,
-		)
+		return containsInBoundedFileFS(fsys, m.Contains.File, m.Contains.Pattern)
 	}
 	if m.GlobPath != "" {
-		matches, _ := filepath.Glob(filepath.Join(projectRoot, m.GlobPath))
+		matches, _ := fs.Glob(fsys, m.GlobPath)
 		return len(matches) > 0
 	}
 	if m.DirExists != "" {
-		fi, err := os.Stat(filepath.Join(projectRoot, m.DirExists))
+		fi, err := fs.Stat(fsys, m.DirExists)
 		return err == nil && fi.IsDir()
 	}
 	if m.GlobContains.Glob != "" {
-		matches, _ := filepath.Glob(filepath.Join(projectRoot, m.GlobContains.Glob))
+		matches, _ := fs.Glob(fsys, m.GlobContains.Glob)
 		if len(matches) > globContainsMaxFiles {
 			matches = matches[:globContainsMaxFiles]
 		}
 		for _, p := range matches {
-			if containsInBoundedFile(p, m.GlobContains.Pattern) {
+			if containsInBoundedFileFS(fsys, p, m.GlobContains.Pattern) {
 				return true
 			}
 		}
@@ -145,12 +143,12 @@ func (m Marker) MatchSummary() string {
 	return "<empty-marker>"
 }
 
-// containsInBoundedFile reads up to markerMaxReadSize bytes from path
-// and reports whether pattern appears as a substring. Unreadable files
-// yield false; pattern matches truncated to the read boundary are
-// accepted intentionally (matches Task 3 design doc).
-func containsInBoundedFile(path, pattern string) bool {
-	f, err := os.Open(path)
+// containsInBoundedFileFS reads up to markerMaxReadSize bytes from
+// path within fsys and reports whether pattern appears as a substring.
+// Unreadable files yield false; pattern matches truncated to the read
+// boundary are accepted intentionally (matches Task 3 design doc).
+func containsInBoundedFileFS(fsys fs.FS, path, pattern string) bool {
+	f, err := fsys.Open(path)
 	if err != nil {
 		return false
 	}
@@ -161,11 +159,11 @@ func containsInBoundedFile(path, pattern string) bool {
 }
 
 // AnyMarkerMatches reports whether at least one marker in ms matches
-// somewhere under projectRoot. An empty list returns false. Use for
-// top-level Capability.Markers (presence-of-evidence semantics).
-func AnyMarkerMatches(projectRoot string, ms []Marker) bool {
+// under fsys. Empty list → false. Use for top-level Capability.Markers
+// (presence-of-evidence / OR semantics).
+func AnyMarkerMatches(fsys fs.FS, ms []Marker) bool {
 	for _, m := range ms {
-		if m.Match(projectRoot) {
+		if m.Match(fsys) {
 			return true
 		}
 	}
@@ -173,14 +171,14 @@ func AnyMarkerMatches(projectRoot string, ms []Marker) bool {
 }
 
 // AllMarkersMatch reports whether every marker in ms matches under
-// projectRoot. An empty list returns false. Use for Variant.Markers
-// (specificity-of-evidence semantics).
-func AllMarkersMatch(projectRoot string, ms []Marker) bool {
+// fsys. Empty list → false. Use for Variant.Markers (specificity-of-
+// evidence / AND semantics).
+func AllMarkersMatch(fsys fs.FS, ms []Marker) bool {
 	if len(ms) == 0 {
 		return false
 	}
 	for _, m := range ms {
-		if !m.Match(projectRoot) {
+		if !m.Match(fsys) {
 			return false
 		}
 	}

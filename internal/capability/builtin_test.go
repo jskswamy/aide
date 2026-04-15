@@ -193,3 +193,26 @@ func TestBuiltins_PythonVariantMarkers(t *testing.T) {
 		t.Errorf("venv should have no markers; got %v", venv.Markers)
 	}
 }
+
+func TestBuiltins_AllCapabilitiesDetectableByDetectProject_HaveMarkers(t *testing.T) {
+	// Every capability that DetectProject currently detects must
+	// declare Markers, so the Task 6 rewrite can loop the registry.
+	detectable := map[string]bool{
+		"docker": true, "terraform": true, "go": true, "rust": true,
+		"python": true, "ruby": true, "java": true, "k8s": true,
+		"github": true, "helm": true, "aws": true, "gcp": true,
+		"npm": true, "vault": true, "git-remote": true,
+	}
+	b := Builtins()
+	for name := range detectable {
+		c, ok := b[name]
+		if !ok {
+			t.Errorf("builtin %q missing from registry", name)
+			continue
+		}
+		if len(c.Markers) == 0 {
+			t.Errorf("builtin %q has no Markers; DetectProject cannot detect it",
+				name)
+		}
+	}
+}

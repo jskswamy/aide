@@ -9,6 +9,11 @@ func init() {
 		"aws": {
 			Name:        "aws",
 			Description: "AWS CLI and credentials",
+			Markers: []Marker{
+				{Contains: ContainsSpec{File: "go.mod", Pattern: "aws-sdk-go"}},
+				{Contains: ContainsSpec{File: "requirements.txt", Pattern: "boto3"}},
+				{Contains: ContainsSpec{File: "package.json", Pattern: "aws-sdk"}},
+			},
 			Writable: []string{"~/.aws"},
 			EnvAllow: []string{
 				"AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION",
@@ -19,6 +24,11 @@ func init() {
 		"gcp": {
 			Name:        "gcp",
 			Description: "Google Cloud CLI and credentials",
+			Markers: []Marker{
+				{Contains: ContainsSpec{File: "go.mod", Pattern: "cloud.google.com"}},
+				{Contains: ContainsSpec{File: "requirements.txt", Pattern: "google-cloud"}},
+				{Contains: ContainsSpec{File: "package.json", Pattern: "@google-cloud"}},
+			},
 			Writable: []string{"~/.config/gcloud"},
 			EnvAllow:    []string{"CLOUDSDK_CONFIG", "GOOGLE_APPLICATION_CREDENTIALS", "GCLOUD_PROJECT"},
 		},
@@ -45,6 +55,11 @@ func init() {
 		"docker": {
 			Name:        "docker",
 			Description: "Docker daemon and registry credentials",
+			Markers: []Marker{
+				{File: "Dockerfile"},
+				{File: "docker-compose.yaml"},
+				{File: "docker-compose.yml"},
+			},
 			Writable: []string{"~/.docker"},
 			EnvAllow:    []string{"DOCKER_CONFIG", "DOCKER_HOST"},
 		},
@@ -53,12 +68,25 @@ func init() {
 		"k8s": {
 			Name:        "k8s",
 			Description: "Kubernetes cluster access",
+			Markers: []Marker{
+				{DirExists: "k8s"},
+				{DirExists: "kubernetes"},
+				{DirExists: "manifests"},
+				{GlobContains: GlobContainsSpec{Glob: "*.yaml", Pattern: "apiVersion:"}},
+				{GlobContains: GlobContainsSpec{Glob: "*.yml", Pattern: "apiVersion:"}},
+				{GlobContains: GlobContainsSpec{Glob: "*/*.yaml", Pattern: "apiVersion:"}},
+				{GlobContains: GlobContainsSpec{Glob: "*/*.yml", Pattern: "apiVersion:"}},
+			},
 			Writable: []string{"~/.kube"},
 			EnvAllow:    []string{"KUBECONFIG"},
 		},
 		"helm": {
 			Name:        "helm",
 			Description: "Helm charts and releases",
+			Markers: []Marker{
+				{File: "Chart.yaml"},
+				{File: "helmfile.yaml"},
+			},
 			Writable: []string{"~/.kube", "~/.config/helm", "~/.cache/helm"},
 			EnvAllow:    []string{"HELM_HOME", "KUBECONFIG"},
 		},
@@ -67,13 +95,18 @@ func init() {
 		"terraform": {
 			Name:        "terraform",
 			Description: "Terraform state and providers",
+			Markers: []Marker{
+				{GlobPath: "*.tf"},
+				{GlobPath: "*/*.tf"},
+			},
 			Writable: []string{"~/.terraform.d"},
 			EnvAllow:    []string{"TF_CLI_CONFIG_FILE"},
 		},
 		"vault": {
 			Name:        "vault",
 			Description: "HashiCorp Vault access",
-			Writable: []string{"~/.vault-token"},
+			Markers:     []Marker{{File: ".vault-token"}},
+			Writable:    []string{"~/.vault-token"},
 			EnvAllow:    []string{"VAULT_ADDR", "VAULT_TOKEN", "VAULT_TOKEN_FILE"},
 		},
 
@@ -89,7 +122,8 @@ func init() {
 		"npm": {
 			Name:        "npm",
 			Description: "npm and yarn registry credentials",
-			Writable: []string{"~/.npmrc", "~/.yarnrc"},
+			Markers:     []Marker{{File: "package.json"}},
+			Writable:    []string{"~/.npmrc", "~/.yarnrc"},
 			EnvAllow:    []string{"NPM_TOKEN", "NODE_AUTH_TOKEN"},
 		},
 
@@ -97,18 +131,29 @@ func init() {
 		"go": {
 			Name:        "go",
 			Description: "Go toolchain",
+			Markers: []Marker{
+				{File: "go.mod"},
+				{File: "go.sum"},
+			},
 			Writable:    []string{"~/go"},
 			EnvAllow:    []string{"GOPATH", "GOROOT", "GOBIN"},
 		},
 		"rust": {
 			Name:        "rust",
 			Description: "Rust toolchain",
+			Markers:     []Marker{{File: "Cargo.toml"}},
 			Writable:    []string{"~/.cargo", "~/.rustup"},
 			EnvAllow:    []string{"CARGO_HOME", "RUSTUP_HOME"},
 		},
 		"python": {
 			Name:        "python",
 			Description: "Python toolchain",
+			Markers: []Marker{
+				{File: "pyproject.toml"},
+				{File: "requirements.txt"},
+				{File: "Pipfile"},
+				{File: "setup.py"},
+			},
 			Variants: []Variant{
 				{
 					Name:        "uv",
@@ -161,12 +206,21 @@ func init() {
 		"ruby": {
 			Name:        "ruby",
 			Description: "Ruby toolchain",
+			Markers: []Marker{
+				{File: "Gemfile"},
+				{GlobPath: "*.gemspec"},
+			},
 			Writable:    []string{"~/.rbenv"},
 			EnvAllow:    []string{"RBENV_ROOT", "GEM_HOME"},
 		},
 		"java": {
 			Name:        "java",
 			Description: "Java/JVM toolchain",
+			Markers: []Marker{
+				{File: "pom.xml"},
+				{File: "build.gradle"},
+				{File: "build.gradle.kts"},
+			},
 			Writable:    []string{"~/.sdkman", "~/.gradle", "~/.m2"},
 			EnvAllow:    []string{"JAVA_HOME", "SDKMAN_DIR"},
 		},
@@ -175,12 +229,16 @@ func init() {
 		"github": {
 			Name:        "github",
 			Description: "GitHub CLI and credentials",
+			Markers:     []Marker{{DirExists: ".github/workflows"}},
 			Writable:    []string{"~/.config/gh"},
 			EnvAllow:    []string{"GITHUB_TOKEN", "GH_TOKEN"},
 		},
 		"git-remote": {
 			Name:        "git-remote",
 			Description: "Git remote operations (push, fetch, pull) via SSH and HTTPS",
+			Markers: []Marker{
+				{Contains: ContainsSpec{File: ".git/config", Pattern: "[remote "}},
+			},
 			EnableGuard: []string{"git-remote"},
 			EnvAllow:    []string{"SSH_AUTH_SOCK"},
 		},

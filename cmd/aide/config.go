@@ -71,13 +71,8 @@ func configEditCmd() *cobra.Command {
 				return fmt.Errorf("editor exited with error: %w", err)
 			}
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-
 			out := cmd.OutOrStdout()
-			if _, err := config.Load(config.Dir(), cwd); err != nil {
+			if _, err := cmdEnv(cmd); err != nil {
 				fmt.Fprintf(out, "Saved. Validation failed: %s\n", err)
 			} else {
 				fmt.Fprintln(out, "Saved. Validation: OK")

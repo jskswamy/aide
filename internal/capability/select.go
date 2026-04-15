@@ -15,6 +15,7 @@
 package capability
 
 import (
+	"io/fs"
 	"os"
 	"time"
 
@@ -65,6 +66,7 @@ type Provenance struct {
 type SelectInput struct {
 	Capability  Capability
 	ProjectRoot string
+	FS          fs.FS    // when nil, SelectVariants uses os.DirFS(ProjectRoot)
 	Overrides   []string // from --variant flag
 	YAMLPins    []string // from .aide.yaml capabilities.<cap>.variants
 	Consent     *consent.Store
@@ -93,7 +95,11 @@ func SelectVariants(in SelectInput) ([]Variant, Provenance, error) {
 		return selected, Provenance{Variants: names(selected), Reason: "yaml-pin"}, nil
 	}
 
-	evidence := DetectEvidence(os.DirFS(in.ProjectRoot), in.Capability)
+	fsys := in.FS
+	if fsys == nil {
+		fsys = os.DirFS(in.ProjectRoot)
+	}
+	evidence := DetectEvidence(fsys, in.Capability)
 
 	// No evidence → DefaultVariants.
 	if len(evidence.Variants) == 0 {

@@ -19,7 +19,7 @@ func TestResolveCapabilitiesWithVariants_AppliesCLIOverrides(t *testing.T) {
 		CLIOverrides: map[string][]string{"python": {"uv"}},
 		Consent:      cstore,
 	}
-	_, overrides, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
+	_, overrides, _, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestResolveCapabilitiesWithVariants_NoDetection_UsesDefault(t *testing.T) {
 		ProjectRoot: t.TempDir(), // no markers
 		Consent:     consent.NewStore(t.TempDir()),
 	}
-	_, overrides, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
+	_, overrides, _, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestResolveCapabilitiesWithVariants_AutoDetect_UVMarker(t *testing.T) {
 		AutoYes:     true, // auto-approve in test
 		Interactive: true,
 	}
-	_, overrides, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
+	_, overrides, _, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestResolveCapabilitiesWithVariants_UnknownVariant_ReturnsError(t *testing.
 		CLIOverrides: map[string][]string{"python": {"nosuch"}},
 		Consent:      consent.NewStore(t.TempDir()),
 	}
-	_, _, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
+	_, _, _, err := ResolveCapabilitiesWithVariants([]string{"python"}, cfg, opts)
 	if err == nil {
 		t.Fatal("want error, got nil")
 	}

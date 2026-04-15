@@ -217,9 +217,9 @@ func TestProvenanceTag(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.reason, func(t *testing.T) {
-			got := provenanceTag(tc.reason)
+			got := ProvenanceTag(tc.reason)
 			if got != tc.want {
-				t.Errorf("provenanceTag(%q) = %q; want %q", tc.reason, got, tc.want)
+				t.Errorf("ProvenanceTag(%q) = %q; want %q", tc.reason, got, tc.want)
 			}
 		})
 	}

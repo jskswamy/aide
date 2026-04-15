@@ -48,7 +48,7 @@ func TestPythonUV_EndToEnd(t *testing.T) {
 	{
 		store := consent.DefaultStore()
 		stub := &stubPrompter{}
-		_, overrides, err := ResolveCapabilitiesWithVariants(
+		_, overrides, _, err := ResolveCapabilitiesWithVariants(
 			[]string{"python"}, cfg,
 			VariantSelectionOptions{
 				ProjectRoot: project,
@@ -85,7 +85,7 @@ func TestPythonUV_EndToEnd(t *testing.T) {
 	{
 		store := consent.DefaultStore()
 		stub := &stubPrompter{}
-		_, overrides, err := ResolveCapabilitiesWithVariants(
+		_, overrides, _, err := ResolveCapabilitiesWithVariants(
 			[]string{"python"}, cfg,
 			VariantSelectionOptions{
 				ProjectRoot: project,
@@ -132,7 +132,7 @@ func TestPythonUV_EndToEnd(t *testing.T) {
 	{
 		store := consent.DefaultStore()
 		stub := &stubPrompter{}
-		_, overrides, err := ResolveCapabilitiesWithVariants(
+		_, overrides, _, err := ResolveCapabilitiesWithVariants(
 			[]string{"python"}, cfg,
 			VariantSelectionOptions{
 				ProjectRoot: project,
@@ -173,7 +173,7 @@ func TestPythonUV_EvidenceChange_Reprompts(t *testing.T) {
 	// First grant: AutoYes with uv.lock.
 	store := consent.DefaultStore()
 	yes := &stubPrompter{decision: capability.PromptYes, variants: []string{"uv"}}
-	if _, _, err := ResolveCapabilitiesWithVariants(
+	if _, _, _, err := ResolveCapabilitiesWithVariants(
 		[]string{"python"}, cfg,
 		VariantSelectionOptions{
 			ProjectRoot: project, Consent: store,
@@ -193,7 +193,7 @@ func TestPythonUV_EvidenceChange_Reprompts(t *testing.T) {
 
 	// Re-run interactively (no AutoYes). Prompter MUST be called.
 	prompted := &stubPrompter{decision: capability.PromptYes, variants: []string{"conda"}}
-	_, overrides, err := ResolveCapabilitiesWithVariants(
+	_, overrides, _, err := ResolveCapabilitiesWithVariants(
 		[]string{"python"}, cfg,
 		VariantSelectionOptions{
 			ProjectRoot: project, Consent: store,
@@ -231,7 +231,7 @@ func TestPythonUV_CLIOverride_WinsOverYAMLAndDetection(t *testing.T) {
 	store := consent.DefaultStore()
 
 	// CLI overrides to pyenv; YAML pins conda; detection sees uv.
-	_, overrides, err := ResolveCapabilitiesWithVariants(
+	_, overrides, _, err := ResolveCapabilitiesWithVariants(
 		[]string{"python"}, cfg,
 		VariantSelectionOptions{
 			ProjectRoot:  project,

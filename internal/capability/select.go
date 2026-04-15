@@ -64,6 +64,11 @@ type Provenance struct {
 	// "consent:stable", "default:declined", "default:non-interactive",
 	// "default:skipped", "default:no-evidence".
 	Reason string
+	// EvidenceSummary is a short human-readable summary of the
+	// markers that fired in this detection. Empty for branches
+	// that did not run detection (yaml-pin, cli-override, default
+	// paths). Used by the banner Tier 3 evidence: line.
+	EvidenceSummary string
 }
 
 // SelectInput is the composite set of inputs to SelectVariants.
@@ -104,6 +109,7 @@ func SelectVariants(in SelectInput) ([]Variant, Provenance, error) {
 		fsys = os.DirFS(in.ProjectRoot)
 	}
 	evidence := DetectEvidence(fsys, in.Capability)
+	evidenceSummary := summarizeEvidence(evidence)
 
 	// No evidence → DefaultVariants.
 	if len(evidence.Variants) == 0 {
@@ -120,7 +126,7 @@ func SelectVariants(in SelectInput) ([]Variant, Provenance, error) {
 		if err != nil {
 			return nil, Provenance{}, err
 		}
-		return selected, Provenance{Variants: names(selected), Reason: "consent:stable"}, nil
+		return selected, Provenance{Variants: names(selected), Reason: "consent:stable", EvidenceSummary: evidenceSummary}, nil
 	}
 
 	// States A/C — need a decision. Non-interactive → fall through.
@@ -129,7 +135,7 @@ func SelectVariants(in SelectInput) ([]Variant, Provenance, error) {
 		if err != nil {
 			return nil, Provenance{}, err
 		}
-		return defaults, Provenance{Variants: names(defaults), Reason: "default:non-interactive"}, nil
+		return defaults, Provenance{Variants: names(defaults), Reason: "default:non-interactive", EvidenceSummary: evidenceSummary}, nil
 	}
 
 	detected, err := variantsByName(in.Capability, evidence.Variants)
@@ -161,23 +167,23 @@ func SelectVariants(in SelectInput) ([]Variant, Provenance, error) {
 				Capability:  in.Capability.Name,
 				Variants:    result.Variants,
 				Evidence:    evidence,
-				Summary:     summarizeEvidence(evidence),
+				Summary:     evidenceSummary,
 				ConfirmedAt: time.Now().UTC(),
 			})
 		}
-		return approved, Provenance{Variants: names(approved), Reason: "consent:granted"}, nil
+		return approved, Provenance{Variants: names(approved), Reason: "consent:granted", EvidenceSummary: evidenceSummary}, nil
 	case PromptSkip:
 		defaults, err := variantsByName(in.Capability, in.Capability.DefaultVariants)
 		if err != nil {
 			return nil, Provenance{}, err
 		}
-		return defaults, Provenance{Variants: names(defaults), Reason: "default:skipped"}, nil
+		return defaults, Provenance{Variants: names(defaults), Reason: "default:skipped", EvidenceSummary: evidenceSummary}, nil
 	default: // PromptNo
 		defaults, err := variantsByName(in.Capability, in.Capability.DefaultVariants)
 		if err != nil {
 			return nil, Provenance{}, err
 		}
-		return defaults, Provenance{Variants: names(defaults), Reason: "default:declined"}, nil
+		return defaults, Provenance{Variants: names(defaults), Reason: "default:declined", EvidenceSummary: evidenceSummary}, nil
 	}
 }
 

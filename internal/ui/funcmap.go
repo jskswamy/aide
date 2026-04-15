@@ -32,7 +32,7 @@ func colorFuncMap() template.FuncMap {
 		// Variant + provenance helpers (Tier 1 + Tier 2)
 		"variantSuffix":     variantSuffix,
 		"freshMarker":       freshMarker,
-		"provenanceTag":     provenanceTag,
+		"provenanceTag":     ProvenanceTag,
 		"formatConfirmedAt": formatConfirmedAt,
 		"suggestedEvidence": suggestedEvidence,
 
@@ -92,7 +92,7 @@ func freshMarker(fresh bool) string {
 	return ""
 }
 
-// provenanceTag maps a capability.Provenance.Reason string to the
+// ProvenanceTag maps a capability.Provenance.Reason string to the
 // short human-readable tag shown in Tier 2 (clean + boxed):
 //
 //	"detected" — consent:granted, consent:stable
@@ -101,7 +101,7 @@ func freshMarker(fresh bool) string {
 //	"default"  — any default:* reason
 //
 // Unknown reasons map to "".
-func provenanceTag(reason string) string {
+func ProvenanceTag(reason string) string {
 	switch reason {
 	case "consent:granted", "consent:stable":
 		return "detected"

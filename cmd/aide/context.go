@@ -37,14 +37,11 @@ func contextListCmd() *cobra.Command {
 		Short:        "List all configured contexts",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 			if len(cfg.Contexts) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No contexts configured.")
 				return nil
@@ -102,8 +99,9 @@ func contextAddCmd() *cobra.Command {
 			reader := bufio.NewReader(os.Stdin)
 			out := cmd.OutOrStdout()
 
-			cwd, err := os.Getwd()
-			if err != nil {
+			env, _ := cmdEnv(cmd)
+			cwd := env.CWD()
+			if cwd == "" {
 				cwd = "."
 			}
 
@@ -143,13 +141,7 @@ func contextAddCmd() *cobra.Command {
 			}
 			secretsInput = strings.TrimSpace(secretsInput)
 
-			cfg, loadErr := config.Load(config.Dir(), cwd)
-			if loadErr != nil {
-				cfg = &config.Config{
-					Agents:   make(map[string]config.AgentDef),
-					Contexts: make(map[string]config.Context),
-				}
-			}
+			cfg := env.Config()
 			if cfg.Agents == nil {
 				cfg.Agents = make(map[string]config.AgentDef)
 			}
@@ -241,14 +233,11 @@ func contextRenameCmd() *cobra.Command {
 			oldName := args[0]
 			newName := args[1]
 
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 
 			ctx, ok := cfg.Contexts[oldName]
 			if !ok {
@@ -283,14 +272,11 @@ func contextRemoveCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cfg := env.Config()
 			ctx, ok := cfg.Contexts[name]
 			if !ok {
 				return fmt.Errorf("context %q not found", name)
@@ -411,14 +397,12 @@ If no context name is given, the CWD-matched context is used.`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-			cfg, err := config.Load(config.Dir(), cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			cwd := env.CWD()
+			cfg := env.Config()
 
 			var ctxName string
 			if len(args) > 0 {

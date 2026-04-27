@@ -1,10 +1,12 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	sops "github.com/getsops/sops/v3"
 	"github.com/getsops/sops/v3/decrypt"
 	"gopkg.in/yaml.v3"
 )
@@ -28,7 +30,7 @@ func DecryptSecretsFile(filePath string, identity *AgeIdentity) (map[string]stri
 	// Decrypt using sops library.
 	decrypted, err := decrypt.File(absPath, "yaml")
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt %s: %w, is your YubiKey plugged in? Check 'aide setup' for key configuration", filePath, err)
+		return nil, fmt.Errorf("failed to decrypt %s: %s", filePath, sopsErrorDetail(err))
 	}
 
 	// Unmarshal into map[string]interface{} first, then validate and flatten.
@@ -75,6 +77,17 @@ func resolveSecretsPath(filePath string) string {
 	}
 
 	return filepath.Join(configHome, "aide", "secrets", filePath)
+}
+
+// sopsErrorDetail extracts the detailed error message from a sops decryption
+// error. If the error implements sops.UserError, the detailed per-key failure
+// information is returned instead of the terse summary.
+func sopsErrorDetail(err error) string {
+	var ue sops.UserError
+	if errors.As(err, &ue) {
+		return ue.UserError()
+	}
+	return err.Error()
 }
 
 // setupDecryptEnv configures environment variables for sops decryption

@@ -140,6 +140,41 @@ func TestDecryptSecretsFile_WrongKey(t *testing.T) {
 	}
 }
 
+func TestDecryptSecretsFile_WrongKey_SurfacesDetailedError(t *testing.T) {
+	td := testdataDir(t)
+	encFile := filepath.Join(td, "test-secrets.enc.yaml")
+
+	// Use a wrong key so sops returns a getDataKeyError with UserError details.
+	identity := &AgeIdentity{
+		Source:  SourceEnvKey,
+		KeyData: "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ",
+	}
+
+	_, err := DecryptSecretsFile(encFile, identity)
+	if err == nil {
+		t.Fatal("expected error when decrypting with wrong key, got nil")
+	}
+
+	errMsg := err.Error()
+
+	// The error should contain the detailed sops UserError output showing
+	// per-key failure reasons, not just "0 successful groups required, got 0".
+	if strings.Contains(errMsg, "0 successful groups required") {
+		t.Errorf("error should surface detailed sops error, not the summary. Got: %s", errMsg)
+	}
+
+	// Should contain actual failure detail from the age key decryption.
+	if !strings.Contains(errMsg, "FAILED") && !strings.Contains(errMsg, "failed") {
+		t.Errorf("error should contain failure details from sops, got: %s", errMsg)
+	}
+
+	// Should NOT contain the hardcoded "is your YubiKey plugged in?" message
+	// when the identity source is not a YubiKey.
+	if strings.Contains(errMsg, "YubiKey plugged in") {
+		t.Errorf("non-YubiKey decryption error should not mention YubiKey, got: %s", errMsg)
+	}
+}
+
 func TestDecryptSecretsFile_NonStringValue(t *testing.T) {
 	td := testdataDir(t)
 	keyFile := filepath.Join(td, "age-key.txt")

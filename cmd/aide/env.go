@@ -20,6 +20,13 @@ import (
 	"github.com/jskswamy/aide/internal/trust"
 )
 
+// Test seams. Production code uses the real implementations; tests
+// override these to avoid real SOPS encryption.
+var (
+	discoverAgeKey     = secrets.DiscoverAgeKey
+	decryptSecretsFile = secrets.DecryptSecretsFile
+)
+
 func envCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "env",
@@ -136,11 +143,11 @@ Examples:
 				} else {
 					secretKey = fromSecret
 					secretsFilePath := config.ResolveSecretPath(ctx.Secret)
-					identity, err := secrets.DiscoverAgeKey()
+					identity, err := discoverAgeKey()
 					if err != nil {
 						return err
 					}
-					decrypted, err := secrets.DecryptSecretsFile(secretsFilePath, identity)
+					decrypted, err := decryptSecretsFile(secretsFilePath, identity)
 					if err != nil {
 						return err
 					}
@@ -221,11 +228,11 @@ func selectSecret(out io.Writer, reader *bufio.Reader, secretsDir string) (strin
 }
 
 func selectSecretKey(out io.Writer, reader *bufio.Reader, secretsFilePath string) (string, error) {
-	identity, err := secrets.DiscoverAgeKey()
+	identity, err := discoverAgeKey()
 	if err != nil {
 		return "", err
 	}
-	decrypted, err := secrets.DecryptSecretsFile(secretsFilePath, identity)
+	decrypted, err := decryptSecretsFile(secretsFilePath, identity)
 	if err != nil {
 		return "", err
 	}

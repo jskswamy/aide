@@ -118,7 +118,7 @@ func secretsEditCmd() *cobra.Command {
 						if len(added) > 0 {
 							fmt.Fprintf(out, "\nTip: Wire new keys to env vars:\n")
 							for _, k := range added {
-								fmt.Fprintf(out, "  aide env set MY_VAR --from-secret %s\n", k)
+								fmt.Fprintf(out, "  aide env set MY_VAR --secret-key %s --global\n", k)
 							}
 						}
 					}

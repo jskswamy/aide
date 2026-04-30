@@ -28,6 +28,8 @@ func projectTempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Chdir(dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	t.Setenv("HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".aide"), 0o755); err != nil {
 		t.Fatal(err)
 	}

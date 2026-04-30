@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,9 +38,13 @@ func envCmd() *cobra.Command {
 }
 
 func envSetCmd() *cobra.Command {
-	var fromSecret string
-	var contextName string
-	var global bool
+	var (
+		secretKey   string
+		secretStore string
+		pick        bool
+		contextName string
+		global      bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "set KEY [VALUE]",
@@ -49,10 +52,11 @@ func envSetCmd() *cobra.Command {
 		Long: `Set an environment variable on a context.
 
 Examples:
-  aide env set ANTHROPIC_API_KEY sk-ant-xxx              # literal value
-  aide env set ANTHROPIC_API_KEY --from-secret api_key   # explicit key
-  aide env set ANTHROPIC_API_KEY --from-secret            # interactive picker
-  aide env set OPENAI_API_KEY --from-secret key --context work`,
+  aide env set ANTHROPIC_API_KEY sk-ant-xxx                              # literal value
+  aide env set ANTHROPIC_API_KEY --secret-key api_key --global           # key in bound store
+  aide env set ANTHROPIC_API_KEY --secret-store firmus --secret-key api_key --global
+  aide env set ANTHROPIC_API_KEY --pick --global                         # interactive picker
+  aide env set OPENAI_API_KEY --secret-key key --context work --global`,
 		Args:         cobra.RangeArgs(1, 2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -61,23 +65,26 @@ Examples:
 			out := cmd.OutOrStdout()
 			reader := bufio.NewReader(os.Stdin)
 
-			isFromSecret := cmd.Flags().Changed("from-secret")
-			isInteractive := isFromSecret && strings.TrimSpace(fromSecret) == ""
+			useSecret := secretKey != "" || pick || secretStore != ""
 
-			if hasValueArg && isFromSecret {
-				return fmt.Errorf("cannot specify both a value argument and --from-secret")
+			// Mutual-exclusion checks.
+			if hasValueArg && useSecret {
+				return fmt.Errorf("cannot specify both a literal VALUE and a secret flag (--secret-key/--secret-store/--pick)")
 			}
-			if !hasValueArg && !isFromSecret {
-				return fmt.Errorf("must specify either a value argument or --from-secret")
+			if !hasValueArg && !useSecret {
+				return fmt.Errorf("must specify VALUE, --secret-key, or --pick")
+			}
+			if secretKey != "" && pick {
+				return fmt.Errorf("--secret-key and --pick are mutually exclusive")
 			}
 			if !global && contextName != "" {
 				return fmt.Errorf("the --context flag requires --global")
 			}
-			if isFromSecret && !global {
-				return fmt.Errorf("--from-secret requires --global (secrets are context-scoped)")
+			if useSecret && !global {
+				return fmt.Errorf("secret references require --global (secrets are context-scoped)")
 			}
 
-			// Project path: simple KEY VALUE only (--from-secret requires --global)
+			// Project path: literal KEY VALUE only.
 			if !global {
 				value := args[1]
 				_, po, poPath, err := resolveProjectOverrideForMutation()
@@ -91,11 +98,11 @@ Examples:
 				if err := config.WriteProjectOverrideWithTrust(poPath, po, trust.DefaultStore()); err != nil {
 					return fmt.Errorf("writing project config: %w", err)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Set %s in project (%s)\n", key, poPath)
+				fmt.Fprintf(out, "Set %s in project (%s)\n", key, poPath)
 				return nil
 			}
 
-			// Global path: existing logic below (handles --from-secret)
+			// Global path.
 			env, err := cmdEnv(cmd)
 			if err != nil {
 				return err
@@ -121,28 +128,33 @@ Examples:
 			ctx := cfg.Contexts[targetName]
 
 			var value string
-			if isFromSecret {
-				// Auto-detect secret if missing
-				if ctx.Secret == "" {
-					selected, err := selectSecret(out, reader, config.SecretsDir())
-					if err != nil {
-						return err
-					}
-					ctx.Secret = selected
-					fmt.Fprintf(out, "Set secret=%q on context %q.\n", selected, targetName)
+			if useSecret {
+				// Resolve store: explicit flag, else context binding. No auto-bind.
+				store := secretStore
+				if store == "" {
+					store = ctx.Secret
+				}
+				if store == "" {
+					return fmt.Errorf(
+						"no secret store bound to context %q.\n"+
+							"Pass --secret-store <name>, or run: aide context set-secret <name> --context %s --global",
+						targetName, targetName,
+					)
 				}
 
-				var secretKey string
-				if isInteractive {
-					secretsFilePath := config.ResolveSecretPath(ctx.Secret)
+				// Resolve key.
+				resolvedKey := secretKey
+				if pick {
+					secretsFilePath := config.ResolveSecretPath(store)
 					picked, err := selectSecretKey(out, reader, secretsFilePath)
 					if err != nil {
 						return err
 					}
-					secretKey = picked
+					resolvedKey = picked
 				} else {
-					secretKey = fromSecret
-					secretsFilePath := config.ResolveSecretPath(ctx.Secret)
+					// Validate the key exists in the store now, surfacing a
+					// helpful error before writing the template.
+					secretsFilePath := config.ResolveSecretPath(store)
 					identity, err := discoverAgeKey()
 					if err != nil {
 						return err
@@ -151,17 +163,17 @@ Examples:
 					if err != nil {
 						return err
 					}
-					if _, ok := decrypted[secretKey]; !ok {
+					if _, ok := decrypted[resolvedKey]; !ok {
 						available := make([]string, 0, len(decrypted))
 						for k := range decrypted {
 							available = append(available, k)
 						}
 						sort.Strings(available)
 						return fmt.Errorf("key %q not found in %s.\nAvailable keys: %s",
-							secretKey, ctx.Secret, strings.Join(available, ", "))
+							resolvedKey, store, strings.Join(available, ", "))
 					}
 				}
-				value = fmt.Sprintf("{{ .secrets.%s }}", secretKey)
+				value = fmt.Sprintf("{{ .secrets.%s }}", resolvedKey)
 			} else {
 				value = args[1]
 			}
@@ -180,51 +192,12 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringVar(&fromSecret, "from-secret", "", "Generate template referencing a secret key")
-	cmd.Flags().Lookup("from-secret").NoOptDefVal = " "
+	cmd.Flags().StringVar(&secretKey, "secret-key", "", "Key inside the secret store to reference")
+	cmd.Flags().StringVar(&secretStore, "secret-store", "", "Secret store name (defaults to context's bound store)")
+	cmd.Flags().BoolVar(&pick, "pick", false, "Interactively pick a key from the resolved store")
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	return cmd
-}
-
-func selectSecret(out io.Writer, reader *bufio.Reader, secretsDir string) (string, error) {
-	matches, err := filepath.Glob(filepath.Join(secretsDir, "*.enc.yaml"))
-	if err != nil {
-		return "", fmt.Errorf("scanning secrets directory: %w", err)
-	}
-	if len(matches) == 0 {
-		return "", fmt.Errorf("no secrets found.\nCreate one with: aide secrets create <name> --age-key <key>")
-	}
-
-	names := make([]string, len(matches))
-	for i, m := range matches {
-		names[i] = strings.TrimSuffix(filepath.Base(m), ".enc.yaml")
-	}
-	sort.Strings(names)
-
-	if len(names) == 1 {
-		fmt.Fprintf(out, "Auto-selected secret: %s\n", names[0])
-		return names[0], nil
-	}
-
-	fmt.Fprintln(out, "Available secrets:")
-	for i, name := range names {
-		fmt.Fprintf(out, "  [%d] %s\n", i+1, name)
-	}
-	fmt.Fprint(out, "Select secret [1]: ")
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("reading selection: %w", err)
-	}
-	input = strings.TrimSpace(input)
-	choice := 1
-	if input != "" {
-		choice, err = strconv.Atoi(input)
-		if err != nil || choice < 1 || choice > len(names) {
-			return "", fmt.Errorf("invalid selection: %q", input)
-		}
-	}
-	return names[choice-1], nil
 }
 
 func selectSecretKey(out io.Writer, reader *bufio.Reader, secretsFilePath string) (string, error) {

@@ -62,29 +62,25 @@ aide env set AWS_REGION us-east-1
 aide env set CONTEXT_VAR value --context work
 ```
 
-## The --from-secret Flag
+## Referencing Secrets in Env Vars
 
-`--from-secret key_name` writes the template expression instead of a raw value.
-The key must exist in the context's secrets file:
-
-```sh
-aide env set ANTHROPIC_API_KEY --from-secret anthropic_key
-aide env set ANTHROPIC_API_KEY --from-secret anthropic_key --context work
-```
-
-Pass `--from-secret` without a value to open an interactive picker. aide decrypts
-the secrets file and presents available keys:
+Use `--secret-key` to write a template expression that references a key in the
+context's secret store, rather than a raw value. `--global` is required because
+secrets are context-scoped:
 
 ```sh
-aide env set ANTHROPIC_API_KEY --from-secret
-# Available secret keys:
-#   [1] anthropic_key
-#   [2] openai_key
-# Select secret key [1]:
+aide env set ANTHROPIC_API_KEY --secret-key anthropic_key --global
+aide env set ANTHROPIC_API_KEY --secret-key anthropic_key --context work --global
+aide env set ANTHROPIC_API_KEY --pick --global
 ```
 
-If the context has no `secret` field set, aide prompts to select one before
-showing the key picker.
+The context must already have a secret store bound (via
+`aide context set-secret <name>`) before using `--secret-key` or `--pick`. To
+read from a different store without changing the context binding, pass
+`--secret-store <name>` explicitly alongside `--secret-key` or `--pick`.
+
+Pass `--pick` instead of `--secret-key` to open an interactive picker. aide
+decrypts the secrets file and presents available keys to choose from.
 
 ## Listing Env Vars
 

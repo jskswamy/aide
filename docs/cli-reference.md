@@ -423,16 +423,19 @@ aide env set KEY [VALUE] [flags]
 ```
 
 Sets an environment variable on a context. Provide a literal value as the
-second argument or use `--from-secret` to generate a template referencing a
-secret key. When `--from-secret` has no value, an interactive picker is shown.
+second argument, or use `--secret-key`, `--secret-store`, or `--pick` to
+generate a template referencing a key in the context's bound secret store.
+`--global` is required when using any secret flag.
 
 | Flag | Description |
 |------|-------------|
-| `--from-secret [key]` | Template from secret key; omit key for interactive picker |
+| `--secret-key <key>` | Reference a key inside the bound (or explicit) secret store |
+| `--secret-store <name>` | Override which secret store to read from (without changing the context binding) |
+| `--pick` | Interactively pick a key from the resolved store |
 | `--context <name>` | Target context (default: CWD-matched) |
 
 ```
-aide env set ANTHROPIC_API_KEY --from-secret api_key --context work
+aide env set ANTHROPIC_API_KEY --secret-key api_key --context work --global
 ```
 
 ### aide env list

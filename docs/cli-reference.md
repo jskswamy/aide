@@ -315,32 +315,46 @@ Lists all configured contexts with their agent, secret, match rules, and env var
 aide context list
 ```
 
-### aide context add
+### aide context bind
 
 ```
-aide context add
+aide context bind <name>
 ```
 
-Interactive prompt to create a new context: name, agent, match rule, and optional secret.
-
-```
-aide context add
-```
-
-### aide context add-match
-
-```
-aide context add-match [--context name]
-```
-
-Adds a match rule to a context via interactive prompt. Defaults to the CWD-matched context.
+Attach the current folder to an existing context. Auto-detects the match rule
+(git remote URL when the folder is a git repo with an origin remote; exact
+folder path otherwise). Override with `--path` or `--remote`.
 
 | Flag | Description |
 |------|-------------|
-| `--context <name>` | Target context (default: CWD-matched) |
+| `--path` | Force exact folder path match. |
+| `--remote` | Force git remote match (errors if not a git repo). |
 
 ```
-aide context add-match --context work
+aide context bind work               # auto-detect: git remote if repo, else folder path
+aide context bind work --path        # force exact folder path match
+aide context bind                    # interactive picker over existing contexts
+```
+
+### aide context create
+
+```
+aide context create [name]
+```
+
+Create a new context. In TTY mode, prompts for any missing fields. In
+non-interactive use, supply `--agent` and either `--here` or `--no-here`.
+
+| Flag | Description |
+|------|-------------|
+| `--agent <name>` | Set the agent without prompting. |
+| `--secret-store <name>` | Bind a secret store at create time. |
+| `--here` | Bind this folder as a match rule (auto-detect). |
+| `--no-here` | Skip cwd binding entirely. |
+
+```
+aide context create work --agent claude --secret-store firmus --here
+aide context create work --agent claude --no-here
 ```
 
 ### aide context set-secret

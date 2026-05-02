@@ -42,7 +42,7 @@ agents on your PATH.`,
 		Version:            version,
 		DisableFlagParsing: false,
 		SilenceUsage:       true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
@@ -63,6 +63,7 @@ agents on your PATH.`,
 				AutoYes:             autoYes,
 				Interactive:         isInteractiveTerminal(os.Stdin),
 				ConsentStore:        consent.DefaultStore(),
+				EmptyStateActions:   newEmptyStateAdapter(cmd),
 			}
 			if l.Interactive {
 				l.Prompter = ui.NewTTYPrompter(os.Stdin, os.Stderr)

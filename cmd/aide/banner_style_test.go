@@ -33,6 +33,6 @@ func TestEffectiveBannerStyle_ExplicitOverrideWinsOverTTY(t *testing.T) {
 	}
 }
 
-func TestIsInteractiveStdout(t *testing.T) {
+func TestIsInteractiveStdout(_ *testing.T) {
 	_ = isInteractiveTerminal(os.Stdout)
 }

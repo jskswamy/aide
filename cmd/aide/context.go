@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ func contextCmd() *cobra.Command {
 	}
 	cmd.AddCommand(contextListCmd())
 	cmd.AddCommand(contextBindCmd())
+	cmd.AddCommand(contextCreateCmd())
 	cmd.AddCommand(contextRenameCmd())
 	cmd.AddCommand(contextRemoveCmd())
 	cmd.AddCommand(contextSetSecretCmd())
@@ -239,16 +241,188 @@ type createOptions struct {
 	here   createTristate
 }
 
-// runCreateWizard creates a new context and (optionally) binds cwd.
-// Implemented in Task 3.
-func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOptions) error {
-	return fmt.Errorf("runCreateWizard not implemented yet")
+func contextCreateCmd() *cobra.Command {
+	var (
+		agent  string
+		secret string
+		here   bool
+		noHere bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create [name]",
+		Short: "Create a new context",
+		Long: `Create a new context.
+
+Examples:
+  aide context create                                              # interactive wizard
+  aide context create work                                         # name pre-filled
+  aide context create work --agent claude --secret-store firmus --here
+  aide context create work --agent claude --no-here                # skip cwd binding`,
+		Args:         cobra.MaximumNArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if here && noHere {
+				return fmt.Errorf("--here and --no-here are mutually exclusive")
+			}
+
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			}
+
+			opts := createOptions{
+				agent:  agent,
+				secret: secret,
+				here:   tristateUnset,
+			}
+			if here {
+				opts.here = tristateYes
+			} else if noHere {
+				opts.here = tristateNo
+			}
+
+			return runCreateWizard(cmd, name, opts)
+		},
+	}
+
+	cmd.Flags().StringVar(&agent, "agent", "", "Agent name (skips agent prompt)")
+	cmd.Flags().StringVar(&secret, "secret-store", "", "Secret store name (skips secret prompt)")
+	cmd.Flags().BoolVar(&here, "here", false, "Bind this folder as a match rule")
+	cmd.Flags().BoolVar(&noHere, "no-here", false, "Skip cwd binding")
+	return cmd
 }
 
-// Ensure launcher import is used (IsKnownAgent is used by contextAddCmd
-// which was deleted; keep the import live via a reference here until
-// Task 3 adds contextCreateCmd that uses launcher directly).
-var _ = launcher.KnownAgents
+// runCreateWizard creates a new context, optionally binding cwd. The
+// wizard fills in any missing fields by prompting in TTY mode, or by
+// returning a helpful error in non-TTY mode.
+func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOptions) error {
+	out := cmd.OutOrStdout()
+	reader := bufio.NewReader(os.Stdin)
+	tty := isStdinTTY()
+
+	env, err := cmdEnv(cmd)
+	if err != nil {
+		return err
+	}
+	cwd := env.CWD()
+	cfg := env.Config()
+
+	// 1. Name
+	name := strings.TrimSpace(prefilledName)
+	if name == "" {
+		if !tty {
+			return fmt.Errorf("a context name is required in non-interactive mode")
+		}
+		fmt.Fprint(out, "Context name: ")
+		raw, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading context name: %w", err)
+		}
+		name = strings.TrimSpace(raw)
+		if name == "" {
+			return fmt.Errorf("context name cannot be empty")
+		}
+	}
+	if _, exists := cfg.Contexts[name]; exists {
+		return fmt.Errorf("context %q already exists", name)
+	}
+
+	// 2. Agent
+	agentName := opts.agent
+	if agentName == "" {
+		if detected := singleAgentOnPath(); detected != "" {
+			agentName = detected
+			fmt.Fprintf(out, "Using agent: %s (auto-detected)\n", agentName)
+		} else if tty {
+			fmt.Fprint(out, "Agent: ")
+			raw, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("reading agent: %w", err)
+			}
+			agentName = strings.TrimSpace(raw)
+		}
+	}
+	if agentName == "" {
+		return fmt.Errorf("no agent provided and none could be auto-detected on PATH (pass --agent)")
+	}
+	if !launcher.IsKnownAgent(agentName) {
+		return fmt.Errorf("unknown agent %q.\nKnown agents: %s",
+			agentName, strings.Join(launcher.KnownAgents, ", "))
+	}
+
+	// 3. Secret store (optional)
+	secretName := strings.TrimSpace(opts.secret)
+	if secretName == "" && tty && opts.secret == "" {
+		fmt.Fprint(out, "Secret store name (optional, press enter to skip): ")
+		raw, _ := reader.ReadString('\n')
+		secretName = strings.TrimSpace(raw)
+	}
+
+	// 4. Bind cwd?
+	bindHere := false
+	switch opts.here {
+	case tristateYes:
+		bindHere = true
+	case tristateNo:
+		bindHere = false
+	case tristateUnset:
+		if tty {
+			fmt.Fprintf(out, "Bind this folder to %q now? [Y/n]: ", name)
+			raw, _ := reader.ReadString('\n')
+			ans := strings.ToLower(strings.TrimSpace(raw))
+			bindHere = (ans == "" || ans == "y" || ans == "yes")
+		}
+	}
+
+	// 5. Build and persist.
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[string]config.AgentDef)
+	}
+	if cfg.Contexts == nil {
+		cfg.Contexts = make(map[string]config.Context)
+	}
+	if _, ok := cfg.Agents[agentName]; !ok {
+		cfg.Agents[agentName] = config.AgentDef{Binary: agentName}
+	}
+
+	newCtx := config.Context{Agent: agentName}
+	if secretName != "" {
+		newCtx.Secret = secretName
+	}
+	var bindDesc string
+	if bindHere {
+		rule, desc := autoDetectMatchRule(cwd)
+		newCtx.Match = []config.MatchRule{rule}
+		bindDesc = desc
+	}
+	cfg.Contexts[name] = newCtx
+	if cfg.DefaultContext == "" {
+		cfg.DefaultContext = name
+	}
+
+	if err := config.WriteConfig(cfg); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
+	fmt.Fprintf(out, "Created context %q (agent: %s).\n", name, agentName)
+	if bindHere {
+		fmt.Fprintf(out, "Bound this folder (matched %s).\n", bindDesc)
+	}
+	return nil
+}
+
+// singleAgentOnPath returns the single supported agent binary present
+// on PATH. If zero or multiple are found, returns "".
+func singleAgentOnPath() string {
+	scan := launcher.ScanAgents(exec.LookPath)
+	if len(scan.Found) == 1 {
+		for name := range scan.Found {
+			return name
+		}
+	}
+	return ""
+}
 
 func contextRenameCmd() *cobra.Command {
 	return &cobra.Command{

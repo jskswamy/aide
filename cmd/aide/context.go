@@ -4,11 +4,14 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
@@ -21,8 +24,7 @@ func contextCmd() *cobra.Command {
 		Short: "Manage aide contexts",
 	}
 	cmd.AddCommand(contextListCmd())
-	cmd.AddCommand(contextAddCmd())
-	cmd.AddCommand(contextAddMatchCmd())
+	cmd.AddCommand(contextBindCmd())
 	cmd.AddCommand(contextRenameCmd())
 	cmd.AddCommand(contextRemoveCmd())
 	cmd.AddCommand(contextSetSecretCmd())
@@ -90,138 +92,163 @@ func contextListCmd() *cobra.Command {
 	}
 }
 
-func contextAddCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:          "add",
-		Short:        "Add a new context interactively",
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			reader := bufio.NewReader(os.Stdin)
-			out := cmd.OutOrStdout()
-
-			env, _ := cmdEnv(cmd)
-			cwd := env.CWD()
-			if cwd == "" {
-				cwd = "."
-			}
-
-			fmt.Fprint(out, "Context name: ")
-			name, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("reading context name: %w", err)
-			}
-			name = strings.TrimSpace(name)
-			if name == "" {
-				return fmt.Errorf("context name cannot be empty")
-			}
-
-			fmt.Fprint(out, "Agent: ")
-			agent, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("reading agent: %w", err)
-			}
-			agent = strings.TrimSpace(agent)
-			if agent == "" {
-				return fmt.Errorf("agent cannot be empty")
-			}
-			if !launcher.IsKnownAgent(agent) {
-				return fmt.Errorf("unknown agent %q.\n\nSupported agents: %s",
-					agent, strings.Join(launcher.KnownAgents, ", "))
-			}
-
-			matchRule, err := askMatchRule(out, reader, cwd)
-			if err != nil {
-				return err
-			}
-
-			fmt.Fprint(out, "Secret name (optional, press enter to skip): ")
-			secretsInput, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("reading secret name: %w", err)
-			}
-			secretsInput = strings.TrimSpace(secretsInput)
-
-			cfg := env.Config()
-			if cfg.Agents == nil {
-				cfg.Agents = make(map[string]config.AgentDef)
-			}
-			if cfg.Contexts == nil {
-				cfg.Contexts = make(map[string]config.Context)
-			}
-
-			if _, ok := cfg.Agents[agent]; !ok {
-				cfg.Agents[agent] = config.AgentDef{Binary: agent}
-			}
-
-			newCtx := config.Context{
-				Agent: agent,
-				Match: []config.MatchRule{matchRule},
-			}
-			if secretsInput != "" {
-				newCtx.Secret = secretsInput
-			}
-			cfg.Contexts[name] = newCtx
-
-			if cfg.DefaultContext == "" {
-				cfg.DefaultContext = name
-			}
-
-			if err := config.WriteConfig(cfg); err != nil {
-				return fmt.Errorf("writing config: %w", err)
-			}
-			fmt.Fprintf(out, "\nAdded context %q\n", name)
-			return nil
-		},
-	}
-}
-
-func contextAddMatchCmd() *cobra.Command {
-	var contextName string
+func contextBindCmd() *cobra.Command {
+	var (
+		forcePath   bool
+		forceRemote bool
+	)
 
 	cmd := &cobra.Command{
-		Use:          "add-match",
-		Short:        "Add a match rule to the current context",
-		Args:         cobra.NoArgs,
+		Use:   "bind [name]",
+		Short: "Attach this folder to an existing context",
+		Long: `Attach the current folder to an existing context.
+
+Examples:
+  aide context bind work               # auto-detect: git remote if repo, else folder path
+  aide context bind work --path        # force exact folder path match
+  aide context bind work --remote      # force git remote match (errors if not a git repo)
+  aide context bind                    # interactive picker over existing contexts`,
+		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, name, ctx, err := resolveContextForMutation(contextName)
-			if err != nil {
-				return err
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if forcePath && forceRemote {
+				return fmt.Errorf("--path and --remote are mutually exclusive")
 			}
 
 			out := cmd.OutOrStdout()
 			reader := bufio.NewReader(os.Stdin)
 
-			cwd, cwdErr := os.Getwd()
-			if cwdErr != nil {
-				cwd = "."
-			}
-
-			rule, err := askMatchRule(out, reader, cwd)
+			env, err := cmdEnv(cmd)
 			if err != nil {
 				return err
+			}
+			cwd := env.CWD()
+			cfg := env.Config()
+
+			var name string
+			if len(args) == 1 {
+				name = args[0]
+			} else {
+				picked, err := pickExistingContext(out, reader, cfg)
+				if err != nil {
+					return err
+				}
+				name = picked
+			}
+
+			ctx, ok := cfg.Contexts[name]
+			if !ok {
+				// TTY: offer to create. Non-TTY: hard error.
+				if isStdinTTY() {
+					fmt.Fprintf(out, "Context %q doesn't exist. Create it now? [y/N]: ", name)
+					ans, _ := reader.ReadString('\n')
+					if strings.EqualFold(strings.TrimSpace(ans), "y") {
+						return runCreateWizard(cmd, name, createOptions{here: tristateYes})
+					}
+				}
+				return fmt.Errorf("context %q not found.\nRun: aide context create %s", name, name)
+			}
+
+			var rule config.MatchRule
+			var desc string
+			switch {
+			case forceRemote:
+				remote := aidectx.DetectRemote(cwd, "origin")
+				if remote == "" {
+					return fmt.Errorf("--remote requires the current folder to be a git repo with an 'origin' remote (not a git repo or no origin)")
+				}
+				rule = config.MatchRule{Remote: remote}
+				desc = fmt.Sprintf("by remote %s", remote)
+			case forcePath:
+				rule = config.MatchRule{Path: cwd}
+				desc = fmt.Sprintf("by path %s", cwd)
+			default:
+				rule, desc = autoDetectMatchRule(cwd)
 			}
 
 			ctx.Match = append(ctx.Match, rule)
 			cfg.Contexts[name] = ctx
-
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-
-			if rule.Path != "" {
-				fmt.Fprintf(out, "Added path match to context %q: %s\n", name, rule.Path)
-			} else {
-				fmt.Fprintf(out, "Added remote match to context %q: %s\n", name, rule.Remote)
-			}
-			fmt.Fprintln(out, "\nTip: `aide setup` can also do this interactively with more options.")
+			fmt.Fprintf(out, "Bound this folder to context %q (matched %s)\n", name, desc)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	cmd.Flags().BoolVar(&forcePath, "path", false, "Force exact folder path match")
+	cmd.Flags().BoolVar(&forceRemote, "remote", false, "Force git remote match (errors if not a git repo)")
 	return cmd
 }
+
+// pickExistingContext shows a numbered menu of existing contexts and
+// returns the chosen name. Returns an error in non-TTY mode (the
+// caller is expected to require a positional name in that case).
+func pickExistingContext(out io.Writer, reader *bufio.Reader, cfg *config.Config) (string, error) {
+	if !isStdinTTY() {
+		return "", fmt.Errorf("a context name is required in non-interactive mode")
+	}
+	if len(cfg.Contexts) == 0 {
+		return "", fmt.Errorf("no contexts configured. Run: aide context create <name>")
+	}
+	names := make([]string, 0, len(cfg.Contexts))
+	for n := range cfg.Contexts {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	fmt.Fprintln(out, "Existing contexts:")
+	for i, n := range names {
+		fmt.Fprintf(out, "  [%d] %s\n", i+1, n)
+	}
+	fmt.Fprint(out, "Choose [1]: ")
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("reading selection: %w", err)
+	}
+	input = strings.TrimSpace(input)
+	choice := 1
+	if input != "" {
+		n, err := strconv.Atoi(input)
+		if err != nil || n < 1 || n > len(names) {
+			return "", fmt.Errorf("invalid selection: %q", input)
+		}
+		choice = n
+	}
+	return names[choice-1], nil
+}
+
+// isStdinTTY reports whether stdin is connected to a terminal. Used by
+// commands that need to choose between interactive prompting and a
+// non-TTY hard error.
+func isStdinTTY() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+type createTristate int
+
+const (
+	tristateUnset createTristate = iota
+	tristateYes
+	tristateNo
+)
+
+type createOptions struct {
+	agent  string
+	secret string
+	here   createTristate
+}
+
+// runCreateWizard creates a new context and (optionally) binds cwd.
+// Implemented in Task 3.
+func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOptions) error {
+	return fmt.Errorf("runCreateWizard not implemented yet")
+}
+
+// Ensure launcher import is used (IsKnownAgent is used by contextAddCmd
+// which was deleted; keep the import live via a reference here until
+// Task 3 adds contextCreateCmd that uses launcher directly).
+var _ = launcher.KnownAgents
 
 func contextRenameCmd() *cobra.Command {
 	return &cobra.Command{

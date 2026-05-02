@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"golang.org/x/term"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
@@ -73,6 +76,12 @@ type Launcher struct {
 	Prompter         capability.Prompter
 	AutoYes          bool
 	Interactive      bool
+
+	// EmptyStateActions is invoked when context resolution fails AND
+	// no default_context is configured. May be nil; nil disables the
+	// interactive empty-state prompt and falls back to the legacy
+	// hard error.
+	EmptyStateActions EmptyStateActions
 }
 
 // stderr returns the effective stderr writer.
@@ -114,7 +123,13 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// 3. Resolve context
 	rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
 	if err != nil {
-		return fmt.Errorf("resolving context: %w", err)
+		if cfg.DefaultContext != "" || l.EmptyStateActions == nil {
+			return fmt.Errorf("resolving context: %w", err)
+		}
+		rc, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remoteURL)
+		if err != nil {
+			return err
+		}
 	}
 
 	// 4. If agentOverride is set, validate and override context's agent.
@@ -728,6 +743,41 @@ func printUntrustedWarning(w io.Writer, path string, po *config.ProjectOverride)
 	fmt.Fprintf(w, "  Run `aide trust` to approve this configuration.\n")
 	fmt.Fprintf(w, "  Run `aide deny` to permanently block it.\n")
 	fmt.Fprintf(w, "  Run `aide --ignore-project-config` to launch without it.\n")
+}
+
+// handleEmptyStateLaunch delegates to the empty-state helper and, on
+// ErrEmptyStateActionRanReloadNeeded, reloads config and re-resolves
+// context so Launch can continue normally.
+func (l *Launcher) handleEmptyStateLaunch(
+	cfg *config.Config,
+	cwd string,
+	remoteURL string,
+) (*aidectx.ResolvedContext, *config.Config, error) {
+	tty := isStdinTTY()
+	rc, err := handleEmptyState(cfg, os.Stdin, os.Stderr, tty, l.EmptyStateActions)
+	if err == nil {
+		return rc, cfg, nil
+	}
+	if errors.Is(err, ErrEmptyStateCancelled) {
+		return nil, cfg, err
+	}
+	if errors.Is(err, ErrEmptyStateActionRanReloadNeeded) {
+		newCfg, lerr := config.Load(l.configDir(), cwd)
+		if lerr != nil {
+			return nil, cfg, fmt.Errorf("reloading config after empty-state action: %w", lerr)
+		}
+		newRc, rerr := aidectx.Resolve(newCfg, cwd, remoteURL)
+		if rerr != nil {
+			return nil, cfg, fmt.Errorf("resolving context after empty-state action: %w", rerr)
+		}
+		return newRc, newCfg, nil
+	}
+	return nil, cfg, err
+}
+
+// isStdinTTY reports whether os.Stdin is connected to a terminal.
+func isStdinTTY() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // yamlVariantPins extracts capability_variants from a ProjectOverride

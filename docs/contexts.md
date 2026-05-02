@@ -100,9 +100,10 @@ See [Capabilities](capabilities.md) for details on built-in and custom capabilit
 
 ```
 aide context list                         # list all contexts
-aide context add                          # add a context interactively
-aide context add-match                    # add a match rule (auto-detects CWD)
-aide context add-match --context work     # target a specific context
+aide context create                       # create a new context interactively
+aide context create work --agent claude --here  # scripted: create and bind CWD
+aide context bind work                    # attach this folder to an existing context
+aide context bind work --path             # force exact folder path match
 aide context set-secret personal          # set secret (auto-detects CWD)
 aide context set-secret work --context work
 aide context remove-secret                # clear secret (auto-detects CWD)

@@ -99,9 +99,91 @@ agent: claude
 
 Add secrets, environment variables, and contexts by editing the file directly.
 
-## Binding a Directory
+## Empty-State Experience
 
-`aide use <agent>` creates or updates a context that matches the current directory:
+The first time you run `aide` in a folder that has no matching context configured,
+aide detects the gap and guides you through fixing it rather than failing silently.
+
+In a TTY you see:
+
+```
+aide: no context matches this folder.
+
+What do you want to do?
+  [1] Bind this folder to an existing context
+  [2] Create a new context for this folder
+  [3] Launch once with an existing context (don't save)
+  [c] Cancel
+
+Choose [1]:
+```
+
+Pick `[2]` to create a new context — aide walks you through naming it, picking
+an agent (auto-detected if you have only one supported agent on PATH), optionally
+binding a secret store, and attaching the current folder.
+
+If you already have a context (say `work`) and want this folder to also resolve
+to it, pick `[1]`, or run directly:
+
+```
+aide context bind work
+```
+
+By default `bind` matches by git remote URL when the folder is a git repo with
+an `origin` remote — so the same context resolves correctly for any worktree
+or fresh checkout of the same repo.
+
+In non-interactive mode (CI, scripts) aide prints concrete next-command hints:
+
+```
+aide: no context matches this folder, and no default_context is configured.
+
+To proceed, run one of:
+  aide context bind <name>            # attach this folder to existing context
+  aide context create [name]          # create a new context for this folder
+  aide use <name> -- <agent-args>     # launch once without persisting
+  aide context set-default <name>     # use a fallback for unmatched folders
+```
+
+## Creating a Context
+
+`aide context create` creates a new context with an interactive wizard (TTY) or
+fully scripted flags (non-TTY):
+
+```
+# Interactive wizard
+$ aide context create
+
+# Non-interactive — name, agent, and cwd binding all specified
+$ aide context create work --agent claude --here
+
+# Non-interactive — skip binding the current folder
+$ aide context create work --agent claude --no-here
+```
+
+The first context created automatically becomes the `default_context`.
+
+## Binding a Directory to an Existing Context
+
+`aide context bind` attaches the current folder to a context that already exists:
+
+```
+$ cd ~/work/myproject
+$ aide context bind work
+Bound this folder to context "work" (matched by remote git@github.com:…/myproject.git)
+```
+
+Use `--path` to force an exact folder path match instead of a git remote match:
+
+```
+$ aide context bind work --path
+Bound this folder to context "work" (matched by path /home/user/work/myproject)
+```
+
+## Binding a Directory (legacy aide use)
+
+`aide use <agent>` creates or updates a context that matches the current directory.
+For new setups, `aide context create` and `aide context bind` are preferred.
 
 ```
 $ cd ~/work/myproject
@@ -118,8 +200,6 @@ Available flags:
 --secret work          Attach a named secrets file
 --sandbox strict       Apply a sandbox profile
 ```
-
-The first context created by `aide use` automatically becomes the `default_context`.
 
 ## Your First Multi-Context Setup
 

@@ -172,7 +172,7 @@ func initCmd() *cobra.Command {
 			fmt.Fprintln(out)
 			fmt.Fprintln(out, "Next steps:")
 			fmt.Fprintf(out, "  aide                     Launch %s\n", agentName)
-			fmt.Fprintln(out, "  aide use <agent>         Bind a folder to an agent")
+			fmt.Fprintln(out, "  aide context bind <name> Attach this folder to an existing context")
 			fmt.Fprintln(out, "  aide secrets create      Set up encrypted secrets")
 			fmt.Fprintln(out, "  aide agents add <name>   Register another agent")
 
@@ -338,7 +338,6 @@ func useCmd() *cobra.Command {
 Examples:
   aide use claude                       # Bind CWD to claude
   aide use claude --match "~/work/*"    # Bind a glob pattern
-  aide use --context myproject          # Add CWD match to existing context
   aide use claude --secret personal     # Also set secret
   aide use claude --sandbox strict      # Use a named sandbox profile`,
 		SilenceUsage: true,

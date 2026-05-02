@@ -1,4 +1,3 @@
-// internal/launcher/empty_state.go
 package launcher
 
 import (

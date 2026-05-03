@@ -1,5 +1,9 @@
 # aide
 
+[![CI](https://github.com/jskswamy/aide/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jskswamy/aide/actions/workflows/ci.yml)
+[![Security](https://github.com/jskswamy/aide/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/jskswamy/aide/actions/workflows/security.yml)
+[![Release](https://img.shields.io/github/v/release/jskswamy/aide)](https://github.com/jskswamy/aide/releases/latest)
+
 Stop babysitting your agent.
 
 One command. Any agent. Sandboxed, reproducible, zero decision fatigue.

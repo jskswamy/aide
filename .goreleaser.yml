@@ -40,3 +40,4 @@ release:
   github:
     owner: jskswamy
     name: aide
+  header: '{{ readFile "RELEASE_NOTES.md" }}'

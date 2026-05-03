@@ -36,6 +36,31 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## Release Notes
+
+User-facing changes are tracked in `RELEASE_NOTES.md` at the repo
+root. Goreleaser reads it as the GitHub release header at tag time.
+
+**Rule:** when a spec describes a user-facing change, the SAME
+commit that adds the spec also appends a matching entry to
+`RELEASE_NOTES.md` under the appropriate heading (`### 💥 Breaking
+changes`, `### ✨ New`, or `### 🔧 Internal`).
+
+What counts as user-facing: removed flags, renamed commands, new
+commands, changed defaults, new prompts, new error messages users
+see, environment-variable contracts, file-format changes.
+
+What does not count: internal refactors, test scaffolding, doc
+fixes, performance improvements without observable change.
+
+When in doubt, add the note.
+
+When tagging a release: replace the `## Unreleased` header with the
+version (e.g. `## v1.8.0`), commit, then tag. After the release
+ships, reset `RELEASE_NOTES.md` to its template.
+
+Full design: `docs/superpowers/specs/2026-05-03-release-notes-workflow.md`.
+
 <!-- BEGIN BEADS INTEGRATION profile:full hash:d4f96305 -->
 ## Issue Tracking with bd (beads)
 

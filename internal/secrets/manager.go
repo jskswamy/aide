@@ -461,6 +461,7 @@ func (m *Manager) secureTempDir(prefix string) (string, func(), error) {
 		return "", func() {}, err
 	}
 
+	// #nosec G302 -- 0700 required for owner to traverse directory
 	if err := os.Chmod(tmpDir, 0o700); err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return "", func() {}, err

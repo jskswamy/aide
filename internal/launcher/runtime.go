@@ -44,7 +44,8 @@ func NewRuntimeDir() (*RuntimeDir, error) {
 		return nil, fmt.Errorf("failed to create runtime dir %s: %w", dirPath, err)
 	}
 
-	// Verify permissions
+	// Verify permissions.
+	// #nosec G302 -- 0700 required for owner to traverse directory
 	if err := os.Chmod(dirPath, 0700); err != nil {
 		return nil, fmt.Errorf("failed to set permissions on runtime dir %s: %w", dirPath, err)
 	}

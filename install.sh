@@ -4,7 +4,7 @@ set -e
 # aide installer
 # Usage:
 #   curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | sh
-#   curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | INSTALL_DIR=/usr/local/bin sudo sh
+#   curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | sudo INSTALL_DIR=/usr/local/bin sh
 #   curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | VERSION=v0.2.0 sh
 
 REPO="jskswamy/aide"

@@ -21,7 +21,35 @@ aide tries the following sources in order and uses the first one it finds:
 1. **YubiKey** via `age-plugin-yubikey` (hardware-bound key, requires the plugin binary on `$PATH`)
 2. **`$SOPS_AGE_KEY`**: inline key material, useful for CI environments
 3. **`$SOPS_AGE_KEY_FILE`**: path to a key file at a custom location
-4. **`$XDG_CONFIG_HOME/sops/age/keys.txt`**: the sops default key file (typically `~/.config/sops/age/keys.txt`)
+4. **Default key file**, in OS-canonical location (matches sops):
+   - macOS: `~/Library/Application Support/sops/age/keys.txt`
+   - Linux: `$XDG_CONFIG_HOME/sops/age/keys.txt` (typically `~/.config/sops/age/keys.txt`)
+   - On macOS, aide also falls back to `~/.config/sops/age/keys.txt` for users with cross-platform setups.
+
+## Finding Your Existing Age Key
+
+If you've used sops before and aren't sure where your key file lives:
+
+```sh
+# macOS (most common)
+ls -l ~/Library/Application\ Support/sops/age/keys.txt
+
+# Linux / cross-platform
+ls -l "${XDG_CONFIG_HOME:-$HOME/.config}/sops/age/keys.txt"
+```
+
+If your key is somewhere else, point aide at it explicitly:
+
+```sh
+export SOPS_AGE_KEY_FILE=/path/to/keys.txt
+aide secrets keys personal
+```
+
+To see which source aide picked up, run:
+
+```sh
+aide status
+```
 
 ## Creating Secrets
 
@@ -97,7 +125,10 @@ RUN aide --agent claude -- -p "run tests"
 Pass the key at build or runtime:
 
 ```sh
+# Linux
 docker build --build-arg SOPS_AGE_KEY="$(cat ~/.config/sops/age/keys.txt)" .
+# macOS
+docker build --build-arg SOPS_AGE_KEY="$(cat ~/Library/Application\ Support/sops/age/keys.txt)" .
 # or at runtime
 docker run -e SOPS_AGE_KEY="AGE-SECRET-KEY-..." myimage
 ```

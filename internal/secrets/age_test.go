@@ -4,9 +4,25 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
+
+// isolateConfigDir redirects os.UserConfigDir() and the XDG fallback into a
+// temp directory on every OS, then returns the sops/age/keys.txt path that
+// DiscoverAgeKey will probe first.
+func isolateConfigDir(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("UserConfigDir: %v", err)
+	}
+	return filepath.Join(dir, "sops", "age", "keys.txt")
+}
 
 func TestDiscoverAgeKey_YubiKeyOnPath(t *testing.T) {
 	// Create a fake age-plugin-yubikey binary on a temp PATH dir.
@@ -23,7 +39,7 @@ func TestDiscoverAgeKey_YubiKeyOnPath(t *testing.T) {
 	t.Setenv("PATH", tmpDir)
 	t.Setenv("SOPS_AGE_KEY", "")
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty config dir
+	isolateConfigDir(t)
 
 	id, err := DiscoverAgeKey()
 	if err != nil {
@@ -38,7 +54,7 @@ func TestDiscoverAgeKey_EnvKey(t *testing.T) {
 	t.Setenv("PATH", "") // no yubikey
 	t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1FAKE0000000000000000000000000000000000000000000000000000000")
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateConfigDir(t)
 
 	id, err := DiscoverAgeKey()
 	if err != nil {
@@ -57,7 +73,7 @@ func TestDiscoverAgeKey_EnvKeyInvalid(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("SOPS_AGE_KEY", "not-a-valid-key")
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateConfigDir(t)
 
 	_, err := DiscoverAgeKey()
 	if err == nil {
@@ -79,7 +95,7 @@ func TestDiscoverAgeKey_EnvKeyFile(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("SOPS_AGE_KEY", "")
 	t.Setenv("SOPS_AGE_KEY_FILE", keyFile)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateConfigDir(t)
 
 	id, err := DiscoverAgeKey()
 	if err != nil {
@@ -97,7 +113,7 @@ func TestDiscoverAgeKey_EnvKeyFileMissing(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("SOPS_AGE_KEY", "")
 	t.Setenv("SOPS_AGE_KEY_FILE", "/nonexistent/keys.txt")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateConfigDir(t)
 
 	_, err := DiscoverAgeKey()
 	if err == nil {
@@ -109,12 +125,10 @@ func TestDiscoverAgeKey_EnvKeyFileMissing(t *testing.T) {
 }
 
 func TestDiscoverAgeKey_DefaultPath(t *testing.T) {
-	xdgDir := t.TempDir()
-	keyDir := filepath.Join(xdgDir, "sops", "age")
-	if err := os.MkdirAll(keyDir, 0o755); err != nil {
+	keyFile := isolateConfigDir(t)
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	keyFile := filepath.Join(keyDir, "keys.txt")
 	if err := os.WriteFile(keyFile, []byte("AGE-SECRET-KEY-1DEFAULT\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -122,11 +136,82 @@ func TestDiscoverAgeKey_DefaultPath(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("SOPS_AGE_KEY", "")
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
-	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	id, err := DiscoverAgeKey()
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
+	}
+	if id.Source != SourceDefaultFile {
+		t.Errorf("expected SourceDefaultFile, got %v", id.Source)
+	}
+	if id.KeyData != keyFile {
+		t.Errorf("expected KeyData=%q, got %q", keyFile, id.KeyData)
+	}
+}
+
+func TestDiscoverAgeKey_DefaultPathXDGFallbackOnDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("XDG fallback path only applies on macOS")
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	// Place key only at the XDG-style ~/.config path, not at the macOS
+	// canonical ~/Library/Application Support path.
+	xdgKey := filepath.Join(home, ".config", "sops", "age", "keys.txt")
+	if err := os.MkdirAll(filepath.Dir(xdgKey), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(xdgKey, []byte("AGE-SECRET-KEY-1XDG\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", "")
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	id, err := DiscoverAgeKey()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if id.Source != SourceDefaultFile {
+		t.Errorf("expected SourceDefaultFile, got %v", id.Source)
+	}
+	if id.KeyData != xdgKey {
+		t.Errorf("expected KeyData=%q, got %q", xdgKey, id.KeyData)
+	}
+}
+
+// TestDiscoverAgeKey_MacOSLibraryPath_Regression pins the fix for a bug where
+// DiscoverAgeKey only checked $XDG_CONFIG_HOME/sops/age/keys.txt and missed
+// the sops/age canonical path on macOS, ~/Library/Application Support/sops/age/keys.txt.
+// Symptom: aide users on macOS without YubiKey or env vars hit
+// "no age identity found" even though sops's own default key was present.
+func TestDiscoverAgeKey_MacOSLibraryPath_Regression(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("regression specific to macOS path resolution")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	keyFile := filepath.Join(home, "Library", "Application Support", "sops", "age", "keys.txt")
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte("AGE-SECRET-KEY-1MAC\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", "")
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	id, err := DiscoverAgeKey()
+	if err != nil {
+		t.Fatalf("expected discovery to succeed for key at macOS canonical path, got: %v", err)
 	}
 	if id.Source != SourceDefaultFile {
 		t.Errorf("expected SourceDefaultFile, got %v", id.Source)
@@ -147,18 +232,16 @@ func TestDiscoverAgeKey_PriorityOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	xdgDir := t.TempDir()
-	keyDir := filepath.Join(xdgDir, "sops", "age")
-	if err := os.MkdirAll(keyDir, 0o755); err != nil {
+	keyFile := isolateConfigDir(t)
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(keyDir, "keys.txt"), []byte("AGE-SECRET-KEY-1\n"), 0o600); err != nil {
+	if err := os.WriteFile(keyFile, []byte("AGE-SECRET-KEY-1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1FAKE0000000000000000000000000000000000000000000000000000000")
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
-	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	// With YubiKey on PATH, it should win.
 	t.Setenv("PATH", tmpBin)
@@ -207,29 +290,47 @@ func TestFileReadable(t *testing.T) {
 }
 
 func TestDefaultKeyPath(t *testing.T) {
-	t.Run("with XDG_CONFIG_HOME", func(t *testing.T) {
-		t.Setenv("XDG_CONFIG_HOME", "/custom/config")
-		got := defaultKeyPath()
-		want := "/custom/config/sops/age/keys.txt"
-		if got != want {
-			t.Errorf("defaultKeyPath() = %q, want %q", got, want)
-		}
-	})
+	keyFile := isolateConfigDir(t)
+	got := defaultKeyPath()
+	if got != keyFile {
+		t.Errorf("defaultKeyPath() = %q, want %q", got, keyFile)
+	}
 
-	t.Run("without XDG_CONFIG_HOME", func(t *testing.T) {
-		t.Setenv("XDG_CONFIG_HOME", "")
-		got := defaultKeyPath()
-		if !strings.HasSuffix(got, ".config/sops/age/keys.txt") {
-			t.Errorf("defaultKeyPath() = %q, want suffix .config/sops/age/keys.txt", got)
+	switch runtime.GOOS {
+	case "darwin":
+		if !strings.Contains(got, "Library/Application Support/sops/age/keys.txt") {
+			t.Errorf("on darwin, expected Library/Application Support path, got %q", got)
 		}
-	})
+	case "linux":
+		if !strings.HasSuffix(got, ".config/sops/age/keys.txt") {
+			t.Errorf("on linux, expected .config/sops/age/keys.txt suffix, got %q", got)
+		}
+	}
+}
+
+func TestDefaultKeyPaths_DarwinIncludesXDGFallback(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("XDG fallback only added on macOS")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	paths := defaultKeyPaths()
+	if len(paths) < 2 {
+		t.Fatalf("expected >=2 paths on darwin, got %v", paths)
+	}
+	xdg := filepath.Join(home, ".config", "sops", "age", "keys.txt")
+	if !slices.Contains(paths, xdg) {
+		t.Errorf("expected %q in paths, got %v", xdg, paths)
+	}
 }
 
 func TestDiscoverAgeKey_NoneFound(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("SOPS_AGE_KEY", "")
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty
+	isolateConfigDir(t)
 
 	_, err := DiscoverAgeKey()
 	if err == nil {

@@ -120,8 +120,23 @@ func setupDecryptEnv(identity *AgeIdentity) (func(), error) {
 
 	switch identity.Source {
 	case SourceYubiKey:
-		// No env setup needed; sops + age-plugin-yubikey handle it.
-		return noop, nil
+		// age-plugin-yubikey handles age1yubikey1... recipients automatically
+		// via PATH discovery. Also surface the default keys.txt if present so
+		// software identities in the same file can decrypt regular age1...
+		// recipients (users commonly mix both kinds in one keys.txt).
+		// Skip if SOPS_AGE_KEY_FILE is already set explicitly — respect the
+		// caller's choice.
+		if os.Getenv("SOPS_AGE_KEY_FILE") == "" {
+			for _, p := range defaultKeyPaths() {
+				if fileReadable(p) {
+					if err := setEnv("SOPS_AGE_KEY_FILE", p); err != nil {
+						return noop, err
+					}
+					break
+				}
+			}
+		}
+		return cleanup, nil
 
 	case SourceEnvKey:
 		// Set SOPS_AGE_KEY to the raw key material.

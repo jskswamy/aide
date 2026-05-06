@@ -137,6 +137,80 @@ aide use claude --sandbox strict      # use a named sandbox profile
 aide use --context work               # add CWD as a match rule to existing context
 ```
 
+## Multi-Account Setups
+
+A common need is keeping a personal and a work Claude account side by
+side — different API keys, different MCP servers, separate
+conversation history, no cross-contamination. aide composes two
+primitives to make this clean:
+
+1. **One secret store per account.** Each holds its own
+   `anthropic_api_key`. Use a different age recipient if you want
+   tighter access boundaries; the same recipient is fine if only the
+   API keys differ.
+2. **One context per account**, each setting `CLAUDE_CONFIG_DIR` to a
+   distinct path so Claude Code's own state (auth tokens, settings,
+   MCP servers, conversation history) stays isolated. `CLAUDE_CONFIG_DIR`
+   is a Claude Code env var; aide just sets it per context.
+
+**Walkthrough — personal + work.**
+
+Create one encrypted secret per account (see [Secrets — Quick
+Start](secrets.md#quick-start-wiring-an-anthropic-api-key) for the
+editor flow):
+
+```sh
+aide secrets create personal --age-key age1abc...
+aide secrets create work     --age-key age1xyz...
+```
+
+Bind directories and wire env per context:
+
+```sh
+# Personal — everything under ~/personal/*
+aide use claude --match "~/personal/*" --secret personal
+aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --context personal --global
+aide env set CLAUDE_CONFIG_DIR "$HOME/.claude-personal"       --context personal --global
+
+# Work — everything under ~/work/*
+aide use claude --match "~/work/*" --secret work
+aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --context work --global
+aide env set CLAUDE_CONFIG_DIR "$HOME/.claude-work"           --context work --global
+```
+
+The first launch in each tree authenticates Claude Code into the
+matching `CLAUDE_CONFIG_DIR`; from then on aide picks the right state
+directory automatically based on CWD.
+
+```sh
+cd ~/personal/some-project && aide   # uses ~/.claude-personal
+cd ~/work/some-project    && aide    # uses ~/.claude-work
+```
+
+Verify with `aide which --resolve`:
+
+```
+$ cd ~/work/some-project && aide which --resolve
+Context:  work
+Matched:  path glob match: ~/work/*
+Env:
+  ANTHROPIC_API_KEY  <- secret (sk-ant-........)
+  CLAUDE_CONFIG_DIR  /Users/you/.claude-work
+```
+
+Resulting layout:
+
+```
+~/.config/aide/secrets/personal.enc.yaml
+~/.config/aide/secrets/work.enc.yaml
+~/.claude-personal/   ← Claude Code state for personal account
+~/.claude-work/       ← Claude Code state for work account
+```
+
+The same pattern extends to N accounts (client-x, oss, ...) — just
+add more context blocks. Codex and other agents have analogous config
+directory env vars (`CODEX_HOME`, etc.); set those the same way.
+
 ## Default Context
 
 The default context is the fallback when no match rule applies. Change it at any time:

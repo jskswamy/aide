@@ -424,10 +424,65 @@ func TestResolveSecretsPath(t *testing.T) {
 }
 
 func TestSetupDecryptEnv(t *testing.T) {
-	t.Run("yubikey source", func(t *testing.T) {
+	t.Run("yubikey source without default keys file", func(t *testing.T) {
+		isolateConfigDir(t) // ensure no keys.txt exists
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
 		cleanup, err := setupDecryptEnv(&AgeIdentity{Source: SourceYubiKey})
 		if err != nil {
 			t.Fatalf("setupDecryptEnv() error = %v", err)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != "" {
+			t.Errorf("SOPS_AGE_KEY_FILE = %q, want empty when no keys.txt exists", got)
+		}
+		cleanup()
+	})
+
+	// Regression: when YubiKey is the primary source, aide must still surface
+	// the default keys.txt so software identities in the same file can decrypt
+	// regular age1... recipients (not just age1yubikey1... ones).
+	t.Run("yubikey source with default keys file present", func(t *testing.T) {
+		keyFile := isolateConfigDir(t)
+		if err := os.MkdirAll(filepath.Dir(keyFile), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(keyFile, []byte("AGE-SECRET-KEY-1TEST\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{Source: SourceYubiKey})
+		if err != nil {
+			t.Fatalf("setupDecryptEnv() error = %v", err)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != keyFile {
+			t.Errorf("SOPS_AGE_KEY_FILE = %q, want %q", got, keyFile)
+		}
+		cleanup()
+	})
+
+	// Precedence: when caller has already exported SOPS_AGE_KEY_FILE,
+	// respect it instead of overwriting with the default keys.txt path.
+	t.Run("yubikey source preserves caller-set SOPS_AGE_KEY_FILE", func(t *testing.T) {
+		defaultKey := isolateConfigDir(t)
+		if err := os.MkdirAll(filepath.Dir(defaultKey), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(defaultKey, []byte("AGE-SECRET-KEY-1DEFAULT\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		callerKey := filepath.Join(t.TempDir(), "caller-keys.txt")
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", callerKey)
+
+		cleanup, err := setupDecryptEnv(&AgeIdentity{Source: SourceYubiKey})
+		if err != nil {
+			t.Fatalf("setupDecryptEnv() error = %v", err)
+		}
+		if got := os.Getenv("SOPS_AGE_KEY_FILE"); got != callerKey {
+			t.Errorf("SOPS_AGE_KEY_FILE = %q, want caller's %q (default %q must not override)", got, callerKey, defaultKey)
 		}
 		cleanup()
 	})

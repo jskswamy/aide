@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -54,10 +55,11 @@ func DiscoverAgeKey() (*AgeIdentity, error) {
 		// File missing or unreadable — skip silently.
 	}
 
-	// 4. Default key path: $XDG_CONFIG_HOME/sops/age/keys.txt
-	defaultPath := defaultKeyPath()
-	if fileReadable(defaultPath) {
-		return &AgeIdentity{Source: SourceDefaultFile, KeyData: defaultPath}, nil
+	// 4. Default key path: OS-canonical sops location, with XDG fallback on macOS.
+	for _, p := range defaultKeyPaths() {
+		if fileReadable(p) {
+			return &AgeIdentity{Source: SourceDefaultFile, KeyData: p}, nil
+		}
 	}
 
 	return nil, fmt.Errorf(`no age identity found. aide needs an age key to decrypt secrets.
@@ -68,20 +70,41 @@ Options:
   3. Set SOPS_AGE_KEY_FILE to point to your key file
   4. Run: age-keygen -o %s
 
-Run 'aide setup' for guided configuration`, defaultPath)
+Run 'aide setup' for guided configuration`, defaultKeyPath())
 }
 
-// defaultKeyPath returns the standard sops age key location.
+// defaultKeyPath returns the OS-canonical sops age key location for messages.
+// On macOS this is ~/Library/Application Support/sops/age/keys.txt; on Linux
+// it honors $XDG_CONFIG_HOME (or ~/.config). Matches sops upstream behavior.
 func defaultKeyPath() string {
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			home = "~"
-		}
-		configHome = filepath.Join(home, ".config")
+	paths := defaultKeyPaths()
+	if len(paths) == 0 {
+		return filepath.Join("~", ".config", "sops", "age", "keys.txt")
 	}
-	return filepath.Join(configHome, "sops", "age", "keys.txt")
+	return paths[0]
+}
+
+// defaultKeyPaths returns candidate sops age key locations in priority order.
+// The first entry is the OS-canonical path (per Go's os.UserConfigDir, matching
+// sops). On macOS, the XDG-style ~/.config path is appended as a secondary
+// candidate so users with cross-platform setups still resolve their key.
+func defaultKeyPaths() []string {
+	var paths []string
+
+	if dir, err := os.UserConfigDir(); err == nil {
+		paths = append(paths, filepath.Join(dir, "sops", "age", "keys.txt"))
+	}
+
+	if runtime.GOOS == "darwin" {
+		if home, err := os.UserHomeDir(); err == nil {
+			xdg := filepath.Join(home, ".config", "sops", "age", "keys.txt")
+			if len(paths) == 0 || paths[0] != xdg {
+				paths = append(paths, xdg)
+			}
+		}
+	}
+
+	return paths
 }
 
 // fileReadable returns true if the path exists and is a regular file.

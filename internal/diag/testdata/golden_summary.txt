@@ -1,0 +1,5 @@
+── aide diagnose ──
+exit=1 runtime=250ms — fast-fail (<500ms)
+child stderr (last lines):
+error: An unknown error occurred (Unexpected)
+sandbox: network-outbound, code-only

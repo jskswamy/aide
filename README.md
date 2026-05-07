@@ -369,6 +369,42 @@ ENV SOPS_AGE_KEY=AGE-SECRET-KEY-1...
 RUN aide --agent claude -- -p "run tests"
 ```
 
+## Diagnosing a failed run
+
+When the agent exits with a cryptic message (or with no message at all), re-run aide with `--diagnose`:
+
+```bash
+aide --diagnose
+```
+
+aide will:
+
+1. Run the agent normally with stdin/stdout passthrough.
+2. Capture the agent's stderr (last 200 lines / 64 KB by default).
+3. On exit, print a short summary and write a full markdown report to `~/.cache/aide/diagnose/<timestamp>-<id>.md` (or `$XDG_CACHE_HOME/aide/diagnose/...` if set).
+
+The report is **redacted** — no secret values, no hostnames — and is suitable to paste into a GitHub issue.
+
+For sandbox-related failures on macOS, add `--diagnose-trace` to additionally capture sandbox-deny events from `log show`:
+
+```bash
+aide --diagnose-trace
+```
+
+### Tweaking the stderr buffer
+
+Two env vars override the defaults for one run:
+
+```bash
+AIDE_DIAGNOSE_STDERR_LINES=2000 AIDE_DIAGNOSE_STDERR_BYTES=524288 aide --diagnose
+```
+
+Whichever limit is reached first wins.
+
+### Note
+
+`--diagnose` switches the exec strategy from `syscall.Exec` (process replacement) to fork+exec so aide can stay alive to gather post-mortem data. Default runs are unaffected. `--diagnose-trace` is macOS-only in v1.
+
 ## Supported Agents
 
 Claude, Copilot, Codex, Aider, Goose, Amp, Gemini. Any binary on PATH works as an agent target.

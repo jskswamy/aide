@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -32,13 +33,20 @@ func main() {
 	var unrestrictedNetwork bool
 	var variantFlag []string
 	var autoYes bool
+	var diagnose bool
+	var diagnoseTrace bool
 
 	rootCmd := &cobra.Command{
 		Use:   "aide [flags] [-- agent-args...]",
 		Short: "Universal Coding Agent Context Manager",
 		Long: `aide resolves context, decrypts secrets, and launches your coding agent
 with the right environment. Without a config file, it auto-detects
-agents on your PATH.`,
+agents on your PATH.
+
+If the agent dies with a cryptic message, re-run with --diagnose to
+write a redacted, GitHub-pasteable report to
+~/.cache/aide/diagnose/. Add --diagnose-trace on macOS to also
+capture sandbox-deny events from the failed run.`,
 		Version:            version,
 		DisableFlagParsing: false,
 		SilenceUsage:       true,
@@ -63,7 +71,12 @@ agents on your PATH.`,
 				AutoYes:             autoYes,
 				Interactive:         isInteractiveTerminal(os.Stdin),
 				ConsentStore:        consent.DefaultStore(),
+				Diagnose:            diagnose || diagnoseTrace,
+				DiagnoseTrace:       diagnoseTrace,
 				EmptyStateActions:   newEmptyStateAdapter(cmd),
+				Version:             version,
+				Commit:              commit,
+				BuildDate:           date,
 			}
 			if l.Interactive {
 				l.Prompter = ui.NewTTYPrompter(os.Stdin, os.Stderr)
@@ -95,6 +108,8 @@ agents on your PATH.`,
 	rootCmd.Flags().BoolVar(&ignoreProjectConfig, "ignore-project-config", false, "Launch without applying .aide.yaml")
 	rootCmd.Flags().BoolVarP(&unrestrictedNetwork, "unrestricted-network", "N", false,
 		"Allow unrestricted network access, ignoring config port rules")
+	rootCmd.Flags().BoolVar(&diagnose, "diagnose", false, "wrap the run and write a redacted post-mortem on exit")
+	rootCmd.Flags().BoolVar(&diagnoseTrace, "diagnose-trace", false, "implies --diagnose; also capture macOS sandbox denials (Darwin only)")
 	rootCmd.Flags().StringSliceVar(&variantFlag, "variant", nil,
 		"Pin variants for capabilities in --with (format: capability=variant). Repeatable. Must match a --with capability.")
 	rootCmd.Flags().BoolVar(&autoYes, "yes", false, "Auto-approve variant consent prompts (non-interactive workflows).")
@@ -110,6 +125,10 @@ agents on your PATH.`,
 	})
 
 	if err := rootCmd.Execute(); err != nil {
+		var ee interface{ ExitCode() int }
+		if errors.As(err, &ee) {
+			os.Exit(ee.ExitCode())
+		}
 		os.Exit(1)
 	}
 }
@@ -157,4 +176,3 @@ func isInteractiveTerminal(f *os.File) bool {
 	}
 	return (fi.Mode() & os.ModeCharDevice) != 0
 }
-

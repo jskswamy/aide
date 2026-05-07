@@ -17,6 +17,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/consent"
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/diag"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
@@ -77,11 +78,24 @@ type Launcher struct {
 	AutoYes          bool
 	Interactive      bool
 
+	// Diagnose enables post-mortem report generation (forks instead of execve).
+	Diagnose bool
+	// DiagnoseTrace implies Diagnose; additionally captures macOS sandbox denials.
+	DiagnoseTrace bool
+
 	// EmptyStateActions is invoked when context resolution fails AND
 	// no default_context is configured. May be nil; nil disables the
 	// interactive empty-state prompt and falls back to the legacy
 	// hard error.
 	EmptyStateActions EmptyStateActions
+
+	// Version, Commit, BuildDate carry the goreleaser-injected build
+	// metadata. They are populated in cmd/aide/main.go and surfaced in
+	// the --diagnose report's Environment section. Empty values are
+	// rendered verbatim ("dev", "none", "unknown" by default).
+	Version   string
+	Commit    string
+	BuildDate string
 }
 
 // stderr returns the effective stderr writer.
@@ -300,6 +314,10 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 
 	homeDir, _ := os.UserHomeDir()
 	var pathWarnings []string
+	var diagSandbox diag.SandboxInfo
+	if sbDisabled {
+		diagSandbox.Disabled = true
+	}
 	if !sbDisabled {
 		tempDir := os.TempDir()
 		policy, pw, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
@@ -327,6 +345,28 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			binary = cmd.Path
 			extraArgs = cmd.Args[1:]
 			env = cmd.Env
+
+			// Capture sandbox info for --diagnose. Best-effort: profile
+			// generation is allowed to fail silently — the report still
+			// gets variants/guard names without it.
+			diagSandbox.GuardNames = append([]string(nil), policy.Guards...)
+			if rendered, gerr := sb.GenerateProfile(*policy); gerr == nil {
+				diagSandbox.RenderedSB = rendered
+			}
+		}
+	}
+	if resolvedCapSet != nil {
+		seen := make(map[string]bool)
+		for _, rc := range resolvedCapSet.Capabilities {
+			prov := capProvenance[rc.Name]
+			for _, v := range prov.Variants {
+				key := rc.Name + "=" + v
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				diagSandbox.Variants = append(diagSandbox.Variants, key)
+			}
 		}
 	}
 
@@ -350,7 +390,58 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 
 	// 14. Exec the agent binary
 	args := append([]string{binary}, extraArgs...)
+	if l.Diagnose {
+		dc := l.buildDiagContext(cfg, rc, diagSandbox)
+		return l.runDiagnose(binary, args, env, dc)
+	}
 	return l.Execer.Exec(binary, args, env)
+}
+
+// buildDiagContext bundles inputs needed by --diagnose into a single
+// struct. Reuses state already gathered by Launch (sandbox info, secret
+// reference, resolved config path) rather than re-deriving anything.
+//
+// Best-effort: AgeKeySource is discovered fresh here because the
+// secrets path in Launch only runs when a context references a secret.
+// If discovery fails we leave the field empty rather than failing the
+// whole launch — diagnose is supposed to be observational.
+func (l *Launcher) buildDiagContext(cfg *config.Config, rc *aidectx.ResolvedContext, sb diag.SandboxInfo) diagContext {
+	dc := diagContext{
+		Version:   l.Version,
+		Commit:    l.Commit,
+		BuildDate: l.BuildDate,
+		Sandbox:   sb,
+	}
+	if cfg != nil && cfg.ProjectConfigPath != "" {
+		dc.ResolvedConfig = cfg.ProjectConfigPath
+	} else {
+		dc.ResolvedConfig = l.configDir() + " (no project config)"
+	}
+	if rc != nil && rc.Context.Secret != "" {
+		dc.SecretSourcePaths = []string{config.ResolveSecretPath(rc.Context.Secret)}
+	}
+	if id, err := secrets.DiscoverAgeKey(); err == nil && id != nil {
+		dc.AgeKeySource = ageKeySourceLabel(id)
+	}
+	return dc
+}
+
+// ageKeySourceLabel returns a short human-readable label for an age
+// identity source. Mirrors the labels used by `aide secrets status` so
+// the diagnose report stays consistent with the rest of the CLI.
+func ageKeySourceLabel(id *secrets.AgeIdentity) string {
+	switch id.Source {
+	case secrets.SourceYubiKey:
+		return "yubikey"
+	case secrets.SourceEnvKey:
+		return "env:SOPS_AGE_KEY"
+	case secrets.SourceEnvKeyFile:
+		return "env:SOPS_AGE_KEY_FILE=" + id.KeyData
+	case secrets.SourceDefaultFile:
+		return "file:" + id.KeyData
+	default:
+		return ""
+	}
 }
 
 // resolveAgentBinary determines the binary path from config and agent name.

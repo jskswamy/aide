@@ -1324,3 +1324,13 @@ func TestLaunch_ResolveFlagOverridesShowInfoFalse(t *testing.T) {
 		t.Error("--resolve should override show_info: false")
 	}
 }
+
+func TestLauncher_DiagnoseDefaultsOff(t *testing.T) {
+	l := &Launcher{}
+	if l.Diagnose {
+		t.Error("Diagnose should default to false")
+	}
+	if l.DiagnoseTrace {
+		t.Error("DiagnoseTrace should default to false")
+	}
+}

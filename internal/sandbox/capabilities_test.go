@@ -198,6 +198,36 @@ func TestResolveCapabilities_GitRemote_EnableGuard(t *testing.T) {
 	}
 }
 
+func TestResolveCapabilities_SSH_PortsFromAideYAML(t *testing.T) {
+	cfg := &config.Config{
+		Capabilities: map[string]config.CapabilityDef{
+			// User layers ports onto the builtin ssh. MergedRegistry merges
+			// non-empty fields with the same-name builtin.
+			"ssh": {Ports: []int{2222, 7022}},
+		},
+	}
+	_, overrides, err := ResolveCapabilities([]string{"ssh"}, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.Equal(overrides.SSHPorts, []int{2222, 7022}) {
+		t.Errorf("expected SSHPorts [2222 7022], got %v", overrides.SSHPorts)
+	}
+	// Builtin's EnableGuard must still flow through after merge.
+	if len(overrides.EnableGuard) != 1 || overrides.EnableGuard[0] != "ssh" {
+		t.Errorf("expected builtin EnableGuard=[ssh] preserved, got %v", overrides.EnableGuard)
+	}
+	if !slices.Contains(overrides.EnvAllow, "SSH_AUTH_SOCK") {
+		t.Error("expected builtin EnvAllow SSH_AUTH_SOCK preserved")
+	}
+
+	var sandboxCfg *config.SandboxPolicy
+	ApplyOverrides(&sandboxCfg, overrides)
+	if !slices.Equal(sandboxCfg.SSHPorts, []int{2222, 7022}) {
+		t.Errorf("expected sandboxCfg.SSHPorts [2222 7022], got %v", sandboxCfg.SSHPorts)
+	}
+}
+
 func TestResolveCapabilities_SSH_EnableGuardAndEnv(t *testing.T) {
 	cfg := &config.Config{}
 	_, overrides, err := ResolveCapabilities([]string{"ssh"}, cfg)

@@ -2,10 +2,22 @@ package guards
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
+
+// sshURLPortRe matches the explicit port in ssh://[user@]host:PORT/...
+var sshURLPortRe = regexp.MustCompile(`ssh://[^@\s]+@?[^:/\s]+:(\d{1,5})\b`)
+
+// sshConfigPortRe matches "Port N" lines in ~/.ssh/config (case-insensitive,
+// leading whitespace allowed). One match per line.
+var sshConfigPortRe = regexp.MustCompile(`(?im)^[ \t]*Port[ \t]+(\d{1,5})[ \t]*$`)
 
 type sshGuard struct{}
 
@@ -53,7 +65,8 @@ func (g *sshGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	}
 
 	// Network outbound on resolved SSH ports (default [22])
-	ports := resolveSSHPorts(ctx)
+	ports, skipNotes := resolveSSHPorts(ctx)
+	result.Skipped = append(result.Skipped, skipNotes...)
 	var portRules []string
 	for _, p := range ports {
 		portRules = append(portRules, fmt.Sprintf("    (remote tcp \"*:%d\")", p))
@@ -67,13 +80,94 @@ func (g *sshGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 }
 
 // resolveSSHPorts returns the union of SSH ports declared via:
-//   A. ~/.ssh/config Host/Port directives
-//   B. .git/config ssh:// URLs with explicit ports
-//   C. AIDE_SSH_PORTS env var (comma-separated)
-//   D. ctx.SSHPorts (set from .aide.yaml capabilities.ssh.ports)
 //
-// Falls back to [22] if no port is declared anywhere.
-func resolveSSHPorts(ctx *seatbelt.Context) []int {
-	// Skeleton: full A/B/C/D resolution arrives in subsequent TDD cycles.
-	return []int{22}
+//	A. ~/.ssh/config Host/Port directives
+//	B. .git/config ssh:// URLs with explicit ports
+//	C. AIDE_SSH_PORTS env var (comma-separated)
+//	D. ctx.SSHPorts (set from .aide.yaml capabilities.ssh.ports)
+//
+// Falls back to [22] if no port is declared anywhere. Returns sorted-deduped
+// ports plus any human-readable notes about ignored input.
+func resolveSSHPorts(ctx *seatbelt.Context) ([]int, []string) {
+	set := make(map[int]struct{})
+	var notes []string
+
+	// Channel D (explicit): .aide.yaml capabilities.ssh.ports → ctx.SSHPorts.
+	for _, p := range ctx.SSHPorts {
+		if p >= 1 && p <= 65535 {
+			set[p] = struct{}{}
+		}
+	}
+
+	// Channel A (auto-detect): ~/.ssh/config Port directives. Presence of an
+	// ssh config implies SSH usage, so include the :22 default for hosts
+	// without an explicit Port line.
+	if home := ctx.HomeDir; home != "" {
+		if data, err := os.ReadFile(filepath.Join(home, ".ssh", "config")); err == nil {
+			set[22] = struct{}{}
+			for _, m := range sshConfigPortRe.FindAllStringSubmatch(string(data), -1) {
+				if n, err := strconv.Atoi(m[1]); err == nil && n >= 1 && n <= 65535 {
+					set[n] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// Channel B (auto-detect): ssh:// URLs in <project>/.git/config.
+	// When any git remote exists, scp-style (git@host:path) uses port 22
+	// implicitly, so add :22 alongside any explicit ssh:// ports detected.
+	if ctx.ProjectRoot != "" {
+		gitConfigPath := filepath.Join(ctx.ProjectRoot, ".git", "config")
+		if data, err := os.ReadFile(gitConfigPath); err == nil {
+			text := string(data)
+			if strings.Contains(text, "[remote ") {
+				set[22] = struct{}{}
+			}
+			for _, m := range sshURLPortRe.FindAllStringSubmatch(text, -1) {
+				if n, err := strconv.Atoi(m[1]); err == nil && n >= 1 && n <= 65535 {
+					set[n] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// Channel C (explicit): AIDE_SSH_PORTS env override. Pure declaration —
+	// only the listed ports, no implicit :22 unless the user includes it.
+	if raw, ok := ctx.EnvLookup("AIDE_SSH_PORTS"); ok && raw != "" {
+		envSet := make(map[int]struct{})
+		var ignored []string
+		for _, tok := range strings.Split(raw, ",") {
+			tok = strings.TrimSpace(tok)
+			if tok == "" {
+				continue
+			}
+			n, err := strconv.Atoi(tok)
+			if err != nil || n < 1 || n > 65535 {
+				ignored = append(ignored, tok)
+				continue
+			}
+			envSet[n] = struct{}{}
+		}
+		if len(ignored) > 0 {
+			notes = append(notes,
+				fmt.Sprintf("AIDE_SSH_PORTS: ignored invalid entries %s", strings.Join(ignored, ",")))
+		}
+		// Explicit env replaces auto-detected set (deny-by-default discipline:
+		// if you declare ports, you declare all of them).
+		if len(envSet) > 0 {
+			set = envSet
+		}
+	}
+
+	if len(set) == 0 {
+		return []int{22}, notes
+	}
+
+	out := make([]int, 0, len(set))
+	for p := range set {
+		out = append(out, p)
+	}
+	sort.Ints(out)
+	return out, notes
 }
+

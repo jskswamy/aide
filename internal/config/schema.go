@@ -54,6 +54,10 @@ type CapabilityDef struct {
 	Deny        []string `yaml:"deny,omitempty"`
 	EnvAllow    []string `yaml:"env_allow,omitempty"`
 	Allow       []string `yaml:"allow,omitempty"`
+	// Ports is a capability-specific port list. Currently consumed only by
+	// the ssh capability (capabilities.ssh.ports: [22, 2222]) where it is
+	// unioned with auto-detected channels. Other capabilities ignore it.
+	Ports []int `yaml:"ports,omitempty"`
 }
 
 // AgentDef defines an agent binary. Agents carry no env or secrets (DD-5).
@@ -135,7 +139,10 @@ type SandboxOverrides struct {
 	EnableGuard   []string
 	Allow         []string
 	NetworkMode   string // "unrestricted" or "" (no override)
+	SSHPorts      []int  // ports for the ssh guard, from capabilities.ssh.ports
 }
+
+// (SandboxPolicy continues below.)
 
 // SandboxPolicy defines the OS-native sandbox constraints for an agent.
 // A nil pointer means "use defaults". The bool variant (sandbox: false)
@@ -159,6 +166,11 @@ type SandboxPolicy struct {
 	GuardsExtra []string `yaml:"guards_extra,omitempty"`
 	Unguard     []string `yaml:"unguard,omitempty"`
 	Allow       []string `yaml:"allow,omitempty"`
+
+	// SSHPorts is the resolved port list for the ssh guard, populated from
+	// capabilities.ssh.ports (and unioned with auto-detected channels at
+	// guard time). Not directly settable in sandbox YAML.
+	SSHPorts []int `yaml:"-"`
 }
 
 // UnmarshalYAML handles both `sandbox: false` (bool) and `sandbox: { ... }` (map).

@@ -16,6 +16,7 @@ func FromConfigDefs(defs map[string]config.CapabilityDef) map[string]Capability 
 			Deny:        def.Deny,
 			EnvAllow:    def.EnvAllow,
 			Allow:       def.Allow,
+			Ports:       def.Ports,
 		}
 	}
 	return out

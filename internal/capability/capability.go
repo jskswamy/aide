@@ -20,6 +20,9 @@ type Capability struct {
 	EnableGuard []string
 	Allow       []string
 	NetworkMode string
+	// Ports is a capability-specific port list. Currently consumed only by
+	// the ssh guard.
+	Ports []int
 	// Markers are top-level detection rules evaluated with OR semantics:
 	// any match means this capability applies to the project. Distinct
 	// from Variant.Markers (which uses AND).
@@ -47,6 +50,7 @@ type ResolvedCapability struct {
 	EnableGuard []string
 	Allow       []string
 	NetworkMode string
+	Ports       []int
 }
 
 // Set is the merged result of multiple activated capabilities.
@@ -125,6 +129,7 @@ func flatten(capDef *Capability) *ResolvedCapability {
 		EnableGuard: copyStrings(capDef.EnableGuard),
 		Allow:       copyStrings(capDef.Allow),
 		NetworkMode: capDef.NetworkMode,
+		Ports:       copyInts(capDef.Ports),
 	}
 }
 
@@ -144,6 +149,7 @@ func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapabili
 		EnableGuard: dedup(append(parent.EnableGuard, child.EnableGuard...)),
 		Allow:       dedup(append(parent.Allow, child.Allow...)),
 		NetworkMode: networkMode,
+		Ports:       dedupInts(append(parent.Ports, child.Ports...)),
 	}
 }
 
@@ -192,7 +198,32 @@ func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
 		EnableGuard: dedup(append(a.EnableGuard, b.EnableGuard...)),
 		Allow:       dedup(append(a.Allow, b.Allow...)),
 		NetworkMode: networkMode,
+		Ports:       dedupInts(append(a.Ports, b.Ports...)),
 	}
+}
+
+func copyInts(s []int) []int {
+	if s == nil {
+		return nil
+	}
+	out := make([]int, len(s))
+	copy(out, s)
+	return out
+}
+
+func dedupInts(s []int) []int {
+	if len(s) == 0 {
+		return nil
+	}
+	seen := make(map[int]bool, len(s))
+	var out []int
+	for _, v := range s {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func copyStrings(s []string) []string {
@@ -263,6 +294,7 @@ func (cs *Set) ToSandboxOverrides() SandboxOverrides {
 		o.EnvAllow = append(o.EnvAllow, rc.EnvAllow...)
 		o.EnableGuard = append(o.EnableGuard, rc.EnableGuard...)
 		o.Allow = append(o.Allow, rc.Allow...)
+		o.SSHPorts = append(o.SSHPorts, rc.Ports...)
 		if o.NetworkMode == "" && rc.NetworkMode != "" {
 			o.NetworkMode = rc.NetworkMode
 		}

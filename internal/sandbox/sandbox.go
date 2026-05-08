@@ -66,6 +66,10 @@ type Policy struct {
 	// DenyPorts blocks outbound connections to these ports (blacklist).
 	DenyPorts []int
 
+	// SSHPorts is the list of ports allowed by the ssh guard (from
+	// capabilities.ssh.ports), unioned with the guard's auto-detected set.
+	SSHPorts []int
+
 	// ExtraDenied holds user-configured denied paths from config.
 	ExtraDenied []string
 
@@ -176,6 +180,7 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 		Network:     string(policy.Network),
 		AllowPorts:  policy.AllowPorts,
 		DenyPorts:   policy.DenyPorts,
+		SSHPorts:    policy.SSHPorts,
 		ExtraDenied:   policy.ExtraDenied,
 		ExtraWritable:   policy.ExtraWritable,
 		ExtraReadable:   policy.ExtraReadable,

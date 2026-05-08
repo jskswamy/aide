@@ -268,11 +268,43 @@ func Builtins() map[string]Capability {
 }
 
 // MergedRegistry returns a registry combining built-ins with user-defined
-// capabilities. User-defined capabilities override built-ins with the same name.
+// capabilities. When a user-defined capability has the same name as a
+// built-in, its non-empty fields are layered on top of the built-in (slice
+// fields concatenate-and-dedup, scalar fields are taken from the user-def
+// only when non-zero). New user-defined names are added as-is. This lets a
+// user add (e.g.) capabilities.ssh.ports without losing the built-in's
+// description, EnableGuard, or EnvAllow.
 func MergedRegistry(userDefined map[string]Capability) map[string]Capability {
 	merged := Builtins()
-	for k, v := range userDefined {
-		merged[k] = v
+	for name, user := range userDefined {
+		if base, ok := merged[name]; ok {
+			merged[name] = mergeCapability(base, user)
+		} else {
+			merged[name] = user
+		}
 	}
 	return merged
+}
+
+func mergeCapability(base, user Capability) Capability {
+	out := base
+	if user.Description != "" {
+		out.Description = user.Description
+	}
+	if user.Extends != "" {
+		out.Extends = user.Extends
+	}
+	if user.NetworkMode != "" {
+		out.NetworkMode = user.NetworkMode
+	}
+	out.Combines = dedup(append(base.Combines, user.Combines...))
+	out.Unguard = dedup(append(base.Unguard, user.Unguard...))
+	out.Readable = dedup(append(base.Readable, user.Readable...))
+	out.Writable = dedup(append(base.Writable, user.Writable...))
+	out.Deny = dedup(append(base.Deny, user.Deny...))
+	out.EnvAllow = dedup(append(base.EnvAllow, user.EnvAllow...))
+	out.EnableGuard = dedup(append(base.EnableGuard, user.EnableGuard...))
+	out.Allow = dedup(append(base.Allow, user.Allow...))
+	out.Ports = dedupInts(append(base.Ports, user.Ports...))
+	return out
 }

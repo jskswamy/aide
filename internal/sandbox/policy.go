@@ -127,6 +127,10 @@ func PolicyFromConfig(
 		policy.ExtraAllow = cfg.Allow
 	}
 
+	if len(cfg.SSHPorts) > 0 {
+		policy.SSHPorts = cfg.SSHPorts
+	}
+
 	return &policy, warnings, nil
 }
 

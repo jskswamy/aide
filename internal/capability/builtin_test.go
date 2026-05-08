@@ -249,6 +249,52 @@ func stringIndex(s, sub string) int {
 	return -1
 }
 
+func TestMergedRegistry_UserDefMergesIntoBuiltin(t *testing.T) {
+	// User adds ports to ssh without redefining the whole capability.
+	user := map[string]Capability{
+		"ssh": {Name: "ssh", Ports: []int{2222}},
+	}
+	merged := MergedRegistry(user)
+	ssh := merged["ssh"]
+
+	// Builtin fields preserved
+	if len(ssh.EnableGuard) != 1 || ssh.EnableGuard[0] != "ssh" {
+		t.Errorf("expected builtin EnableGuard=[ssh] preserved, got %v", ssh.EnableGuard)
+	}
+	if len(ssh.EnvAllow) == 0 {
+		t.Error("expected builtin EnvAllow preserved (SSH_AUTH_SOCK)")
+	}
+	if ssh.Description == "" {
+		t.Error("expected builtin Description preserved")
+	}
+	// User-supplied field added
+	if len(ssh.Ports) != 1 || ssh.Ports[0] != 2222 {
+		t.Errorf("expected user Ports=[2222] applied, got %v", ssh.Ports)
+	}
+}
+
+func TestMergedRegistry_NewUserCapStillAdded(t *testing.T) {
+	user := map[string]Capability{
+		"my-cap": {Name: "my-cap", Description: "custom"},
+	}
+	merged := MergedRegistry(user)
+	if _, ok := merged["my-cap"]; !ok {
+		t.Error("user-defined cap with new name should be added")
+	}
+}
+
+func TestSet_ToSandboxOverrides_SSHPorts(t *testing.T) {
+	set := &Set{
+		Capabilities: []ResolvedCapability{
+			{Name: "ssh", Ports: []int{22, 2222}},
+		},
+	}
+	o := set.ToSandboxOverrides()
+	if len(o.SSHPorts) != 2 || o.SSHPorts[0] != 22 || o.SSHPorts[1] != 2222 {
+		t.Errorf("expected SSHPorts [22 2222], got %v", o.SSHPorts)
+	}
+}
+
 func TestBuiltins_AllCapabilitiesDetectableByDetectProject_HaveMarkers(t *testing.T) {
 	// Every capability that DetectProject currently detects must
 	// declare Markers, so the Task 6 rewrite can loop the registry.

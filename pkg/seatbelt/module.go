@@ -55,6 +55,7 @@ type Context struct {
 	Network     string   // consumed by network guard: "outbound", "none", "unrestricted", or ""
 	AllowPorts  []int    // consumed by network guard
 	DenyPorts   []int    // consumed by network guard
+	SSHPorts    []int    // consumed by ssh guard (from capabilities.ssh.ports)
 	ExtraDenied   []string // consumed by filesystem guard (user-configured denied: paths)
 	ExtraWritable []string // consumed by filesystem guard (user-configured writable paths)
 	ExtraReadable []string // consumed by filesystem guard (user-configured readable paths)

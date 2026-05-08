@@ -29,6 +29,7 @@ func ApplyOverrides(cfg **config.SandboxPolicy, overrides config.SandboxOverride
 	(*cfg).DeniedExtra = append((*cfg).DeniedExtra, overrides.DeniedExtra...)
 	(*cfg).GuardsExtra = append((*cfg).GuardsExtra, overrides.EnableGuard...)
 	(*cfg).Allow = append((*cfg).Allow, overrides.Allow...)
+	(*cfg).SSHPorts = append((*cfg).SSHPorts, overrides.SSHPorts...)
 	if overrides.NetworkMode != "" {
 		if (*cfg).Network == nil {
 			(*cfg).Network = &config.NetworkPolicy{}

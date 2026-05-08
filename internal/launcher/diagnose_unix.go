@@ -56,6 +56,7 @@ func (l *Launcher) runDiagnose(binary string, args, env []string, dc diagContext
 	fmt.Fprint(l.stderr(), diag.Summary(report))
 	if werr == nil {
 		fmt.Fprintf(l.stderr(), "\nfull report: %s\n", path)
+		fmt.Fprintln(l.stderr(), "please review the file before sharing — secret values are redacted, but paths and argv are not.")
 	}
 
 	if res.ExitCode != 0 {

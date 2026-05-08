@@ -11,6 +11,7 @@ func Markdown(r Report) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# aide diagnose report\n\n")
+	fmt.Fprintf(&b, "> ⚠️  Review this file before sharing. It may contain paths, hostnames, or argv values that you consider sensitive. Secret values are redacted (only env-var names and lengths are recorded), but please skim every section before posting.\n\n")
 	fmt.Fprintf(&b, "## TL;DR\n\nexit=%d runtime=%s — %s\n\n", r.ExitCode, r.Runtime, r.Classification())
 
 	fmt.Fprintf(&b, "## Environment\n\n")

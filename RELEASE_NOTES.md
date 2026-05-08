@@ -1,25 +1,31 @@
-## v1.8.1
+## v1.9.0
+
+### ✨ Features
+
+- **`--diagnose` flag** for surfacing child-agent failures. When set,
+  aide switches from `syscall.Exec` (process replacement) to fork+exec
+  so it stays alive after the child exits, captures the last N lines /
+  bytes of stderr, and writes a redacted markdown post-mortem to
+  `~/.cache/aide/diagnose/<id>.md` (mode 0600). A compact terminal
+  summary is also printed. Secret values are redacted (only env-var
+  names and lengths recorded); paths and argv are not, so users are
+  reminded to review the file before sharing.
+- **`--diagnose-trace` flag** (macOS only). Post-hoc queries
+  `log show --predicate 'sender == "Sandbox"'` and attaches matching
+  sandbox-denial rows to the report.
+- **Tunable capture limits** via `AIDE_DIAGNOSE_STDERR_LINES`
+  (default 200) and `AIDE_DIAGNOSE_STDERR_BYTES` (default 65536).
 
 ### 🐛 Fixes
 
-- **macOS age key discovery.** aide now resolves the sops keys file at
-  the OS-canonical path (`~/Library/Application Support/sops/age/keys.txt`
-  on macOS), matching sops upstream behavior. Previously aide only
-  checked `$XDG_CONFIG_HOME/sops/age/keys.txt`, so macOS users without
-  a YubiKey or `SOPS_AGE_KEY*` env vars hit "no age identity found"
-  even with a valid keys file present. XDG fallback retained on macOS
-  for cross-platform setups.
-- **Mixed YubiKey + software identities in one keys.txt.** When a
-  YubiKey is on `PATH`, aide also surfaces the default `keys.txt` to
-  sops via `SOPS_AGE_KEY_FILE`, so software identities in the same
-  file decrypt regular `age1...` recipients (not only
-  `age1yubikey1...` ones). Caller-set `SOPS_AGE_KEY_FILE` is respected
-  and never overridden.
+- `install.sh`: corrected `sudo` invocation example.
 
 ### 🔧 Internal
 
-- New documentation covering age bootstrap per OS, end-to-end Anthropic
-  API key wiring via `aide secrets create` / `aide use` /
-  `aide env set`, and a multi-account walkthrough that pairs separate
-  secret stores with per-context `CLAUDE_CONFIG_DIR`. See
-  `docs/secrets.md` and `docs/contexts.md`.
+- New `internal/diag` package: typed redaction surface (`Report`,
+  `EnvKey`), pre/post collector with sensitive-flag list (handles
+  `--key=value` and `--key value`, with underscore→dash normalization),
+  markdown renderer with golden-file tests, and a secret-aware writer
+  with stderr fallback.
+- `cmd/aide` now propagates the child exit code via `errors.As` on
+  `interface{ ExitCode() int }` instead of forcing `exit=1`.

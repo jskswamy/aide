@@ -110,11 +110,12 @@ func init() {
 			EnvAllow:    []string{"VAULT_ADDR", "VAULT_TOKEN", "VAULT_TOKEN_FILE"},
 		},
 
-		// SSH
+		// SSH — explicit opt-in. Required for git over SSH, ssh login, scp/rsync.
 		"ssh": {
 			Name:        "ssh",
-			Description: "SSH keys and agent",
-			Readable: []string{"~/.ssh"},
+			Description: "SSH keys, agent, and outbound SSH transport (port 22 + custom). Required for: git over SSH, ssh login, scp/rsync.",
+			Readable:    []string{"~/.ssh"},
+			EnableGuard: []string{"ssh"},
 			EnvAllow:    []string{"SSH_AUTH_SOCK"},
 		},
 
@@ -235,12 +236,11 @@ func init() {
 		},
 		"git-remote": {
 			Name:        "git-remote",
-			Description: "Git remote operations (push, fetch, pull) via SSH and HTTPS",
+			Description: "Git remote operations over HTTPS (port 443). For SSH-based remotes, also enable the 'ssh' capability.",
 			Markers: []Marker{
 				{Contains: ContainsSpec{File: ".git/config", Pattern: "[remote "}},
 			},
 			EnableGuard: []string{"git-remote"},
-			EnvAllow:    []string{"SSH_AUTH_SOCK"},
 		},
 		"gpg": {
 			Name:        "gpg",

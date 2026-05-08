@@ -194,6 +194,61 @@ func TestBuiltins_PythonVariantMarkers(t *testing.T) {
 	}
 }
 
+func TestBuiltin_SSH_EnablesSSHGuard(t *testing.T) {
+	ssh := Builtins()["ssh"]
+	if len(ssh.EnableGuard) != 1 || ssh.EnableGuard[0] != "ssh" {
+		t.Errorf("expected ssh capability EnableGuard=[ssh], got %v", ssh.EnableGuard)
+	}
+}
+
+func TestBuiltin_SSH_HasNoMarker(t *testing.T) {
+	ssh := Builtins()["ssh"]
+	if len(ssh.Markers) != 0 {
+		t.Errorf("ssh capability must remain explicit-only (no markers), got %v", ssh.Markers)
+	}
+}
+
+func TestBuiltin_SSH_DescriptionMentionsGitOverSSH(t *testing.T) {
+	ssh := Builtins()["ssh"]
+	want := "git over SSH"
+	if !contains(ssh.Description, want) {
+		t.Errorf("ssh capability description should mention %q for discoverability; got %q",
+			want, ssh.Description)
+	}
+}
+
+func TestBuiltin_GitRemote_DropsSSHAuthSock(t *testing.T) {
+	gr := Builtins()["git-remote"]
+	for _, env := range gr.EnvAllow {
+		if env == "SSH_AUTH_SOCK" {
+			t.Error("git-remote must NOT include SSH_AUTH_SOCK in EnvAllow — moved to ssh capability")
+		}
+	}
+}
+
+func TestBuiltin_GitRemote_DescriptionMentionsHTTPSAndPointsToSSH(t *testing.T) {
+	gr := Builtins()["git-remote"]
+	if !contains(gr.Description, "HTTPS") {
+		t.Errorf("git-remote description should mention HTTPS; got %q", gr.Description)
+	}
+	if !contains(gr.Description, "ssh") {
+		t.Errorf("git-remote description should reference 'ssh' capability for SSH transport; got %q", gr.Description)
+	}
+}
+
+func contains(haystack, needle string) bool {
+	return len(haystack) >= len(needle) && (haystack == needle || stringIndex(haystack, needle) >= 0)
+}
+
+func stringIndex(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestBuiltins_AllCapabilitiesDetectableByDetectProject_HaveMarkers(t *testing.T) {
 	// Every capability that DetectProject currently detects must
 	// declare Markers, so the Task 6 rewrite can loop the registry.

@@ -57,6 +57,11 @@
 {{- range .Warnings}}
      {{yellow "⚠"}} {{.}}
 {{- end}}
+{{- if .Sandbox}}
+{{- range .Sandbox.Hints}}
+     {{yellow "💡"}} {{.}}
+{{- end}}
+{{- end}}
 {{- if .AutoApprove}}
    {{red "⚡ AUTO-APPROVE — all agent actions execute without confirmation"}}
 {{- end}}

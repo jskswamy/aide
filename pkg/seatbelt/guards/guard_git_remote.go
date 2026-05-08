@@ -2,10 +2,15 @@ package guards
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
+
+// sshRemoteRe matches ssh:// or git@host: style URLs in a git config remote.url line.
+var sshRemoteRe = regexp.MustCompile(`(?m)^\s*url\s*=\s*(ssh://|[^@\s]+@[^:\s]+:)`)
 
 type gitRemoteGuard struct{}
 
@@ -54,6 +59,18 @@ func (g *gitRemoteGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		seatbelt.DenyRule(fmt.Sprintf("(deny file-write* (literal \"%s\"))", gitCredentials)),
 	)
 	result.Protected = append(result.Protected, gitCredentials)
+
+	// Discoverability hint: if the project has SSH-style remotes, point the
+	// user at the 'ssh' capability — this guard only covers HTTPS.
+	if ctx.ProjectRoot != "" {
+		gitConfigPath := filepath.Join(ctx.ProjectRoot, ".git", "config")
+		if data, err := os.ReadFile(gitConfigPath); err == nil {
+			if sshRemoteRe.Match(data) {
+				result.Hints = append(result.Hints,
+					"git-remote: detected SSH remote(s) in .git/config; enable the 'ssh' capability to push/fetch over SSH (aide cap enable ssh)")
+			}
+		}
+	}
 
 	return result
 }

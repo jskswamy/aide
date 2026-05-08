@@ -78,6 +78,7 @@ type SandboxInfo struct {
 	Active    []GuardDisplay
 	Skipped   []GuardDisplay
 	Available []string // opt-in guard names not enabled
+	Hints     []string // user-facing suggestions from guards
 }
 
 // GuardDisplay holds per-guard information for banner rendering.

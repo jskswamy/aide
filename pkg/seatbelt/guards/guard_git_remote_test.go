@@ -45,6 +45,40 @@ func TestGuard_GitRemote_HTTPSAndCredentialsDeny(t *testing.T) {
 	}
 }
 
+func TestGuard_GitRemote_HintsOnSSHRemote(t *testing.T) {
+	root := writeGitConfig(t, `
+[remote "origin"]
+	url = git@github.com:user/repo.git
+[remote "gitlab"]
+	url = ssh://git@gitlab.example.com:2222/team/repo.git
+`)
+	g := guards.GitRemoteGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser", ProjectRoot: root}
+	result := g.Rules(ctx)
+
+	if len(result.Hints) == 0 {
+		t.Fatal("expected a hint when .git/config has ssh-style remotes")
+	}
+	joined := strings.Join(result.Hints, "\n")
+	if !strings.Contains(joined, "ssh") {
+		t.Errorf("hint should reference 'ssh' capability; got %q", joined)
+	}
+}
+
+func TestGuard_GitRemote_NoHintsForHTTPSOnly(t *testing.T) {
+	root := writeGitConfig(t, `
+[remote "origin"]
+	url = https://github.com/user/repo.git
+`)
+	g := guards.GitRemoteGuard()
+	ctx := &seatbelt.Context{HomeDir: "/Users/testuser", ProjectRoot: root}
+	result := g.Rules(ctx)
+
+	if len(result.Hints) != 0 {
+		t.Errorf("expected no SSH hints when all remotes are HTTPS, got: %v", result.Hints)
+	}
+}
+
 func TestGuard_GitRemote_NilContext(t *testing.T) {
 	g := guards.GitRemoteGuard()
 	result := g.Rules(nil)

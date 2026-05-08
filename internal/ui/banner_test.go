@@ -102,6 +102,31 @@ func TestRenderBanner_WithWarnings(t *testing.T) {
 	// Warnings should be rendered (the specific format may vary)
 }
 
+func TestRenderBanner_RendersSandboxHints(t *testing.T) {
+	data := &BannerData{
+		AgentName: "claude",
+		Sandbox: &SandboxInfo{
+			Network: "outbound only",
+			Hints:   []string{"git-remote: detected SSH remote(s); enable 'ssh' capability"},
+			Active: []GuardDisplay{
+				{Name: "git-remote"},
+			},
+		},
+		Capabilities: []CapabilityDisplay{
+			{Name: "git-remote"},
+		},
+	}
+	for _, style := range []string{"compact", "boxed", "clean"} {
+		var buf bytes.Buffer
+		if err := RenderBanner(&buf, style, data); err != nil {
+			t.Fatalf("style %s: %v", style, err)
+		}
+		if !strings.Contains(buf.String(), "enable 'ssh' capability") {
+			t.Errorf("style %s: expected hint in output, got:\n%s", style, buf.String())
+		}
+	}
+}
+
 func TestRenderBanner_NoSandbox(t *testing.T) {
 	data := fullBannerData()
 	data.Sandbox = &SandboxInfo{Disabled: true}

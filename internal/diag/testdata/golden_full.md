@@ -1,5 +1,7 @@
 # aide diagnose report
 
+> ⚠️  Review this file before sharing. It may contain paths, hostnames, or argv values that you consider sensitive. Secret values are redacted (only env-var names and lengths are recorded), but please skim every section before posting.
+
 ## TL;DR
 
 exit=1 runtime=250ms — fast-fail (<500ms)

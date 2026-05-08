@@ -1,31 +1,13 @@
-## v1.9.0
+## v1.9.1
 
-### ✨ Features
+### 🔒 Security
 
-- **`--diagnose` flag** for surfacing child-agent failures. When set,
-  aide switches from `syscall.Exec` (process replacement) to fork+exec
-  so it stays alive after the child exits, captures the last N lines /
-  bytes of stderr, and writes a redacted markdown post-mortem to
-  `~/.cache/aide/diagnose/<id>.md` (mode 0600). A compact terminal
-  summary is also printed. Secret values are redacted (only env-var
-  names and lengths recorded); paths and argv are not, so users are
-  reminded to review the file before sharing.
-- **`--diagnose-trace` flag** (macOS only). Post-hoc queries
-  `log show --predicate 'sender == "Sandbox"'` and attaches matching
-  sandbox-denial rows to the report.
-- **Tunable capture limits** via `AIDE_DIAGNOSE_STDERR_LINES`
-  (default 200) and `AIDE_DIAGNOSE_STDERR_BYTES` (default 65536).
-
-### 🐛 Fixes
-
-- `install.sh`: corrected `sudo` invocation example.
-
-### 🔧 Internal
-
-- New `internal/diag` package: typed redaction surface (`Report`,
-  `EnvKey`), pre/post collector with sensitive-flag list (handles
-  `--key=value` and `--key value`, with underscore→dash normalization),
-  markdown renderer with golden-file tests, and a secret-aware writer
-  with stderr fallback.
-- `cmd/aide` now propagates the child exit code via `errors.As` on
-  `interface{ ExitCode() int }` instead of forcing `exit=1`.
+- Bumped `go` directive from 1.25.7 to 1.25.10 so the toolchain pulls
+  the patched `html/template`, `net`, and `net/http` (clears
+  GO-2026-4982, GO-2026-4980, GO-2026-4971, and GO-2026-4918 reachable
+  through `secrets.Rotate` and `launcher.RuntimeDir.Cleanup`).
+- Upgraded `golang.org/x/net` from v0.51.0 to v0.53.0, fixing the
+  HTTP/2 transport infinite loop on bad `SETTINGS_MAX_FRAME_SIZE`.
+- No code changes; practical exploit risk for aide is low (no HTML
+  rendering, macOS-only target), but the bump clears govulncheck and
+  downstream SBOM scanners.

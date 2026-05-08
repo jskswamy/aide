@@ -285,6 +285,7 @@ func whichCmd() *cobra.Command {
 						si.Ports = strings.Join(portStrs, ", ")
 					}
 					for _, g := range guardResults {
+						si.Hints = append(si.Hints, g.Hints...)
 						if len(g.Rules) > 0 {
 							display := ui.GuardDisplay{
 								Name:      g.Name,

@@ -151,6 +151,12 @@ func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
 		dimC.Fprintf(w, "%s○ %s — available (opt-in)\n",
 			prefix, strings.Join(info.Available, ", "))
 	}
+	if len(info.Hints) > 0 {
+		fmt.Fprintln(w)
+		for _, h := range info.Hints {
+			yellowC.Fprintf(w, "%s💡 %s\n", prefix, h)
+		}
+	}
 	needsHint := len(info.Skipped) > 0 || len(info.Available) > 0
 	for _, g := range info.Active {
 		if len(g.Protected) > 3 || len(g.Allowed) > 3 {

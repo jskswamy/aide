@@ -33,6 +33,7 @@ type GuardResult struct {
 	Allowed   []string   // paths explicitly allowed (exceptions)
 	Skipped   []string   // "~/.config/op not found" etc.
 	Overrides []Override // env var overrides detected
+	Hints     []string   // user-facing suggestions (e.g. "enable 'ssh' capability for SSH push")
 }
 
 // Override records when an env var changed a guard's default path.

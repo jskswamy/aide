@@ -184,9 +184,9 @@ func TestResolveCapabilities_GitRemote_EnableGuard(t *testing.T) {
 		t.Errorf("expected EnableGuard [git-remote], got %v", overrides.EnableGuard)
 	}
 
-	// EnvAllow should include SSH_AUTH_SOCK
-	if !slices.Contains(overrides.EnvAllow, "SSH_AUTH_SOCK") {
-		t.Error("expected SSH_AUTH_SOCK in EnvAllow")
+	// After the split: git-remote MUST NOT bring SSH_AUTH_SOCK — that lives in ssh capability.
+	if slices.Contains(overrides.EnvAllow, "SSH_AUTH_SOCK") {
+		t.Error("git-remote must NOT include SSH_AUTH_SOCK in EnvAllow — moved to ssh capability")
 	}
 
 	// ApplyOverrides should add to GuardsExtra
@@ -195,6 +195,26 @@ func TestResolveCapabilities_GitRemote_EnableGuard(t *testing.T) {
 
 	if len(sandboxCfg.GuardsExtra) != 1 || sandboxCfg.GuardsExtra[0] != "git-remote" {
 		t.Errorf("expected GuardsExtra [git-remote], got %v", sandboxCfg.GuardsExtra)
+	}
+}
+
+func TestResolveCapabilities_SSH_EnableGuardAndEnv(t *testing.T) {
+	cfg := &config.Config{}
+	_, overrides, err := ResolveCapabilities([]string{"ssh"}, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(overrides.EnableGuard) != 1 || overrides.EnableGuard[0] != "ssh" {
+		t.Errorf("expected EnableGuard [ssh], got %v", overrides.EnableGuard)
+	}
+	if !slices.Contains(overrides.EnvAllow, "SSH_AUTH_SOCK") {
+		t.Error("expected SSH_AUTH_SOCK in EnvAllow for ssh capability")
+	}
+
+	var sandboxCfg *config.SandboxPolicy
+	ApplyOverrides(&sandboxCfg, overrides)
+	if len(sandboxCfg.GuardsExtra) != 1 || sandboxCfg.GuardsExtra[0] != "ssh" {
+		t.Errorf("expected GuardsExtra [ssh], got %v", sandboxCfg.GuardsExtra)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/getsops/sops/v3/age"
 	"github.com/getsops/sops/v3/keyservice"
 	"github.com/getsops/sops/v3/stores/yaml"
+	"github.com/jskswamy/aide/internal/fsutil"
 	yamlpkg "gopkg.in/yaml.v3"
 )
 
@@ -372,14 +373,8 @@ func (m *Manager) EditFromContent(name, secretsDir string, newContent []byte) er
 		return fmt.Errorf("sops re-encryption failed: %w", err)
 	}
 
-	// Atomic write: write to .tmp then rename.
-	tmpTarget := srcPath + ".tmp"
-	if err := os.WriteFile(tmpTarget, encrypted, 0o600); err != nil {
-		return fmt.Errorf("failed to write temporary file: %w", err)
-	}
-	if err := os.Rename(tmpTarget, srcPath); err != nil {
-		_ = os.Remove(tmpTarget)
-		return fmt.Errorf("failed to rename temporary file: %w", err)
+	if err := fsutil.AtomicWrite(srcPath, encrypted); err != nil {
+		return fmt.Errorf("failed to atomically write encrypted file: %w", err)
 	}
 
 	return nil

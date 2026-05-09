@@ -8,6 +8,7 @@ import (
 	sopsage "github.com/getsops/sops/v3/age"
 	"github.com/getsops/sops/v3/keyservice"
 	"github.com/getsops/sops/v3/stores/yaml"
+	"github.com/jskswamy/aide/internal/fsutil"
 
 	sops "github.com/getsops/sops/v3"
 )
@@ -158,14 +159,9 @@ func Rotate(filePath string, addKeys []string, removeKeys []string) error {
 		return fmt.Errorf("failed to emit encrypted file: %w", err)
 	}
 
-	// 13. Atomic write: write to temp, then rename
-	tmpPath := filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, output, 0600); err != nil {
-		return fmt.Errorf("failed to write temporary file: %w", err)
-	}
-	if err := os.Rename(tmpPath, filePath); err != nil {
-		_ = os.Remove(tmpPath) // clean up on failure
-		return fmt.Errorf("failed to rename temporary file: %w", err)
+	// 13. Atomic write
+	if err := fsutil.AtomicWrite(filePath, output); err != nil {
+		return fmt.Errorf("failed to atomically write rotated file: %w", err)
 	}
 
 	return nil

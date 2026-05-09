@@ -695,6 +695,9 @@ func (l *Launcher) buildBannerData(
 				si.Ports = strings.Join(portStrs, ", ")
 			}
 			for _, g := range guardResults {
+				if len(g.Hints) > 0 {
+					si.Hints = append(si.Hints, g.Hints...)
+				}
 				if len(g.Rules) > 0 {
 					display := ui.GuardDisplay{
 						Name:      g.Name,

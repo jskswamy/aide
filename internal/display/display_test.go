@@ -172,32 +172,3 @@ func TestRemoveFromSlice(t *testing.T) {
 	}
 }
 
-func TestExpandHome(t *testing.T) {
-	t.Run("tilde prefix", func(t *testing.T) {
-		got := ExpandHome("~/Documents")
-		if got == "~/Documents" {
-			t.Error("ExpandHome should expand tilde prefix")
-		}
-	})
-
-	t.Run("absolute path", func(t *testing.T) {
-		got := ExpandHome("/usr/local/bin")
-		if got != "/usr/local/bin" {
-			t.Errorf("got %q, want /usr/local/bin", got)
-		}
-	})
-
-	t.Run("relative path", func(t *testing.T) {
-		got := ExpandHome("relative/path")
-		if got != "relative/path" {
-			t.Errorf("got %q, want relative/path", got)
-		}
-	})
-
-	t.Run("tilde only no slash", func(t *testing.T) {
-		got := ExpandHome("~")
-		if got != "~" {
-			t.Errorf("got %q, want ~ unchanged", got)
-		}
-	})
-}

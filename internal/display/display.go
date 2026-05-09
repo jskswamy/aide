@@ -4,8 +4,6 @@ package display
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -109,14 +107,3 @@ func RemoveFromSlice(slice []string, item string) []string {
 	return result
 }
 
-// ExpandHome expands a leading ~/ to the user's home directory.
-func ExpandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, path[2:])
-	}
-	return path
-}

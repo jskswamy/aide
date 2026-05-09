@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // PreInput is the data the launcher hands the collector before the child
@@ -150,14 +152,8 @@ func Post(r Report, in PostInput) Report {
 	r.ExitCode = in.ExitCode
 	r.Signal = in.Signal
 	r.Runtime = in.Runtime
-	r.StderrTail = rewriteHome(in.StderrTail, in.HomeDir)
+	r.StderrTail = homepath.Collapse(in.StderrTail, in.HomeDir)
 	r.StderrTruncated = int(in.StderrTruncated)
 	return r
 }
 
-func rewriteHome(s, home string) string {
-	if home == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, home, "~")
-}

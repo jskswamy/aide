@@ -9,3 +9,11 @@
   now owned in one place and consumed by `approvalstore`,
   `config.WriteConfigTo`, `config.WriteProjectOverride`,
   `secrets.Manager.EditFromContent`, and `secrets.Rotate`.
+- **`internal/homepath` for `~`/`$HOME` expansion.** Five packages
+  each carried their own tilde helper with subtly divergent
+  semantics (lone `~` accepted in some, ignored in others; trailing
+  slashes preserved only by seatbelt's concat-based variant; inverse
+  collapse direction in `internal/diag`). One `homepath.Expand` plus
+  `homepath.Collapse` now own those rules; the seatbelt
+  `gitdir:`-trailing-slash regression test still passes against the
+  shared implementation.

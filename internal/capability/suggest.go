@@ -2,8 +2,9 @@ package capability
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // SuggestForPath returns capability names that would grant access to the given path.
@@ -20,7 +21,7 @@ func SuggestForPath(path string, registry map[string]Capability) []string {
 
 func matchesAnyPath(path string, paths []string, home string) bool {
 	for _, p := range paths {
-		expanded := expandTilde(p, home)
+		expanded := homepath.Expand(p, home)
 		if strings.HasPrefix(path, expanded) {
 			return true
 		}
@@ -28,9 +29,3 @@ func matchesAnyPath(path string, paths []string, home string) bool {
 	return false
 }
 
-func expandTilde(path, home string) string {
-	if strings.HasPrefix(path, "~/") {
-		return filepath.Join(home, path[2:])
-	}
-	return path
-}

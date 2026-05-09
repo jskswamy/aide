@@ -12,6 +12,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -351,7 +352,7 @@ func sandboxCreateCmd() *cobra.Command {
 					if p == "" {
 						continue
 					}
-					expanded := display.ExpandHome(p)
+					expanded := homepath.Expand(p, "")
 					if _, err := os.Stat(expanded); err != nil {
 						fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 					} else {
@@ -371,7 +372,7 @@ func sandboxCreateCmd() *cobra.Command {
 					if p == "" {
 						continue
 					}
-					expanded := display.ExpandHome(p)
+					expanded := homepath.Expand(p, "")
 					if _, err := os.Stat(expanded); err != nil {
 						fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 					} else {
@@ -440,7 +441,7 @@ func sandboxEditCmd() *cobra.Command {
 			}
 
 			for _, p := range addWritable {
-				expanded := display.ExpandHome(p)
+				expanded := homepath.Expand(p, "")
 				if _, err := os.Stat(expanded); err != nil {
 					fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 				}
@@ -448,7 +449,7 @@ func sandboxEditCmd() *cobra.Command {
 			}
 
 			for _, p := range addDenied {
-				expanded := display.ExpandHome(p)
+				expanded := homepath.Expand(p, "")
 				if _, err := os.Stat(expanded); err != nil {
 					fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 				}
@@ -464,7 +465,7 @@ func sandboxEditCmd() *cobra.Command {
 			}
 
 			for _, p := range addReadable {
-				expanded := display.ExpandHome(p)
+				expanded := homepath.Expand(p, "")
 				if _, err := os.Stat(expanded); err != nil {
 					fmt.Fprintf(out, "  ⚠ %s does not exist (added anyway)\n", p)
 				}

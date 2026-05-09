@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/jskswamy/aide/internal/fsutil"
 )
 
 // Store is a content-addressed set backed by a directory of files.
@@ -58,7 +60,7 @@ func (s *Store) Add(key string, body []byte) error {
 	if err := os.MkdirAll(s.baseDir, 0o700); err != nil {
 		return err
 	}
-	return atomicWrite(filepath.Join(s.baseDir, key), body)
+	return fsutil.AtomicWrite(filepath.Join(s.baseDir, key), body)
 }
 
 // Remove deletes the record for key. Missing keys are a no-op.
@@ -113,28 +115,3 @@ func (s *Store) List() ([]Record, error) {
 	return out, nil
 }
 
-// atomicWrite writes data to a temp file in the same directory then
-// renames it over path. File permissions are 0o600.
-func atomicWrite(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".aide-approval-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if err := f.Chmod(0o600); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, path)
-}

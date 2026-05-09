@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/trust"
 	"gopkg.in/yaml.v3"
 )
@@ -15,22 +16,7 @@ func WriteProjectOverride(path string, po *ProjectOverride) error {
 	if err != nil {
 		return fmt.Errorf("marshaling project override: %w", err)
 	}
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("creating directory: %w", err)
-	}
-
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
-		return fmt.Errorf("writing temp file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("renaming temp file: %w", err)
-	}
-	return nil
+	return fsutil.AtomicWrite(path, data)
 }
 
 // WriteProjectOverrideWithTrust writes the project override and auto-re-trusts the file

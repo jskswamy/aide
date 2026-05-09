@@ -2,14 +2,12 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
 // WriteConfig writes the given Config to the global config file atomically.
-// It writes to a .tmp file first, then renames.
 func WriteConfig(cfg *Config) error {
 	return WriteConfigTo(cfg, FilePath())
 }
@@ -21,22 +19,5 @@ func WriteConfigTo(cfg *Config, path string) error {
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
-	}
-
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
-		return fmt.Errorf("writing temp config file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		// Clean up .tmp on failure
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("renaming temp config file: %w", err)
-	}
-
-	return nil
+	return fsutil.AtomicWrite(path, data)
 }

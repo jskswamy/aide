@@ -339,6 +339,144 @@ func TestResolve_RemoteExactBeatsRemoteGlob(t *testing.T) {
 	}
 }
 
+// TestResolve_ExactRemoteBeatsRecursivePathGlob locks in the AIDE-30b fix:
+// an exact remote URL is a stronger identity signal than a recursive '**'
+// path glob, so it must outrank the path glob. Without this, a context bound
+// to a unique repo URL is silently overridden by any catch-all path glob
+// covering the checkout directory.
+func TestResolve_ExactRemoteBeatsRecursivePathGlob(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home directory")
+	}
+	cwd := filepath.Join(home, "src-AIDE-30b", "acme", "widget-sim")
+	remote := "ssh://git@github.com/acme/widget-sim.git"
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"acme": {
+				Match: []config.MatchRule{
+					{Remote: remote},
+				},
+				Agent: "acme-agent",
+			},
+			"work": {
+				Match: []config.MatchRule{
+					{Path: filepath.Join(home, "src-AIDE-30b", "acme", "**")},
+				},
+				Agent: "work-agent",
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, cwd, remote)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "acme" {
+		t.Errorf("expected 'acme' (exact remote URL more specific than recursive path glob), got %q", rc.Name)
+	}
+}
+
+func TestResolve_RemoteURLForms_AllMatchSameCanonicalPattern(t *testing.T) {
+	// A single canonical pattern should match all three interchangeable git
+	// remote URL forms for the same repo.
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"acme": {
+				Match: []config.MatchRule{
+					{Remote: "github.com/acme/widget-sim"},
+				},
+				Agent: "claude",
+			},
+		},
+	}
+
+	cases := []struct {
+		name      string
+		remoteURL string
+	}{
+		{"ssh-scheme", "ssh://git@github.com/acme/widget-sim.git"},
+		{"scp-style", "git@github.com:acme/widget-sim.git"},
+		{"https", "https://github.com/acme/widget-sim.git"},
+		{"https-no-suffix", "https://github.com/acme/widget-sim"},
+		{"already-canonical", "github.com/acme/widget-sim"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rc, err := Resolve(cfg, "/tmp/somedir", tc.remoteURL)
+			if err != nil {
+				t.Fatalf("unexpected error for %q: %v", tc.remoteURL, err)
+			}
+			if rc.Name != "acme" {
+				t.Errorf("expected context 'acme' for remote %q, got %q", tc.remoteURL, rc.Name)
+			}
+		})
+	}
+}
+
+func TestResolve_RemotePatternURLForms_AllMatchCanonicalRemote(t *testing.T) {
+	// A pattern written in any URL form should match a remote in any URL form
+	// for the same repo (both sides get canonicalized).
+	patterns := []string{
+		"ssh://git@github.com/acme/widget-sim.git",
+		"git@github.com:acme/widget-sim.git",
+		"https://github.com/acme/widget-sim.git",
+		"github.com/acme/widget-sim",
+	}
+
+	for _, pattern := range patterns {
+		t.Run("pattern="+pattern, func(t *testing.T) {
+			cfg := &config.Config{
+				Contexts: map[string]config.Context{
+					"acme": {
+						Match: []config.MatchRule{{Remote: pattern}},
+						Agent: "claude",
+					},
+				},
+			}
+			rc, err := Resolve(cfg, "/tmp/somedir", "git@github.com:acme/widget-sim.git")
+			if err != nil {
+				t.Fatalf("unexpected error for pattern %q: %v", pattern, err)
+			}
+			if rc.Name != "acme" {
+				t.Errorf("expected context 'acme' for pattern %q, got %q", pattern, rc.Name)
+			}
+		})
+	}
+}
+
+func TestResolve_RemoteGlobPattern_MatchesURLForms(t *testing.T) {
+	// Glob patterns in canonical form should still work against any URL form.
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Match: []config.MatchRule{{Remote: "github.com/acme/*"}},
+				Agent: "claude",
+			},
+		},
+	}
+
+	cases := []string{
+		"ssh://git@github.com/acme/widget-sim.git",
+		"git@github.com:acme/widget-sim.git",
+		"https://github.com/acme/widget-sim.git",
+		"github.com/acme/widget-sim",
+	}
+	for _, remoteURL := range cases {
+		t.Run(remoteURL, func(t *testing.T) {
+			rc, err := Resolve(cfg, "/tmp/somedir", remoteURL)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if rc.Name != "work" {
+				t.Errorf("expected context 'work' for %q, got %q", remoteURL, rc.Name)
+			}
+		})
+	}
+}
+
 func TestResolve_TildeExpansion(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {

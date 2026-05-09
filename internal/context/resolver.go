@@ -19,11 +19,16 @@ type ResolvedContext struct {
 }
 
 // Specificity tiers. Within a tier, longer pattern string = higher specificity.
+//
+// An exact remote URL sits between path-glob and path-exact: it is a unique
+// repo identity (stronger than any directory glob, which is a catch-all) but
+// weaker than an exact directory binding (which pins a specific checkout).
 const (
-	specificityDefault   = 0
-	specificityRemote    = 100
-	specificityPathGlob  = 200
-	specificityPathExact = 300
+	specificityDefault     = 0
+	specificityRemote      = 100
+	specificityPathGlob    = 200
+	specificityRemoteExact = 250
+	specificityPathExact   = 300
 )
 
 // Resolve picks the best matching context from cfg for the given cwd and remoteURL.
@@ -315,9 +320,10 @@ func scoreRemoteRule(pattern string, remoteURL string) int {
 		return 0
 	}
 
-	// Exact match gets a bonus
+	// Exact match: promoted to its own tier above path-glob, since a unique
+	// repo URL is a stronger identity signal than any directory catch-all.
 	if pattern == remoteURL {
-		return specificityRemote + len(pattern) + 50
+		return specificityRemoteExact + len(pattern)
 	}
 
 	// Glob match
@@ -355,6 +361,9 @@ func describeMatch(rule *config.MatchRule, score int) string {
 		return fmt.Sprintf("path glob match: %s", rule.Path)
 	}
 	if rule.Remote != "" {
+		if score >= specificityRemoteExact {
+			return fmt.Sprintf("exact remote match: %s", rule.Remote)
+		}
 		return fmt.Sprintf("remote match: %s", rule.Remote)
 	}
 	return "unknown"

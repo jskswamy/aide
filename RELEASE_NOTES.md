@@ -48,6 +48,13 @@
   `approvalstore.Store.Sub` so sibling aggregates wire their
   sub-namespaces in one place, plus `consent.Status.String` to match
   `trust.Status`'s contract.
+- **Seatbelt agent module skeleton collapsed.** Five of the six
+  bundled agent modules (aider, amp, codex, gemini, goose) now
+  declare themselves through a data-only `modules.AgentSpec` instead
+  of carrying an identical struct + constructor + Name + Rules
+  skeleton each. The unused `seatbelt.Section` alias is removed
+  (`SectionAllow` was always identical), and the three home-path
+  rule constructors share a private `homeExpr` helper.
 
 ### ⚠️ Breaking
 

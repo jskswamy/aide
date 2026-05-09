@@ -18,18 +18,16 @@ func Path(p string) string {
 }
 
 // HomeSubpath returns (subpath "<home>/<rel>") for use in profile rules.
-func HomeSubpath(home, rel string) string {
-	return fmt.Sprintf(`(subpath "%s")`, filepath.Join(home, rel))
-}
+func HomeSubpath(home, rel string) string { return homeExpr("subpath", home, rel) }
 
 // HomeLiteral returns (literal "<home>/<rel>") for use in profile rules.
-func HomeLiteral(home, rel string) string {
-	return fmt.Sprintf(`(literal "%s")`, filepath.Join(home, rel))
-}
+func HomeLiteral(home, rel string) string { return homeExpr("literal", home, rel) }
 
 // HomePrefix returns (prefix "<home>/<rel>") for use in profile rules.
-func HomePrefix(home, rel string) string {
-	return fmt.Sprintf(`(prefix "%s")`, filepath.Join(home, rel))
+func HomePrefix(home, rel string) string { return homeExpr("prefix", home, rel) }
+
+func homeExpr(form, home, rel string) string {
+	return fmt.Sprintf(`(%s "%s")`, form, filepath.Join(home, rel))
 }
 
 // SubpathWithParentMetadata returns two rules: (allow file-read* (subpath ...))

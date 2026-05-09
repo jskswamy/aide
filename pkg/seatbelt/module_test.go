@@ -68,7 +68,7 @@ func TestRuleIntent_UtilityConstructors(t *testing.T) {
 		rule Rule
 	}{
 		{"Raw", Raw("test")},
-		{"Section", Section("test")},
+		{"SectionAllow", SectionAllow("test")},
 		{"Comment", Comment("test")},
 	}
 	for _, tt := range tests {

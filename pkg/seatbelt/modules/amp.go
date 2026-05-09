@@ -1,22 +1,13 @@
 package modules
 
-import (
-	"path/filepath"
-
-	"github.com/jskswamy/aide/pkg/seatbelt"
-)
-
-type ampAgentModule struct{}
+import "github.com/jskswamy/aide/pkg/seatbelt"
 
 // AmpAgent returns a module with Amp agent sandbox rules.
-func AmpAgent() seatbelt.Module { return &ampAgentModule{} }
-
-func (m *ampAgentModule) Name() string { return "Amp Agent" }
-
-func (m *ampAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
-	dirs := resolveConfigDirs(ctx, "AMP_HOME", []string{
-		filepath.Join(ctx.HomeDir, ".amp"),
-		filepath.Join(ctx.HomeDir, ".config", "amp"),
+func AmpAgent() seatbelt.Module {
+	return NewSimpleAgent(AgentSpec{
+		DisplayName:     "Amp Agent",
+		SectionName:     "Amp",
+		EnvKey:          "AMP_HOME",
+		HomeRelDefaults: []string{".amp", ".config/amp"},
 	})
-	return seatbelt.GuardResult{Rules: configDirRules("Amp", dirs)}
 }

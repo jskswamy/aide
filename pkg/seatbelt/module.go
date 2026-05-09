@@ -133,11 +133,6 @@ func Comment(text string) Rule {
 	return Rule{intent: Allow, comment: text}
 }
 
-// Section creates a ;; --- section header --- comment.
-func Section(name string) Rule {
-	return Rule{intent: Allow, comment: "--- " + name + " ---"}
-}
-
 // Raw creates a rule from raw Seatbelt text (may be multi-line).
 func Raw(text string) Rule {
 	return Rule{intent: Allow, lines: text}

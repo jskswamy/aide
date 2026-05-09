@@ -314,27 +314,75 @@ func globBase(pattern string) string {
 	return dir
 }
 
-// scoreRemoteRule scores a remote match rule against a normalized remote URL.
+// scoreRemoteRule scores a remote match rule against a remote URL.
+//
+// Both pattern and remoteURL are canonicalized to "host/org/repo" form before
+// comparison so that the three interchangeable git URL forms — ssh scheme
+// (ssh://git@host/org/repo.git), scp-style (git@host:org/repo.git), and
+// https (https://host/org/repo.git) — all match a single pattern.
+//
+// Glob patterns (containing *, ?, [, {) are left as-is since they are already
+// expressed in canonical form and url.Parse would mangle them.
 func scoreRemoteRule(pattern string, remoteURL string) int {
 	if remoteURL == "" {
 		return 0
 	}
 
+	canonRemote := canonicalizeRemote(remoteURL)
+	canonPattern := canonicalizeRemotePattern(pattern)
+
 	// Exact match: promoted to its own tier above path-glob, since a unique
 	// repo URL is a stronger identity signal than any directory catch-all.
-	if pattern == remoteURL {
+	if canonPattern == canonRemote {
 		return specificityRemoteExact + len(pattern)
 	}
 
-	// Glob match
-	g, err := glob.Compile(pattern)
+	// Glob match — match canonical remote first; fall back to raw remote so
+	// pathological patterns written in URL form (e.g. ssh://...*) still work.
+	g, err := glob.Compile(canonPattern)
 	if err != nil {
 		return 0
 	}
-	if g.Match(remoteURL) {
+	if g.Match(canonRemote) || g.Match(remoteURL) {
 		return specificityRemote + len(pattern)
 	}
 	return 0
+}
+
+// canonicalizeRemote normalizes a git remote URL to "host/org/repo" form via
+// ParseRemoteHost. Returns the input unchanged if it is empty or cannot be
+// parsed into a host/path.
+func canonicalizeRemote(s string) string {
+	if s == "" {
+		return s
+	}
+	if c := ParseRemoteHost(s); c != "" {
+		return c
+	}
+	return s
+}
+
+// canonicalizeRemotePattern canonicalizes a remote rule pattern. URL-shaped
+// patterns (with a scheme, or scp-style user@host:path) are normalized via
+// ParseRemoteHost; everything else (globs, already-canonical host/org/repo,
+// bare host names) is returned unchanged.
+func canonicalizeRemotePattern(s string) string {
+	if s == "" {
+		return s
+	}
+	if strings.ContainsAny(s, "*?[{") {
+		return s
+	}
+	hasScheme := strings.Contains(s, "://")
+	// scp-style: contains ':' but no scheme, and doesn't start with '/'.
+	isSCP := !hasScheme && strings.Contains(s, ":") && !strings.HasPrefix(s, "/")
+	if !hasScheme && !isSCP {
+		return s
+	}
+	if c := ParseRemoteHost(s); c != "" {
+		return c
+	}
+	return s
 }
 
 // expandTilde replaces a leading ~ with the user's home directory.

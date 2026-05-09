@@ -2,8 +2,11 @@ package capability
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/sliceutil"
 )
 
 // Capability defines a task-oriented permission bundle.
@@ -101,7 +104,7 @@ func resolveOne(name string, registry map[string]Capability, visited map[string]
 	if len(entry.Combines) > 0 {
 		result := &ResolvedCapability{Name: name, Sources: []string{name}}
 		for _, combineName := range entry.Combines {
-			resolved, err := resolveOne(combineName, registry, copyVisited(visited), depth+1)
+			resolved, err := resolveOne(combineName, registry, maps.Clone(visited), depth+1)
 			if err != nil {
 				return nil, fmt.Errorf("resolving combined %q in %q: %w", combineName, name, err)
 			}
@@ -121,15 +124,15 @@ func flatten(capDef *Capability) *ResolvedCapability {
 	return &ResolvedCapability{
 		Name:        capDef.Name,
 		Sources:     []string{capDef.Name},
-		Unguard:     copyStrings(capDef.Unguard),
-		Readable:    copyStrings(capDef.Readable),
-		Writable:    copyStrings(capDef.Writable),
-		Deny:        copyStrings(capDef.Deny),
-		EnvAllow:    copyStrings(capDef.EnvAllow),
-		EnableGuard: copyStrings(capDef.EnableGuard),
-		Allow:       copyStrings(capDef.Allow),
+		Unguard:     slices.Clone(capDef.Unguard),
+		Readable:    slices.Clone(capDef.Readable),
+		Writable:    slices.Clone(capDef.Writable),
+		Deny:        slices.Clone(capDef.Deny),
+		EnvAllow:    slices.Clone(capDef.EnvAllow),
+		EnableGuard: slices.Clone(capDef.EnableGuard),
+		Allow:       slices.Clone(capDef.Allow),
 		NetworkMode: capDef.NetworkMode,
-		Ports:       copyInts(capDef.Ports),
+		Ports:       slices.Clone(capDef.Ports),
 	}
 }
 
@@ -141,15 +144,15 @@ func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapabili
 	return &ResolvedCapability{
 		Name:        child.Name,
 		Sources:     append([]string{child.Name}, parent.Sources...),
-		Unguard:     dedup(append(parent.Unguard, child.Unguard...)),
-		Readable:    dedup(append(parent.Readable, child.Readable...)),
-		Writable:    dedup(append(parent.Writable, child.Writable...)),
-		Deny:        dedup(append(parent.Deny, child.Deny...)),
-		EnvAllow:    dedup(append(parent.EnvAllow, child.EnvAllow...)),
-		EnableGuard: dedup(append(parent.EnableGuard, child.EnableGuard...)),
-		Allow:       dedup(append(parent.Allow, child.Allow...)),
+		Unguard:     sliceutil.Dedup(append(parent.Unguard, child.Unguard...)),
+		Readable:    sliceutil.Dedup(append(parent.Readable, child.Readable...)),
+		Writable:    sliceutil.Dedup(append(parent.Writable, child.Writable...)),
+		Deny:        sliceutil.Dedup(append(parent.Deny, child.Deny...)),
+		EnvAllow:    sliceutil.Dedup(append(parent.EnvAllow, child.EnvAllow...)),
+		EnableGuard: sliceutil.Dedup(append(parent.EnableGuard, child.EnableGuard...)),
+		Allow:       sliceutil.Dedup(append(parent.Allow, child.Allow...)),
 		NetworkMode: networkMode,
-		Ports:       dedupInts(append(parent.Ports, child.Ports...)),
+		Ports:       sliceutil.Dedup(append(parent.Ports, child.Ports...)),
 	}
 }
 
@@ -163,21 +166,21 @@ func mergeChild(parent *ResolvedCapability, child *Capability) *ResolvedCapabili
 func MergeSelectedVariants(rc *ResolvedCapability, selected []Variant) *ResolvedCapability {
 	out := *rc
 	out.Sources = append([]string(nil), rc.Sources...)
-	out.Readable = copyStrings(rc.Readable)
-	out.Writable = copyStrings(rc.Writable)
-	out.EnvAllow = copyStrings(rc.EnvAllow)
-	out.EnableGuard = copyStrings(rc.EnableGuard)
-	out.Unguard = copyStrings(rc.Unguard)
-	out.Deny = copyStrings(rc.Deny)
-	out.Allow = copyStrings(rc.Allow)
+	out.Readable = slices.Clone(rc.Readable)
+	out.Writable = slices.Clone(rc.Writable)
+	out.EnvAllow = slices.Clone(rc.EnvAllow)
+	out.EnableGuard = slices.Clone(rc.EnableGuard)
+	out.Unguard = slices.Clone(rc.Unguard)
+	out.Deny = slices.Clone(rc.Deny)
+	out.Allow = slices.Clone(rc.Allow)
 	for _, v := range selected {
 		if v.Name != "" {
 			out.Sources = append(out.Sources, rc.Name+"/"+v.Name)
 		}
-		out.Readable = dedup(append(out.Readable, v.Readable...))
-		out.Writable = dedup(append(out.Writable, v.Writable...))
-		out.EnvAllow = dedup(append(out.EnvAllow, v.EnvAllow...))
-		out.EnableGuard = dedup(append(out.EnableGuard, v.EnableGuard...))
+		out.Readable = sliceutil.Dedup(append(out.Readable, v.Readable...))
+		out.Writable = sliceutil.Dedup(append(out.Writable, v.Writable...))
+		out.EnvAllow = sliceutil.Dedup(append(out.EnvAllow, v.EnvAllow...))
+		out.EnableGuard = sliceutil.Dedup(append(out.EnableGuard, v.EnableGuard...))
 	}
 	return &out
 }
@@ -190,72 +193,16 @@ func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
 	return &ResolvedCapability{
 		Name:        a.Name,
 		Sources:     append(a.Sources, b.Sources...),
-		Unguard:     dedup(append(a.Unguard, b.Unguard...)),
-		Readable:    dedup(append(a.Readable, b.Readable...)),
-		Writable:    dedup(append(a.Writable, b.Writable...)),
-		Deny:        dedup(append(a.Deny, b.Deny...)),
-		EnvAllow:    dedup(append(a.EnvAllow, b.EnvAllow...)),
-		EnableGuard: dedup(append(a.EnableGuard, b.EnableGuard...)),
-		Allow:       dedup(append(a.Allow, b.Allow...)),
+		Unguard:     sliceutil.Dedup(append(a.Unguard, b.Unguard...)),
+		Readable:    sliceutil.Dedup(append(a.Readable, b.Readable...)),
+		Writable:    sliceutil.Dedup(append(a.Writable, b.Writable...)),
+		Deny:        sliceutil.Dedup(append(a.Deny, b.Deny...)),
+		EnvAllow:    sliceutil.Dedup(append(a.EnvAllow, b.EnvAllow...)),
+		EnableGuard: sliceutil.Dedup(append(a.EnableGuard, b.EnableGuard...)),
+		Allow:       sliceutil.Dedup(append(a.Allow, b.Allow...)),
 		NetworkMode: networkMode,
-		Ports:       dedupInts(append(a.Ports, b.Ports...)),
+		Ports:       sliceutil.Dedup(append(a.Ports, b.Ports...)),
 	}
-}
-
-func copyInts(s []int) []int {
-	if s == nil {
-		return nil
-	}
-	out := make([]int, len(s))
-	copy(out, s)
-	return out
-}
-
-func dedupInts(s []int) []int {
-	if len(s) == 0 {
-		return nil
-	}
-	seen := make(map[int]bool, len(s))
-	var out []int
-	for _, v := range s {
-		if !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-func copyStrings(s []string) []string {
-	if s == nil {
-		return nil
-	}
-	out := make([]string, len(s))
-	copy(out, s)
-	return out
-}
-
-func copyVisited(m map[string]bool) map[string]bool {
-	out := make(map[string]bool, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
-func dedup(s []string) []string {
-	if len(s) == 0 {
-		return nil
-	}
-	seen := make(map[string]bool, len(s))
-	var out []string
-	for _, v := range s {
-		if !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 // ResolveAll resolves multiple capability names and returns a merged Set.
@@ -318,13 +265,13 @@ func (cs *Set) ToSandboxOverrides() SandboxOverrides {
 		o.EnvAllow = filtered
 	}
 
-	o.Unguard = dedup(o.Unguard)
-	o.ReadableExtra = dedup(o.ReadableExtra)
-	o.WritableExtra = dedup(o.WritableExtra)
-	o.DeniedExtra = dedup(o.DeniedExtra)
-	o.EnvAllow = dedup(o.EnvAllow)
-	o.EnableGuard = dedup(o.EnableGuard)
-	o.Allow = dedup(o.Allow)
+	o.Unguard = sliceutil.Dedup(o.Unguard)
+	o.ReadableExtra = sliceutil.Dedup(o.ReadableExtra)
+	o.WritableExtra = sliceutil.Dedup(o.WritableExtra)
+	o.DeniedExtra = sliceutil.Dedup(o.DeniedExtra)
+	o.EnvAllow = sliceutil.Dedup(o.EnvAllow)
+	o.EnableGuard = sliceutil.Dedup(o.EnableGuard)
+	o.Allow = sliceutil.Dedup(o.Allow)
 
 	return o
 }

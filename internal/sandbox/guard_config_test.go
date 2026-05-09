@@ -255,42 +255,6 @@ func TestDisableGuard_RemovesFromGuardsExtra(t *testing.T) {
 	}
 }
 
-func TestRemoveFromSlice(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []string
-		val      string
-		expected []string
-		found    bool
-	}{
-		{"remove middle", []string{"a", "b", "c"}, "b", []string{"a", "c"}, true},
-		{"remove first", []string{"a", "b", "c"}, "a", []string{"b", "c"}, true},
-		{"remove last", []string{"a", "b", "c"}, "c", []string{"a", "b"}, true},
-		{"not found", []string{"a", "b"}, "z", []string{"a", "b"}, false},
-		{"empty slice", []string{}, "a", []string{}, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := make([]string, len(tt.input))
-			copy(s, tt.input)
-			got := removeFromSlice(&s, tt.val)
-			if got != tt.found {
-				t.Errorf("removeFromSlice returned %v, want %v", got, tt.found)
-			}
-			if len(s) != len(tt.expected) {
-				t.Errorf("slice = %v, want %v", s, tt.expected)
-				return
-			}
-			for i := range s {
-				if s[i] != tt.expected[i] {
-					t.Errorf("slice = %v, want %v", s, tt.expected)
-					break
-				}
-			}
-		})
-	}
-}
-
 func TestDefaultGuard_DisableEnableRoundTrip(t *testing.T) {
 	cfg := &config.SandboxPolicy{}
 

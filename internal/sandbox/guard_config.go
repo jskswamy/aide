@@ -1,6 +1,8 @@
 package sandbox
 
 import (
+	"slices"
+
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -51,7 +53,7 @@ func EnableGuard(cfg *config.SandboxPolicy, name string) *seatbelt.ValidationRes
 	var newUnguard []string
 	for _, u := range cfg.Unguard {
 		expanded := guards.ExpandGuardName(u)
-		if containsString(expanded, name) {
+		if slices.Contains(expanded, name) {
 			// This entry (or its expansion) covers our target — keep the others
 			for _, e := range expanded {
 				if e != name {
@@ -122,12 +124,14 @@ func DisableGuard(cfg *config.SandboxPolicy, name string) *seatbelt.ValidationRe
 	}
 
 	// Remove from guards: if present
-	if removeFromSlice(&cfg.Guards, name) {
+	if i := slices.Index(cfg.Guards, name); i >= 0 {
+		cfg.Guards = slices.Delete(cfg.Guards, i, i+1)
 		return r
 	}
 
 	// Remove from guards_extra: if present
-	if removeFromSlice(&cfg.GuardsExtra, name) {
+	if i := slices.Index(cfg.GuardsExtra, name); i >= 0 {
+		cfg.GuardsExtra = slices.Delete(cfg.GuardsExtra, i, i+1)
 		return r
 	}
 
@@ -136,14 +140,3 @@ func DisableGuard(cfg *config.SandboxPolicy, name string) *seatbelt.ValidationRe
 	return r
 }
 
-// removeFromSlice removes the first occurrence of val from *slice.
-// Returns true if found and removed.
-func removeFromSlice(slice *[]string, val string) bool {
-	for i, v := range *slice {
-		if v == val {
-			*slice = append((*slice)[:i], (*slice)[i+1:]...)
-			return true
-		}
-	}
-	return false
-}

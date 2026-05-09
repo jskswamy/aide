@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/sliceutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
@@ -162,7 +164,7 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 		for _, name := range cfg.Guards {
 			expanded := guards.ExpandGuardName(name)
 			for _, n := range expanded {
-				if !containsString(alwaysNames, n) {
+				if !slices.Contains(alwaysNames, n) {
 					guardNames = append(guardNames, n)
 				}
 			}
@@ -198,13 +200,13 @@ func resolveGuards(cfg *config.SandboxPolicy) ([]string, []string, error) {
 				if g.Type() == "always" {
 					return nil, nil, fmt.Errorf("sandbox: cannot unguard %q (type %q is always-on)", n, g.Type())
 				}
-				guardNames = removeString(guardNames, n)
+				guardNames = slices.DeleteFunc(guardNames, func(s string) bool { return s == n })
 			}
 		}
 	}
 
 	// Deduplicate while preserving order
-	guardNames = dedup(guardNames)
+	guardNames = sliceutil.Dedup(guardNames)
 
 	return guardNames, warnings, nil
 }
@@ -220,39 +222,6 @@ func alwaysGuardNames() []string {
 	return names
 }
 
-// containsString checks if a string slice contains a value.
-func containsString(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-// removeString removes all occurrences of s from slice.
-func removeString(slice []string, s string) []string {
-	var result []string
-	for _, v := range slice {
-		if v != s {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-// dedup removes duplicates while preserving order.
-func dedup(slice []string) []string {
-	seen := make(map[string]bool, len(slice))
-	var result []string
-	for _, s := range slice {
-		if !seen[s] {
-			seen[s] = true
-			result = append(result, s)
-		}
-	}
-	return result
-}
 
 // isGlobPattern reports whether path contains any glob metacharacters.
 func isGlobPattern(path string) bool {

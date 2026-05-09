@@ -8,6 +8,7 @@ import (
 	"github.com/gobwas/glob"
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/sliceutil"
 )
 
 // ResolvedContext holds the result of context resolution.
@@ -150,11 +151,11 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride, sandb
 		inline := rc.Context.Sandbox.Inline
 
 		// Additive fields (append + dedup)
-		inline.DeniedExtra = dedupStrings(append(inline.DeniedExtra, po.Sandbox.DeniedExtra...))
-		inline.ReadableExtra = dedupStrings(append(inline.ReadableExtra, po.Sandbox.ReadableExtra...))
-		inline.WritableExtra = dedupStrings(append(inline.WritableExtra, po.Sandbox.WritableExtra...))
-		inline.GuardsExtra = dedupStrings(append(inline.GuardsExtra, po.Sandbox.GuardsExtra...))
-		inline.Unguard = dedupStrings(append(inline.Unguard, po.Sandbox.Unguard...))
+		inline.DeniedExtra = sliceutil.Dedup(append(inline.DeniedExtra, po.Sandbox.DeniedExtra...))
+		inline.ReadableExtra = sliceutil.Dedup(append(inline.ReadableExtra, po.Sandbox.ReadableExtra...))
+		inline.WritableExtra = sliceutil.Dedup(append(inline.WritableExtra, po.Sandbox.WritableExtra...))
+		inline.GuardsExtra = sliceutil.Dedup(append(inline.GuardsExtra, po.Sandbox.GuardsExtra...))
+		inline.Unguard = sliceutil.Dedup(append(inline.Unguard, po.Sandbox.Unguard...))
 
 		// Replace-if-set fields
 		if len(po.Sandbox.Writable) > 0 {
@@ -184,7 +185,7 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride, sandb
 	}
 	// Capabilities: additive merge, then subtract disabled
 	if len(po.Capabilities) > 0 || len(po.DisabledCapabilities) > 0 {
-		merged := dedupStrings(append(rc.Context.Capabilities, po.Capabilities...))
+		merged := sliceutil.Dedup(append(rc.Context.Capabilities, po.Capabilities...))
 		rc.Context.Capabilities = subtractStrings(merged, po.DisabledCapabilities)
 	}
 	// Env: merge additively, override wins on conflict
@@ -204,18 +205,6 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride, sandb
 	rc.MatchReason = fmt.Sprintf("project override on top of %s", rc.MatchReason)
 }
 
-// dedupStrings returns a new slice with duplicate strings removed, preserving order.
-func dedupStrings(s []string) []string {
-	seen := make(map[string]bool, len(s))
-	var result []string
-	for _, v := range s {
-		if !seen[v] {
-			seen[v] = true
-			result = append(result, v)
-		}
-	}
-	return result
-}
 
 // subtractStrings returns elements in a that are not in b.
 func subtractStrings(a, b []string) []string {

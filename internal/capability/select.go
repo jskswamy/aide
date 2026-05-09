@@ -17,6 +17,7 @@ package capability
 import (
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jskswamy/aide/internal/consent"
@@ -235,18 +236,7 @@ type UnknownVariantError struct {
 
 func (e *UnknownVariantError) Error() string {
 	return "unknown variant '" + e.Variant + "' for capability '" + e.Capability +
-		"'. available: " + joinCSV(e.Available)
-}
-
-func joinCSV(s []string) string {
-	out := ""
-	for i, v := range s {
-		if i > 0 {
-			out += ", "
-		}
-		out += v
-	}
-	return out
+		"'. available: " + strings.Join(e.Available, ", ")
 }
 
 func previousVariants(store *consent.Store, project, capName string) []string {

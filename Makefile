@@ -2,11 +2,30 @@
 
 all: build vet test
 
-build:
-	go build -o bin/aide ./cmd/aide
+# Version metadata for `make build` — mirrors .goreleaser.yml so dev binaries
+# report a meaningful version. `make install` instead delegates to goreleaser
+# so the installed binary matches release artifacts exactly.
+VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+BUILD_DATE ?= $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
+LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 
+GOPATH_BIN := $(shell go env GOPATH)/bin
+
+build:
+	go build -ldflags "$(LDFLAGS)" -o bin/aide ./cmd/aide
+
+# Install via goreleaser so the binary matches release artifacts. goreleaser
+# refuses to run on a dirty tree without --snapshot, which gives us the
+# dirty-commit guard for free.
 install:
-	go install ./cmd/aide
+	@if ! command -v goreleaser >/dev/null 2>&1; then \
+		echo "error: goreleaser not installed; see https://goreleaser.com/install/"; \
+		exit 1; \
+	fi
+	goreleaser build --single-target --clean --output bin/aide
+	install -m 0755 bin/aide $(GOPATH_BIN)/aide
+	@echo "installed: $(GOPATH_BIN)/aide"
 
 test:
 	go test ./...

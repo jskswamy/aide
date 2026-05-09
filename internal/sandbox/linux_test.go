@@ -162,7 +162,7 @@ func TestLinuxSandbox_Apply_FallsBackGracefully(t *testing.T) {
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo", "test")
 	runtimeDir := t.TempDir()
-	policy := DefaultPolicy("/tmp/proj", runtimeDir, "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: runtimeDir, TempDir: "/tmp"}, nil)
 
 	// This test exercises the full Apply path.
 	// On systems with bwrap (our devcontainer), it will use bwrap.

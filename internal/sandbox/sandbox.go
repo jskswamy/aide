@@ -103,21 +103,29 @@ const (
 	NetworkUnrestricted NetworkMode = "unrestricted"
 )
 
+// Paths bundles the filesystem locations a sandbox policy needs. Passing
+// the four paths as a struct (instead of a positional string list) makes
+// it impossible to swap HomeDir and TempDir at a call site.
+type Paths struct {
+	// ProjectRoot is the git root (or cwd if not a repo).
+	ProjectRoot string
+	// RuntimeDir is the $XDG_RUNTIME_DIR/aide-<pid>/ directory.
+	RuntimeDir string
+	// HomeDir is the user's home directory. Used by PolicyFromConfig for
+	// path-template expansion; DefaultPolicy ignores it.
+	HomeDir string
+	// TempDir is the os.TempDir() result.
+	TempDir string
+}
+
 // DefaultPolicy returns the sandbox policy applied when no sandbox: block
 // exists in the context config.
-//
-// Parameters:
-//
-//	projectRoot — git root (or cwd if not a repo)
-//	runtimeDir  — $XDG_RUNTIME_DIR/aide-<pid>/
-//	tempDir     — os.TempDir() result
-//	env         — environment variables for the agent
-func DefaultPolicy(projectRoot, runtimeDir, tempDir string, env []string) Policy {
+func DefaultPolicy(p Paths, env []string) Policy {
 	return Policy{
 		Guards:          guards.DefaultGuardNames(),
-		ProjectRoot:     projectRoot,
-		RuntimeDir:      runtimeDir,
-		TempDir:         tempDir,
+		ProjectRoot:     p.ProjectRoot,
+		RuntimeDir:      p.RuntimeDir,
+		TempDir:         p.TempDir,
 		Env:             env,
 		Network:         NetworkOutbound,
 		AllowSubprocess: true,
@@ -161,6 +169,31 @@ func expandGlobs(patterns []string) []string { //nolint:unused,nolintlint // use
 	return result
 }
 
+// ToSeatbeltContext projects the Policy onto a seatbelt.Context. It is the
+// single owner of the Policy → Context mapping; both EvaluateGuards and the
+// darwin profile generator route through it so that adding a Policy field
+// is a one-line change in this method instead of a shotgun edit across
+// sandbox.go and darwin.go.
+func (p *Policy) ToSeatbeltContext(homeDir string) *seatbelt.Context {
+	return &seatbelt.Context{
+		HomeDir:         homeDir,
+		ProjectRoot:     p.ProjectRoot,
+		TempDir:         p.TempDir,
+		RuntimeDir:      p.RuntimeDir,
+		Env:             p.Env,
+		GOOS:            runtime.GOOS,
+		Network:         string(p.Network),
+		AllowPorts:      p.AllowPorts,
+		DenyPorts:       p.DenyPorts,
+		SSHPorts:        p.SSHPorts,
+		ExtraDenied:     p.ExtraDenied,
+		ExtraWritable:   p.ExtraWritable,
+		ExtraReadable:   p.ExtraReadable,
+		AllowSubprocess: p.AllowSubprocess,
+		ExtraAllow:      p.ExtraAllow,
+	}
+}
+
 // EvaluateGuards runs all guards from the policy and returns their diagnostics
 // without rendering a full profile. Used by the banner layer to show guard status.
 func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
@@ -170,23 +203,7 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 	homeDir, _ := os.UserHomeDir()
 	activeGuards := guards.ResolveActiveGuards(policy.Guards)
 
-	ctx := &seatbelt.Context{
-		HomeDir:     homeDir,
-		ProjectRoot: policy.ProjectRoot,
-		TempDir:     policy.TempDir,
-		RuntimeDir:  policy.RuntimeDir,
-		Env:         policy.Env,
-		GOOS:        runtime.GOOS,
-		Network:     string(policy.Network),
-		AllowPorts:  policy.AllowPorts,
-		DenyPorts:   policy.DenyPorts,
-		SSHPorts:    policy.SSHPorts,
-		ExtraDenied:   policy.ExtraDenied,
-		ExtraWritable:   policy.ExtraWritable,
-		ExtraReadable:   policy.ExtraReadable,
-		AllowSubprocess: policy.AllowSubprocess,
-		ExtraAllow:      policy.ExtraAllow,
-	}
+	ctx := policy.ToSeatbeltContext(homeDir)
 
 	var results []seatbelt.GuardResult
 	for _, g := range activeGuards {

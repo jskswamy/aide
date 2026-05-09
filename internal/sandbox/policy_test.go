@@ -17,7 +17,7 @@ func TestPolicyFromConfig_Nil_ReturnsDefaults(t *testing.T) {
 	homeDir := "/home/testuser"
 	tempDir := "/tmp"
 
-	policy, _, err := PolicyFromConfig(nil, projectRoot, runtimeDir, homeDir, tempDir)
+	policy, _, err := PolicyFromConfig(nil, Paths{ProjectRoot: projectRoot, RuntimeDir: runtimeDir, HomeDir: homeDir, TempDir: tempDir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestPolicyFromConfig_Nil_ReturnsDefaults(t *testing.T) {
 		t.Fatal("expected non-nil policy for nil config")
 	}
 
-	defaults := DefaultPolicy(projectRoot, runtimeDir, tempDir, nil)
+	defaults := DefaultPolicy(Paths{ProjectRoot: projectRoot, RuntimeDir: runtimeDir, TempDir: tempDir}, nil)
 
 	assertSliceEqual(t, policy.Guards, defaults.Guards, "Guards")
 
@@ -148,7 +148,7 @@ func TestPolicyFromConfig_NetworkOverride(t *testing.T) {
 		Network: &config.NetworkPolicy{Mode: "none"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestPolicyFromConfig_AllowSubprocessOverride(t *testing.T) {
 		AllowSubprocess: boolPtr(false),
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestPolicyFromConfig_CleanEnvOverride(t *testing.T) {
 		CleanEnv: boolPtr(true),
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,12 +198,12 @@ func TestPolicyFromConfig_PartialOverride(t *testing.T) {
 	homeDir := "/home/user"
 	tempDir := "/tmp"
 
-	policy, _, err := PolicyFromConfig(cfg, projectRoot, runtimeDir, homeDir, tempDir)
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: projectRoot, RuntimeDir: runtimeDir, HomeDir: homeDir, TempDir: tempDir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	defaults := DefaultPolicy(projectRoot, runtimeDir, tempDir, nil)
+	defaults := DefaultPolicy(Paths{ProjectRoot: projectRoot, RuntimeDir: runtimeDir, TempDir: tempDir}, nil)
 
 	// Network should be overridden
 	if policy.Network != NetworkNone {
@@ -333,7 +333,7 @@ func TestPolicyFromConfig_DeniedAndDeniedExtra(t *testing.T) {
 		DeniedExtra: []string{"~/.kube"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", homeDir, "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: homeDir, TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestPolicyFromConfig_DeniedAndDeniedExtra(t *testing.T) {
 		Denied: []string{"~/.custom_denied_*"},
 	}
 
-	policy2, _, err := PolicyFromConfig(cfg2, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy2, _, err := PolicyFromConfig(cfg2, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestPolicyFromConfig_DeniedAndDeniedExtra(t *testing.T) {
 		DeniedExtra: []string{"~/.extra_denied_*"},
 	}
 
-	policy3, _, err := PolicyFromConfig(cfg3, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy3, _, err := PolicyFromConfig(cfg3, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestPolicyFromConfig_NetworkPorts_Extracted(t *testing.T) {
 		},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -484,7 +484,7 @@ func TestPolicyFromConfig_GlobsNotValidated(t *testing.T) {
 	cfg := &config.SandboxPolicy{
 		Denied: []string{"~/.ssh/id_*", "~/.config/{foo}"},
 	}
-	policy, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, warnings, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestPolicyFromConfig_GuardsOverridesDefault(t *testing.T) {
 		Guards: []string{"project-secrets", "aide-secrets"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestPolicyFromConfig_GuardsExtraAdds(t *testing.T) {
 		GuardsExtra: []string{"project-secrets"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestPolicyFromConfig_UnguardRemoves(t *testing.T) {
 		Unguard: []string{"aide-secrets"},
 	}
 
-	policy, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestPolicyFromConfig_UnguardAlways_Error(t *testing.T) {
 		Unguard: []string{"base"},
 	}
 
-	_, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	_, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err == nil {
 		t.Error("expected error when unguarding always guard, got nil")
 	}
@@ -585,7 +585,7 @@ func TestPolicyFromConfig_GuardsAndGuardsExtraWarns(t *testing.T) {
 		GuardsExtra: []string{"aide-secrets"},
 	}
 
-	_, warnings, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	_, warnings, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -607,7 +607,7 @@ func TestPolicyFromConfig_UnknownGuardName_Error(t *testing.T) {
 		Guards: []string{"nonexistent-guard"},
 	}
 
-	_, _, err := PolicyFromConfig(cfg, "/tmp/proj", "/tmp/rt", "/home/user", "/tmp")
+	_, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err == nil {
 		t.Error("expected error for unknown guard name, got nil")
 	}
@@ -656,7 +656,7 @@ func TestValidateSandboxConfig_BothGuardsAndGuardsExtra_Warning(t *testing.T) {
 
 func TestPolicyFromConfig_DuplicateGuardNames(t *testing.T) {
 	cfg := &config.SandboxPolicy{Guards: []string{"project-secrets", "project-secrets"}}
-	policy, _, err := PolicyFromConfig(cfg, "/proj", "/rt", "/home/user", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/proj", RuntimeDir: "/rt", HomeDir: "/home/user", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

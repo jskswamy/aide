@@ -28,7 +28,7 @@ func TestSandbox_DeniedPathBlocked(t *testing.T) {
 		t.Fatalf("failed to create secret file: %v", err)
 	}
 
-	policy := DefaultPolicy(deniedDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: deniedDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 	policy.ExtraDenied = []string{secretFile}
 
 	cmd := exec.Command("/bin/cat", secretFile)
@@ -56,7 +56,7 @@ func TestSandbox_AllowedPathReadable(t *testing.T) {
 		t.Fatalf("failed to create readable file: %v", err)
 	}
 
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 
 	cmd := exec.Command("/bin/cat", readableFile)
 	cmd.Env = os.Environ()
@@ -79,7 +79,7 @@ func TestSandbox_WritablePath(t *testing.T) {
 	runtimeDir := realPath(t, t.TempDir())
 	projectDir := realPath(t, t.TempDir())
 
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 
 	targetFile := filepath.Join(projectDir, "test.txt")
 	cmd := exec.Command("/usr/bin/touch", targetFile)
@@ -104,7 +104,7 @@ func TestSandbox_ExtraWritablePath(t *testing.T) {
 	projectDir := realPath(t, t.TempDir())
 	extraDir := realPath(t, t.TempDir())
 
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 	policy.ExtraWritable = []string{extraDir}
 
 	targetFile := filepath.Join(extraDir, "extra.txt")
@@ -144,7 +144,7 @@ func TestSandbox_WriteToReadOnlyBlocked(t *testing.T) {
 	runtimeDir := realPath(t, t.TempDir())
 	projectDir := realPath(t, t.TempDir())
 
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 	policy.ExtraReadable = []string{readOnlyDir}
 
 	targetFile := filepath.Join(readOnlyDir, "test.txt")
@@ -183,7 +183,7 @@ func TestSandbox_HomeDocumentsNotReadable(t *testing.T) {
 
 	runtimeDir := realPath(t, t.TempDir())
 	projectDir := realPath(t, t.TempDir())
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 
 	cmd := exec.Command("/bin/cat", testFile)
 	cmd.Env = os.Environ()
@@ -216,7 +216,7 @@ func TestSandbox_HomeDotfileReadable(t *testing.T) {
 
 	runtimeDir := realPath(t, t.TempDir())
 	projectDir := realPath(t, t.TempDir())
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 
 	cmd := exec.Command("/bin/cat", dotfile)
 	cmd.Env = os.Environ()

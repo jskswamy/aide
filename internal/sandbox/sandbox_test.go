@@ -10,7 +10,7 @@ import (
 )
 
 func TestDefaultPolicy_GuardNames(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 
 	expected := guards.DefaultGuardNames()
 	if len(policy.Guards) != len(expected) {
@@ -28,7 +28,7 @@ func TestDefaultPolicy_Paths(t *testing.T) {
 	runtimeDir := "/tmp/aide-12345"
 	tempDir := "/tmp"
 
-	policy := DefaultPolicy(projectRoot, runtimeDir, tempDir, nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: projectRoot, RuntimeDir: runtimeDir, TempDir: tempDir}, nil)
 
 	if policy.ProjectRoot != projectRoot {
 		t.Errorf("expected ProjectRoot=%q, got %q", projectRoot, policy.ProjectRoot)
@@ -42,7 +42,7 @@ func TestDefaultPolicy_Paths(t *testing.T) {
 }
 
 func TestDefaultPolicy_NetworkIsOutbound(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 
 	if policy.Network != NetworkOutbound {
 		t.Errorf("expected Network=%q, got %q", NetworkOutbound, policy.Network)
@@ -50,7 +50,7 @@ func TestDefaultPolicy_NetworkIsOutbound(t *testing.T) {
 }
 
 func TestDefaultPolicy_AllowSubprocess(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 
 	if !policy.AllowSubprocess {
 		t.Error("expected AllowSubprocess=true, got false")
@@ -58,7 +58,7 @@ func TestDefaultPolicy_AllowSubprocess(t *testing.T) {
 }
 
 func TestDefaultPolicy_CleanEnv(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 
 	if policy.CleanEnv {
 		t.Error("expected CleanEnv=false, got true")
@@ -67,7 +67,7 @@ func TestDefaultPolicy_CleanEnv(t *testing.T) {
 
 func TestDefaultPolicy_Env(t *testing.T) {
 	env := []string{"PATH=/usr/bin", "HOME=/home/user"}
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", env)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, env)
 
 	if len(policy.Env) != 2 {
 		t.Fatalf("expected 2 env vars, got %d", len(policy.Env))
@@ -80,7 +80,7 @@ func TestDefaultPolicy_Env(t *testing.T) {
 func TestNoopSandbox_Apply_ReturnsNil(t *testing.T) {
 	s := &noopSandbox{}
 	cmd := exec.Command("echo", "hello")
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 
 	err := s.Apply(cmd, policy, "/tmp/rt")
 	if err != nil {
@@ -108,7 +108,7 @@ func TestNetworkModeConstants(t *testing.T) {
 }
 
 func TestDefaultPolicy_NilAgentModule(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 
 	if policy.AgentModule != nil {
 		t.Error("expected AgentModule=nil for default policy")
@@ -116,7 +116,7 @@ func TestDefaultPolicy_NilAgentModule(t *testing.T) {
 }
 
 func TestDefaultPolicy_EmptyExtraDenied(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 
 	if len(policy.ExtraDenied) != 0 {
 		t.Errorf("expected empty ExtraDenied, got %v", policy.ExtraDenied)

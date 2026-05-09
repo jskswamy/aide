@@ -132,7 +132,7 @@ func sandboxShowCmd() *cobra.Command {
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
 
-			policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, "/tmp/aide-preview", homeDir, tempDir)
+			policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: "/tmp/aide-preview", HomeDir: homeDir, TempDir: tempDir})
 			if err != nil {
 				return fmt.Errorf("building sandbox policy: %w", err)
 			}
@@ -220,7 +220,7 @@ func sandboxTestCmd() *cobra.Command {
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
 
-			policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, "/tmp/aide-preview", homeDir, tempDir)
+			policy, _, err := sandbox.PolicyFromConfig(sandboxCfg, sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: "/tmp/aide-preview", HomeDir: homeDir, TempDir: tempDir})
 			if err != nil {
 				return fmt.Errorf("building sandbox policy: %w", err)
 			}

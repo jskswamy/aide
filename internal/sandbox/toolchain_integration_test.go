@@ -22,7 +22,7 @@ func TestNixGuard_StatNix(t *testing.T) {
 
 	runtimeDir := realPath(t, t.TempDir())
 	projectDir := realPath(t, t.TempDir())
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 
 	cmd := exec.Command("/usr/bin/stat", "/nix")
 	cmd.Env = os.Environ()
@@ -45,7 +45,7 @@ func TestNixGuard_StatRunCurrentSystem(t *testing.T) {
 
 	runtimeDir := realPath(t, t.TempDir())
 	projectDir := realPath(t, t.TempDir())
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 
 	cmd := exec.Command("/usr/bin/stat", "/private/var/run/current-system")
 	cmd.Env = os.Environ()
@@ -73,7 +73,7 @@ func TestNixGuard_GoToolchain(t *testing.T) {
 
 	runtimeDir := realPath(t, t.TempDir())
 	projectDir := realPath(t, t.TempDir())
-	policy := DefaultPolicy(projectDir, runtimeDir, os.TempDir(), os.Environ())
+	policy := DefaultPolicy(Paths{ProjectRoot: projectDir, RuntimeDir: runtimeDir, TempDir: os.TempDir()}, os.Environ())
 
 	cmd := exec.Command(goPath, "env", "GOROOT")
 	cmd.Env = os.Environ()

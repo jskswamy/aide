@@ -320,7 +320,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 	if !sbDisabled {
 		tempDir := os.TempDir()
-		policy, pw, err := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDir.Path(), homeDir, tempDir)
+		policy, pw, err := sandbox.PolicyFromConfig(sandboxCfg, sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDir.Path(), HomeDir: homeDir, TempDir: tempDir})
 		pathWarnings = pw
 		if err != nil {
 			cleanup()
@@ -680,7 +680,7 @@ func (l *Launcher) buildBannerData(
 		data.Sandbox = &ui.SandboxInfo{Disabled: true}
 	} else {
 		tempDir := os.TempDir()
-		policy, _, _ := sandbox.PolicyFromConfig(sandboxCfg, projectRoot, rtDirPath, homeDir, tempDir)
+		policy, _, _ := sandbox.PolicyFromConfig(sandboxCfg, sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDirPath, HomeDir: homeDir, TempDir: tempDir})
 		if policy != nil {
 			guardResults := sandbox.EvaluateGuards(policy)
 			availableNames := sandbox.AvailableGuardNames(policy.Guards)

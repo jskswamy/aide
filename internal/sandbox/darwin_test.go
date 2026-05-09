@@ -321,7 +321,7 @@ func TestSeatbeltProfile_PortFiltering_DNS(t *testing.T) {
 }
 
 func TestProfile_NoKeychainConflict(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -401,7 +401,7 @@ func scanBlockContext(lines []string, fn func(i int, line, blockType string, blo
 }
 
 func TestProfile_IntentOrdering(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -435,7 +435,7 @@ func TestProfile_IntentOrdering(t *testing.T) {
 }
 
 func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -468,7 +468,7 @@ func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
 }
 
 func TestProfile_KeychainNotDenied(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -483,7 +483,7 @@ func TestProfile_KeychainNotDenied(t *testing.T) {
 }
 
 func TestProfile_ClaudeAgentAllowsSurvive(t *testing.T) {
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", nil)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
 	// Set agent module to ClaudeAgent
 	policy.AgentModule = modules.ClaudeAgent()
 	profile, err := generateSeatbeltProfile(policy)
@@ -515,7 +515,7 @@ func TestProfile_ClaudeAgentAllowsSurvive(t *testing.T) {
 
 func TestSeatbeltProfile_CustomClaudeConfigDir(t *testing.T) {
 	env := []string{"CLAUDE_CONFIG_DIR=/Users/testuser/.claude-work"}
-	policy := DefaultPolicy("/tmp/proj", "/tmp/rt", "/tmp", env)
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, env)
 	policy.AgentModule = modules.ClaudeAgent()
 
 	profile, err := generateSeatbeltProfile(policy)

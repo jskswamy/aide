@@ -270,7 +270,7 @@ func whichCmd() *cobra.Command {
 				data.Sandbox = &ui.SandboxInfo{Disabled: true}
 			} else {
 				tempDir := os.TempDir()
-				policy, pathWarnings, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, aidectx.ProjectRoot(cwd), "/tmp/aide-preview", homeDir, tempDir)
+				policy, pathWarnings, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, sandbox.Paths{ProjectRoot: aidectx.ProjectRoot(cwd), RuntimeDir: "/tmp/aide-preview", HomeDir: homeDir, TempDir: tempDir})
 				if policyErr == nil && policy != nil {
 					guardResults := sandbox.EvaluateGuards(policy)
 					availableNames := sandbox.AvailableGuardNames(policy.Guards)
@@ -1154,7 +1154,7 @@ func statusCmd() *cobra.Command {
 			if !sandboxDisabled {
 				homeDir, _ := os.UserHomeDir()
 				tempDir := os.TempDir()
-				pol, _, _ := sandbox.PolicyFromConfig(sandboxPolicy, cwd, "", homeDir, tempDir)
+				pol, _, _ := sandbox.PolicyFromConfig(sandboxPolicy, sandbox.Paths{ProjectRoot: cwd, HomeDir: homeDir, TempDir: tempDir})
 				if pol != nil {
 					guardCount = len(pol.Guards)
 				}

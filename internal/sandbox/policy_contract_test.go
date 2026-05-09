@@ -16,7 +16,7 @@ import (
 
 func renderProfileFromConfig(t *testing.T, cfg *config.SandboxPolicy) string {
 	t.Helper()
-	policy, _, err := PolicyFromConfig(cfg, "/project", "/runtime", "/Users/testuser", "/tmp")
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/project", RuntimeDir: "/runtime", HomeDir: "/Users/testuser", TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("PolicyFromConfig failed: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestContract_ReadableExtraOptOutsDeny(t *testing.T) {
 	}
 	policy, _, err := PolicyFromConfig(&config.SandboxPolicy{
 		ReadableExtra: []string{envFile},
-	}, projectDir, "/runtime", home, "/tmp")
+	}, Paths{ProjectRoot: projectDir, RuntimeDir: "/runtime", HomeDir: home, TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("PolicyFromConfig failed: %v", err)
 	}

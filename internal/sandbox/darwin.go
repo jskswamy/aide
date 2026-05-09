@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -82,19 +81,7 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 
 	p := seatbelt.New(homeDir).
 		WithContext(func(c *seatbelt.Context) {
-			c.ProjectRoot = policy.ProjectRoot
-			c.TempDir = policy.TempDir
-			c.RuntimeDir = policy.RuntimeDir
-			c.Env = policy.Env
-			c.GOOS = runtime.GOOS // FIX C1: always set GOOS
-			c.Network = string(policy.Network)
-			c.AllowPorts = policy.AllowPorts
-			c.DenyPorts = policy.DenyPorts
-			c.ExtraDenied = policy.ExtraDenied
-			c.ExtraWritable = policy.ExtraWritable
-			c.ExtraReadable = policy.ExtraReadable
-			c.AllowSubprocess = policy.AllowSubprocess
-			c.ExtraAllow = policy.ExtraAllow
+			*c = *policy.ToSeatbeltContext(homeDir)
 		})
 
 	for _, g := range activeGuards {

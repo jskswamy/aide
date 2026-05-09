@@ -33,9 +33,9 @@ import (
 // caller should skip sandbox entirely.
 func PolicyFromConfig(
 	cfg *config.SandboxPolicy,
-	projectRoot, runtimeDir, homeDir, tempDir string,
+	p Paths,
 ) (*Policy, []string, error) {
-	defaults := DefaultPolicy(projectRoot, runtimeDir, tempDir, nil)
+	defaults := DefaultPolicy(p, nil)
 
 	if cfg == nil {
 		return &defaults, nil, nil
@@ -44,10 +44,10 @@ func PolicyFromConfig(
 	var warnings []string
 
 	templateVars := map[string]string{
-		"project_root": projectRoot,
-		"runtime_dir":  runtimeDir,
-		"home":         homeDir,
-		"config_dir":   filepath.Join(homeDir, ".config", "aide"),
+		"project_root": p.ProjectRoot,
+		"runtime_dir":  p.RuntimeDir,
+		"home":         p.HomeDir,
+		"config_dir":   filepath.Join(p.HomeDir, ".config", "aide"),
 	}
 
 	policy := defaults // copy

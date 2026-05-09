@@ -55,6 +55,15 @@
   skeleton each. The unused `seatbelt.Section` alias is removed
   (`SectionAllow` was always identical), and the three home-path
   rule constructors share a private `homeExpr` helper.
+- **`sandbox.Paths` parameter object and `Policy.ToSeatbeltContext`.**
+  `PolicyFromConfig` and `DefaultPolicy` previously took 3–4
+  positional path strings — `homeDir` and `tempDir` could be swapped
+  at a call site without a compile error. They now take a named
+  `sandbox.Paths` struct. `EvaluateGuards` and the darwin profile
+  generator no longer carry parallel inline `Policy → Context`
+  copies; both go through a new `Policy.ToSeatbeltContext`. As a side
+  effect, the `SSHPorts` field that had drifted out of the darwin
+  copy is now consistent across both paths.
 
 ### ⚠️ Breaking
 

@@ -17,3 +17,9 @@
   `homepath.Collapse` now own those rules; the seatbelt
   `gitdir:`-trailing-slash regression test still passes against the
   shared implementation.
+- **`internal/sliceutil.Dedup` plus stdlib generics.** Order-
+  preserving string Dedup was reimplemented three times with a
+  fourth int variant. `containsString`, `removeString`,
+  `removeFromSlice`, `copyStrings/Ints`, `copyVisited`, and `joinCSV`
+  reimplemented things `slices`/`maps`/`strings` already provide.
+  All now route through `sliceutil.Dedup` or stdlib equivalents.

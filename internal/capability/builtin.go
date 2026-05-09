@@ -1,5 +1,7 @@
 package capability
 
+import "github.com/jskswamy/aide/internal/sliceutil"
+
 // builtins holds all built-in capability definitions.
 var builtins map[string]Capability
 
@@ -297,14 +299,14 @@ func mergeCapability(base, user Capability) Capability {
 	if user.NetworkMode != "" {
 		out.NetworkMode = user.NetworkMode
 	}
-	out.Combines = dedup(append(base.Combines, user.Combines...))
-	out.Unguard = dedup(append(base.Unguard, user.Unguard...))
-	out.Readable = dedup(append(base.Readable, user.Readable...))
-	out.Writable = dedup(append(base.Writable, user.Writable...))
-	out.Deny = dedup(append(base.Deny, user.Deny...))
-	out.EnvAllow = dedup(append(base.EnvAllow, user.EnvAllow...))
-	out.EnableGuard = dedup(append(base.EnableGuard, user.EnableGuard...))
-	out.Allow = dedup(append(base.Allow, user.Allow...))
-	out.Ports = dedupInts(append(base.Ports, user.Ports...))
+	out.Combines = sliceutil.Dedup(append(base.Combines, user.Combines...))
+	out.Unguard = sliceutil.Dedup(append(base.Unguard, user.Unguard...))
+	out.Readable = sliceutil.Dedup(append(base.Readable, user.Readable...))
+	out.Writable = sliceutil.Dedup(append(base.Writable, user.Writable...))
+	out.Deny = sliceutil.Dedup(append(base.Deny, user.Deny...))
+	out.EnvAllow = sliceutil.Dedup(append(base.EnvAllow, user.EnvAllow...))
+	out.EnableGuard = sliceutil.Dedup(append(base.EnableGuard, user.EnableGuard...))
+	out.Allow = sliceutil.Dedup(append(base.Allow, user.Allow...))
+	out.Ports = sliceutil.Dedup(append(base.Ports, user.Ports...))
 	return out
 }

@@ -33,6 +33,13 @@ func NewStore(baseDir string) *Store {
 	return &Store{baseDir: baseDir}
 }
 
+// Sub returns a Store rooted at baseDir/name. It is the canonical way
+// for sibling aggregates (trust, deny, consent, ...) to share an XDG
+// root without each one re-implementing filepath.Join wiring.
+func (s *Store) Sub(name string) *Store {
+	return &Store{baseDir: filepath.Join(s.baseDir, name)}
+}
+
 // DefaultRoot returns XDG_DATA_HOME/aide (or ~/.local/share/aide when
 // XDG_DATA_HOME is unset). Aggregates should nest their namespaces
 // underneath this root.

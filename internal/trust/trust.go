@@ -5,11 +5,8 @@
 package trust
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"path/filepath"
-
 	"github.com/jskswamy/aide/internal/approvalstore"
+	"github.com/jskswamy/aide/internal/hashutil"
 )
 
 // Status represents the trust state of a .aide.yaml file.
@@ -42,9 +39,10 @@ type Store struct {
 
 // NewStore creates a trust store at the given base directory.
 func NewStore(baseDir string) *Store {
+	root := approvalstore.NewStore(baseDir)
 	return &Store{
-		trust: approvalstore.NewStore(filepath.Join(baseDir, "trust")),
-		deny:  approvalstore.NewStore(filepath.Join(baseDir, "deny")),
+		trust: root.Sub("trust"),
+		deny:  root.Sub("deny"),
 	}
 }
 
@@ -53,21 +51,22 @@ func DefaultStore() *Store {
 	return NewStore(approvalstore.DefaultRoot())
 }
 
-// FileHash computes SHA-256(path + "\n" + contents).
+// FileHash returns the trust key for path with given contents.
+//
+// The encoding is length-prefixed (via hashutil) and version-tagged so
+// that a path containing a newline cannot collide with a (path, contents)
+// boundary, and so that file-hashes never collide with path-hashes. This
+// is a hash-format change from the legacy "path + \\n + contents"
+// encoding: pre-existing trust records become invalid and the user is
+// prompted to re-trust on first use.
 func FileHash(path string, contents []byte) string {
-	h := sha256.New()
-	h.Write([]byte(path))
-	h.Write([]byte("\n"))
-	h.Write(contents)
-	return hex.EncodeToString(h.Sum(nil))
+	return hashutil.New("trust-v1-file").Field(path).Bytes(contents).HexSum()
 }
 
-// PathHash computes SHA-256(path + "\n").
+// PathHash returns the deny key for path. See FileHash for the format
+// migration note.
 func PathHash(path string) string {
-	h := sha256.New()
-	h.Write([]byte(path))
-	h.Write([]byte("\n"))
-	return hex.EncodeToString(h.Sum(nil))
+	return hashutil.New("trust-v1-path").Field(path).HexSum()
 }
 
 // Check returns the trust status for a file with given content.

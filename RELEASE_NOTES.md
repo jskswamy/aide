@@ -1,5 +1,16 @@
 ## Unreleased
 
+### 🔒 Security
+
+- **Trust store hash format hardened against newline-in-path
+  collisions.** `trust.FileHash` and `trust.PathHash` previously
+  encoded `path + "\n" + contents` without length prefixing, leaving
+  a path containing a newline able to impersonate a different
+  `(path, contents)` pair. Both functions now build keys through a
+  shared `internal/hashutil` Builder that uses length-prefixed,
+  version-tagged encoding (`trust-v1-file` and `trust-v1-path`),
+  matching the existing safer encoding already used by `consent`.
+
 ### 🧹 Refactor
 
 - **`internal/fsutil.AtomicWrite`.** Four packages each rolled their
@@ -31,3 +42,18 @@
   in `cmd/aide`, plus `config.ValidNetworkModes` and
   `config.ValidateNetworkMode`, collapse the guards onto one helper
   and the network-mode literal onto one declaration.
+- **`internal/hashutil` shared digest builder.** Trust, consent, and
+  evidence digests now build keys through a single length-prefixed
+  `Builder` with explicit version tags. Adds
+  `approvalstore.Store.Sub` so sibling aggregates wire their
+  sub-namespaces in one place, plus `consent.Status.String` to match
+  `trust.Status`'s contract.
+
+### ⚠️ Breaking
+
+- **Existing `trust`/`deny` records become invalid on upgrade.** The
+  hash format change above is intentional — the legacy `path + "\n"
+  + contents` encoding had no migration path that preserved the
+  collision-safety invariant. Users will be prompted to re-trust
+  `.aide.yaml` files on first interaction after the upgrade. No
+  silent acceptance of stale records.

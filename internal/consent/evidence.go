@@ -5,12 +5,10 @@
 package consent
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"io"
 	"sort"
 	"strings"
+
+	"github.com/jskswamy/aide/internal/hashutil"
 )
 
 // MarkerMatch records a single detection marker and whether it matched
@@ -46,26 +44,14 @@ func (e Evidence) Digest() string {
 		return !matches[i].Matched && matches[j].Matched
 	})
 
-	h := sha256.New()
-	h.Write([]byte("v1\n"))
-	writeLenPrefixed(h, strings.Join(variants, ","))
+	b := hashutil.New("v1").Field(strings.Join(variants, ","))
 	for _, m := range matches {
-		writeLenPrefixed(h, m.Kind)
-		writeLenPrefixed(h, m.Target)
+		b.Field(m.Kind).Field(m.Target)
 		if m.Matched {
-			h.Write([]byte{1})
+			b.Bytes([]byte{1})
 		} else {
-			h.Write([]byte{0})
+			b.Bytes([]byte{0})
 		}
 	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// writeLenPrefixed writes a decimal length, a colon, and then the bytes of s
-// to h. This encoding is injective: the length tells a hypothetical parser
-// exactly how many bytes of s to read, so values that differ only in where
-// their internal separators fall cannot collide.
-func writeLenPrefixed(h io.Writer, s string) {
-	fmt.Fprintf(h, "%d:", len(s))
-	_, _ = h.Write([]byte(s))
+	return b.HexSum()
 }

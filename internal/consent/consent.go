@@ -1,16 +1,14 @@
 package consent
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jskswamy/aide/internal/approvalstore"
+	"github.com/jskswamy/aide/internal/hashutil"
 )
 
 // Status is the consent state for a (project, capability, variants,
@@ -24,6 +22,15 @@ const (
 	// Granted indicates a matching grant exists.
 	Granted
 )
+
+// String returns a stable lowercase label for s. Unknown statuses report
+// as "not_granted" so callers may safely log raw integer values.
+func (s Status) String() string {
+	if s == Granted {
+		return "granted"
+	}
+	return "not_granted"
+}
 
 // ErrInvalidGrantField is returned by Grant when a field contains a
 // character that would corrupt the stored body. The wrapped detail
@@ -70,7 +77,7 @@ type Store struct {
 // NewStore creates a consent store rooted at baseDir. baseDir should
 // be the XDG-shared aide root; the store nests into consent/.
 func NewStore(baseDir string) *Store {
-	return &Store{set: approvalstore.NewStore(filepath.Join(baseDir, "consent"))}
+	return &Store{set: approvalstore.NewStore(baseDir).Sub("consent")}
 }
 
 // DefaultStore returns a Store under approvalstore.DefaultRoot().
@@ -85,13 +92,12 @@ func DefaultStore() *Store {
 func Hash(projectRoot, capability string, variants []string, evidenceDigest string) string {
 	sorted := append([]string(nil), variants...)
 	sort.Strings(sorted)
-	h := sha256.New()
-	h.Write([]byte("consent-v1\n"))
-	writeLenPrefixed(h, projectRoot)
-	writeLenPrefixed(h, capability)
-	writeLenPrefixed(h, strings.Join(sorted, ","))
-	writeLenPrefixed(h, evidenceDigest)
-	return hex.EncodeToString(h.Sum(nil))
+	return hashutil.New("consent-v1").
+		Field(projectRoot).
+		Field(capability).
+		Field(strings.Join(sorted, ",")).
+		Field(evidenceDigest).
+		HexSum()
 }
 
 // Check returns Granted when a record exists matching the exact

@@ -2,6 +2,14 @@
 
 ### 🔒 Security
 
+- **Clear new round of stdlib CVEs by pinning toolchain `go1.26.3`.**
+  govulncheck flagged GO-2026-4982/4980/4971/4918 (template/html, net,
+  net/http, plus a `golang.org/x/net` HTTP/2 transport infinite-loop)
+  reachable via `secrets.Rotate` and `launcher.RuntimeDir.Cleanup` on
+  the `go1.26.x` toolchain line. v1.9.1 cleared the equivalent wave
+  for the `go1.25.x` line by bumping the `go` directive; this release
+  adds an explicit `toolchain go1.26.3` so the patched stdlib is
+  fetched automatically when building under 1.26.
 - **Split SSH primitives out of the `git-remote` capability.** Previously,
   enabling `git-remote` (auto-detected from `.git/config` containing
   `[remote `) silently bundled `~/.ssh` read access, `SSH_AUTH_SOCK`

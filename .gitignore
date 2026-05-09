@@ -18,6 +18,9 @@ bin/
 /aide
 *.exe
 
+# goreleaser output (make install routes through goreleaser build)
+dist/
+
 # Plugin state
 .entire/
 

@@ -23,3 +23,11 @@
   `removeFromSlice`, `copyStrings/Ints`, `copyVisited`, and `joinCSV`
   reimplemented things `slices`/`maps`/`strings` already provide.
   All now route through `sliceutil.Dedup` or stdlib equivalents.
+- **CLI scope guard centralized.** Fourteen cobra `RunE` bodies
+  across `aide sandbox`, `aide env`, and `aide cap` opened with the
+  same `if !global && contextName != ""` guard, and three of them
+  reimplemented the `{outbound, none, unrestricted}` validation
+  inline. New `validateContextScope` and `runScopedMutation` helpers
+  in `cmd/aide`, plus `config.ValidNetworkModes` and
+  `config.ValidateNetworkMode`, collapse the guards onto one helper
+  and the network-mode literal onto one declaration.

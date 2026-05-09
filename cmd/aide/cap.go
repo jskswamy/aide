@@ -449,8 +449,8 @@ func capEnableCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			capNames := display.SplitCommaList(args[0])
 
-			if !global && contextName != "" {
-				return fmt.Errorf("the --context flag requires --global")
+			if err := validateContextScope(global, contextName); err != nil {
+				return err
 			}
 
 			if global {
@@ -534,8 +534,8 @@ func capDisableCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			capNames := display.SplitCommaList(args[0])
 
-			if !global && contextName != "" {
-				return fmt.Errorf("the --context flag requires --global")
+			if err := validateContextScope(global, contextName); err != nil {
+				return err
 			}
 
 			if global {

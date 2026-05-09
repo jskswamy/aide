@@ -77,8 +77,8 @@ Examples:
 			if secretKey != "" && pick {
 				return fmt.Errorf("--secret-key and --pick are mutually exclusive")
 			}
-			if !global && contextName != "" {
-				return fmt.Errorf("the --context flag requires --global")
+			if err := validateContextScope(global, contextName); err != nil {
+				return err
 			}
 			if useSecret && !global {
 				return fmt.Errorf("secret references require --global (secrets are context-scoped)")
@@ -322,8 +322,8 @@ func envRemoveCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
-			if !global && contextName != "" {
-				return fmt.Errorf("the --context flag requires --global")
+			if err := validateContextScope(global, contextName); err != nil {
+				return err
 			}
 			if global {
 				cfg, ctxName, ctx, err := resolveContextForMutation(contextName)

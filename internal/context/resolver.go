@@ -2,12 +2,12 @@ package context
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gobwas/glob"
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // ResolvedContext holds the result of context resolution.
@@ -255,7 +255,7 @@ func scoreRule(rule *config.MatchRule, cwd string, remoteURL string) int {
 //     the user is at the root of the pattern's scope (e.g., cwd is
 //     /work and pattern is /work/*)
 func scorePathRule(pattern string, cwd string) int {
-	expanded := expandTilde(pattern)
+	expanded := homepath.Expand(pattern, "")
 
 	// Try exact match first (works even if pattern has no glob chars)
 	absPattern, _ := filepath.Abs(expanded)
@@ -385,17 +385,6 @@ func canonicalizeRemotePattern(s string) string {
 	return s
 }
 
-// expandTilde replaces a leading ~ with the user's home directory.
-func expandTilde(path string) string {
-	if !strings.HasPrefix(path, "~") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(home, path[1:])
-}
 
 // describeMatch produces a human-readable description of why a rule matched.
 func describeMatch(rule *config.MatchRule, score int) string {

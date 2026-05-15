@@ -24,6 +24,9 @@ dist/
 # Plugin state
 .entire/
 
+# Refactor scanner working dir (agent artifact)
+.refactor-scan/
+
 # IDE/editor
 .idea/
 .vscode/

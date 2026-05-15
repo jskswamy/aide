@@ -19,6 +19,20 @@
   hostile repo cannot inject a path into the allow set (regression-
   tested).
 
+### 🛠 Dev workflow
+
+- **`make install-dev` for fast local iteration.** `make install`
+  routes through `goreleaser build` to keep installed binaries in
+  lockstep with release artifacts, and goreleaser's dirty-tree guard
+  intentionally blocks installs from dirty trees. That made the
+  target unusable during normal `.go`-file editing. `make install-dev`
+  now does a plain `go build` + `install` with the same ldflags;
+  `git describe --dirty` still tags the version string so the
+  installed binary advertises its provenance. The strict release-
+  parity path stays on `make install`.
+- **`.refactor-scan/` gitignored.** The `/refactor:scan` skill drops a
+  working dir at repo root; it's an agent artifact, not source.
+
 ### 🔒 Security
 
 - **Trust store hash format hardened against newline-in-path

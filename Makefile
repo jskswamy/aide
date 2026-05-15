@@ -1,4 +1,4 @@
-.PHONY: all build install test vet generate lint gosec coverage clean devcontainer-build test-linux test-integration test-all
+.PHONY: all build install install-dev test vet generate lint gosec coverage clean devcontainer-build test-linux test-integration test-all
 
 all: build vet test
 
@@ -26,6 +26,15 @@ install:
 	goreleaser build --single-target --clean --output bin/aide
 	install -m 0755 bin/aide $(GOPATH_BIN)/aide
 	@echo "installed: $(GOPATH_BIN)/aide"
+
+# Fast local install for iteration. Skips goreleaser (and its dirty-tree
+# guard), uses the same ldflags as `make build`. Version string carries the
+# `-dirty` suffix from `git describe --dirty` when the tree is dirty, so the
+# installed binary still reports its provenance.
+install-dev:
+	go build -ldflags "$(LDFLAGS)" -o bin/aide ./cmd/aide
+	install -m 0755 bin/aide $(GOPATH_BIN)/aide
+	@echo "installed (dev): $(GOPATH_BIN)/aide ($(VERSION))"
 
 test:
 	go test ./...

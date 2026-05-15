@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/fsutil"
@@ -105,6 +106,90 @@ func TestAtomicWriteOverwritePreservesModeAfterChmod(t *testing.T) {
 	info, _ := os.Stat(path)
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("after overwrite perm = %o, want 0o600", perm)
+	}
+}
+
+func TestAtomicWriteParentIsFileFailsMkdirAll(t *testing.T) {
+	// AtomicWrite calls MkdirAll on filepath.Dir(path). When that ancestor
+	// path is already a regular file, MkdirAll returns "not a directory"
+	// and AtomicWrite must surface a wrapped error and write nothing.
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("file, not a dir"), 0o600); err != nil {
+		t.Fatalf("seed blocker: %v", err)
+	}
+	path := filepath.Join(blocker, "nested", "out.txt")
+
+	err := fsutil.AtomicWrite(path, []byte("x"))
+	if err == nil {
+		t.Fatal("expected error when parent path is a regular file")
+	}
+	if !strings.Contains(err.Error(), "creating parent directory") {
+		t.Errorf("error %q should mention parent directory", err)
+	}
+}
+
+func TestAtomicWriteReadOnlyDirFailsCreateTemp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix-only: chmod 0o500 doesn't deny writes on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write bit")
+	}
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "ro")
+	if err := os.Mkdir(subdir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Strip write bit so CreateTemp inside subdir fails with EACCES.
+	if err := os.Chmod(subdir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(subdir, 0o700) })
+
+	err := fsutil.AtomicWrite(filepath.Join(subdir, "out.txt"), []byte("x"))
+	if err == nil {
+		t.Fatal("expected error when parent dir is not writable")
+	}
+	if !strings.Contains(err.Error(), "creating temp file") {
+		t.Errorf("error %q should mention temp file creation", err)
+	}
+	// Sanity: no temp leftovers (write bit was off, so this is structural).
+	entries, _ := os.ReadDir(subdir)
+	if len(entries) != 0 {
+		t.Errorf("read-only dir should be empty, found %d entries", len(entries))
+	}
+}
+
+func TestAtomicWriteRenameOntoNonEmptyDirFails(t *testing.T) {
+	// On POSIX, renaming a regular file onto a non-empty directory fails
+	// with ENOTEMPTY/EISDIR. Use this to exercise the rename-error branch
+	// and verify the temp file is cleaned up.
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	// Make target a non-empty directory.
+	if err := os.MkdirAll(filepath.Join(target, "child"), 0o700); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+
+	err := fsutil.AtomicWrite(target, []byte("x"))
+	if err == nil {
+		t.Fatal("expected error when renaming over a non-empty directory")
+	}
+	if !strings.Contains(err.Error(), "renaming temp file") {
+		t.Errorf("error %q should mention rename", err)
+	}
+	// Cleanup contract: the temp file in dir must be gone after rename
+	// failure. Anything left other than `target/` is a leak.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name() == "target" {
+			continue
+		}
+		t.Errorf("rename failure left temp file %q in dir", e.Name())
 	}
 }
 

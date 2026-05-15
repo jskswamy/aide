@@ -365,6 +365,91 @@ func TestParseGitConfig_NoGPGSign(t *testing.T) {
 	}
 }
 
+func TestParseGitConfig_SSHFormatDetection(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_signing")
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(
+		"[commit]\n\tgpgsign = true\n"+
+			"[gpg]\n\tformat = ssh\n"+
+			"[user]\n\tsigningkey = "+keyPath+".pub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := guards.ParseGitConfig(home, "", nil)
+	if result.GPGFormat != "ssh" {
+		t.Errorf("expected GPGFormat=ssh, got %q", result.GPGFormat)
+	}
+	if result.SigningKey != keyPath+".pub" {
+		t.Errorf("expected SigningKey=%q, got %q", keyPath+".pub", result.SigningKey)
+	}
+}
+
+func TestParseGitConfig_SSHFormatFromIncludedConfig(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	projectRoot := filepath.Join(home, "source", "org", "repo")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	orgConfig := filepath.Join(home, "org-gitconfig")
+	if err := os.WriteFile(orgConfig, []byte(
+		"[gpg]\n\tformat = ssh\n[user]\n\tsigningkey = ~/.ssh/work-signing.pub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(
+		"[commit]\n\tgpgsign = true\n[includeIf \"gitdir:~/source/org/\"]\n\tpath = "+orgConfig+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := guards.ParseGitConfig(home, projectRoot, nil)
+	if result.GPGFormat != "ssh" {
+		t.Errorf("expected GPGFormat=ssh from included config, got %q", result.GPGFormat)
+	}
+	if result.SigningKey != "~/.ssh/work-signing.pub" {
+		t.Errorf("expected SigningKey from included config, got %q", result.SigningKey)
+	}
+}
+
+func TestParseGitConfig_RepoLocalGitconfigIgnored(t *testing.T) {
+	// T3 regression: a malicious <project>/.git/config must NOT influence
+	// user.signingkey (which the guard later turns into a file-read grant).
+	// ParseGitConfigWithEnv reads global + [includeIf] only.
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	projectRoot := filepath.Join(tmp, "evil-repo")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty global config — no signingkey configured by the user.
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(
+		"[user]\n\tname = Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Hostile repo-local config tries to set signingkey to a sensitive file.
+	if err := os.WriteFile(filepath.Join(projectRoot, ".git", "config"), []byte(
+		"[gpg]\n\tformat = ssh\n[user]\n\tsigningkey = /etc/shadow.pub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := guards.ParseGitConfig(home, projectRoot, nil)
+	if result.SigningKey != "" {
+		t.Errorf("repo-local .git/config must not influence signingkey, got %q", result.SigningKey)
+	}
+	if result.GPGFormat != "" {
+		t.Errorf("repo-local .git/config must not influence gpg.format, got %q", result.GPGFormat)
+	}
+}
+
 func TestParseGitConfig_MissingConfig(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "empty-home")

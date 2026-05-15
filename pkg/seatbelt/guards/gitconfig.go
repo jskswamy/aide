@@ -17,6 +17,8 @@ type GitConfigResult struct {
 	AttributesFile string
 	GPGSign        bool   // commit.gpgsign = true found in any config
 	GPGProgram     string // gpg.program override (empty = default gpg)
+	GPGFormat      string // gpg.format: "openpgp" (default), "ssh", or "x509"
+	SigningKey     string // user.signingkey: key identifier, file path, or literal pubkey
 	Err            error
 	Warnings       []string
 }
@@ -183,13 +185,20 @@ func extractCoreOverrides(cfg *gitconfig.Config, homeDir string, result *GitConf
 	extractGPGConfig(cfg, result)
 }
 
-// extractGPGConfig checks for commit.gpgsign and gpg.program.
+// extractGPGConfig checks for commit.gpgsign, gpg.program, gpg.format, and user.signingkey.
+// Uses last-one-wins semantics matching git: values in included configs override earlier ones.
 func extractGPGConfig(cfg *gitconfig.Config, result *GitConfigResult) {
 	if val := configValue(cfg, "commit", "", "gpgsign"); strings.EqualFold(val, "true") {
 		result.GPGSign = true
 	}
 	if val := configValue(cfg, "gpg", "", "program"); val != "" {
 		result.GPGProgram = val
+	}
+	if val := configValue(cfg, "gpg", "", "format"); val != "" {
+		result.GPGFormat = val
+	}
+	if val := configValue(cfg, "user", "", "signingkey"); val != "" {
+		result.SigningKey = val
 	}
 }
 

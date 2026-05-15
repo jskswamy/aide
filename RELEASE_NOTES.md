@@ -1,5 +1,24 @@
 ## Unreleased
 
+### 🐛 Bug fixes
+
+- **SSH commit signing keys auto-granted by `git-integration`
+  guard.** When git is configured with `gpg.format = ssh`, the
+  always-on `git-integration` guard now resolves `user.signingkey`
+  from the user's global gitconfig (and `[includeIf]`-included
+  configs) and emits a narrow `file-read*` allow for the resolved
+  key and its `.pub` sibling, plus a read+write rule on
+  `~/.ssh/known_hosts` for TOFU on first push. Previously, agents
+  inside the sandbox had to be told `readable_extra: [~/.ssh/
+  id_ed25519_signing, …]` per context, and `git commit` failed with
+  a misleading `Couldn't load public key … No such file or directory`
+  from `ssh-keygen -Y sign`. The grant is scoped: symlinks are
+  resolved, paths escaping `$HOME` are refused, literal `ssh-…`
+  pubkey strings produce no rule, and the parser only ever reads
+  global/included configs — never `<project>/.git/config` — so a
+  hostile repo cannot inject a path into the allow set (regression-
+  tested).
+
 ### 🔒 Security
 
 - **Trust store hash format hardened against newline-in-path

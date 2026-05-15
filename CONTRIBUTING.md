@@ -107,14 +107,29 @@ Follow the classic Git commit message style ([Chris Beams' 7 Rules](https://cbea
 6. Wrap body at 72 characters
 7. Use the body to explain what and why, not how
 
-Make atomic commits: one logical change per commit.
+Do not use conventional-commit prefixes (`feat:`, `fix:`, `sec:`, `fix(scope):`). The 7 rules above are the whole spec.
+
+Make atomic commits: one logical change per commit. Concretely:
+
+- **One concern per commit.** Don't bundle a behaviour change with a doc-comment cleanup, or a security fix with an alphabetisation reorder. If the subject needs "and", split the commit.
+- **Tests travel with their implementation.** Tests and the implementation they exercise belong in the same commit, regardless of which was written first. Fold them together before review.
+- **No drive-by changes.** A commit on a feature branch should serve the feature. Unrelated tweaks belong in their own PR.
 
 Keep commit messages clean. No AI co-author attributions, no task tracker IDs, no agent workflow artifacts. If someone with no knowledge of your tools would find a reference confusing, it does not belong in the commit message.
 
+### Cleaning up before requesting review
+
+Local TDD often produces granular ratcheting commits — introduce a function, fix a typo, adjust a test, expand the implementation. That's fine while you're working. Before opening the PR, fold the introduce-then-fix pairs into their target commits with `git commit --fixup=<hash>` and `git rebase -i --autosquash <base>`.
+
+Heuristic: if commit B starts with "Fix", "Update", or "Correct" and shares a key noun with an earlier commit A on the same branch, B is almost certainly a fixup of A.
+
 ## Pull Requests
 
+- PRs are rebase-merged. Each commit on the branch lands on `main` as-is, so every commit must stand on its own.
 - Branch from `main`.
 - Keep PRs focused on a single concern.
+- Unrelated dependency bumps, formatting passes, and refactors go in separate PRs.
+- No `fixup!` or `squash!` subjects in the pushed branch — autosquash before pushing.
 - Describe what changed and why in the PR description.
 - CI must pass before requesting review.
 - Two-stage review: automated AI review first, then human review.

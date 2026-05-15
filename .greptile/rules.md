@@ -17,6 +17,19 @@ precise — false positives waste maintainer time.
 
 ---
 
+## Confidence and Gate Coupling
+
+The confidence score reported with the review is bounded by unresolved gate
+findings:
+
+> `confidence = min(intrinsic_confidence, 5 − count_of_unresolved_findings_at_severity_high_or_above)`
+
+- Any Gate 3 vector at score 3/5 or higher, any Gate 4 (design-alignment) divergence marked "no" without an inline rationale, any Gate 6 (design decision) violation, any blocked Gate 5 (AI slop) case, and any Gate 7 (commit hygiene) violation each deduct one from the confidence ceiling.
+- 5/5 ("safe to merge") is not reportable while any high-severity finding is open.
+- When the reported confidence is below 5, the review must show the arithmetic: starting value, each deduction with citation, final score.
+
+---
+
 ## Gate 1: Code Quality
 
 ### Go Standards
@@ -24,6 +37,7 @@ precise — false positives waste maintainer time.
 - Zero lint warnings (errcheck, govet, staticcheck, unused, misspell, revive, gocritic, exhaustive, nolintlint)
 - No `//nolint` without a specific linter name and explanation
 - Error returns must be checked (except fmt.Fprint* family)
+- In security-critical packages (`pkg/seatbelt/`, `internal/sandbox/`, `internal/secrets/`, `internal/launcher/`): flag any error silently discarded via `_ =`, `_, _ :=`, or assignment to `_` when the discarded error encodes a precondition for a security-relevant operation (path normalisation, symlink resolution, binary lookup, file existence checks that feed sandbox rules). Either handle the error or add a single-line comment explaining why the discard is sound for this call site.
 
 ### Testing
 - All new public functions require unit tests
@@ -89,6 +103,14 @@ precise — false positives waste maintainer time.
 - Changes to error handling patterns (especially in sandbox/secrets paths where errors affect security posture)
 - Any new `os.Exec`, `exec.Command`, or subprocess spawning outside `internal/launcher/`
 
+### Claim verification
+
+Treat every assertion in the PR description and title as falsifiable:
+
+- Every type, interface, function, file path, or flag named in the body must exist in the working tree at the reviewed SHA. Grep for each. Absent names are findings (could indicate a description copied from a different branch, a different repo, or a hallucination).
+- Every "reuses X" / "follows the Y pattern" / "mirrors Z" / "extends W" claim must be verifiable by inspecting the diff. Grep the diff for the named helper or pattern. Absence is a finding even when the underlying behaviour is similar — the contributor should either correct the description or call the helper.
+- When a claim references a related in-flight PR (e.g. "the Linux* providers come from #N"), verify the named providers exist in #N's diff before treating the body as accurate.
+
 ---
 
 ## Gate 3: Threat Model — Security Posture Scoring
@@ -98,7 +120,7 @@ never gain access to resources without explicit user consent.
 
 ### Scoring framework
 
-Rate each PR on a 0-5 threat scale:
+Rate each PR on a 0–5 threat scale:
 
 | Score | Label | Meaning | Action |
 |-------|-------|---------|--------|
@@ -109,48 +131,97 @@ Rate each PR on a 0-5 threat scale:
 | 4 | High | Changes to sandbox profile generation, secret handling, trust boundaries, or exec paths | Requires maintainer + security review |
 | 5 | Critical | Weakens deny-default posture, bypasses never_allow, adds mid-session escalation, or exposes secrets | Block merge, escalate immediately |
 
-### Specific threat patterns to detect:
+### Pattern reference
 
-**Sandbox escape vectors (score 4-5):**
-- Adding `(allow default)` anywhere in seatbelt profiles — this breaks the deny-default architecture
-- Removing or weakening deny rules without adding equivalent protection
-- Any path that allows the agent to modify its own sandbox profile
-- Changes that allow MCP servers to bypass sandbox restrictions
-- New `process-exec` allows outside the base guard's allowlist
-- Any code path where the agent can influence which binary gets exec'd
+These categories illustrate what raises a score; they are not the assessment itself. The assessment is the exercise below.
 
-**Credential exposure (score 3-5):**
-- New environment variables passed through the sandbox boundary
-- Changes to never_allow or never_allow_env logic
-- Secrets decrypted to disk (even temporarily) rather than in-process
-- New file read permissions for paths that commonly contain credentials (~/.ssh/, ~/.aws/, ~/.config/gcloud/, etc.)
-- Agent gaining read access to aide's own config or secrets directory
+**Sandbox escape vectors (score 4–5):** new `(allow default)`, removed or weakened deny rules, paths that let the agent modify its own profile, MCP bypasses, new `process-exec` allows, code paths where the agent influences which binary gets exec'd.
 
-**Privilege escalation (score 3-5):**
-- Any mechanism for mid-session capability changes (aide's design forbids this)
-- Changes to the trust model for `.aide.yaml` project configs
-- Auto-enabling capabilities without user confirmation (aide suggests, never auto-enables)
-- Changes to guard type from "always" to "default" or "opt-in" (weakens baseline)
+**Credential exposure (score 3–5):** new env vars across the sandbox boundary, changes to `never_allow` / `never_allow_env`, secrets touching disk, new file-read permissions covering common credential paths (`~/.ssh/`, `~/.aws/`, `~/.gnupg/`, `~/.config/gcloud/`, `~/.kube/`), agent gaining read on aide's own config or secrets.
 
-**Information leakage (score 2-4):**
-- Agent gaining access to git history of aide's config repo
-- Logging or telemetry that could capture secrets or sandbox policy details
-- Error messages that reveal sandbox policy structure to the agent
-- New network allow rules that let the agent reach arbitrary hosts
+**Privilege escalation (score 3–5):** mid-session capability changes, trust-model changes for `.aide.yaml`, auto-enabling capabilities without confirmation, downgrading a guard type from `always` to `default`/`opt-in`.
 
-### Present the threat assessment as:
+**Information leakage (score 2–4):** access to aide-config git history, telemetry that can capture secrets or policy structure, error messages that reveal policy, network allow rules that reach arbitrary hosts.
+
+### Required exercise: Threat-Model Sweep
+
+**Trigger:** PR touches any of `pkg/seatbelt/`, `internal/sandbox/`, `internal/secrets/`, `internal/launcher/`, `internal/context/`, `internal/config/`, OR adds/modifies any code that emits a sandbox rule, decrypts a secret, spawns a process, or reads an environment variable that crosses the sandbox boundary.
+
+**Output:** Every triggered review must include this section, even when the conclusion is "no vectors found." A missing or empty section is itself a finding.
 
 ```
-Threat Score: X/5 (Label)
-Attack Surface Change: [increased/unchanged/decreased]
-Vectors Identified:
-- [specific finding with file:line reference]
-Recommendation: [pass/flag for maintainer/block]
+## Threat-Model Sweep
+
+Score: X/5 (Label)
+Attack surface change: increased | unchanged | decreased
+
+Inputs that influence sandbox rules / secret handling / exec paths in this diff:
+| Input | Source | Operand it feeds | Validated? |
+|-------|--------|------------------|------------|
+| <name> | env var | (subpath ...) | yes/no — citation |
+| <name> | exec.LookPath | rule operand | ... |
+| <name> | EvalSymlinks output | rule operand | ... |
+| <name> | argv / CLI flag | exec.Command arg | ... |
+
+Vectors:
+| # | file:line | Vector | Mitigation cited in diff? |
+|---|-----------|--------|---------------------------|
+| V1 | ... | ... | yes/no |
+
+Score derivation: <one sentence per row above 2/5>
+Recommendation: pass | flag | block
 ```
+
+**Rules for filling the table:**
+
+- The "Inputs" table must enumerate every `os.Getenv`, `EnvLookup`, `exec.LookPath`, `filepath.EvalSymlinks`, `argv[]`, or external-file-read whose result reaches a sandbox rule operand, a secret decryption call, or an `exec.Command` argument.
+- "Validated?" = "yes" only when the diff (or an existing function it calls) constrains the input. Acceptable constraints include: prefix check against a documented allowlist; `ExistsOrUnderHome` filter; explicit reject for values outside `$HOME`; `never_allow` ceiling cited by file:line; deny rule that shadows the operand.
+- Any "Validated? no" row forces the score to a minimum of 3/5 regardless of which pattern category the change falls into.
+- When a `(subpath …)`, `(literal …)`, or equivalent rule operand is derived from an unvalidated process-inherited input, that row also forces a vector entry — the input row alone is insufficient.
+- For each `EvalSymlinks` result that becomes a rule operand, the diff must show a trusted-prefix check on the resolved path or the row is "Validated? no".
 
 ---
 
-## Gate 4: AI Slop Detection
+## Gate 4: Design-Alignment Sweep
+
+New code in a pattern-laden directory must follow the conventions of its peers. Drift compounds — silent divergences become "how things are done" the next time someone copies the pattern.
+
+**Trigger:** PR adds a new file to any directory that already contains two or more peer files implementing the same pattern (factory + interface, plugin + registry, handler + dispatcher, etc.), OR adds a new type that satisfies an interface declared in the same package. The rule is structural — any directory matching the shape triggers, not an enumerated list.
+
+**Output:** Every triggered review must produce this section.
+
+```
+## Design-Alignment Sweep
+
+Peers compared: <list of sibling files / types that implement the same pattern>
+Shared helpers in the package: <list of exported helpers in helpers.go / equivalent>
+
+| Aspect | Peer convention | This PR | Aligned? |
+|--------|-----------------|---------|----------|
+| Factory / constructor signature | ... | ... | yes/no |
+| Struct fields and state shape | ... | ... | yes/no |
+| Helper reuse (calls vs reimplements) | calls X, Y | inlines X | no |
+| Naming (exported names, section headers, log tags) | ... | ... | yes/no |
+| Test layout (table-driven vs hand-rolled, location) | ... | ... | yes/no |
+| Registration (map insertion vs alphabetical, slice append vs sorted) | ... | ... | yes/no |
+| Error/return shape | ... | ... | yes/no |
+
+Divergences: <one bullet per "no" row, with file:line and a one-sentence rationale or "undocumented">
+Doc comments invalidated by this PR: <list any package-level or file-level comment that asserts the old invariant, e.g. "only X diverges">
+Recommendation: align | document the divergence inline | accept and update the package comment in the same PR
+```
+
+**Rules for filling the table:**
+
+- "Peers compared" must list every file under the same directory that implements the same interface or factory pattern. If the package has a `helpers.go`, `common.go`, or equivalent shared file, list its exported functions under "Shared helpers."
+- "Helper reuse — no" requires the reviewer to grep the package's shared helpers for every helper the peers use, then confirm whether the new code calls or reimplements each. Reimplementation must be explicitly justified inline in the new code.
+- When the PR description says "reuses X" or "follows the Y pattern", cross-check against the diff (per Gate 2's claim-verification rule). Discrepancy is a finding even when the divergence is otherwise acceptable.
+- Acceptable divergence requires either an inline code comment explaining why this case differs from peers, or an update to the package-level comment that asserted the old invariant. Silent divergence is a finding.
+- "Registration" row covers map entries, slice appends, and CLI flag tables. If sibling docs (README, package docs) are sorted but the registration is insertion-ordered, the row is "no."
+
+---
+
+## Gate 5: AI Slop Detection
 
 AI-assisted contributions are welcome. Unreviewed AI dumps are not. This gate
 detects code and prose that was generated by AI and submitted without human
@@ -179,12 +250,13 @@ review or editing.
 - Function signatures that don't match the patterns used elsewhere in the same package
 - Test code that uses `assert` libraries when the project uses standard `testing` package
 
-**Prose tells (in comments, docs, PR descriptions):**
+**Prose tells (in comments, docs, PR descriptions, and PR titles):**
 - Banned words: seamlessly, robust, leverage, utilize, comprehensive, cutting-edge, innovative, game-changing, world-class, best-in-class, next-generation, harness, unlock, empower, elevate, streamline, delve, unpack
 - Banned patterns: "It's worth noting", "Let me explain", "In today's world", "As we know", "Ever wondered", "What if you could", "One might say", "It could be argued", "It's important to note", "as you can see", "keep in mind"
 - Em dashes in markdown files
 - Hedge phrases: "might want to consider", "it could be beneficial", "one approach would be"
 - Excessive qualification: "It should be noted that...", "Generally speaking..."
+- References to types, interfaces, or functions that do not exist in the working tree (common signal of LLM hallucination or copy-paste from an unrelated codebase). Cross-checked under Gate 2's claim-verification rule.
 
 ### What to flag vs block:
 
@@ -201,7 +273,7 @@ review or editing.
 
 ---
 
-## Gate 5: Design Decision Compliance
+## Gate 6: Design Decision Compliance
 
 aide has 32 documented design decisions (DD-1 through DD-32) in DESIGN.md.
 PRs that violate these decisions must be blocked unless the PR explicitly
@@ -292,7 +364,7 @@ Per AI_POLICY.md:
 
 ---
 
-## Gate 6: Commit Quality Review
+## Gate 7: Commit Quality Review
 
 Review the PR's commit history for atomicity, grouping, and message
 quality. Well-structured commits make review easier, bisect safer, and

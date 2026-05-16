@@ -8,8 +8,8 @@ import (
 
 // AgentSpec is the data-only shape of an "I have one config dir under
 // $HOME plus an optional env-var override" agent module. Five of the
-// six bundled agent modules (aider, amp, codex, gemini, goose) match
-// this shape; only copilot diverges and keeps its own Rules method.
+// seven bundled agent modules (aider, amp, codex, gemini, goose) match
+// this shape; copilot and cursor-agent diverge and keep their own Rules method.
 type AgentSpec struct {
 	// DisplayName is what Module.Name returns (e.g. "Aider Agent").
 	DisplayName string

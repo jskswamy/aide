@@ -15,13 +15,14 @@ import (
 
 // KnownAgents is the list of agent binaries aide can detect on PATH.
 var KnownAgents = []string{
+	"aider",
+	"amp",
 	"claude",
 	"codex",
-	"aider",
-	"goose",
-	"amp",
-	"gemini",
 	"copilot",
+	"cursor-agent",
+	"gemini",
+	"goose",
 }
 
 // LookPathFunc abstracts exec.LookPath for testability.

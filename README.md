@@ -407,7 +407,7 @@ Whichever limit is reached first wins.
 
 ## Supported Agents
 
-Claude, Copilot, Codex, Aider, Goose, Amp, Gemini. Any binary on PATH works as an agent target.
+Aider, Amp, Claude, Codex, Copilot, Cursor, Gemini, Goose. Any binary on PATH works as an agent target.
 
 ## Development
 

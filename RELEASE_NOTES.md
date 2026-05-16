@@ -1,5 +1,11 @@
 ## Unreleased
 
+### ✨ New
+
+- **`cursor-agent` added to known agents.** aide now recognises Cursor's CLI (`cursor-agent`) alongside the
+  existing seven agents. The shorter `agent` symlink shipped by Cursor's installer is intentionally not registered - use
+  `aide --agent cursor-agent`.
+
 ### 🐛 Bug fixes
 
 - **`internal/fsutil` coverage above CI gate.** `AtomicWrite`'s

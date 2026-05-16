@@ -156,6 +156,41 @@ func TestAgentModules(t *testing.T) {
 				"/home/user/.local/state/copilot",
 			},
 		},
+		{
+			name:     "Cursor defaults",
+			module:   CursorAgent(),
+			wantName: "Cursor Agent",
+			wantContain: []string{
+				"/home/user/.cursor",
+				"/home/user/.config/cursor",
+			},
+		},
+		{
+			name:     "Cursor env override (CURSOR_CONFIG_DIR under $HOME)",
+			module:   CursorAgent(),
+			wantName: "Cursor Agent",
+			env:      []string{"CURSOR_CONFIG_DIR=/home/user/my-cursor"},
+			wantContain: []string{
+				"/home/user/my-cursor",
+			},
+			wantAbsent: []string{
+				"/home/user/.cursor",
+				"/home/user/.config/cursor",
+			},
+		},
+		{
+			name:     "Cursor env override (XDG_CONFIG_HOME under $HOME)",
+			module:   CursorAgent(),
+			wantName: "Cursor Agent",
+			env:      []string{"XDG_CONFIG_HOME=/home/user/.config-alt"},
+			wantContain: []string{
+				"/home/user/.cursor",
+				"/home/user/.config-alt/cursor",
+			},
+			wantAbsent: []string{
+				"/home/user/.config/cursor",
+			},
+		},
 	}
 
 	for _, tt := range tests {

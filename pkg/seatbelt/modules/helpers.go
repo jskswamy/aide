@@ -2,6 +2,8 @@ package modules
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
@@ -22,6 +24,66 @@ func resolveConfigDirs(ctx *seatbelt.Context, envKey string, candidates []string
 		}
 	}
 	return dirs
+}
+
+// sensitiveHomeDirs are home-relative paths that must never be accepted as a
+// config-dir override; they hold credentials or private keys.
+var sensitiveHomeDirs = []string{
+	".ssh",
+	".aws",
+	".gnupg",
+	".gpg",
+	".config/gcloud",
+	".azure",
+	".kube",
+	".docker",
+	".netrc",
+	".git-credentials",
+}
+
+// resolveConfigDirsAdditive is like resolveConfigDirs but xdgCandidate is
+// always appended to the result (augmenting rather than replacing defaults).
+// Both the overrideKey value and xdgCandidate are validated with
+// isSafeConfigOverride before use; unsafe values are silently dropped so that
+// XDG_CONFIG_HOME=$HOME/.ssh cannot inject a writable rule for ~/.ssh/cursor.
+func resolveConfigDirsAdditive(ctx *seatbelt.Context, overrideKey, xdgCandidate string, defaults []string) []string {
+	home := ctx.HomeDir
+
+	if overrideKey != "" {
+		if dir, ok := ctx.EnvLookup(overrideKey); ok && dir != "" {
+			if isSafeConfigOverride(home, dir) {
+				return []string{dir}
+			}
+		}
+	}
+
+	dirs := make([]string, len(defaults))
+	copy(dirs, defaults)
+	if isSafeConfigOverride(home, xdgCandidate) {
+		dirs = append(dirs, xdgCandidate)
+	}
+	return dirs
+}
+
+// isSafeConfigOverride returns true when dir is under $HOME and does not
+// overlap any entry in sensitiveHomeDirs.
+func isSafeConfigOverride(home, dir string) bool {
+	if !isUnderHome(home, dir) {
+		return false
+	}
+	for _, sensitive := range sensitiveHomeDirs {
+		sensitiveAbs := filepath.Join(home, sensitive)
+		if dir == sensitiveAbs || strings.HasPrefix(dir, sensitiveAbs+string(filepath.Separator)) {
+			return false
+		}
+	}
+	return true
+}
+
+// isUnderHome uses a separator-aware prefix check to avoid false positives
+// such as /home/user-other matching /home/user.
+func isUnderHome(home, path string) bool {
+	return strings.HasPrefix(path, home+string(filepath.Separator))
 }
 
 // configDirRules generates file-read* file-write* Allow rules for each dir.

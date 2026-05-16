@@ -191,6 +191,44 @@ func TestAgentModules(t *testing.T) {
 				"/home/user/.config/cursor",
 			},
 		},
+		{
+			name:     "Cursor unsafe CURSOR_CONFIG_DIR (sensitive dir) falls back to defaults",
+			module:   CursorAgent(),
+			wantName: "Cursor Agent",
+			env:      []string{"CURSOR_CONFIG_DIR=/home/user/.ssh"},
+			wantContain: []string{
+				"/home/user/.cursor",
+				"/home/user/.config/cursor",
+			},
+			wantAbsent: []string{
+				"/.ssh",
+			},
+		},
+		{
+			name:     "Cursor unsafe XDG_CONFIG_HOME (sensitive dir) drops xdg candidate",
+			module:   CursorAgent(),
+			wantName: "Cursor Agent",
+			env:      []string{"XDG_CONFIG_HOME=/home/user/.ssh"},
+			wantContain: []string{
+				"/home/user/.cursor",
+			},
+			wantAbsent: []string{
+				"/.ssh",
+			},
+		},
+		{
+			name:     "Cursor unsafe CURSOR_CONFIG_DIR (outside home) falls back to defaults",
+			module:   CursorAgent(),
+			wantName: "Cursor Agent",
+			env:      []string{"CURSOR_CONFIG_DIR=/etc/cursor"},
+			wantContain: []string{
+				"/home/user/.cursor",
+				"/home/user/.config/cursor",
+			},
+			wantAbsent: []string{
+				"/etc/cursor",
+			},
+		},
 	}
 
 	for _, tt := range tests {

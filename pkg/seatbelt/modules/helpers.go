@@ -6,14 +6,9 @@ import (
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
-// resolveConfigDirs returns directories for an agent given an env var
-// override key and a list of default candidates. When the env var is
-// set, only that path is returned (explicit override). Otherwise,
-// candidates that exist or are under homeDir are returned.
-//
-// Empty env var semantics: ctx.EnvLookup returns ("", true) for KEY=,
-// but we treat empty as unset (fall through to defaults). This matches
-// the previous resolver behavior where KEY= was treated as unset.
+// resolveConfigDirs returns config directories for an agent.
+// When envKey is set to a non-empty value, only that path is returned.
+// Otherwise, candidates that exist on disk or are under homeDir are returned.
 func resolveConfigDirs(ctx *seatbelt.Context, envKey string, candidates []string) []string {
 	if envKey != "" {
 		if dir, ok := ctx.EnvLookup(envKey); ok && dir != "" {
@@ -29,15 +24,12 @@ func resolveConfigDirs(ctx *seatbelt.Context, envKey string, candidates []string
 	return dirs
 }
 
-// configDirRules generates file-read* file-write* Allow rules for
-// agent config directories. Each dir gets a subpath rule.
+// configDirRules generates file-read* file-write* Allow rules for each dir.
 func configDirRules(sectionName string, dirs []string) []seatbelt.Rule {
 	if len(dirs) == 0 {
 		return nil
 	}
-	rules := []seatbelt.Rule{
-		seatbelt.SectionAllow(sectionName + " config"),
-	}
+	rules := []seatbelt.Rule{seatbelt.SectionAllow(sectionName + " config")}
 	for _, dir := range dirs {
 		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf(
 			`(allow file-read* file-write* (subpath %q))`, dir,

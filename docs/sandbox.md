@@ -44,14 +44,15 @@ Run `aide status` to see what is active for the current context.
 
 aide auto-detects known agent config directories and adds them to the writable list so agents can store state, cache, and settings.
 
-| Agent  | Env Override        | Default Path                          |
-|--------|---------------------|---------------------------------------|
-| Claude | `CLAUDE_CONFIG_DIR` | `~/.claude`, `~/.config/claude`, `~/Library/Application Support/Claude` |
-| Codex  | `CODEX_HOME`        | `~/.codex`                            |
-| Aider  | (none)              | `~/.aider`                            |
-| Goose  | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
-| Amp    | `AMP_HOME`          | `~/.amp`, `~/.config/amp`             |
-| Gemini | `GEMINI_HOME`       | `~/.gemini`                           |
+| Agent        | Env Override        | Default Path                          |
+|--------------|---------------------|---------------------------------------|
+| Aider        | (none)              | `~/.aider`                            |
+| Amp          | `AMP_HOME`          | `~/.amp`, `~/.config/amp`             |
+| Claude       | `CLAUDE_CONFIG_DIR` | `~/.claude`, `~/.config/claude`, `~/Library/Application Support/Claude` |
+| Codex        | `CODEX_HOME`        | `~/.codex`                            |
+| Cursor       | `CURSOR_CONFIG_DIR` | `~/.cursor` (also `$XDG_CONFIG_HOME/cursor` on Linux when set) |
+| Gemini       | `GEMINI_HOME`       | `~/.gemini`                           |
+| Goose        | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
 
 ## Customizing Per-Context
 
@@ -237,6 +238,14 @@ aide sandbox test --context myproject
 ```
 
 `aide sandbox show` prints the merged policy (defaults + profile + inline + extra fields). `aide sandbox test` outputs the raw Seatbelt `.sb` profile on macOS, which is useful for confirming that paths resolve correctly before running an agent.
+
+### Cursor agent troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `cursor-agent: permission denied` on `~/.cursor/` writes | Config dir not in writable set | Confirm `CURSOR_CONFIG_DIR` is unset or points to the correct dir; run `aide sandbox show --agent cursor-agent` to inspect granted paths. |
+| `agent update` fails inside aide | Auto-update writes to `~/.local/share/cursor-agent/versions/` which is not writable inside the sandbox | Run `cursor-agent update` outside of aide (this is by design). |
+| `aide` does not detect cursor-agent | `cursor-agent` not on PATH | Confirm `which cursor-agent` resolves; the shorter `agent` symlink is not registered — use `cursor-agent` explicitly. |
 
 ## Using the Seatbelt Library
 

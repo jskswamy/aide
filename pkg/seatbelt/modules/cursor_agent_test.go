@@ -67,37 +67,110 @@ func TestCursorAgent_Rules_IncludesInstallDirs(t *testing.T) {
 	}
 }
 
-// TestDeriveCursorInstallDirs verifies the Linux/macOS install layout:
+// CURSOR_CONFIG_DIR pointing to $HOME/.ssh must not produce any rule for ~/.ssh.
+// This pins the never_allow contract: env-injection must not bypass credential guards.
+func TestCursorAgent_Rules_RejectsCursorConfigDirOutsideHome(t *testing.T) {
+	mod := CursorAgent()
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CURSOR_CONFIG_DIR=/home/user/.ssh"},
+	}
+
+	result := mod.Rules(ctx)
+	got := rulesToString(result.Rules)
+
+	if strings.Contains(got, ".ssh") {
+		t.Errorf("Rules() must not emit any rule for ~/.ssh when CURSOR_CONFIG_DIR=$HOME/.ssh; got:\n%s", got)
+	}
+	// Default config dirs must still be present.
+	if !strings.Contains(got, "/home/user/.cursor") {
+		t.Errorf("Rules() must fall back to default config dirs; got:\n%s", got)
+	}
+}
+
+// CURSOR_CONFIG_DIR pointing to a safe path under $HOME must be accepted.
+func TestCursorAgent_Rules_AcceptsCursorConfigDirUnderHome(t *testing.T) {
+	mod := CursorAgent()
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CURSOR_CONFIG_DIR=/home/user/my-cursor-config"},
+	}
+
+	result := mod.Rules(ctx)
+	got := rulesToString(result.Rules)
+
+	if !strings.Contains(got, "/home/user/my-cursor-config") {
+		t.Errorf("Rules() must accept safe CURSOR_CONFIG_DIR; got:\n%s", got)
+	}
+	if strings.Contains(got, "/home/user/.cursor\"") {
+		t.Errorf("Rules() must not include default ~/.cursor when safe override is set; got:\n%s", got)
+	}
+}
+
+// TestDeriveCursorInstallDirs verifies the Linux/macOS install layout and
+// trusted-prefix rejection:
 //
 //	~/.local/share/cursor-agent/versions/<ver>/cursor-agent  (binary)
 //	~/.local/share/cursor-agent/logs                         (logs sibling)
+//
+// The Cursor desktop IDE bundle (/Applications/Cursor.app) does NOT ship the
+// standalone CLI, so it is intentionally rejected.
 func TestDeriveCursorInstallDirs(t *testing.T) {
 	home := "/home/user"
+	macHome := "/Users/jane"
 	cases := []struct {
 		name             string
+		home             string
 		resolvedBinary   string
+		wantOK           bool
 		wantActiveVerDir string
 		wantLogsDir      string
 	}{
 		{
 			name:             "Linux user install",
+			home:             home,
 			resolvedBinary:   "/home/user/.local/share/cursor-agent/versions/2026.05.09-abc/cursor-agent",
+			wantOK:           true,
 			wantActiveVerDir: "/home/user/.local/share/cursor-agent/versions/2026.05.09-abc",
 			wantLogsDir:      "/home/user/.local/share/cursor-agent/logs",
 		},
 		{
 			name:             "macOS user install (same layout as Linux)",
+			home:             macHome,
 			resolvedBinary:   "/Users/jane/.local/share/cursor-agent/versions/2026.05.09-abc/cursor-agent",
+			wantOK:           true,
 			wantActiveVerDir: "/Users/jane/.local/share/cursor-agent/versions/2026.05.09-abc",
 			wantLogsDir:      "/Users/jane/.local/share/cursor-agent/logs",
+		},
+		{
+			name:           "macOS Cursor.app bundle is not the standalone CLI; rejected",
+			home:           macHome,
+			resolvedBinary: "/Applications/Cursor.app/Contents/MacOS/cursor-agent",
+			wantOK:         false,
+		},
+		{
+			name:           "untrusted /tmp path rejected",
+			home:           home,
+			resolvedBinary: "/tmp/evil/cursor-agent",
+			wantOK:         false,
+		},
+		{
+			name:           "look-alike directory cursor-agent-evil rejected",
+			home:           home,
+			resolvedBinary: "/home/user/.local/share/cursor-agent-evil/versions/1.0/cursor-agent",
+			wantOK:         false,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			activeVerDir, logsDir, ok := deriveCursorInstallDirs(tc.resolvedBinary, home)
-			if !ok {
-				t.Fatalf("ok = false (resolved=%q)", tc.resolvedBinary)
+			activeVerDir, logsDir, ok := deriveCursorInstallDirs(tc.resolvedBinary, tc.home)
+
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v (resolved=%q)", ok, tc.wantOK, tc.resolvedBinary)
+			}
+			if !tc.wantOK {
+				return
 			}
 			if activeVerDir != tc.wantActiveVerDir {
 				t.Errorf("activeVerDir = %q, want %q", activeVerDir, tc.wantActiveVerDir)
@@ -106,6 +179,29 @@ func TestDeriveCursorInstallDirs(t *testing.T) {
 				t.Errorf("logsDir = %q, want %q", logsDir, tc.wantLogsDir)
 			}
 		})
+	}
+}
+
+// isTrustedInstallDir accepts only the cross-platform Cursor CLI install
+// location. The Cursor desktop IDE bundle is intentionally rejected because
+// it does not ship the standalone CLI.
+func TestIsTrustedInstallDir_AcceptsTrustedPrefixes(t *testing.T) {
+	home := "/home/user"
+	cases := []struct {
+		dir     string
+		trusted bool
+	}{
+		{"/home/user/.local/share/cursor-agent/versions/1.2.3", true},
+		{"/Applications/Cursor.app/Contents/MacOS", false},
+		{"/home/user/Applications/Cursor.app/Contents/MacOS", false},
+		{"/home/user/.ssh", false},
+		{"/tmp/cursor-agent", false},
+		{"/home/user/.local/share/cursor-agent-evil/versions/1.0", false},
+	}
+	for _, tc := range cases {
+		if got := isTrustedInstallDir(tc.dir, home); got != tc.trusted {
+			t.Errorf("isTrustedInstallDir(%q, %q) = %v, want %v", tc.dir, home, got, tc.trusted)
+		}
 	}
 }
 

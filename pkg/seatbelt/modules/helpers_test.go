@@ -78,6 +78,88 @@ func TestResolveConfigDirs_NonExistentOutsideHome(t *testing.T) {
 	}
 }
 
+func TestResolveConfigDirsAdditive_SafeOverride(t *testing.T) {
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CURSOR_CONFIG_DIR=/home/user/my-cursor"},
+	}
+	defaults := []string{"/home/user/.cursor"}
+
+	dirs := resolveConfigDirsAdditive(ctx, "CURSOR_CONFIG_DIR", "/home/user/.config/cursor", defaults)
+
+	if len(dirs) != 1 || dirs[0] != "/home/user/my-cursor" {
+		t.Errorf("expected [/home/user/my-cursor], got %v", dirs)
+	}
+}
+
+func TestResolveConfigDirsAdditive_RejectsSensitiveOverride(t *testing.T) {
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CURSOR_CONFIG_DIR=/home/user/.ssh"},
+	}
+	defaults := []string{"/home/user/.cursor"}
+	xdg := "/home/user/.config/cursor"
+
+	dirs := resolveConfigDirsAdditive(ctx, "CURSOR_CONFIG_DIR", xdg, defaults)
+
+	for _, d := range dirs {
+		if strings.Contains(d, ".ssh") {
+			t.Errorf("resolveConfigDirsAdditive must not include .ssh path; got %v", dirs)
+		}
+	}
+	if len(dirs) != 2 {
+		t.Errorf("expected 2 fallback dirs (default + xdg), got %v", dirs)
+	}
+}
+
+func TestResolveConfigDirsAdditive_RejectsSensitiveXdgCandidate(t *testing.T) {
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+	}
+	dirs := resolveConfigDirsAdditive(ctx, "CURSOR_CONFIG_DIR", "/home/user/.ssh/cursor", []string{"/home/user/.cursor"})
+
+	for _, d := range dirs {
+		if strings.Contains(d, ".ssh") {
+			t.Errorf("resolveConfigDirsAdditive must not include .ssh path; got %v", dirs)
+		}
+	}
+	if len(dirs) != 1 || dirs[0] != "/home/user/.cursor" {
+		t.Errorf("expected only default dir when xdgCandidate is unsafe, got %v", dirs)
+	}
+}
+
+func TestResolveConfigDirsAdditive_RejectsOutsideHome(t *testing.T) {
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CURSOR_CONFIG_DIR=/etc/cursor"},
+	}
+	defaults := []string{"/home/user/.cursor"}
+	xdg := "/home/user/.config/cursor"
+
+	dirs := resolveConfigDirsAdditive(ctx, "CURSOR_CONFIG_DIR", xdg, defaults)
+
+	if len(dirs) != 2 {
+		t.Errorf("expected 2 fallback dirs, got %v", dirs)
+	}
+	for _, d := range dirs {
+		if d == "/etc/cursor" {
+			t.Errorf("override outside $HOME must be rejected; got %v", dirs)
+		}
+	}
+}
+
+func TestResolveConfigDirsAdditive_NoOverride(t *testing.T) {
+	ctx := &seatbelt.Context{HomeDir: "/home/user"}
+	defaults := []string{"/home/user/.cursor"}
+	xdg := "/home/user/.config/cursor"
+
+	dirs := resolveConfigDirsAdditive(ctx, "CURSOR_CONFIG_DIR", xdg, defaults)
+
+	if len(dirs) != 2 || dirs[0] != "/home/user/.cursor" || dirs[1] != xdg {
+		t.Errorf("expected [default, xdg], got %v", dirs)
+	}
+}
+
 func TestConfigDirRules_Empty(t *testing.T) {
 	rules := configDirRules("Claude", nil)
 	if rules != nil {

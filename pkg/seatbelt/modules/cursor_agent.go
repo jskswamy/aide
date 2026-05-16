@@ -4,13 +4,32 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
+// trustedInstallPrefixes are the only locations a cursor-agent binary may
+// resolve to. Anything outside is rejected to block malicious PATH entries.
+//
+// The Cursor Agent CLI installer (https://cursor.com/install) uses the same
+// layout on both Linux and macOS:
+//
+//	~/.local/share/cursor-agent/versions/<ver>/cursor-agent  (the binary)
+//	~/.local/share/cursor-agent/logs                         (logs sibling)
+//	~/.local/bin/cursor-agent  ->  ../share/cursor-agent/versions/<ver>/cursor-agent
+//
+// The Cursor desktop IDE bundle (/Applications/Cursor.app) does not ship the
+// standalone CLI, so it is intentionally not listed here.
+func trustedInstallPrefixes(home string) []string {
+	return []string{
+		filepath.Join(home, ".local", "share", "cursor-agent", "versions") + string(filepath.Separator),
+	}
+}
+
 // installDirResolver returns ("", "", false) when cursor-agent is absent or
-// its path cannot be resolved. Injected to keep install-dir branches
-// reachable in CI without cursor-agent on PATH.
+// its path cannot be resolved or fails the trusted-prefix check. Injected to
+// keep install-dir branches reachable in CI without cursor-agent on PATH.
 type installDirResolver func(home string) (activeVerDir, logsDir string, ok bool)
 
 type cursorAgentModule struct {
@@ -44,25 +63,20 @@ func (m *cursorAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	return seatbelt.GuardResult{Rules: rules}
 }
 
-// cursorConfigDirs returns ~/.cursor and the XDG cursor config directory.
-// CURSOR_CONFIG_DIR, when set, overrides both. XDG_CONFIG_HOME/cursor (or its
-// XDG default $HOME/.config/cursor when unset) is always appended; cursor-agent
-// stores auth.json there on Linux.
+// cursorConfigDirs resolves config directories for cursor-agent.
+// CURSOR_CONFIG_DIR is accepted only when under $HOME and outside sensitive
+// dirs; unsafe values fall back to defaults. XDG_CONFIG_HOME/cursor (or its
+// XDG default $HOME/.config/cursor when unset) augments ~/.cursor.
 func cursorConfigDirs(ctx *seatbelt.Context) []string {
 	home := ctx.HomeDir
-
-	if dir, ok := ctx.EnvLookup("CURSOR_CONFIG_DIR"); ok && dir != "" {
-		return []string{dir}
-	}
 
 	xdgBase := filepath.Join(home, ".config")
 	if xdg, ok := ctx.EnvLookup("XDG_CONFIG_HOME"); ok && xdg != "" {
 		xdgBase = xdg
 	}
-	return []string{
-		filepath.Join(home, ".cursor"),
-		filepath.Join(xdgBase, "cursor"),
-	}
+
+	defaults := []string{filepath.Join(home, ".cursor")}
+	return resolveConfigDirsAdditive(ctx, "CURSOR_CONFIG_DIR", filepath.Join(xdgBase, "cursor"), defaults)
 }
 
 func cursorActiveInstallDirs(home string) (activeVerDir, logsDir string, ok bool) {
@@ -83,9 +97,27 @@ func cursorActiveInstallDirs(home string) (activeVerDir, logsDir string, ok bool
 //	~/.local/share/cursor-agent/versions/<ver>/cursor-agent  (the binary)
 //	~/.local/share/cursor-agent/logs                         (logs sibling)
 //
-// so logs is two parents up from the binary, then "logs".
-func deriveCursorInstallDirs(resolvedBinary, _ string) (activeVerDir, logsDir string, ok bool) {
-	activeVerDir = filepath.Dir(resolvedBinary)
+// so logs is two parents up from the binary, then "logs". Paths outside the
+// trusted-prefix list are rejected to block binaries on attacker-controlled
+// PATH entries.
+func deriveCursorInstallDirs(resolvedBinary, home string) (activeVerDir, logsDir string, ok bool) {
+	dir := filepath.Dir(resolvedBinary)
+	if !isTrustedInstallDir(dir, home) {
+		return "", "", false
+	}
+	activeVerDir = dir
 	logsDir = filepath.Clean(filepath.Join(activeVerDir, "..", "..", "logs"))
 	return activeVerDir, logsDir, true
+}
+
+func isTrustedInstallDir(dir, home string) bool {
+	// Append separator before comparing so .../versions/1.2 matches
+	// .../versions/ without also matching .../versions-extra/.
+	candidate := dir + string(filepath.Separator)
+	for _, prefix := range trustedInstallPrefixes(home) {
+		if strings.HasPrefix(candidate, prefix) {
+			return true
+		}
+	}
+	return false
 }

@@ -10,13 +10,14 @@ import (
 
 // agentModuleResolvers maps agent base names to their seatbelt module factory.
 var agentModuleResolvers = map[string]func() seatbelt.Module{
-	"claude":  modules.ClaudeAgent,
-	"codex":   modules.CodexAgent,
-	"aider":   modules.AiderAgent,
-	"goose":   modules.GooseAgent,
-	"amp":     modules.AmpAgent,
-	"gemini":  modules.GeminiAgent,
-	"copilot": modules.CopilotAgent,
+	"aider":        modules.AiderAgent,
+	"amp":          modules.AmpAgent,
+	"claude":       modules.ClaudeAgent,
+	"codex":        modules.CodexAgent,
+	"copilot":      modules.CopilotAgent,
+	"cursor-agent": modules.CursorAgent,
+	"gemini":       modules.GeminiAgent,
+	"goose":        modules.GooseAgent,
 }
 
 // ResolveAgentModule returns the seatbelt module for the named agent, or nil.

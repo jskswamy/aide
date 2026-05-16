@@ -522,3 +522,62 @@ func TestIsKnownAgent(t *testing.T) {
 		t.Error("expected empty string to be unknown")
 	}
 }
+
+// Cursor's installer also drops a shorter "agent" symlink; recognising it would
+// shadow other tools, so only the full "cursor-agent" name should match.
+func TestPassthrough_IsKnownAgent_CursorAgent(t *testing.T) {
+	if !IsKnownAgent("cursor-agent") {
+		t.Error("expected cursor-agent to be known")
+	}
+	if IsKnownAgent("agent") {
+		t.Error("expected agent alias NOT to be known")
+	}
+}
+
+func TestScanAgents_FindsCursorAgent(t *testing.T) {
+	available := map[string]string{
+		"cursor-agent": "/home/user/.local/bin/cursor-agent",
+	}
+	result := ScanAgents(mockLookPath(available))
+	if result.Found["cursor-agent"] != "/home/user/.local/bin/cursor-agent" {
+		t.Errorf("expected cursor-agent to be found, got: %v", result.Found)
+	}
+}
+
+func TestPassthrough_NoConfigNoAgents_ErrorListsCursorAgent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	l := &Launcher{
+		Execer:   mockExec,
+		LookPath: mockLookPath(map[string]string{}),
+	}
+	err := l.Passthrough(t.TempDir(), "", nil)
+	if err == nil {
+		t.Fatal("expected error when no agents on PATH, got nil")
+	}
+	if !strings.Contains(err.Error(), "cursor-agent") {
+		t.Errorf("error message should mention cursor-agent, got: %s", err.Error())
+	}
+}
+
+func TestPassthrough_AmbiguousIncludesCursorAgent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	l := &Launcher{
+		Execer: mockExec,
+		LookPath: mockLookPath(map[string]string{
+			"claude":       "/usr/local/bin/claude",
+			"cursor-agent": "/home/user/.local/bin/cursor-agent",
+		}),
+	}
+	err := l.Passthrough(t.TempDir(), "", nil)
+	if err == nil {
+		t.Fatal("expected ambiguity error when multiple agents found, got nil")
+	}
+	if !strings.Contains(err.Error(), "claude") {
+		t.Errorf("error message should mention claude, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "cursor-agent") {
+		t.Errorf("error message should mention cursor-agent, got: %s", err.Error())
+	}
+}

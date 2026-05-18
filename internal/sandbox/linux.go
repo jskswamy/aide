@@ -380,8 +380,12 @@ func buildAtomicWriteOverlayArgs(j landlockPolicyJSON, gps GrantedPathSet, aideB
 				args = append(args, "--bind-try", w, w)
 			}
 		}
+		atomicSet := make(map[string]bool, len(j.AgentAtomicWritableFiles))
+		for _, f := range j.AgentAtomicWritableFiles {
+			atomicSet[f] = true
+		}
 		for _, r := range gps.Readable {
-			if pathInside(r, parent) && r != parent && pathExists(r) {
+			if pathInside(r, parent) && r != parent && pathExists(r) && !atomicSet[r] {
 				args = append(args, "--ro-bind-try", r, r)
 			}
 		}

@@ -1,0 +1,4 @@
+NAME              VERSION  MARKETPLACE
+linear            0.4.0    copilot-plugins
+github-actions    1.0.2    awesome-copilot
+slack             0.7.3    copilot-plugins

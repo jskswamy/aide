@@ -1,0 +1,4 @@
+NAME                VERSION   ENABLED
+mcp-everything      0.1.0     true
+my-helper           0.0.3     true
+toolkit             1.2.0     false

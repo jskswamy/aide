@@ -115,3 +115,12 @@
 
   Spec: `docs/specs/2026-05-15-declarative-agent-provisioning-design.md`.
   Capability research: `docs/specs/2026-05-16-agent-capability-research.md`.
+
+### 🧹 Internal
+
+- **`mcp.jsonFlat.Write` calls existing `reconcile()` helper.** The
+  preserve-unmanaged + drop-old-managed + marshal-desired + sort
+  algorithm was inlined alongside the already-extracted
+  `reconcile()` used by `claudeJSON`. Routing both writers through
+  the shared helper cuts ~20 duplicated lines and removes drift
+  risk when the algorithm hardens.

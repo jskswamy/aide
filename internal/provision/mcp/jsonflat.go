@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/provision"
@@ -75,28 +74,10 @@ func (jsonFlat) Write(path string, desired map[string]provision.MCPServer) error
 	if raw, ok := existing["_aide_managed"]; ok {
 		_ = json.Unmarshal(raw, &prevManaged)
 	}
-	wasManaged := map[string]bool{}
-	for _, k := range prevManaged {
-		wasManaged[k] = true
+	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired)
+	if err != nil {
+		return err
 	}
-
-	newServers := map[string]json.RawMessage{}
-	for key, raw := range prevServers {
-		if wasManaged[key] {
-			continue
-		}
-		newServers[key] = raw
-	}
-	newManaged := make([]string, 0, len(desired))
-	for key, s := range desired {
-		raw, err := json.Marshal(serverBody(s))
-		if err != nil {
-			return fmt.Errorf("provision/mcp: marshalling server %q: %w", key, err)
-		}
-		newServers[key] = raw
-		newManaged = append(newManaged, key)
-	}
-	sort.Strings(newManaged)
 
 	managedRaw, _ := json.Marshal(newManaged)
 	serversRaw, _ := json.Marshal(newServers)

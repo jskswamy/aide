@@ -132,6 +132,67 @@ env:
 	}
 }
 
+// TestLauncher_TildeExpandsEnvValues guards against passing literal "~/foo"
+// to the child agent. Claude's CLAUDE_CONFIG_DIR (and similar agent env
+// vars) don't tilde-expand themselves, so an unexpanded value means the
+// agent reads the wrong (or missing) config dir. The aide provisioning
+// path expands via homepath.Expand; Launch must do the same.
+func TestLauncher_TildeExpandsEnvValues(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: /usr/local/bin/my-agent
+env:
+  CLAUDE_CONFIG_DIR: ~/.claude-work
+  NESTED: ~/sub/dir
+  ABSOLUTE: /already/absolute
+  EMBEDDED: prefix-~/not-expanded
+`)
+
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, _ []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
+	l := &Launcher{
+		Execer:    mockExec,
+		ConfigDir: configDir,
+	}
+
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	wantClaudeDir := filepath.Join(home, ".claude-work")
+	if got, _ := envValue(capturedEnv, "CLAUDE_CONFIG_DIR"); got != wantClaudeDir {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want %q (~/ must be expanded)", got, wantClaudeDir)
+	}
+
+	wantNested := filepath.Join(home, "sub/dir")
+	if got, _ := envValue(capturedEnv, "NESTED"); got != wantNested {
+		t.Errorf("NESTED = %q, want %q", got, wantNested)
+	}
+
+	if got, _ := envValue(capturedEnv, "ABSOLUTE"); got != "/already/absolute" {
+		t.Errorf("ABSOLUTE = %q, want unchanged", got)
+	}
+
+	// homepath.Expand only expands leading "~/"; embedded tildes pass through.
+	if got, _ := envValue(capturedEnv, "EMBEDDED"); got != "prefix-~/not-expanded" {
+		t.Errorf("EMBEDDED = %q, want unchanged (only leading ~/ expands)", got)
+	}
+}
+
 func TestLauncher_WithSecrets(t *testing.T) {
 	td := repoTestdataDir(t)
 	keyFile := filepath.Join(td, "age-key.txt")

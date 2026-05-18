@@ -19,6 +19,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/diag"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
@@ -233,6 +234,14 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return wrapTemplateError(err, rc.Name, rc.Context.Secret)
 	}
 
+	// Tilde-expand leading "~/" in values so the child agent receives
+	// absolute paths. Agents (e.g. claude reading CLAUDE_CONFIG_DIR) don't
+	// expand "~" themselves, so an unexpanded value reads the wrong dir.
+	homeDir, _ := os.UserHomeDir()
+	for k, v := range resolvedEnv {
+		resolvedEnv[k] = homepath.Expand(v, homeDir)
+	}
+
 	// 10. Build environment
 	var baseEnv []string
 	if cleanEnv {
@@ -312,7 +321,6 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		sandboxCfg.Network.DenyPorts = nil
 	}
 
-	homeDir, _ := os.UserHomeDir()
 	var pathWarnings []string
 	var diagSandbox diag.SandboxInfo
 	if sbDisabled {

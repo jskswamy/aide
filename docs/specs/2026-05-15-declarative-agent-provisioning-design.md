@@ -143,61 +143,199 @@ against `config_hash` in the state file:
 The banner never blocks the launch. The check is one `os.ReadFile` + one
 hash on a small YAML; no subprocess to the agent.
 
-## Schema
+## Schema (v2 — polymorphic plugins + delta semantics)
 
-### Top-level
+> **v1 historical note.** An earlier iteration shipped a flat
+> `plugins: {name: {source, name}}` map. Smoke-testing against a real
+> Claude installation revealed three structural issues — marketplaces
+> are a distinct concept aide had to model, "plugin" meant materially
+> different things across agents, and contexts repeating the same plugin
+> list violated DRY badly enough that 18-plugin configs grew to 54
+> duplicated lines. v2 replaces that flat shape with what's described
+> below. Migration is a one-time config rewrite.
+
+### Two top-level blocks
 
 ```yaml
-# Existing
-mcp_server_overrides:
+plugins:           # polymorphic-by-value-shape (see below)
+  ...
+
+mcp_servers:       # always-inline (one shape)
+  ...
+
+contexts:
+  <name>:
+    plugins:       # references with optional extra/exclude/only deltas
+    mcp_servers:   # same delta semantics
+```
+
+### `plugins:` — polymorphic by YAML value shape
+
+The block is a single map. Each entry's *value type* tells aide what
+kind of source it represents:
+
+| YAML value type | Semantic | Key role | Driver class |
+|---|---|---|---|
+| **List of strings** | Marketplace with N plugins inside | repo path (`owner/repo`) | Marketplace (Claude/Copilot/Codex) |
+| **String** | Single install reference (URL or local path) | plugin name | URL-direct (Gemini) |
+| **`null`** | Declare-only (e.g. register a marketplace, install nothing from it) | repo path | Marketplace |
+
+There is **no `type:` discriminator field**. The YAML value type is the
+discriminator. Reading the block tells you what each entry means at a
+glance.
+
+```yaml
+plugins:
+  # Marketplace entries — list value, key is a repo
+  steveyegge/beads:
+    - beads
+  jskswamy/claude-plugins:
+    - craft
+    - devenv
+    - jot
+    - codebase
+  anthropics/claude-plugins-official:
+    - context7
+    - plugin-dev
+
+  # URL-direct entries — string value, key is a plugin name
+  gemini-cli-tool: "github:google/gemini-cli-tool"
+  my-local-ext:    "~/src/some-extension"
+
+  # Declare-only — value is null; useful to register a marketplace
+  # without (yet) installing anything from it
+  obra/superpowers-marketplace: ~
+```
+
+### `mcp_servers:` — always inline
+
+MCP servers are not bundles you "install" — they're processes the agent
+spawns and talks to. Every agent that supports MCP uses the same
+conceptual fields: `command` + `args` + `env` (or `url` + `headers` for
+remote servers). File-format differences (JSON / TOML / YAML / dotted
+keys) are driver-level concerns.
+
+```yaml
+mcp_servers:
+  rfctl:
+    command: rfctl
+    args: [mcp-server]
   postgres:
     command: postgres-mcp
     args: ["--port", "5432"]
-  github:
-    command: github-mcp
-    args: ["--port", "9090"]
-
-# New
-plugins:
-  linear:
-    source: marketplace      # one of: marketplace | git | local
-    name: linear@1.2          # agent-interpreted reference
-  github:
-    source: marketplace
-    name: github
-  internal-tool:
-    source: git
-    name: github.com/my-org/internal-tool@v0.4
-
-contexts:
-  work:
-    agent: claude
-    plugins: [linear, github, internal-tool]   # references by name
-    mcp_servers: [postgres, github]            # already supported
+  slack:
+    url: https://mcp.slack.app/sse
+    headers:
+      Authorization: "Bearer ..."
 ```
 
-### `plugins.<name>.source` enum (validated at parse)
+Conflating an MCP server entry with a plugin entry would be a category
+error: a plugin is an installable bundle; an MCP server is a runtime
+process. They get separate blocks.
 
-- `marketplace` — agent's built-in plugin marketplace (e.g. Claude Code
-  marketplace). `name` is whatever the agent's CLI accepts.
-- `git` — a git URL (with optional `@ref`). The agent driver translates
-  this to the agent's git-install command if supported, else errors at
-  sync.
-- `local` — a filesystem path. Same translation rule.
+### Per-context references with `extra` / `exclude` / `only` deltas
 
-Unknown sources fail at config-load time with a clear error and the list
-of supported values.
+A context with no `plugins:` block inherits all top-level entries
+verbatim. To customise, contexts use three keywords:
 
-### Reference resolution
+| Keyword | Meaning |
+| --- | --- |
+| *(no block)* | Inherit all top-level entries. |
+| `exclude: [<path>...]` | Start from inherited defaults, then remove. Path syntax: `repo` removes the whole marketplace; `repo/plugin` removes one plugin from a list-valued entry; `key` removes a string- or null-valued entry. |
+| `extra: {<key>: <value>}` | Add to (or merge into) inherited defaults. Same value shapes as top-level. Repos already in the master list have their plugin lists *merged* additively. |
+| `only: [<path>...]` | Bypass defaults entirely; the context's set is exactly what's listed. Same path syntax as `exclude`. |
 
-`contexts.<x>.plugins: [linear]` references `plugins.linear` by key. If
-the referenced name is missing from the top-level `plugins:` map, config
-load fails with `context "x" references undefined plugin "linear"`.
+**Composition order** (deterministic, no surprises):
+1. Start with the top-level master map. If `only:` is present, replace
+   that start with the explicit list.
+2. Apply `exclude:` — remove entries by key or by `repo/plugin` path.
+3. Apply `extra:` — add or merge.
+
+`only` may coexist with `exclude` / `extra`; order makes it useful for
+"these specific plugins + one more, minus one I don't want."
+
+Same semantics apply to `mcp_servers:`. Path syntax for MCP excludes is
+just `key` — MCP servers don't nest.
+
+```yaml
+contexts:
+  default:
+    agent: claude
+    # Inherits all plugins and mcp_servers from top-level
+
+  prod:
+    agent: claude
+    env: { CLAUDE_CONFIG_DIR: ~/.claude-prod }
+    plugins:
+      extra:
+        my-org/internal: [private-tool]
+      exclude:
+        - obra/superpowers-marketplace/double-shot-latte
+    mcp_servers:
+      extra:
+        rfctl-work:
+          command: rfctl
+          args: [serve, --env, work]
+
+  ci:
+    agent: claude
+    plugins:
+      only:
+        - jskswamy/claude-plugins
+        - jskswamy/claude-plugins/craft   # keep only this plugin from that marketplace
+```
+
+### Validation
+
+**Parser-time (config load):**
+- Key-vs-value-shape consistency for `plugins:` entries:
+  - List value → key must look like `owner/repo` (or a valid git URL).
+  - String value → value must parse as `github:`, `git:`, `https://`,
+    or an absolute local path.
+  - Mismatch fails with a clear "key syntax suggests marketplace but
+    value is a string source ref" message.
+- `exclude:` / `only:` paths must reference declared entries (after
+  considering `extra:` additions).
+- `extra:` value shapes follow the same key/value-shape rules.
+
+**Sync-time:**
+- Each context's agent must accept at least one of the shapes its
+  referenced entries use. If a Goose context references a marketplace
+  entry (list-valued), sync errors with `agent "goose" does not consume
+  marketplace-style plugin entries; see <issue-url> for the inline
+  alternative`.
+
+### Driver capabilities
+
+Each driver advertises which shapes it consumes:
+
+```go
+type Provisioner interface {
+    // ... existing methods
+    SupportedSourceShapes() []SourceShape   // {Marketplace, URLDirect}
+}
+```
+
+| Agent | Plugin shapes consumed | MCP supported? |
+|---|---|---|
+| Claude / Copilot / Codex | `Marketplace` | yes |
+| Gemini | `URLDirect` | yes |
+| Goose | (none) | yes — Goose extensions ARE MCP servers; declared in `mcp_servers:`, no `plugins:` for Goose contexts |
+| Amp | `URLDirect` (TS file URL/path) | yes |
+| Aider | (none) | no |
+
+For marketplace drivers, sync runs in two phases: first ensure each
+referenced marketplace exists in the agent's local cache (calls
+`marketplace add` if missing); then install each declared plugin from
+the now-cached marketplace. The marketplace-name discovered post-add
+(e.g. `beads-marketplace` for `steveyegge/beads`) is cached in the
+state file so future syncs skip the discovery query.
 
 ### Capability mismatch
 
-If `contexts.<x>.agent: aider` (which does not support plugins) and
-`contexts.<x>.plugins` is non-empty, `aide sync` errors with:
+If `contexts.<x>.agent: aider` (which supports neither plugins nor MCP)
+and the resolved set of plugins or MCP servers is non-empty, `aide
+sync` errors with:
 
 ```
 context "x" declares plugins, but agent "aider" does not support plugins.
@@ -234,16 +372,32 @@ type Provisioner interface {
     Name() string
     SupportsPlugins() bool
     SupportsMCP() bool
+    RequiresTTY() bool
 
-    // MCP — implemented by shared helpers since the file format is uniform.
+    // SupportedSourceShapes lists which plugin-entry value shapes the
+    // driver consumes: Marketplace (list-valued), URLDirect (string-
+    // valued). Drivers that don't have a plugin concept (e.g. Goose,
+    // Aider) return nil.
+    SupportedSourceShapes() []SourceShape
+
+    // MCP — shape is uniform; driver picks an MCPHandler matching its
+    // on-disk format (JSON flat / Claude nested / Codex TOML / etc.).
     MCPConfigPath(ctx Context) string
-    InstalledMCP(ctx Context) (map[string]MCPServer, error)
-    WriteMCP(ctx Context, desired map[string]MCPServer) error
+    MCPHandler(ctx Context) MCPHandler
 
-    // Plugins — agent-specific shell-out.
+    // Plugins — agent-specific shell-out. Marketplace drivers' install
+    // path also handles marketplace-add as a prerequisite.
     InstalledPlugins(ctx Context) ([]Plugin, error)
     InstallPlugin(ctx Context, p Plugin) error
     UninstallPlugin(ctx Context, name string) error
+
+    // Marketplace drivers only — installed marketplaces in this
+    // profile, and add/remove operations. URLDirect / inline drivers
+    // return nil for InstalledMarketplaces and silently no-op the
+    // add/remove calls (engine should never invoke them).
+    InstalledMarketplaces(ctx Context) ([]Marketplace, error)
+    AddMarketplace(ctx Context, m Marketplace) error
+    RemoveMarketplace(ctx Context, name string) error
 }
 ```
 
@@ -364,21 +518,41 @@ remediated, here's what's still out of place, run aide sync again".
 
 ## Capability matrix
 
-To be filled in during implementation by reading each agent's docs and
-testing. Current best-effort assessment:
+Verified 2026-05-16 against official docs per agent. Full per-agent
+fact sheets in
+[`docs/specs/2026-05-16-agent-capability-research.md`](./2026-05-16-agent-capability-research.md).
 
-| Agent       | Plugins | MCP | Notes                                |
-| ----------- | ------- | --- | ------------------------------------ |
-| Claude Code | yes     | yes | marketplace + .mcp.json              |
-| Goose       | yes     | yes | "extensions" treated as plugins      |
-| Codex       | ?       | ?   | needs verification                   |
-| Gemini CLI  | ?       | yes | needs verification                   |
-| Aider       | no      | ?   | model + git focus                    |
-| Amp         | ?       | yes | needs verification                   |
-| Copilot CLI | no      | ?   | recent MCP support, no plugin model  |
+| Agent       | Plugins | MCP | Plugin install path           | MCP config path                                  | MCP format | Cleanly scriptable          |
+| ----------- | ------- | --- | ----------------------------- | ------------------------------------------------ | ---------- | --------------------------- |
+| Gemini CLI  | ✓       | ✓   | `gemini extensions ...`       | `~/.gemini/settings.json` (`mcpServers`)         | JSON       | YES (cleanest)              |
+| Copilot CLI | ✓       | ✓   | `copilot plugin ...`          | `~/.copilot/mcp-config.json` (`mcpServers`)      | JSON       | YES                         |
+| Claude Code | ✓       | ✓   | `claude plugin install` (non-interactive; `list --json` for discovery — verified 2026-05-17, supersedes 2026-05-16 research) | `~/.claude.json` (user) + `.mcp.json` (project)  | JSON\*     | YES — all of install/uninstall/list scriptable |
+| Codex       | ✓       | ✓   | TUI / `npx codex-marketplace` | `~/.codex/config.toml`                           | **TOML**   | MCP yes; plugins TUI-only   |
+| Goose       | ✓†      | ✓†  | file edit                     | `~/.config/goose/config.yaml`                    | **YAML**   | File-edit only              |
+| Amp         | ⚠️      | ✓   | file-drop `.ts`               | `~/.config/amp/settings.json` (`amp.mcpServers`) | JSON‡      | MCP yes; plugins are code   |
+| Aider       | ✗       | ✗   | N/A                           | N/A                                              | N/A        | Skip from feature           |
 
-Each unknown is resolved during driver implementation. Until verified,
-the driver returns `false` for both — fail closed.
+\* Claude user-scope MCP is nested under `projects.<path>.mcpServers`,
+not a flat `mcpServers` top-level key — needs a path-aware reader.
+
+† Goose unifies plugins and MCP under a single `extensions:` map.
+
+‡ Amp's top-level key is `amp.mcpServers` (dotted key inside flat
+JSON), not `mcpServers` at the root.
+
+### Driver implementation tiers
+
+| Tier | Drivers          | Effort | Reason                                                                                |
+| ---- | ---------------- | ------ | ------------------------------------------------------------------------------------- |
+| 1    | Gemini, Copilot  | low    | Clean CLI for both plugins and MCP; shared JSON helper works directly.                |
+| 2    | Claude, Codex    | medium | Claude needs path-aware user-scope MCP reader. Codex needs TOML handler and plugin install requires TTY (no scriptable surface). Claude's plugin install/list/uninstall are all scriptable (`--json` flag verified). |
+| 3    | Goose, Amp       | medium | Format diversity: Goose YAML + unified plugins/MCP; Amp nested MCP key + TS file-drop plugins. |
+| —    | Aider            | skip   | No plugin or MCP support. Driver returns `false` for both capabilities.               |
+
+### Interface tweaks suggested by research
+
+- Add `RequiresTTY() bool` capability so `aide sync --yes` can short-circuit drivers whose plugin install path cannot run unattended (Codex), with a clear error instead of a hang. **Update 2026-05-17:** Claude's CLI surface turned out to be fully non-interactive (`claude plugin list --json`, `install`, `uninstall` all scriptable), so Claude's `RequiresTTY()` returns `false`. Codex remains TTY-only for plugin install.
+- The shared MCP helper from Task 7 (JSON + flat `mcpServers`) is **one** implementation, not the only one. Move it into a `internal/provision/mcp/` subpackage with siblings: `jsonflat.go` (current), `claudejson.go` (path-aware projects map), `amp.go` (dotted key), `codextoml.go`, `gooseyaml.go`. Each driver picks its MCP handler in its constructor.
 
 ## CLI surface
 

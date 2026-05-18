@@ -2,6 +2,13 @@
 
 ### ✨ Features
 
+- **Linux: OS-level sandbox via Landlock with documented kernel floor (≥ 6.7) and bubblewrap fallback.**
+  On Linux, aide now applies OS-level sandboxing using Landlock LSM (kernel ≥ 5.13, full TCP port enforcement
+  on kernel ≥ 6.7) with an automatic fallback to bubblewrap for filesystem isolation on older kernels.
+  `aide sandbox show` and `aide status` report the active isolation tier (`primary`, `degraded`, or `unavailable`)
+  so users always know what is being enforced. See [docs/sandbox.md](docs/sandbox.md) for the full platform table
+  and minimum system requirements.
+
 - **Declarative agent provisioning.** Declare plugins and MCP servers
   per context in `config.yaml` and reconcile them against the agent's
   installed state with a single command. Replaces hand-rolled,

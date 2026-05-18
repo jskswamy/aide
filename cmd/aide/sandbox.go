@@ -150,9 +150,56 @@ func sandboxShowCmd() *cobra.Command {
 					source = "inline"
 				}
 			}
+
+			// Print isolation tier preamble.
+			tier := sandbox.PlatformIsolationTier(*policy)
+			fmt.Fprintf(out, "Isolation tier:  %s\n", tier.Tier)
+			fmt.Fprintf(out, "Backend:         %s\n", tier.Backend)
+			fmt.Fprintf(out, "Port filtering:  %s\n", tier.PortFiltering)
+			if tier.Reason != "" {
+				fmt.Fprintf(out, "Reason:          %s\n", tier.Reason)
+			}
+			fmt.Fprintln(out)
+
 			fmt.Fprintf(out, "Effective sandbox policy (%s):\n", source)
 			fmt.Fprintf(out, "  Guards:     %s\n", strings.Join(policy.Guards, ", "))
-			fmt.Fprintf(out, "  Denied:     %s\n", strings.Join(policy.ExtraDenied, ", "))
+
+			// Show derived path set with origin annotations.
+			gps := sandbox.DeriveGrantedPathSet(*policy)
+			if len(gps.Writable) > 0 {
+				fmt.Fprintln(out, "  Writable:")
+				for _, p := range gps.Writable {
+					origin := gps.OriginGuard[p]
+					if origin != "" {
+						fmt.Fprintf(out, "    %s  [%s]\n", p, origin)
+					} else {
+						fmt.Fprintf(out, "    %s\n", p)
+					}
+				}
+			}
+			if len(gps.Readable) > 0 {
+				fmt.Fprintln(out, "  Readable:")
+				for _, p := range gps.Readable {
+					origin := gps.OriginGuard[p]
+					if origin != "" {
+						fmt.Fprintf(out, "    %s  [%s]\n", p, origin)
+					} else {
+						fmt.Fprintf(out, "    %s\n", p)
+					}
+				}
+			}
+			if len(gps.Denied) > 0 {
+				fmt.Fprintln(out, "  Denied:")
+				for _, p := range gps.Denied {
+					origin := gps.OriginGuard[p]
+					if origin != "" {
+						fmt.Fprintf(out, "    %s  [%s]\n", p, origin)
+					} else {
+						fmt.Fprintf(out, "    %s\n", p)
+					}
+				}
+			}
+
 			fmt.Fprintf(out, "  Network:    %s\n", policy.Network)
 			return nil
 		},

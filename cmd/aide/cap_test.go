@@ -17,6 +17,8 @@ import (
 // .aide.yaml and pollute results.
 func runCapCmd(t *testing.T, args ...string) string {
 	t.Helper()
+	// Isolate from the user's real config (which may still be in v1 shape).
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Chdir(t.TempDir())
 	var buf bytes.Buffer
 	cmd := capCmd()
@@ -72,6 +74,7 @@ func runCapConsent(t *testing.T, projectDir string, args ...string) string {
 	t.Helper()
 	xdg := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", xdg)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Chdir(projectDir)
 
 	var buf bytes.Buffer
@@ -120,6 +123,7 @@ func TestCapConsentList_ShowsGrant(t *testing.T) {
 	// set XDG_DATA_HOME then seed + list in the same test env.
 	xdg := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", xdg)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Chdir(project)
 	seedConsent(t, xdg, project)
 
@@ -144,6 +148,7 @@ func TestCapConsentRevoke_ClearsGrant(t *testing.T) {
 	project := t.TempDir()
 	xdg := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", xdg)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Chdir(project)
 	seedConsent(t, xdg, project)
 
@@ -191,6 +196,7 @@ func TestCapConsentList_ProjectFlag(t *testing.T) {
 	self := t.TempDir()
 	xdg := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", xdg)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Chdir(self)
 
 	// Seed a grant belonging to the OTHER project.

@@ -1,0 +1,306 @@
+// `aide sync` — plan-then-apply reconciliation of declared plugins and
+// MCP servers against the agent's installed state. See
+// docs/specs/2026-05-15-declarative-agent-provisioning-design.md.
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/provision"
+	"github.com/spf13/cobra"
+)
+
+func syncCmd() *cobra.Command {
+	var contextName string
+	var planOnly bool
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Reconcile declared plugins and MCP servers for a context",
+		Long: `aide sync inspects the agent's installed state, computes the diff
+against the context's declared plugins and MCP servers, and applies
+the changes through the agent's CLI / config file.
+
+Flags:
+  --plan   Print the plan and exit without making changes.
+  --yes    Non-interactive mode: apply with the default actions and
+           skip the confirmation prompt. Unmanaged items are left
+           in place. Fails fast if the agent's plugin install path
+           requires a TTY.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSync(cmd.OutOrStdout(), cmd.InOrStdin(), contextName, planOnly, yes)
+		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	cmd.Flags().BoolVar(&planOnly, "plan", false, "Show the plan and exit without applying")
+	cmd.Flags().BoolVar(&yes, "yes", false, "Apply without prompting")
+	return cmd
+}
+
+func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool) error {
+	env, err := loadProvisionEnv(contextName)
+	if err != nil {
+		return err
+	}
+	desired, err := provision.ResolveDesired(env.cfg, env.contextName)
+	if err != nil {
+		return err
+	}
+
+	// Capability mismatch surfaces here so we don't even build a plan
+	// the engine would refuse to execute.
+	if !env.prov.SupportsPlugins() && len(desired.Plugins) > 0 {
+		return fmt.Errorf("agent %q does not support plugins (declared: %d)", env.prov.Name(), len(desired.Plugins))
+	}
+	if !env.prov.SupportsMCP() && len(desired.MCPServers) > 0 {
+		return fmt.Errorf("agent %q does not support MCP servers (declared: %d)", env.prov.Name(), len(desired.MCPServers))
+	}
+
+	installed := provision.Installed{
+		MCPServers:   map[string]provision.MCPServer{},
+		Marketplaces: map[string]provision.Marketplace{},
+	}
+	if env.prov.SupportsPlugins() {
+		got, err := env.prov.InstalledPlugins(env.provCtx)
+		if err != nil {
+			return fmt.Errorf("listing installed plugins: %w", err)
+		}
+		for _, p := range got {
+			installed.Plugins = append(installed.Plugins, p.Key)
+		}
+		// Marketplaces are an attribute of plugin-supporting agents.
+		mks, err := env.prov.InstalledMarketplaces(env.provCtx)
+		if err != nil {
+			return fmt.Errorf("listing installed marketplaces: %w", err)
+		}
+		for _, m := range mks {
+			installed.Marketplaces[m.Key] = m
+		}
+	}
+	if env.prov.SupportsMCP() {
+		handler := env.prov.MCPHandler(env.provCtx)
+		if handler != nil {
+			got, _, err := handler.Read(env.prov.MCPConfigPath(env.provCtx))
+			if err != nil {
+				return fmt.Errorf("reading MCP config: %w", err)
+			}
+			installed.MCPServers = got
+		}
+	}
+
+	var managedCtxState provision.ContextState
+	if cs, ok := env.state.Contexts[env.contextName]; ok && cs != nil {
+		managedCtxState = *cs
+	}
+
+	plan := provision.ComputePlan(env.provCtx, desired, installed, managedCtxState)
+	renderPlan(out, plan)
+
+	if planOnly {
+		return nil
+	}
+
+	if plan.HasMutations() {
+		// TTY short-circuit: avoid hanging on stdin for drivers whose
+		// plugin install path requires a real terminal.
+		if env.prov.RequiresTTY() && yes && hasPluginMutations(plan) {
+			return fmt.Errorf("agent %q plugin install requires TTY; cannot run with --yes", env.prov.Name())
+		}
+
+		if !yes {
+			// Interactive per-item adoption of unmanaged items is a
+			// known gap; for now, bail and ask the user to run
+			// `aide adopt`.
+			// TODO(provision): replace this guard with a real prompt UX.
+			if hasUnmanaged(plan) {
+				return fmt.Errorf("unmanaged plugins/MCP servers detected; run `aide adopt` first or rerun with --yes to skip them")
+			}
+			fmt.Fprint(out, "\nApply this plan? [y/N]: ")
+			reader := bufio.NewReader(in)
+			ans, _ := reader.ReadString('\n')
+			ans = strings.TrimSpace(strings.ToLower(ans))
+			if ans != "y" && ans != "yes" {
+				fmt.Fprintln(out, "Aborted.")
+				return nil
+			}
+		}
+
+		if _, err := provision.Apply(env.prov, plan, provision.ApplyOptions{}); err != nil {
+			return err
+		}
+	}
+
+	// Persist state on success — including the no-mutations case so
+	// declared-and-already-installed items get claimed as managed on
+	// first sync.
+	if err := updateStateAfterSync(env, desired, plan); err != nil {
+		return fmt.Errorf("saving state: %w", err)
+	}
+
+	if plan.HasMutations() {
+		installs, updates, uninstalls := countOps(plan)
+		fmt.Fprintf(out, "\nSync complete: %d installed, %d updated, %d uninstalled.\n", installs, updates, uninstalls)
+	} else {
+		fmt.Fprintln(out, "\nNothing to apply. Declared items are already installed; state updated.")
+	}
+	return nil
+}
+
+func renderPlan(out io.Writer, plan provision.Plan) {
+	if len(plan.Ops) == 0 {
+		fmt.Fprintf(out, "Plan for context %s: no changes\n", plan.Context.Name)
+		return
+	}
+	fmt.Fprintf(out, "Plan for context %s (agent: %s):\n\n", plan.Context.Name, plan.Context.Agent)
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	for _, op := range plan.Ops {
+		sym := opSymbol(op.OpKind)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\n", sym, op.Kind.String(), op.Name)
+	}
+	_ = tw.Flush()
+}
+
+func opSymbol(k provision.OpKind) string {
+	switch k {
+	case provision.OpInstall:
+		return "+ install"
+	case provision.OpUpdate:
+		return "~ update"
+	case provision.OpUninstall:
+		return "- uninstall"
+	case provision.OpAdopt:
+		return "↑ adopt"
+	case provision.OpIgnore:
+		return "  unmanaged"
+	}
+	return "?"
+}
+
+func hasPluginMutations(plan provision.Plan) bool {
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindPlugin && op.OpKind != provision.OpIgnore {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUnmanaged(plan provision.Plan) bool {
+	for _, op := range plan.Ops {
+		if op.OpKind == provision.OpIgnore {
+			return true
+		}
+	}
+	return false
+}
+
+func countOps(plan provision.Plan) (installs, updates, uninstalls int) {
+	for _, op := range plan.Ops {
+		switch op.OpKind {
+		case provision.OpInstall:
+			installs++
+		case provision.OpUpdate:
+			updates++
+		case provision.OpUninstall:
+			uninstalls++
+		case provision.OpAdopt, provision.OpIgnore:
+			// counted elsewhere; not a sync-plan op
+		}
+	}
+	return
+}
+
+// updateStateAfterSync writes the post-sync state: the desired set
+// becomes the managed set, the config-hash is refreshed, and SyncedAt
+// is bumped.
+func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan provision.Plan) error {
+	hash, err := provision.ConfigHash(config.FilePath())
+	if err != nil {
+		return err
+	}
+	if env.state.Contexts == nil {
+		env.state.Contexts = map[string]*provision.ContextState{}
+	}
+	cs := env.state.Contexts[env.contextName]
+	if cs == nil {
+		cs = &provision.ContextState{}
+		env.state.Contexts[env.contextName] = cs
+	}
+	if cs.Plugins == nil {
+		cs.Plugins = map[string]provision.ManagedItem{}
+	}
+	if cs.MCPServers == nil {
+		cs.MCPServers = map[string]provision.ManagedItem{}
+	}
+	if cs.Marketplaces == nil {
+		cs.Marketplaces = map[string]provision.ManagedItem{}
+	}
+	// Drop managed entries that were uninstalled.
+	for _, op := range plan.Ops {
+		if op.OpKind == provision.OpUninstall {
+			switch op.Kind {
+			case provision.KindPlugin:
+				delete(cs.Plugins, op.Name)
+			case provision.KindMCP:
+				delete(cs.MCPServers, op.Name)
+			case provision.KindMarketplace:
+				delete(cs.Marketplaces, op.Name)
+			}
+		}
+	}
+	now := time.Now().UTC()
+	for k, p := range desired.Plugins {
+		mi := cs.Plugins[k]
+		if mi.InstalledAt.IsZero() {
+			mi.InstalledAt = now
+		}
+		mi.Version = pluginVersion(p.Name)
+		cs.Plugins[k] = mi
+	}
+	for k := range desired.MCPServers {
+		mi := cs.MCPServers[k]
+		if mi.InstalledAt.IsZero() {
+			mi.InstalledAt = now
+		}
+		cs.MCPServers[k] = mi
+	}
+	for k, m := range desired.Marketplaces {
+		mi := cs.Marketplaces[k]
+		if mi.InstalledAt.IsZero() {
+			mi.InstalledAt = now
+		}
+		mi.Source = m.Source
+		cs.Marketplaces[k] = mi
+	}
+	cs.ConfigHash = hash
+	cs.SyncedAt = now
+	if err := os.MkdirAll(parentDir(env.statePath), 0o750); err != nil {
+		return err
+	}
+	return provision.SaveState(env.statePath, env.state)
+}
+
+func pluginVersion(name string) string {
+	for i := len(name) - 1; i >= 0; i-- {
+		if name[i] == '@' {
+			return name[i+1:]
+		}
+	}
+	return ""
+}
+
+func parentDir(path string) string {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' {
+			return path[:i]
+		}
+	}
+	return "."
+}

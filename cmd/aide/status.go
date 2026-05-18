@@ -18,6 +18,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/ui"
@@ -310,6 +311,19 @@ func whichCmd() *cobra.Command {
 					si.Available = availableNames
 					data.Sandbox = si
 					data.Warnings = append(data.Warnings, pathWarnings...)
+				}
+			}
+
+			// Provisioning drift hint: compare config hash against
+			// last-sync state. Errors here are best-effort — never
+			// fail launch over a drift check.
+			if homeDir != "" {
+				cfgPath := config.FilePath()
+				statePath := provision.DefaultStatePath(homeDir)
+				if d, err := provision.DriftStatus(cfg, cfgPath, statePath, resolved.Name); err == nil {
+					if msg := provision.DriftMessage(d, resolved.Name); msg != "" {
+						data.Warnings = append(data.Warnings, msg)
+					}
 				}
 			}
 

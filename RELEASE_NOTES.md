@@ -1,55 +1,117 @@
-## v1.12.0 — 2026-05-18
+## Unreleased
 
-### ✨ New
+### ✨ Features
 
-- **`cursor-agent` added to known agents.** aide now recognises Cursor's CLI (`cursor-agent`) alongside the
-  existing seven agents. The shorter `agent` symlink shipped by Cursor's installer is intentionally not registered - use
-  `aide --agent cursor-agent`.
+- **Declarative agent provisioning.** Declare plugins and MCP servers
+  per context in `config.yaml` and reconcile them against the agent's
+  installed state with a single command. Replaces hand-rolled,
+  per-machine bootstrap with a Terraform-style plan-then-apply
+  workflow that works end-to-end for Claude, Copilot, Codex, and
+  Gemini.
 
-### 📦 Dependencies
+  The schema is **polymorphic by YAML value shape** — no `type:`
+  discriminator, the reader sees what each entry means:
 
-- **Bump `github.com/go-git/go-git/v5` to v5.19.0.** Aligns object
-  encoding with upstream, hardens commit and tag verification
-  against malformed signatures, and pulls in newer `sha1cd` /
-  `go-billy`. Replaces a Dependabot PR that previously failed CI
-  on an unrelated coverage gate.
+  ```yaml
+  plugins:
+    steveyegge/beads: [beads]                  # list  = marketplace + plugins
+    jskswamy/claude-plugins: [craft, devenv]   # list  = marketplace + plugins
+    gemini-cli-tool: "github:google/foo"       # string = URL-direct (Gemini)
+    obra/superpowers-marketplace: ~            # null  = declare-only
 
-### 🛡 Security
+  mcp_servers:                                 # always-inline (one shape)
+    postgres: { command: postgres-mcp, args: ["--port", "5432"] }
+    rfctl:    { command: rfctl, args: [serve] }
 
-- **Validate env-derived agent config-dir overrides.** The seatbelt
-  module's per-agent config-dir resolver now refuses values pointing
-  at sensitive home subdirs (`.ssh`, `.aws`, `.gnupg`, `.gpg`,
-  `.config/gcloud`, `.azure`, `.kube`, `.docker`, `.netrc`,
-  `.git-credentials`) and any path outside `$HOME`. Without this
-  guard, `XDG_CONFIG_HOME=$HOME/.ssh` (or a hostile
-  `*_CONFIG_DIR` pointing into `.aws`) would inject a writable
-  subpath rule into the agent's sandbox. Env-derived overrides are
-  also tilde-expanded to absolute paths before validation so
-  Seatbelt subpath rules match the syscalls the agent actually
-  makes.
+  contexts:
+    default:
+      agent: claude                            # inherits everything top-level
+    work:
+      agent: claude
+      env: { CLAUDE_CONFIG_DIR: ~/.claude-work }
+      plugins:
+        exclude:                               # subtract from inherited
+          - obra/superpowers-marketplace/double-shot-latte
+        extra:                                 # add on top
+          my-org/internal: [private-tool]
+  ```
 
-### 🐛 Bug fixes
+  Per-context `plugins:` and `mcp_servers:` blocks accept three
+  delta keywords with deterministic composition: `only` (replace
+  defaults), `exclude` (subtract), `extra` (add). Path syntax
+  `repo/plugin` reaches inside a marketplace entry — e.g. `exclude:
+  [jskswamy/claude-plugins/devenv]` removes one plugin without
+  touching the rest.
 
-- **`internal/fsutil` coverage above CI gate.** `AtomicWrite`'s
-  error branches (parent-dir creation failure, temp-file creation
-  failure, rename-onto-non-empty-dir) had no tests, leaving the
-  package at 45.5% — under the 60% per-package threshold ci.yml
-  enforces. Added three error-path tests using POSIX-reliable
-  traps (file-where-dir-expected, chmod 0500 on parent, rename
-  onto non-empty directory) plus a leftover-temp-file assertion
-  on the rename-failure cleanup path. Coverage now 63.6%. The
-  residual 8 statements are `Chmod`/`Write`/`Close` failure
-  cleanups on an open `*os.File` — provoking those reliably
-  needs a fs-fault-injection seam in production code, deferred
-  as a separate concern.
+  Four CLI commands wire the workflow through:
 
-### 🛠 Dev workflow
+  - **`aide sync`** — plan-then-apply reconciliation. `--plan` to
+    preview, `--yes` for non-interactive runs. Marketplace adds are
+    sequenced before plugin installs. Each successful op records an
+    inverse in an in-memory journal; on any failure the engine walks
+    the journal in reverse and rolls back, then prints the failing
+    op and a retry hint. State is persisted to
+    `~/.local/state/aide/managed.json` atomically and only on
+    success.
+  - **`aide adopt`** — promote agent-installed but undeclared items
+    into config.yaml. Marketplace agents get nested list-valued
+    entries under the right repo key (looked up via the driver's
+    `InstalledMarketplaces`); URL-direct agents get string-valued
+    entries.
+  - **`aide plugin list`** — three-column declared / installed /
+    managed view per context. For marketplace agents the output
+    includes a MARKETPLACES section first, surfacing the agent's
+    canonical marketplace name (e.g. `beads-marketplace` for
+    `steveyegge/beads`) and flagging installed-but-undeclared
+    marketplaces as `unmanaged`.
+  - **`aide mcp list`** — same shape for MCP servers.
 
-- **Greptile rules force threat-model exercise.** The previous
-  rules read as a vocabulary — naming threat categories without
-  requiring reviewers to trace a PR's inputs to its rule operands.
-  Converted rules from labels to procedures: added a Confidence
-  and Gate Coupling section that ties the reported confidence to
-  the count of open high-severity findings, plus an explicit
-  threat-modelling pass on env-controlled paths, symlinks, and
-  per-peer-file consistency.
+  **Launch-time drift hint.** A one-line banner appears under `aide
+  which` when the active context is out of sync. Drift is per-context:
+  each context records its own `config_hash` + `synced_at` in
+  `managed.json`, so a successful sync of one context never silences
+  the banner for another. Two cheap signals fire the banner: (1) the
+  context's recorded hash differs from the current `config.yaml`
+  hash, or (2) the desired set computed for the context has items
+  not yet recorded as managed (shortfall). Both stay in-process — no
+  agent-state polling at launch.
+
+  **Multi-profile correctness.** Drivers honor per-context env
+  (`CLAUDE_CONFIG_DIR`, `GEMINI_HOME`, …) when invoking the agent
+  CLI, so contexts pointing at different agent profiles target the
+  right one. The seatbelt rules emitted for an override profile use
+  the absolute path (tilde-expanded) — earlier paths in literal
+  `~/...` form silently never matched the syscalls the agent makes.
+
+  **Architecture.** New `internal/provision/` package: `Provisioner`
+  interface with capability flags (`SupportsPlugins`, `SupportsMCP`,
+  `RequiresTTY`, `SupportedSourceShapes`) and marketplace ops
+  (`InstalledMarketplaces`, `AddMarketplace`, `RemoveMarketplace`).
+  Plan computation diffs desired ∩ installed ∩ managed. Two-phase
+  Apply: marketplaces first, then plugins (rewriting each plugin's
+  `<plugin>@<repo>` ref to the agent's canonical
+  `<plugin>@<marketplace-name>` via a lazy cache invalidated on
+  every marketplace op), then MCP servers. MCP file format is
+  pluggable per driver: `jsonflat` (Gemini, Copilot), `claudejson`
+  (Claude — handles flat `.mcp.json` and the nested
+  `projects.<path>.mcpServers` form in `~/.claude.json`),
+  `codextoml` (Codex `[mcp_servers.<name>]` tables). A `Runner`
+  interface decouples subprocess execution so driver tests don't
+  need real agent binaries.
+
+  **Out of scope for this cut.** Goose, Amp, and Aider provisioning
+  (tracked separately); project-scope `.aide.yaml` plugin/MCP
+  merging into `aide sync` (filed as a feature follow-up); the
+  user-friendly `profile: <name>` field that would let users declare
+  a profile name and have the driver compute the right env var
+  (also a feature follow-up).
+
+  **Bootstrap proof.** End-to-end smoke verified on a clean Claude
+  profile (`~/.claude-bootstrap-test`, zero marketplaces, zero
+  plugins): declare 2 marketplaces + 9 plugins, run `aide sync --yes`,
+  17 seconds later all marketplaces are added, all plugins
+  installed, state populated. `claude plugin list --json` confirms
+  parity. The full bootstrap loop in one command.
+
+  Spec: `docs/specs/2026-05-15-declarative-agent-provisioning-design.md`.
+  Capability research: `docs/specs/2026-05-16-agent-capability-research.md`.

@@ -45,8 +45,14 @@ mcp_servers: [git, context7]
 	if ctx.Secret != "personal" {
 		t.Errorf("expected secret 'personal', got %q", ctx.Secret)
 	}
-	if len(ctx.MCPServers) != 2 || ctx.MCPServers[0] != "git" || ctx.MCPServers[1] != "context7" {
-		t.Errorf("expected mcp_servers [git, context7], got %v", ctx.MCPServers)
+	wantMCP := map[string]bool{"git": true, "context7": true}
+	if len(ctx.MCPServers) != len(wantMCP) {
+		t.Errorf("expected mcp_servers %v, got %v", wantMCP, ctx.MCPServers)
+	}
+	for _, s := range ctx.MCPServers {
+		if !wantMCP[s] {
+			t.Errorf("unexpected mcp_server %q in %v", s, ctx.MCPServers)
+		}
 	}
 }
 

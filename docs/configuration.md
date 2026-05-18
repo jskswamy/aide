@@ -113,6 +113,10 @@ capabilities:
 
 - `never_allow:` (list) — Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
 - `never_allow_env:` (list) — Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
+- `plugins:` (map) — Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
+- `mcp_servers:` (map) — Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
+- `sandboxes:` (map) — Named sandbox profiles referenced from contexts (`sandbox: <name>`).
+- `custom_guards:` and `guard_types:` (advanced) — Define custom seatbelt guard modules. Most users should not need these.
 
 ---
 
@@ -122,9 +126,11 @@ capabilities:
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
+- `profile:` (string, optional): per-context agent profile name. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Contexts](contexts.md).
+- `profile_dir:` (string, optional): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path. Requires `profile:` to also be set.
+- `plugins:` / `mcp_servers:` (per-context overrides, optional): mapping with `extra:` / `exclude:` / `only:` deltas applied on top of the top-level set. See [Provisioning](provisioning.md).
 - `capabilities:` (list) — Capability names to activate for this context (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
 - `yolo:` (bool, optional): skip agent permission checks for this context. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
-- `auto_approve:` (bool, optional): alias for `yolo`. Run agent without permission checks.
 - `sandbox:`: accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
 
 ```yaml

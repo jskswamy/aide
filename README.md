@@ -349,6 +349,71 @@ aide secrets edit personal                           # Decrypt, edit, re-encrypt
 
 Secrets decrypt in-process at launch and never exist as plaintext on disk. See [docs/secrets.md](docs/secrets.md).
 
+## Provisioning — stop reinstalling your plugins on every machine
+
+If you've ever set up a new laptop and spent an hour running
+`claude plugin install <foo>` ten times in a row, only to realise
+two weeks later that you forgot the `commit-tools` plugin on your
+work machine and that's why every commit message looks different
+from your personal machine — this section is for you.
+
+The same problem shows up across teammates. Onboarding a new
+engineer to the project means writing a setup README that lists
+"please install these plugins, then add this MCP server" and hoping
+they read past step 3. Six months later, half the team is on a
+different plugin set than the other half and nobody knows when it
+diverged.
+
+Declare it once in `config.yaml` and reconcile with one command:
+
+```yaml
+plugins:
+  jskswamy/claude-plugins: [commit-tools, craft, refactor]
+
+contexts:
+  work:
+    agent: claude
+    profile: work          # → CLAUDE_CONFIG_DIR=~/.claude-work
+```
+
+```bash
+aide sync --plan           # preview the diff
+aide sync                  # apply (plugins land in ~/.claude-work/)
+aide plugin list           # declared / installed / managed view
+aide adopt                 # bring hand-installed items under management
+```
+
+The state file at `~/.local/state/aide/managed.json` is per-context,
+so syncing your `work` context never disturbs your `personal` plugin
+set. `aide which` shows a drift banner whenever your config drifts
+ahead of what's installed, so the gap doesn't go unnoticed.
+
+### The other half: profiles
+
+The reason you can declare different plugin sets for different
+projects is that each agent context can carry a `profile:` name.
+Without it, every claude invocation reads from one shared
+`~/.claude/` directory — your work plugins and your personal plugins
+fight for the same slot, your client A's session history shows up
+when you're working on client B's repo, and your "experimental"
+MCP servers leak into the project where you're supposed to be on
+your best behaviour.
+
+`profile: work` tells aide's claude driver to set
+`CLAUDE_CONFIG_DIR=~/.claude-work` everywhere: at launch, during
+`aide sync`, during `aide adopt`, during plugin/MCP list. The
+agent reads from and writes to that directory and that directory
+only. Your personal claude state in `~/.claude/` stays untouched.
+Switch context and it's a different dir entirely.
+
+The same idea works for gemini (`GEMINI_HOME`), codex
+(`CODEX_HOME`), copilot (`COPILOT_HOME`) — different env-var name,
+same shape from your point of view. You write `profile: <name>`,
+aide handles the per-agent env quirks.
+
+See [docs/provisioning.md](docs/provisioning.md) for the full
+reference.
+
 ## Reproducibility
 
 **Personal setup** tracked in git:
@@ -426,6 +491,7 @@ make lint                   # Run golangci-lint
 - [Environment Variables](docs/environment.md)
 - [Secrets](docs/secrets.md)
 - [Sandbox](docs/sandbox.md)
+- [Provisioning](docs/provisioning.md)
 - [Configuration Reference](docs/configuration.md)
 - [CLI Reference](docs/cli-reference.md)
 - [Deployment](docs/deployment.md)

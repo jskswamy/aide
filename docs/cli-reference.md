@@ -856,6 +856,72 @@ aide agents remove old-agent
 
 ---
 
+## aide sync
+
+```
+aide sync [--context <name>] [--plan] [--yes]
+```
+
+Reconciles the declared `plugins:` and `mcp_servers:` sets for a
+context against what is installed in the agent. See
+[Provisioning](provisioning.md) for the full model.
+
+Flags:
+- `--context <name>` — operate on a specific context (default: match by CWD).
+- `--plan` — print the plan, exit without mutating state.
+- `--yes` — non-interactive (skip confirmation).
+
+State is persisted to `~/.local/state/aide/managed.json` atomically and
+only on full success. On any failure, the engine rolls back via an
+in-memory inverse journal.
+
+---
+
+## aide adopt
+
+```
+aide adopt [--context <name>] [--yes]
+```
+
+Walks agent-installed but undeclared plugins / MCP servers /
+marketplaces and prompts to add them to `config.yaml`, then records
+them as managed in state. Use this to bring a hand-installed setup
+under aide management.
+
+Flags:
+- `--context <name>` — defaults to current-CWD match.
+- `--yes` — accept everything without prompting.
+
+---
+
+## aide plugin
+
+### aide plugin list
+
+```
+aide plugin list [--context <name>]
+```
+
+Three-column view (declared / installed / managed) per context. For
+marketplace-class agents, includes a MARKETPLACES section first with
+the agent's canonical marketplace name and any installed-but-unmanaged
+entries flagged as `unmanaged`.
+
+---
+
+## aide mcp
+
+### aide mcp list
+
+```
+aide mcp list [--context <name>]
+```
+
+Three-column view (declared / installed / managed) for MCP servers.
+Same shape as `aide plugin list`.
+
+---
+
 ## aide config
 
 ### aide config show

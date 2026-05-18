@@ -30,6 +30,21 @@ func skipIfNoBwrap(t *testing.T) {
 	}
 }
 
+// skipIfNoBwrapMount probes only mount-namespace + tmpfs/bind support, so tests
+// run on hosts where unprivileged user-namespace creation is blocked.
+func skipIfNoBwrapMount(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("bwrap not on PATH -- skipping integration test")
+	}
+	cmd := exec.Command("bwrap",
+		"--bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
+		"--", "/bin/true")
+	if err := cmd.Run(); err != nil {
+		t.Skipf("bwrap cannot create a mount namespace on this host: %v -- skipping integration test", err)
+	}
+}
+
 func TestLinuxIntegration_BwrapDeniedPathBlocked(t *testing.T) {
 	skipIfNoBwrap(t)
 
@@ -124,6 +139,251 @@ func TestLinuxIntegration_MinimalPolicyExecEcho(t *testing.T) {
 
 	if !strings.Contains(string(output), "sandbox works!") {
 		t.Errorf("unexpected output: %s", output)
+	}
+}
+
+// TestLinuxIntegration_DefaultPolicy_SSHNotReadable verifies that with the default policy
+// (no extra capabilities), the agent cannot read ~/.ssh.
+func TestLinuxIntegration_DefaultPolicy_SSHNotReadable(t *testing.T) {
+	skipIfNoBwrap(t)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home dir")
+	}
+	sshDir := filepath.Join(home, ".ssh")
+	if _, err := os.Stat(sshDir); os.IsNotExist(err) {
+		t.Skip("~/.ssh does not exist on this system")
+	}
+
+	writableDir := t.TempDir()
+	runtimeDir := t.TempDir()
+
+	policy := Policy{
+		ProjectRoot:     writableDir,
+		RuntimeDir:      runtimeDir,
+		TempDir:         os.TempDir(),
+		Network:         NetworkNone,
+		AllowSubprocess: true,
+		Guards:          []string{},
+	}
+
+	// Try to list ~/.ssh through the sandbox
+	cmd := exec.Command("/bin/ls", sshDir)
+	cmd.Env = os.Environ()
+
+	s := &LinuxSandbox{}
+	bwrapPath, _ := exec.LookPath("bwrap")
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap failed: %v", err)
+	}
+
+	_, err = cmd.CombinedOutput()
+	if err == nil {
+		t.Error("agent should NOT be able to read ~/.ssh with default policy (no coarse $HOME allow)")
+	} else {
+		t.Logf("correctly blocked ~/.ssh access: %v", err)
+	}
+}
+
+// TestLinuxIntegration_DefaultPolicy_ProjectRootReadable verifies project root remains readable.
+func TestLinuxIntegration_DefaultPolicy_ProjectRootReadable(t *testing.T) {
+	skipIfNoBwrap(t)
+
+	writableDir := t.TempDir()
+	testFile := filepath.Join(writableDir, "hello.txt")
+	if err := os.WriteFile(testFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	policy := Policy{
+		ProjectRoot:     writableDir,
+		RuntimeDir:      t.TempDir(),
+		TempDir:         os.TempDir(),
+		Network:         NetworkNone,
+		AllowSubprocess: true,
+		Guards:          []string{},
+	}
+
+	gps := DeriveGrantedPathSet(policy)
+
+	cmd := exec.Command("/bin/cat", testFile)
+	cmd.Env = os.Environ()
+
+	s := &LinuxSandbox{}
+	bwrapPath, _ := exec.LookPath("bwrap")
+	// Build bwrap args manually using GrantedPathSet
+	var bwrapArgs []string
+	for _, p := range gps.Writable {
+		bwrapArgs = append(bwrapArgs, "--bind", p, p)
+	}
+	for _, p := range gps.Readable {
+		bwrapArgs = append(bwrapArgs, "--ro-bind-try", p, p)
+	}
+	bwrapArgs = append(bwrapArgs,
+		"--ro-bind", "/usr", "/usr",
+		"--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
+		"--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+	)
+	for _, lib := range []string{"/lib", "/lib64"} {
+		if _, err := os.Stat(lib); err == nil {
+			bwrapArgs = append(bwrapArgs, "--ro-bind", lib, lib)
+		}
+	}
+	bwrapArgs = append(bwrapArgs, "--", "/bin/cat", testFile)
+
+	cmd.Path = bwrapPath
+	cmd.Args = append([]string{"bwrap"}, bwrapArgs...)
+	_ = s // use s to avoid unused warning
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("project root should be readable: %v, output: %s", err, output)
+	}
+	if string(output) != "hello" {
+		t.Errorf("unexpected output: %q, want %q", string(output), "hello")
+	}
+}
+
+func TestLinuxIntegration_AtomicOverlay_InPlaceWritePersistsToHost(t *testing.T) {
+	skipIfNoBwrapMount(t)
+
+	parent := t.TempDir()
+	target := filepath.Join(parent, ".claude.json")
+	if err := os.WriteFile(target, []byte(`{"version":1}`), 0600); err != nil {
+		t.Fatalf("setup target file: %v", err)
+	}
+
+	secret := filepath.Join(parent, "secret.txt")
+	if err := os.WriteFile(secret, []byte("HOST-ONLY"), 0600); err != nil {
+		t.Fatalf("setup secret: %v", err)
+	}
+
+	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{target}}
+	overlayArgs := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
+
+	script := `
+set -eu
+echo "--- ls inside overlay ---"
+ls ` + parent + `
+echo "--- in-place rewrite of target ---"
+echo '{"version":2,"updated":true}' > ` + target + `
+echo "--- write sibling into overlay tmpfs ---"
+echo 'OVERWRITTEN-IN-SANDBOX' > ` + secret + `
+echo "--- done ---"
+`
+
+	bwrapPath, _ := exec.LookPath("bwrap")
+	args := append([]string{}, overlayArgs...)
+	args = append(args, "--ro-bind", "/usr", "/usr")
+	for _, lib := range []string{"/lib", "/lib64"} {
+		if _, err := os.Stat(lib); err == nil {
+			args = append(args, "--ro-bind", lib, lib)
+		}
+	}
+	args = append(args, "--", "/bin/sh", "-c", script)
+
+	cmd := exec.Command(bwrapPath, args...)
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bwrap overlay run failed: %v\noutput:\n%s", err, out)
+	}
+
+	t.Logf("overlay output:\n%s", out)
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read host target after sandbox: %v", err)
+	}
+	if !strings.Contains(string(got), `"updated":true`) {
+		t.Errorf("host target was not updated by the in-sandbox write; got: %q", got)
+	}
+
+	stillSecret, err := os.ReadFile(secret)
+	if err != nil {
+		t.Fatalf("read host secret after sandbox: %v", err)
+	}
+	if string(stillSecret) != "HOST-ONLY" {
+		t.Errorf("secret.txt was modified through the overlay; got: %q want %q", stillSecret, "HOST-ONLY")
+	}
+
+	if strings.Contains(string(out), "secret.txt") {
+		t.Errorf("sandbox could see secret.txt through the overlay; output:\n%s", out)
+	}
+}
+
+// rename(2) over a bind-mounted target returns EBUSY on Linux. This test pins
+// that constraint so a future overlay redesign (OverlayFS, mount-move) signals
+// when the limitation lifts.
+func TestLinuxIntegration_AtomicOverlay_RenameOverBindFileFailsWithEBUSY(t *testing.T) {
+	skipIfNoBwrapMount(t)
+
+	parent := t.TempDir()
+	target := filepath.Join(parent, ".claude.json")
+	if err := os.WriteFile(target, []byte(`{"v":1}`), 0600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{target}}
+	overlayArgs := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
+
+	script := `
+echo '{"v":2}' > ` + parent + `/.claude.json.tmp.$$
+mv ` + parent + `/.claude.json.tmp.$$ ` + target + `
+`
+
+	bwrapPath, _ := exec.LookPath("bwrap")
+	args := append([]string{}, overlayArgs...)
+	args = append(args, "--ro-bind", "/usr", "/usr")
+	for _, lib := range []string{"/lib", "/lib64"} {
+		if _, err := os.Stat(lib); err == nil {
+			args = append(args, "--ro-bind", lib, lib)
+		}
+	}
+	args = append(args, "--", "/bin/sh", "-c", script)
+
+	cmd := exec.Command(bwrapPath, args...)
+	cmd.Env = os.Environ()
+	out, _ := cmd.CombinedOutput()
+
+	if !strings.Contains(string(out), "Device or resource busy") &&
+		!strings.Contains(string(out), "EBUSY") {
+		t.Errorf("expected mv-over-bind to fail with EBUSY (Linux kernel constraint); got output:\n%s", out)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read host target: %v", err)
+	}
+	if !strings.Contains(string(got), `"v":1`) {
+		t.Errorf("host file was unexpectedly modified by failed rename; got: %q", got)
+	}
+}
+
+func TestLinuxIntegration_AtomicOverlay_MissingFileRefusesToLaunch(t *testing.T) {
+	skipIfNoBwrapMount(t)
+
+	parent := t.TempDir()
+	missing := filepath.Join(parent, ".claude.json")
+
+	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{missing}}
+	got := missingAtomicWritableFiles(j)
+	if len(got) != 1 || got[0] != missing {
+		t.Fatalf("missingAtomicWritableFiles should report %q as missing, got: %v", missing, got)
+	}
+
+	if !needsAtomicWriteOverlay(j) {
+		t.Error("policy declares an atomic file; needsAtomicWriteOverlay must return true so applyLandlock can hit the missing-file guard")
+	}
+
+	args := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "--bind "+missing) {
+		t.Errorf("overlay must not --bind a non-existent file; got: %s", joined)
+	}
+	if !strings.Contains(joined, "--tmpfs "+filepath.Clean(parent)) {
+		t.Errorf("overlay should still tmpfs the parent so the missing-file guard runs in applyLandlock; got: %s", joined)
 	}
 }
 

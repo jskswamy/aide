@@ -31,8 +31,14 @@ mcp_servers: [git, context7]
 	if cfg.Secret != "personal" {
 		t.Errorf("Secret = %q, want %q", cfg.Secret, "personal")
 	}
-	if len(cfg.MCPServers) != 2 || cfg.MCPServers[0] != "git" || cfg.MCPServers[1] != "context7" {
-		t.Errorf("MCPServers = %v, want [git context7]", cfg.MCPServers)
+	if len(cfg.MCPServers) != 2 {
+		t.Errorf("MCPServers = %v, want 2 entries", cfg.MCPServers)
+	}
+	if _, ok := cfg.MCPServers["git"]; !ok {
+		t.Errorf("MCPServers missing git: %v", cfg.MCPServers)
+	}
+	if _, ok := cfg.MCPServers["context7"]; !ok {
+		t.Errorf("MCPServers missing context7: %v", cfg.MCPServers)
 	}
 }
 
@@ -83,7 +89,7 @@ func TestConfig_UnmarshalMinimal_RoundTrip(t *testing.T) {
 		Agent:      "claude",
 		Env:        map[string]string{"KEY": "val"},
 		Secret:     "test",
-		MCPServers: []string{"git"},
+		MCPServers: config.MCPServerMap{"git": {Command: "git-mcp"}},
 	}
 	data, err := yaml.Marshal(&original)
 	if err != nil {
@@ -102,8 +108,8 @@ func TestConfig_UnmarshalMinimal_RoundTrip(t *testing.T) {
 	if decoded.Secret != original.Secret {
 		t.Errorf("Secret = %q, want %q", decoded.Secret, original.Secret)
 	}
-	if len(decoded.MCPServers) != 1 || decoded.MCPServers[0] != "git" {
-		t.Errorf("MCPServers = %v, want [git]", decoded.MCPServers)
+	if len(decoded.MCPServers) != 1 || decoded.MCPServers["git"].Command != "git-mcp" {
+		t.Errorf("MCPServers = %v, want git", decoded.MCPServers)
 	}
 }
 
@@ -114,17 +120,11 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 		Agents: map[string]config.AgentDef{
 			"claude": {Binary: "claude"},
 		},
-		MCP: &config.MCPConfig{
-			Aggregator: &config.MCPAggregator{
-				Command: "1mcp",
-				URL:     "http://localhost:8080",
-			},
-			Servers: map[string]config.MCPServer{
-				"git": {
-					Command: "git-mcp",
-					Args:    []string{"--verbose"},
-					Env:     map[string]string{"GIT_DIR": "/tmp"},
-				},
+		MCPServers: config.MCPServerMap{
+			"git": {
+				Command: "git-mcp",
+				Args:    []string{"--verbose"},
+				Env:     map[string]string{"GIT_DIR": "/tmp"},
 			},
 		},
 		Contexts: map[string]config.Context{
@@ -132,10 +132,7 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 				Agent:  "claude",
 				Secret: "work",
 				Env:    map[string]string{"ORG": "acme"},
-				MCPServers:  []string{"git"},
-				MCPServerOverrides: map[string]config.MCPServer{
-					"git": {Args: []string{"--quiet"}},
-				},
+				MCPServers: []string{"git"},
 				Match: []config.MatchRule{
 					{Remote: "github.com/acme/*"},
 				},
@@ -164,14 +161,11 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 	if decoded.Agents["claude"].Binary != "claude" {
 		t.Errorf("Agents[claude].Binary = %q, want %q", decoded.Agents["claude"].Binary, "claude")
 	}
-	if decoded.MCP == nil {
-		t.Fatal("MCP is nil")
+	if len(decoded.MCPServers) == 0 {
+		t.Fatal("MCPServers is empty")
 	}
-	if decoded.MCP.Aggregator.Command != "1mcp" {
-		t.Errorf("MCP.Aggregator.Command = %q, want %q", decoded.MCP.Aggregator.Command, "1mcp")
-	}
-	if decoded.MCP.Servers["git"].Command != "git-mcp" {
-		t.Errorf("MCP.Servers[git].Command = %q, want %q", decoded.MCP.Servers["git"].Command, "git-mcp")
+	if decoded.MCPServers["git"].Command != "git-mcp" {
+		t.Errorf("MCPServers[git].Command = %q, want %q", decoded.MCPServers["git"].Command, "git-mcp")
 	}
 
 	ctx := decoded.Contexts["work"]
@@ -193,8 +187,8 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 	if ctx.Sandbox.Inline.CleanEnv == nil || *ctx.Sandbox.Inline.CleanEnv != false {
 		t.Errorf("Sandbox.Inline.CleanEnv = %v, want false", ctx.Sandbox.Inline.CleanEnv)
 	}
-	if len(ctx.MCPServerOverrides) != 1 {
-		t.Errorf("len(MCPServerOverrides) = %d, want 1", len(ctx.MCPServerOverrides))
+	if len(ctx.MCPServers) != 1 || ctx.MCPServers[0] != "git" {
+		t.Errorf("ctx.MCPServers = %v, want [git]", ctx.MCPServers)
 	}
 	if decoded.DefaultContext != "work" {
 		t.Errorf("DefaultContext = %q, want %q", decoded.DefaultContext, "work")
@@ -666,11 +660,8 @@ func TestConfigRoundTrip_SandboxExtraFields(t *testing.T) {
 		t.Fatal("expected 'default' context after loading minimal config")
 	}
 	sbRef := ctx.Sandbox
-	if sbRef == nil {
-		t.Fatal("Sandbox is nil after round-trip")
-	}
-	if sbRef.Inline == nil {
-		t.Fatal("Sandbox.Inline is nil after round-trip")
+	if sbRef == nil || sbRef.Inline == nil {
+		t.Fatal("Sandbox or Sandbox.Inline is nil after round-trip")
 	}
 	sb := sbRef.Inline
 

@@ -23,6 +23,7 @@ func TestPolicyFromConfig_Nil_ReturnsDefaults(t *testing.T) {
 	}
 	if policy == nil {
 		t.Fatal("expected non-nil policy for nil config")
+		return
 	}
 
 	defaults := DefaultPolicy(Paths{ProjectRoot: projectRoot, RuntimeDir: runtimeDir, TempDir: tempDir}, nil)
@@ -109,6 +110,7 @@ func TestResolveSandboxRef_NamedProfile(t *testing.T) {
 	}
 	if cfg == nil {
 		t.Fatal("expected non-nil config for named profile")
+		return
 	}
 	if cfg.Network == nil || cfg.Network.Mode != "none" {
 		t.Errorf("expected network mode 'none', got %v", cfg.Network)

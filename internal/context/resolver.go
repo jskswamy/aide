@@ -51,11 +51,20 @@ const (
 func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext, error) {
 	// Handle minimal config: build a synthetic default context
 	if cfg.IsMinimal() {
+		// Materialise the legacy list-of-names from a polymorphic
+		// MCPServerMap whose entries are zero-valued (the unmarshaller
+		// uses that shape to represent `mcp_servers: [a, b]`).
+		var mcpList []string
+		for k, v := range cfg.MCPServers {
+			if v.Command == "" && v.URL == "" {
+				mcpList = append(mcpList, k)
+			}
+		}
 		ctx := config.Context{
 			Agent:       cfg.Agent,
 			Env:         cfg.Env,
-			Secret: cfg.Secret,
-			MCPServers:  cfg.MCPServers,
+			Secret:      cfg.Secret,
+			MCPServers:  mcpList,
 			Sandbox:     config.SandboxPolicyToRef(cfg.Sandbox),
 			Yolo:        cfg.Yolo,
 		}

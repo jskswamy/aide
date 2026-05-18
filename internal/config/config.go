@@ -49,6 +49,10 @@ func Load(configDir, projectDir string) (*Config, error) {
 		cfg.ProjectConfigPath = projectConfigPath
 	}
 
+	if err := cfg.ValidatePlugins(); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+
 	return cfg, nil
 }
 
@@ -85,21 +89,31 @@ func normalizeMinimal(cfg *Config) *Config {
 	if agentName == "" {
 		agentName = "default"
 	}
+	// Minimal-format mcp_servers may be either a list of names (old
+	// shape) or a v2 map; the MCPServerMap unmarshaller stores both
+	// the same way (map with empty MCPServer values for the list form).
+	var mcpList []string
+	for k, v := range cfg.MCPServers {
+		// Treat zero-value entries as legacy list-form names.
+		if v.Command == "" && v.URL == "" {
+			mcpList = append(mcpList, k)
+		}
+	}
 	return &Config{
 		Agents: map[string]AgentDef{
 			agentName: {Binary: agentName},
 		},
 		Contexts: map[string]Context{
 			"default": {
-				Agent:       agentName,
-				Env:         cfg.Env,
-				Secret:      cfg.Secret,
-				MCPServers:  cfg.MCPServers,
-				Sandbox:     SandboxPolicyToRef(cfg.Sandbox),
-				Yolo:        cfg.Yolo,
+				Agent:          agentName,
+				Env:            cfg.Env,
+				Secret:         cfg.Secret,
+				MCPServers:  mcpList,
+				Sandbox:        SandboxPolicyToRef(cfg.Sandbox),
+				Yolo:           cfg.Yolo,
 			},
 		},
-		MCP:            cfg.MCP,
+		MCPServers:     cfg.MCPServers,
 		DefaultContext: "default",
 		Preferences:    cfg.Preferences,
 	}

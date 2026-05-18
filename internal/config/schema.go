@@ -1,6 +1,11 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Config is the top-level configuration, supporting both minimal and full formats.
 // When the YAML contains "agents" or "contexts" keys, it is the full (structured)
@@ -8,7 +13,6 @@ import "fmt"
 type Config struct {
 	// --- Full format fields ---
 	Agents         map[string]AgentDef        `yaml:"agents,omitempty"`
-	MCP            *MCPConfig                 `yaml:"mcp,omitempty"`
 	Contexts       map[string]Context         `yaml:"contexts,omitempty"`
 	DefaultContext string                     `yaml:"default_context,omitempty"`
 	Sandboxes      map[string]SandboxPolicy   `yaml:"sandboxes,omitempty"`
@@ -17,14 +21,20 @@ type Config struct {
 	Capabilities  map[string]CapabilityDef `yaml:"capabilities,omitempty"`
 	NeverAllow    []string                 `yaml:"never_allow,omitempty"`
 	NeverAllowEnv []string                 `yaml:"never_allow_env,omitempty"`
-	Preferences    *Preferences               `yaml:"preferences,omitempty"`
+	Plugins       PluginMap                `yaml:"plugins,omitempty"`
+	// MCPServers is the v2 top-level mcp_servers map. The custom
+	// MCPServerMap unmarshaller also accepts the legacy minimal-format
+	// list-of-names form; those names are stored with empty MCPServer
+	// values so normalizeMinimal can still propagate them as a
+	// MCPServersList on the synthesised default context.
+	MCPServers  MCPServerMap `yaml:"mcp_servers,omitempty"`
+	Preferences *Preferences `yaml:"preferences,omitempty"`
 
 	// --- Minimal (flat) format fields ---
 	// These are promoted to a synthetic "default" context during loading.
 	Agent       string            `yaml:"agent,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
 	Secret      string            `yaml:"secret,omitempty"`
-	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
 	Yolo        *bool             `yaml:"yolo,omitempty"`
 
@@ -72,11 +82,140 @@ type Context struct {
 	Agent              string               `yaml:"agent"`
 	Secret             string               `yaml:"secret,omitempty"`
 	Env                map[string]string    `yaml:"env,omitempty"`
-	MCPServers         []string             `yaml:"mcp_servers,omitempty"`
-	MCPServerOverrides map[string]MCPServer `yaml:"mcp_server_overrides,omitempty"`
+	// MCPServers retains the v1 list-of-names form for the per-context
+	// selection of which MCP servers (declared at the top level) are
+	// enabled in this context. The v2 ContextOverride[MCPServer]
+	// delta form is captured by MCPServersOverride; one of the two is
+	// non-empty depending on how the user wrote the YAML.
+	MCPServers         []string                    `yaml:"-"`
+	MCPServersOverride *ContextOverride[MCPServer] `yaml:"-"`
 	Sandbox            *SandboxRef          `yaml:"sandbox,omitempty"`
 	Yolo               *bool                `yaml:"yolo,omitempty"`
 	Capabilities       []string             `yaml:"capabilities,omitempty"`
+	// Plugins is populated by UnmarshalYAML when the per-context
+	// `plugins:` value is a mapping (v2 delta form). The yaml tag is
+	// "-" because UnmarshalYAML handles it directly.
+	Plugins *ContextOverride[PluginEntry] `yaml:"-"`
+}
+
+// MarshalYAML emits the Context with mcp_servers/plugins serialized
+// from whichever shape is populated (legacy list, v2 override, etc.).
+func (c Context) MarshalYAML() (interface{}, error) {
+	out := map[string]interface{}{}
+	if len(c.Match) > 0 {
+		out["match"] = c.Match
+	}
+	if c.Agent != "" {
+		out["agent"] = c.Agent
+	}
+	if c.Secret != "" {
+		out["secret"] = c.Secret
+	}
+	if len(c.Env) > 0 {
+		out["env"] = c.Env
+	}
+	if c.Sandbox != nil {
+		out["sandbox"] = c.Sandbox
+	}
+	if c.Yolo != nil {
+		out["yolo"] = c.Yolo
+	}
+	if len(c.Capabilities) > 0 {
+		out["capabilities"] = c.Capabilities
+	}
+	if len(c.MCPServers) > 0 {
+		out["mcp_servers"] = c.MCPServers
+	} else if c.MCPServersOverride != nil {
+		out["mcp_servers"] = c.MCPServersOverride
+	}
+	if c.Plugins != nil {
+		out["plugins"] = c.Plugins
+	}
+	return out, nil
+}
+
+// UnmarshalYAML decodes a Context, routing the polymorphic
+// `mcp_servers:` field into either MCPServers (legacy list-of-names)
+// or MCPServersOverride (v2 delta block). Same for `plugins:` — the
+// generic ContextOverride[PluginEntry] handles the v2 mapping form;
+// the legacy `[]string` selection list is captured in PluginsList.
+func (c *Context) UnmarshalYAML(node *yaml.Node) error {
+	type rawCtx struct {
+		Match        []MatchRule       `yaml:"match,omitempty"`
+		Agent        string            `yaml:"agent"`
+		Secret       string            `yaml:"secret,omitempty"`
+		Env          map[string]string `yaml:"env,omitempty"`
+		Sandbox      *SandboxRef       `yaml:"sandbox,omitempty"`
+		Yolo         *bool             `yaml:"yolo,omitempty"`
+		Capabilities []string          `yaml:"capabilities,omitempty"`
+		MCPServers   yaml.Node         `yaml:"mcp_servers,omitempty"`
+		Plugins      yaml.Node         `yaml:"plugins,omitempty"`
+	}
+	var r rawCtx
+	if err := node.Decode(&r); err != nil {
+		return err
+	}
+	c.Match = r.Match
+	c.Agent = r.Agent
+	c.Secret = r.Secret
+	c.Env = r.Env
+	c.Sandbox = r.Sandbox
+	c.Yolo = r.Yolo
+	c.Capabilities = r.Capabilities
+
+	switch r.MCPServers.Kind {
+	case 0:
+		// absent
+	case yaml.SequenceNode:
+		if err := r.MCPServers.Decode(&c.MCPServers); err != nil {
+			return fmt.Errorf("context.mcp_servers: %w", err)
+		}
+	case yaml.MappingNode:
+		var ov ContextOverride[MCPServer]
+		if err := r.MCPServers.Decode(&ov); err != nil {
+			return fmt.Errorf("context.mcp_servers: %w", err)
+		}
+		c.MCPServersOverride = &ov
+	default:
+		return fmt.Errorf("context.mcp_servers: unsupported YAML kind %v", r.MCPServers.Kind)
+	}
+
+	switch r.Plugins.Kind {
+	case 0:
+		// absent
+	case yaml.MappingNode:
+		var ov ContextOverride[PluginEntry]
+		if err := r.Plugins.Decode(&ov); err != nil {
+			return fmt.Errorf("context.plugins: %w", err)
+		}
+		c.Plugins = &ov
+	case yaml.SequenceNode:
+		// Legacy: list-of-names selection. v2 stub — store in Capabilities-like
+		// slice? We currently don't expose this on Context; tolerate by
+		// dropping the list form silently. ResolveDesired in Task 9
+		// reconstructs the desired set from the polymorphic top-level.
+	default:
+		return fmt.Errorf("context.plugins: unsupported YAML kind %v", r.Plugins.Kind)
+	}
+	return nil
+}
+
+// ContextOverride captures a per-context delta over a top-level map.
+// The type parameter T is the value type of the map (PluginEntry for
+// plugins, MCPServer for mcp_servers). Exactly one of {Only, Exclude+Extra}
+// patterns produces the resolved set; see internal/provision/desired.go
+// for the composition logic.
+type ContextOverride[T any] struct {
+	// Only, if non-empty, replaces the inherited default set entirely.
+	// Path syntax: `repo` (marketplace key) or `name` (other entry key)
+	// or `repo/plugin` (entry-and-subentry).
+	Only []string `yaml:"only,omitempty"`
+	// Exclude removes paths from the inherited (or Only-replaced) set.
+	// Same path syntax as Only.
+	Exclude []string `yaml:"exclude,omitempty"`
+	// Extra adds entries on top of the resolved set. Same shape as the
+	// top-level map of T (e.g. map[string]PluginEntry for plugins).
+	Extra map[string]T `yaml:"extra,omitempty"`
 }
 
 // MatchRule is a single rule in a context's match list.
@@ -87,10 +226,45 @@ type MatchRule struct {
 	RemoteName string `yaml:"remote_name,omitempty"` // defaults to "origin"
 }
 
-// MCPConfig is the top-level MCP section, shared across all contexts.
-type MCPConfig struct {
-	Aggregator *MCPAggregator       `yaml:"aggregator,omitempty"`
-	Servers    map[string]MCPServer `yaml:"servers,omitempty"`
+// MCPServerMap is the polymorphic top-level mcp_servers map. It
+// decodes both the v2 mapping form and the legacy minimal-format
+// list-of-names form (the latter is stashed on Config.MCPServerMinimal
+// by the parent decoder so existing normalizeMinimal callers keep
+// working until that path is rewritten).
+type MCPServerMap map[string]MCPServer
+
+// UnmarshalYAML decodes either a mapping or a sequence. Sequence form
+// returns a sentinel map with a single empty-key entry whose source
+// node is the original sequence; Config.UnmarshalYAML re-routes that
+// into MCPServerMinimal. The simpler approach: detect sequence at the
+// Config level. (Implemented in Config.UnmarshalYAML below.)
+func (m *MCPServerMap) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.MappingNode:
+		out := MCPServerMap{}
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i].Value
+			var srv MCPServer
+			if err := node.Content[i+1].Decode(&srv); err != nil {
+				return fmt.Errorf("mcp_servers[%q]: %w", key, err)
+			}
+			out[key] = srv
+		}
+		*m = out
+		return nil
+	case yaml.SequenceNode:
+		// Minimal-format list of names; values must be stored
+		// elsewhere. Decode names into a placeholder map with empty
+		// MCPServer values so callers can re-route via the keys.
+		out := MCPServerMap{}
+		for _, c := range node.Content {
+			out[c.Value] = MCPServer{}
+		}
+		*m = out
+		return nil
+	default:
+		return fmt.Errorf("mcp_servers: expected mapping or sequence, got %v", node.Kind)
+	}
 }
 
 // MCPServer defines a single MCP server.
@@ -99,6 +273,201 @@ type MCPServer struct {
 	URL     string            `yaml:"url,omitempty"`
 	Args    []string          `yaml:"args,omitempty"`
 	Env     map[string]string `yaml:"env,omitempty"`
+}
+
+// PluginShape enumerates the value-shape categories for entries in the
+// top-level `plugins:` block. Each entry has exactly one shape, picked
+// at YAML-decode time from the value's type.
+type PluginShape int
+
+const (
+	// PluginShapeMarketplace indicates a value that is a YAML sequence
+	// of plugin names; the key is interpreted as a repo path
+	// (owner/repo or full URL).
+	PluginShapeMarketplace PluginShape = iota
+	// PluginShapeURLDirect indicates a value that is a string install
+	// reference; the key is a plugin name chosen by the user for
+	// readability.
+	PluginShapeURLDirect
+	// PluginShapeDeclareOnly indicates a null value. The key is a
+	// repo path for marketplace agents; signals "ensure marketplace
+	// cached, install nothing from it."
+	PluginShapeDeclareOnly
+)
+
+// String returns the lowercase shape name used in validation messages.
+func (s PluginShape) String() string {
+	switch s {
+	case PluginShapeMarketplace:
+		return "marketplace"
+	case PluginShapeURLDirect:
+		return "url-direct"
+	case PluginShapeDeclareOnly:
+		return "declare-only"
+	default:
+		return "unknown"
+	}
+}
+
+// PluginEntry is one entry in the polymorphic top-level `plugins:`
+// block. The Shape determines which of Plugins/Source is populated:
+//   - Marketplace: Plugins is set, Source is empty
+//   - URLDirect:   Source is set, Plugins is nil
+//   - DeclareOnly: both are empty/nil
+type PluginEntry struct {
+	shape   PluginShape
+	Plugins []string // populated only when Shape == Marketplace
+	Source  string   // populated only when Shape == URLDirect
+}
+
+// Shape returns the entry's resolved shape, set at YAML decode time.
+func (p PluginEntry) Shape() PluginShape { return p.shape }
+
+// PluginEntryURLDirect constructs a URL-direct PluginEntry from the
+// given install reference. Convenience for callers (e.g. adopt) that
+// need to synthesise entries outside the YAML decode path.
+func PluginEntryURLDirect(source string) PluginEntry {
+	return PluginEntry{shape: PluginShapeURLDirect, Source: source}
+}
+
+// PluginEntryMarketplace constructs a marketplace PluginEntry from
+// the given plugin list.
+func PluginEntryMarketplace(plugins []string) PluginEntry {
+	return PluginEntry{shape: PluginShapeMarketplace, Plugins: plugins}
+}
+
+// PluginEntryDeclareOnly constructs a declare-only PluginEntry.
+func PluginEntryDeclareOnly() PluginEntry {
+	return PluginEntry{shape: PluginShapeDeclareOnly}
+}
+
+// MarshalYAML emits a PluginEntry in the v2 polymorphic shape that
+// round-trips through UnmarshalYAML. List for Marketplace, string for
+// URL-direct, null for declare-only.
+func (p PluginEntry) MarshalYAML() (interface{}, error) {
+	switch p.shape {
+	case PluginShapeMarketplace:
+		return p.Plugins, nil
+	case PluginShapeURLDirect:
+		return p.Source, nil
+	case PluginShapeDeclareOnly:
+		return nil, nil
+	}
+	return nil, nil
+}
+
+// PluginMap is the polymorphic top-level plugins map. It exists as a
+// named type so we can implement UnmarshalYAML at map level — yaml.v3
+// skips a value-level UnmarshalYAML when the YAML value is null, so
+// shape detection for `key: ~` (declare-only) must happen here.
+type PluginMap map[string]PluginEntry
+
+// UnmarshalYAML decodes a mapping node into the polymorphic plugin map.
+// Iterates the mapping pairs explicitly so null-valued entries are
+// detected (yaml.v3 skips per-value UnmarshalYAML on null values).
+func (m *PluginMap) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("plugins: expected a mapping, got %v", node.Kind)
+	}
+	out := PluginMap{}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		valNode := node.Content[i+1]
+		var entry PluginEntry
+		if valNode.Kind == yaml.ScalarNode && (valNode.Tag == "!!null" || valNode.Value == "" || valNode.Value == "~") {
+			entry.shape = PluginShapeDeclareOnly
+		} else {
+			if err := valNode.Decode(&entry); err != nil {
+				return fmt.Errorf("plugins[%q]: %w", keyNode.Value, err)
+			}
+		}
+		out[keyNode.Value] = entry
+	}
+	*m = out
+	return nil
+}
+
+// UnmarshalYAML implements custom decoding: the value's YAML type
+// (sequence / scalar-string / null) determines the entry's shape.
+// Key-vs-value-shape consistency is checked by ValidatePlugins after
+// decode (so we can produce errors that name the offending key —
+// yaml.v3's per-field unmarshaller doesn't carry the key down).
+func (p *PluginEntry) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.SequenceNode:
+		p.shape = PluginShapeMarketplace
+		return node.Decode(&p.Plugins)
+	case yaml.ScalarNode:
+		if node.Tag == "!!null" || node.Value == "" {
+			p.shape = PluginShapeDeclareOnly
+			return nil
+		}
+		p.shape = PluginShapeURLDirect
+		return node.Decode(&p.Source)
+	case yaml.MappingNode:
+		return fmt.Errorf("plugin entry must be a list, string, or null — got mapping (did you mean to add this under `mcp_servers:`?)")
+	default:
+		return fmt.Errorf("plugin entry has unsupported YAML kind %v", node.Kind)
+	}
+}
+
+// ValidatePlugins runs v2 schema-level checks:
+//   - Marketplace entries (list-valued) have keys shaped like "owner/repo"
+//     or a URL; URL-direct entries (string-valued) have keys without "/".
+//   - DeclareOnly entries (null-valued) have keys shaped like a repo.
+//   - Per-context exclude/only paths resolve to a declared entry
+//     (considering extra: additions).
+//
+// Returns nil on success.
+func (c *Config) ValidatePlugins() error {
+	for key, entry := range c.Plugins {
+		switch entry.Shape() {
+		case PluginShapeMarketplace, PluginShapeDeclareOnly:
+			if !looksLikeRepo(key) {
+				return fmt.Errorf("plugin entry %q has %s shape (list or null value) but its key does not look like a repo path (owner/repo or URL)", key, entry.Shape())
+			}
+		case PluginShapeURLDirect:
+			if strings.Contains(key, "/") {
+				return fmt.Errorf("plugin entry %q has URL-direct shape (string value) but its key contains '/' — pick a plain name (the value carries the source)", key)
+			}
+		}
+	}
+	for ctxName, ctx := range c.Contexts {
+		if ctx.Plugins == nil {
+			continue
+		}
+		merged := mergeKeysForValidation(c.Plugins, ctx.Plugins.Extra)
+		paths := append(append([]string{}, ctx.Plugins.Exclude...), ctx.Plugins.Only...)
+		for _, path := range paths {
+			parts := strings.SplitN(path, "/", 3)
+			topKey := parts[0]
+			if len(parts) >= 2 && looksLikeRepo(parts[0]+"/"+parts[1]) {
+				topKey = parts[0] + "/" + parts[1]
+			}
+			if _, ok := merged[topKey]; !ok {
+				return fmt.Errorf("context %q references unknown plugin path %q (not in top-level plugins or extras)", ctxName, path)
+			}
+		}
+	}
+	return nil
+}
+
+func looksLikeRepo(key string) bool {
+	if strings.HasPrefix(key, "github:") || strings.HasPrefix(key, "git:") || strings.HasPrefix(key, "https://") || strings.HasPrefix(key, "http://") {
+		return true
+	}
+	return strings.Count(key, "/") >= 1
+}
+
+func mergeKeysForValidation(top PluginMap, extras map[string]PluginEntry) map[string]struct{} {
+	out := make(map[string]struct{}, len(top)+len(extras))
+	for k := range top {
+		out[k] = struct{}{}
+	}
+	for k := range extras {
+		out[k] = struct{}{}
+	}
+	return out
 }
 
 // MCPAggregator defines an MCP aggregator (e.g. 1mcp).

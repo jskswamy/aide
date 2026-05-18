@@ -17,10 +17,8 @@ func TestWriteConfig_FullFormat(t *testing.T) {
 			"claude": {Binary: "claude"},
 			"copilot": {Binary: "gh-copilot"},
 		},
-		MCP: &MCPConfig{
-			Servers: map[string]MCPServer{
-				"myserver": {Command: "npx", Args: []string{"--yes", "mcp-server"}},
-			},
+		MCPServers: MCPServerMap{
+			"myserver": {Command: "npx", Args: []string{"--yes", "mcp-server"}},
 		},
 		Contexts: map[string]Context{
 			"work": {
@@ -74,12 +72,12 @@ func TestWriteConfig_FullFormat(t *testing.T) {
 		t.Errorf("default_context = %q, want %q", loaded.DefaultContext, "work")
 	}
 
-	// Verify MCP
-	if loaded.MCP == nil {
-		t.Fatal("expected MCP to be non-nil")
+	// Verify MCP servers
+	if len(loaded.MCPServers) == 0 {
+		t.Fatal("expected MCPServers to be non-empty")
 	}
-	if loaded.MCP.Servers["myserver"].Command != "npx" {
-		t.Errorf("MCP server command = %q, want %q", loaded.MCP.Servers["myserver"].Command, "npx")
+	if loaded.MCPServers["myserver"].Command != "npx" {
+		t.Errorf("MCP server command = %q, want %q", loaded.MCPServers["myserver"].Command, "npx")
 	}
 }
 
@@ -220,13 +218,12 @@ contexts:
     mcp_servers:
       - myserver
 default_context: work
-mcp:
-  servers:
-    myserver:
-      command: npx
-      args:
-        - "--yes"
-        - mcp-server
+mcp_servers:
+  myserver:
+    command: npx
+    args:
+      - "--yes"
+      - mcp-server
 `
 	configPath := filepath.Join(configDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(initial), 0644); err != nil {

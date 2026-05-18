@@ -1136,6 +1136,7 @@ func TestResolve_ProjectOverrideSandbox_ProfileExpanded(t *testing.T) {
 	inline := rc.Context.Sandbox.Inline
 	if inline == nil {
 		t.Fatal("expected inline sandbox after profile expansion")
+		return
 	}
 	if len(inline.Readable) != 1 || inline.Readable[0] != "/usr" {
 		t.Errorf("expected base readable from profile, got %v", inline.Readable)

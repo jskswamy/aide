@@ -12,6 +12,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.0
 	github.com/gobwas/glob v0.2.3
 	github.com/landlock-lsm/go-landlock v0.7.0
+	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/mock v0.6.0
 	golang.org/x/term v0.42.0

@@ -28,36 +28,32 @@ import (
 
 const agentName = "codex"
 
-// Driver implements provision.Provisioner for Codex CLI.
+// Driver implements provision.Provisioner for Codex CLI. Codex
+// mutates TOML directly so RequiresTTY stays false. Capability stub
+// methods are promoted from DriverBase.
 type Driver struct {
+	provision.DriverBase
 	runner provision.Runner
 }
 
 // New returns a Driver. Codex's mutations are file-edits so the
 // Runner is currently unused; we accept it for symmetry with the
 // other drivers and future use.
-func New(r provision.Runner) *Driver { return &Driver{runner: r} }
+func New(r provision.Runner) *Driver {
+	return &Driver{
+		DriverBase: provision.DriverBase{Caps: provision.Capabilities{
+			AgentName:       agentName,
+			SupportsPlugins: true,
+			SupportsMCP:     true,
+			RequiresTTY:     false,
+			SourceShapes:    []provision.SourceShape{provision.ShapeMarketplace},
+		}},
+		runner: r,
+	}
+}
 
 func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
-}
-
-// Name implements provision.Provisioner.
-func (*Driver) Name() string { return agentName }
-
-// SupportsPlugins implements provision.Provisioner.
-func (*Driver) SupportsPlugins() bool { return true }
-
-// SupportsMCP implements provision.Provisioner.
-func (*Driver) SupportsMCP() bool { return true }
-
-// RequiresTTY implements provision.Provisioner. We toggle TOML
-// directly, so no terminal is needed.
-func (*Driver) RequiresTTY() bool { return false }
-
-// SupportedSourceShapes implements provision.Provisioner.
-func (*Driver) SupportedSourceShapes() []provision.SourceShape {
-	return []provision.SourceShape{provision.ShapeMarketplace}
 }
 
 // MCPConfigPath returns ~/.codex/config.toml.

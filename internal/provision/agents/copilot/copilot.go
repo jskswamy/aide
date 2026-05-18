@@ -16,32 +16,28 @@ import (
 const agentName = "copilot"
 
 // Driver implements provision.Provisioner for GitHub Copilot CLI.
+// The five capability stub methods are promoted from DriverBase.
 type Driver struct {
+	provision.DriverBase
 	runner provision.Runner
 }
 
 // New returns a Driver using the supplied Runner.
-func New(r provision.Runner) *Driver { return &Driver{runner: r} }
+func New(r provision.Runner) *Driver {
+	return &Driver{
+		DriverBase: provision.DriverBase{Caps: provision.Capabilities{
+			AgentName:       agentName,
+			SupportsPlugins: true,
+			SupportsMCP:     true,
+			RequiresTTY:     false,
+			SourceShapes:    []provision.SourceShape{provision.ShapeMarketplace},
+		}},
+		runner: r,
+	}
+}
 
 func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
-}
-
-// Name implements provision.Provisioner.
-func (*Driver) Name() string { return agentName }
-
-// SupportsPlugins implements provision.Provisioner.
-func (*Driver) SupportsPlugins() bool { return true }
-
-// SupportsMCP implements provision.Provisioner.
-func (*Driver) SupportsMCP() bool { return true }
-
-// RequiresTTY implements provision.Provisioner.
-func (*Driver) RequiresTTY() bool { return false }
-
-// SupportedSourceShapes implements provision.Provisioner.
-func (*Driver) SupportedSourceShapes() []provision.SourceShape {
-	return []provision.SourceShape{provision.ShapeMarketplace}
 }
 
 // MCPConfigPath returns ~/.copilot/mcp-config.json.

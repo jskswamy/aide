@@ -89,29 +89,18 @@ func parsePluginList(out string) []provision.Plugin {
 // sources, ref is the raw Plugin.Name value.
 func (d *Driver) InstallPlugin(pctx provision.Context, p provision.Plugin) error {
 	ref := p.Name
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "copilot", "plugin", "install", ref)
-	if err != nil {
-		return fmt.Errorf("copilot plugin install %s: %w", ref, err)
-	}
-	if code != 0 {
-		return fmt.Errorf("copilot plugin install %s: exit %d: %s", ref, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"copilot plugin install "+ref,
+		"copilot", []string{"plugin", "install", ref})
 }
 
-// UninstallPlugin invokes `copilot plugin uninstall <name>`.
+// UninstallPlugin invokes `copilot plugin uninstall <name>`. Tolerates
+// the standard rollback-safety stderr substrings.
 func (d *Driver) UninstallPlugin(pctx provision.Context, name string) error {
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "copilot", "plugin", "uninstall", name)
-	if err != nil {
-		return fmt.Errorf("copilot plugin uninstall %s: %w", name, err)
-	}
-	if code != 0 {
-		if strings.Contains(stderr, "not installed") || strings.Contains(stderr, "not found") {
-			return nil
-		}
-		return fmt.Errorf("copilot plugin uninstall %s: exit %d: %s", name, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"copilot plugin uninstall "+name,
+		"copilot", []string{"plugin", "uninstall", name},
+		provision.DefaultTolerateStderr...)
 }
 
 // InstalledMarketplaces returns the marketplaces registered with the
@@ -150,27 +139,16 @@ func (d *Driver) AddMarketplace(pctx provision.Context, m provision.Marketplace)
 	if ref == "" {
 		ref = m.Key
 	}
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "copilot", "plugin", "marketplace", "add", ref)
-	if err != nil {
-		return fmt.Errorf("copilot plugin marketplace add %s: %w", ref, err)
-	}
-	if code != 0 {
-		return fmt.Errorf("copilot plugin marketplace add %s: exit %d: %s", ref, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"copilot plugin marketplace add "+ref,
+		"copilot", []string{"plugin", "marketplace", "add", ref})
 }
 
 // RemoveMarketplace invokes `copilot plugin marketplace remove <name>`.
+// Tolerates the standard rollback-safety stderr substrings.
 func (d *Driver) RemoveMarketplace(pctx provision.Context, name string) error {
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "copilot", "plugin", "marketplace", "remove", name)
-	if err != nil {
-		return fmt.Errorf("copilot plugin marketplace remove %s: %w", name, err)
-	}
-	if code != 0 {
-		if strings.Contains(stderr, "not found") || strings.Contains(stderr, "not configured") {
-			return nil
-		}
-		return fmt.Errorf("copilot plugin marketplace remove %s: exit %d: %s", name, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"copilot plugin marketplace remove "+name,
+		"copilot", []string{"plugin", "marketplace", "remove", name},
+		provision.DefaultTolerateStderr...)
 }

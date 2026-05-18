@@ -118,6 +118,13 @@
 
 ### 🧹 Internal
 
+- **`provision.RunCLI` unifies driver shell-out plumbing.** Three
+  drivers (claude/copilot/gemini) repeated the same wrap-err /
+  wrap-exit / tolerate-stderr shape across ~12 Install / Uninstall /
+  AddMarketplace / RemoveMarketplace methods. They now route through
+  one helper with a shared `DefaultTolerateStderr` constant for the
+  rollback-safety substrings. Codex is intentionally unchanged
+  (it edits TOML directly).
 - **`provision.DriverBase` collapses per-driver capability stubs.**
   All four drivers (claude/copilot/codex/gemini) carried the same
   five trivial methods (`Name`, `SupportsPlugins`, `SupportsMCP`,

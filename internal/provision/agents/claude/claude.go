@@ -134,29 +134,18 @@ func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, e
 // InstallPlugin invokes `claude plugin install <ref>`. The ref shape
 // is `<name>@<marketplace>` per Claude docs.
 func (d *Driver) InstallPlugin(pctx provision.Context, p provision.Plugin) error {
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "claude", "plugin", "install", p.Name)
-	if err != nil {
-		return fmt.Errorf("claude plugin install %s: %w", p.Name, err)
-	}
-	if code != 0 {
-		return fmt.Errorf("claude plugin install %s: exit %d: %s", p.Name, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"claude plugin install "+p.Name,
+		"claude", []string{"plugin", "install", p.Name})
 }
 
-// UninstallPlugin invokes `claude plugin uninstall <ref>`.
+// UninstallPlugin invokes `claude plugin uninstall <ref>`. Tolerates
+// "not installed" / "not found" stderr for rollback safety.
 func (d *Driver) UninstallPlugin(pctx provision.Context, name string) error {
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "claude", "plugin", "uninstall", name)
-	if err != nil {
-		return fmt.Errorf("claude plugin uninstall %s: %w", name, err)
-	}
-	if code != 0 {
-		if strings.Contains(stderr, "not installed") || strings.Contains(stderr, "not found") {
-			return nil
-		}
-		return fmt.Errorf("claude plugin uninstall %s: exit %d: %s", name, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"claude plugin uninstall "+name,
+		"claude", []string{"plugin", "uninstall", name},
+		provision.DefaultTolerateStderr...)
 }
 
 // claudeMarketplaceEntry mirrors the shape of one element from
@@ -221,30 +210,19 @@ func (d *Driver) InstalledMarketplaces(pctx provision.Context) ([]provision.Mark
 // AddMarketplace invokes `claude plugin marketplace add <source>`.
 func (d *Driver) AddMarketplace(pctx provision.Context, m provision.Marketplace) error {
 	ref := normalizeMarketplaceRef(m.Source, m.Key)
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "claude", "plugin", "marketplace", "add", ref)
-	if err != nil {
-		return fmt.Errorf("claude plugin marketplace add %s: %w", ref, err)
-	}
-	if code != 0 {
-		return fmt.Errorf("claude plugin marketplace add %s: exit %d: %s", ref, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"claude plugin marketplace add "+ref,
+		"claude", []string{"plugin", "marketplace", "add", ref})
 }
 
 // RemoveMarketplace invokes `claude plugin marketplace remove <name>`.
-// Tolerates "not found" / "not configured" output for rollback safety.
+// Tolerates the standard "not found" / "not configured" / "not
+// installed" stderr substrings for rollback safety.
 func (d *Driver) RemoveMarketplace(pctx provision.Context, name string) error {
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "claude", "plugin", "marketplace", "remove", name)
-	if err != nil {
-		return fmt.Errorf("claude plugin marketplace remove %s: %w", name, err)
-	}
-	if code != 0 {
-		if strings.Contains(stderr, "not found") || strings.Contains(stderr, "not configured") {
-			return nil
-		}
-		return fmt.Errorf("claude plugin marketplace remove %s: exit %d: %s", name, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"claude plugin marketplace remove "+name,
+		"claude", []string{"plugin", "marketplace", "remove", name},
+		provision.DefaultTolerateStderr...)
 }
 
 // normalizeMarketplaceRef converts aide's internal source representation

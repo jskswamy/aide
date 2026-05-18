@@ -94,15 +94,9 @@ func parseExtensionsList(out string) []provision.Plugin {
 //   - marketplace/git: use Plugin.Name (a GitHub URL or owner/repo).
 //   - local: use --path Plugin.Name (an absolute or relative path).
 func (d *Driver) InstallPlugin(pctx provision.Context, p provision.Plugin) error {
-	args := installArgs(p)
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "gemini", args...)
-	if err != nil {
-		return fmt.Errorf("gemini extensions install %s: %w", p.Name, err)
-	}
-	if code != 0 {
-		return fmt.Errorf("gemini extensions install %s: exit %d: %s", p.Name, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"gemini extensions install "+p.Name,
+		"gemini", installArgs(p))
 }
 
 func installArgs(p provision.Plugin) []string {
@@ -116,19 +110,12 @@ func installArgs(p provision.Plugin) []string {
 }
 
 // UninstallPlugin invokes `gemini extensions uninstall <name>`.
+// Tolerates the standard rollback-safety stderr substrings.
 func (d *Driver) UninstallPlugin(pctx provision.Context, name string) error {
-	_, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "gemini", "extensions", "uninstall", name)
-	if err != nil {
-		return fmt.Errorf("gemini extensions uninstall %s: %w", name, err)
-	}
-	if code != 0 {
-		// Treat missing-extension as success so rollback is safe.
-		if strings.Contains(stderr, "not installed") || strings.Contains(stderr, "not found") {
-			return nil
-		}
-		return fmt.Errorf("gemini extensions uninstall %s: exit %d: %s", name, code, stderr)
-	}
-	return nil
+	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+		"gemini extensions uninstall "+name,
+		"gemini", []string{"extensions", "uninstall", name},
+		provision.DefaultTolerateStderr...)
 }
 
 // InstalledMarketplaces is a no-op: Gemini does not have a marketplace

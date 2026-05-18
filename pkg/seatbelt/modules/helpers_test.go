@@ -24,6 +24,22 @@ func TestResolveConfigDirs_EnvOverride(t *testing.T) {
 	}
 }
 
+// TestResolveConfigDirs_TildeExpansion verifies env values like
+// CLAUDE_CONFIG_DIR=~/.claude-prod are expanded to absolute paths
+// before being returned for sandbox rule emission. Without expansion,
+// Seatbelt subpath rules containing "~/..." literal strings never
+// match the absolute paths the agent actually opens.
+func TestResolveConfigDirs_TildeExpansion(t *testing.T) {
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CLAUDE_CONFIG_DIR=~/.claude-prod"},
+	}
+	dirs := resolveConfigDirs(ctx, "CLAUDE_CONFIG_DIR", nil)
+	if len(dirs) != 1 || dirs[0] != "/home/user/.claude-prod" {
+		t.Errorf("expected [/home/user/.claude-prod], got %v", dirs)
+	}
+}
+
 func TestResolveConfigDirs_EmptyEnv(t *testing.T) {
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/user",

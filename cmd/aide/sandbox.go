@@ -13,6 +13,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -227,6 +228,32 @@ func sandboxTestCmd() *cobra.Command {
 			if policy == nil {
 				fmt.Fprintf(out, "Sandbox: disabled (context %q)\n", rc.Name)
 				return nil
+			}
+
+			// Wire the agent-specific seatbelt module so the printed
+			// profile reflects what the launched agent will actually
+			// see. Without this, `aide sandbox test` shows the base
+			// profile only and the diagnostic misleads when debugging
+			// agent-specific path issues (e.g. claude's
+			// CLAUDE_CONFIG_DIR override).
+			if rc.Context.Agent != "" {
+				if m := launcher.ResolveAgentModule(rc.Context.Agent); m != nil {
+					policy.AgentModule = m
+				}
+			}
+
+			// Project the context's env (with tilde-expansion already
+			// applied by the loader) into policy.Env so the agent
+			// module's EnvLookup can see CLAUDE_CONFIG_DIR and similar
+			// per-context overrides. Without this, the test command's
+			// diagnostic output diverges from what the launcher
+			// actually generates at run time.
+			if len(rc.Context.Env) > 0 {
+				envSlice := make([]string, 0, len(rc.Context.Env))
+				for k, v := range rc.Context.Env {
+					envSlice = append(envSlice, k+"="+homepath.Expand(v, homeDir))
+				}
+				policy.Env = envSlice
 			}
 
 			sb := sandbox.NewSandbox()

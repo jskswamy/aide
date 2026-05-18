@@ -116,6 +116,17 @@
   Spec: `docs/specs/2026-05-15-declarative-agent-provisioning-design.md`.
   Capability research: `docs/specs/2026-05-16-agent-capability-research.md`.
 
+### 🐞 Bug Fixes
+
+- **Launcher tilde-expands env values before exec.** `env:
+  CLAUDE_CONFIG_DIR: ~/.claude-work` in `config.yaml` previously
+  reached the child agent as the literal string `~/.claude-work`.
+  Agents don't expand `~` themselves, so claude fell back to project
+  scope and reported no user plugins (while `aide plugin list` —
+  which already tilde-expands — showed all 20). `Launcher.Launch`
+  now runs each resolved value through `homepath.Expand` after
+  template substitution, matching the provisioning path.
+
 ### 🧹 Internal
 
 - **`provisiontest.FakeProvisioner` consolidates the two hand-rolled

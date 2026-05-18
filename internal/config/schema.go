@@ -82,6 +82,12 @@ type Context struct {
 	Agent              string               `yaml:"agent"`
 	Secret             string               `yaml:"secret,omitempty"`
 	Env                map[string]string    `yaml:"env,omitempty"`
+	// Profile selects a per-context agent config directory. When set,
+	// the agent driver injects its env var (CLAUDE_CONFIG_DIR for
+	// claude, GEMINI_HOME for gemini, etc.) pointing at
+	// ~/.<agent>-<profile> (or ProfileDir when supplied).
+	Profile    string `yaml:"profile,omitempty"`
+	ProfileDir string `yaml:"profile_dir,omitempty"`
 	// MCPServers retains the v1 list-of-names form for the per-context
 	// selection of which MCP servers (declared at the top level) are
 	// enabled in this context. The v2 ContextOverride[MCPServer]
@@ -114,6 +120,12 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	if len(c.Env) > 0 {
 		out["env"] = c.Env
 	}
+	if c.Profile != "" {
+		out["profile"] = c.Profile
+	}
+	if c.ProfileDir != "" {
+		out["profile_dir"] = c.ProfileDir
+	}
 	if c.Sandbox != nil {
 		out["sandbox"] = c.Sandbox
 	}
@@ -145,6 +157,8 @@ func (c *Context) UnmarshalYAML(node *yaml.Node) error {
 		Agent        string            `yaml:"agent"`
 		Secret       string            `yaml:"secret,omitempty"`
 		Env          map[string]string `yaml:"env,omitempty"`
+		Profile      string            `yaml:"profile,omitempty"`
+		ProfileDir   string            `yaml:"profile_dir,omitempty"`
 		Sandbox      *SandboxRef       `yaml:"sandbox,omitempty"`
 		Yolo         *bool             `yaml:"yolo,omitempty"`
 		Capabilities []string          `yaml:"capabilities,omitempty"`
@@ -159,6 +173,8 @@ func (c *Context) UnmarshalYAML(node *yaml.Node) error {
 	c.Agent = r.Agent
 	c.Secret = r.Secret
 	c.Env = r.Env
+	c.Profile = r.Profile
+	c.ProfileDir = r.ProfileDir
 	c.Sandbox = r.Sandbox
 	c.Yolo = r.Yolo
 	c.Capabilities = r.Capabilities

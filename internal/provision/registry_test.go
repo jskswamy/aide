@@ -20,7 +20,24 @@ func (stubProv) InstalledMarketplaces(_ Context) ([]Marketplace, error) { return
 func (stubProv) AddMarketplace(_ Context, _ Marketplace) error    { return nil }
 func (stubProv) RemoveMarketplace(_ Context, _ string) error      { return nil }
 
+// snapshotRegistry returns a copy of the current registry contents
+// so a test can restore them in a t.Cleanup. Used by registry tests
+// that need to mutate global state without bleeding into peers.
+func snapshotRegistry() map[string]Provisioner {
+	snap := make(map[string]Provisioner, len(provisionerRegistry))
+	for k, v := range provisionerRegistry {
+		snap[k] = v
+	}
+	return snap
+}
+
+func restoreRegistry(snap map[string]Provisioner) {
+	provisionerRegistry = snap
+}
+
 func TestRegisterAndLookup(t *testing.T) {
+	snap := snapshotRegistry()
+	t.Cleanup(func() { restoreRegistry(snap) })
 	resetRegistryForTest()
 	RegisterProvisioner(stubProv{name: "alpha"})
 	RegisterProvisioner(stubProv{name: "beta"})
@@ -41,6 +58,8 @@ func TestRegisterAndLookup(t *testing.T) {
 }
 
 func TestRegisterDuplicatePanics(t *testing.T) {
+	snap := snapshotRegistry()
+	t.Cleanup(func() { restoreRegistry(snap) })
 	resetRegistryForTest()
 	RegisterProvisioner(stubProv{name: "x"})
 	defer func() {

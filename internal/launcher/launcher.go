@@ -20,6 +20,7 @@ import (
 	"github.com/jskswamy/aide/internal/diag"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
@@ -146,6 +147,18 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			return err
 		}
 	}
+
+	// 3b. Validate + inject per-profile env (CLAUDE_CONFIG_DIR etc.)
+	// when ctx.Profile is set. Errors here are config errors and
+	// must abort the launch — profile mis-config silently launching
+	// against the wrong dir is the exact class of bug this feature
+	// fixes.
+	homeDirForProfile, _ := os.UserHomeDir()
+	mergedEnv, perr := provision.InjectProfileEnv(rc.Context, rc.Context.Env, homeDirForProfile)
+	if perr != nil {
+		return fmt.Errorf("context %q: %w", rc.Name, perr)
+	}
+	rc.Context.Env = mergedEnv
 
 	// 4. If agentOverride is set, validate and override context's agent.
 	// Accept: known agents, agents defined in config, or names resolvable on PATH.

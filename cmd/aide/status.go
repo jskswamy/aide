@@ -206,6 +206,12 @@ func whichCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			homeDir, _ := os.UserHomeDir()
+			mergedEnv, perr := provision.InjectProfileEnv(resolved.Context, resolved.Context.Env, homeDir)
+			if perr != nil {
+				return fmt.Errorf("context %q: %w", resolved.Name, perr)
+			}
+			resolved.Context.Env = mergedEnv
 
 			out := cmd.OutOrStdout()
 			prefs := resolved.Preferences
@@ -265,7 +271,6 @@ func whichCmd() *cobra.Command {
 			}
 
 			// Build sandbox info
-			homeDir, _ := os.UserHomeDir()
 			resolvedSandbox, sbDisabled, _ := sandbox.ResolveSandboxRef(resolved.Context.Sandbox, cfg.Sandboxes)
 			if sbDisabled {
 				data.Sandbox = &ui.SandboxInfo{Disabled: true}
@@ -1127,6 +1132,12 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			homeDir, _ := os.UserHomeDir()
+			mergedEnv, perr := provision.InjectProfileEnv(resolved.Context, resolved.Context.Env, homeDir)
+			if perr != nil {
+				return fmt.Errorf("context %q: %w", resolved.Name, perr)
+			}
+			resolved.Context.Env = mergedEnv
 
 			// Resolve agent path
 			agentName := resolved.Context.Agent

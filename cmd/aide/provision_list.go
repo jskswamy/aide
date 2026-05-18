@@ -112,7 +112,10 @@ func loadProvisionEnv(contextName string) (*provisionEnv, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving working directory: %w", err)
 	}
-	pCtx := provision.ResolveContext(name, ctx, home, cwd, resolveContextEnv(ctx, home))
+	pCtx, err := provision.ResolveContext(name, ctx, home, cwd, resolveContextEnv(ctx, home))
+	if err != nil {
+		return nil, fmt.Errorf("resolving provision context: %w", err)
+	}
 	statePath := provision.DefaultStatePath(home)
 	st, err := provision.LoadState(statePath)
 	if err != nil {

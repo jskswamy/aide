@@ -33,6 +33,7 @@ func New(r provision.Runner) *Driver {
 			SupportsMCP:     true,
 			RequiresTTY:     false,
 			SourceShapes:    []provision.SourceShape{provision.ShapeURLDirect},
+			ProfileEnvKey:   "GEMINI_HOME",
 		}},
 		runner: r,
 	}

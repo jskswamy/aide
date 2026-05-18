@@ -15,6 +15,11 @@ type Capabilities struct {
 	SupportsMCP     bool
 	RequiresTTY     bool
 	SourceShapes    []SourceShape
+	// ProfileEnvKey is the env-var name the driver injects when a
+	// context declares profile:. Empty string signals the driver does
+	// not support profile (see DriverBase.Profile, which returns
+	// ErrProfileNotSupported in that case).
+	ProfileEnvKey string
 }
 
 // DriverBase is embeddable in per-agent Driver structs. It carries

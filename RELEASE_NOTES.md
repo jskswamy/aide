@@ -116,6 +116,30 @@
   Spec: `docs/specs/2026-05-15-declarative-agent-provisioning-design.md`.
   Capability research: `docs/specs/2026-05-16-agent-capability-research.md`.
 
+- **First-class agent profile support.** Multi-profile contexts can
+  now declare `profile: <name>` instead of hand-rolling agent-specific
+  env vars. The driver computes the right env var and absolute config
+  path; users don't need to memorize `CLAUDE_CONFIG_DIR` vs
+  `GEMINI_HOME` vs `CODEX_HOME` vs `COPILOT_HOME`:
+
+  ```yaml
+  contexts:
+    work:
+      agent: claude
+      profile: work        # → CLAUDE_CONFIG_DIR=~/.claude-work
+  ```
+
+  Optional `profile_dir: <abs-path>` overrides the derived
+  `~/.<agent>-<name>` path. `cursor-agent` is intentionally not
+  supported — its `CURSOR_CONFIG_DIR` env var doesn't isolate
+  `mcp.json`; use project-scoped `.cursor/mcp.json` for per-project
+  MCP instead. Existing configs with explicit env vars (e.g.
+  `env: { CLAUDE_CONFIG_DIR: ~/.claude-other }`) keep working
+  unchanged. Declaring both `profile:` and the matching env var in
+  the same context is a config-load error.
+
+  Spec: `docs/specs/2026-05-18-agent-profile-design.md`.
+
 ### 🐞 Bug Fixes
 
 - **Launcher tilde-expands env values before exec.** `env:

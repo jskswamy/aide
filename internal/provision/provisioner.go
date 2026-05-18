@@ -247,12 +247,28 @@ func (p *Plan) HasMutations() bool {
 // ResolveContext builds a provision.Context from the resolved config
 // context. Caller supplies HomeDir, ProjectRoot, and the resolved env
 // map (after template rendering and secret materialization, if any).
-func ResolveContext(name string, ctx config.Context, homeDir, projectRoot string, env map[string]string) Context {
-	return Context{
+// When ctx.Profile is set, validates and injects the driver's
+// per-profile env var.
+func ResolveContext(name string, ctx config.Context, homeDir, projectRoot string, env map[string]string) (Context, error) {
+	out := Context{
 		Name:        name,
 		Agent:       ctx.Agent,
 		HomeDir:     homeDir,
 		ProjectRoot: projectRoot,
 		Env:         env,
 	}
+	if ctx.Profile == "" && ctx.ProfileDir == "" {
+		return out, nil
+	}
+	// Clone env before mutating so the caller's map is not modified.
+	cloned := make(map[string]string, len(out.Env)+1)
+	for k, v := range out.Env {
+		cloned[k] = v
+	}
+	merged, err := InjectProfileEnv(ctx, cloned, homeDir)
+	if err != nil {
+		return out, err
+	}
+	out.Env = merged
+	return out, nil
 }

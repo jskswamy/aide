@@ -86,12 +86,15 @@ func TestJournalLen(t *testing.T) {
 }
 
 func TestResolveContextPopulatesFields(t *testing.T) {
-	got := provision.ResolveContext("work",
+	got, err := provision.ResolveContext("work",
 		config.Context{Agent: "claude"},
 		"/home/u",
 		"/p/root",
 		map[string]string{"K": "v"},
 	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if got.Name != "work" || got.Agent != "claude" || got.HomeDir != "/home/u" || got.ProjectRoot != "/p/root" || got.Env["K"] != "v" {
 		t.Errorf("ResolveContext fields: %+v", got)
 	}

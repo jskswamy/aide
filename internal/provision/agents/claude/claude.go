@@ -44,6 +44,7 @@ func New(r provision.Runner) *Driver {
 			SupportsMCP:     true,
 			RequiresTTY:     false,
 			SourceShapes:    []provision.SourceShape{provision.ShapeMarketplace},
+			ProfileEnvKey:   "CLAUDE_CONFIG_DIR",
 		}},
 		runner: r,
 	}

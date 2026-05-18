@@ -31,6 +31,7 @@ func New(r provision.Runner) *Driver {
 			SupportsMCP:     true,
 			RequiresTTY:     false,
 			SourceShapes:    []provision.SourceShape{provision.ShapeMarketplace},
+			ProfileEnvKey:   "COPILOT_HOME",
 		}},
 		runner: r,
 	}

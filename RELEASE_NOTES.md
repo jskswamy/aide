@@ -118,6 +118,15 @@
 
 ### 🧹 Internal
 
+- **`provisiontest.FakeProvisioner` consolidates the two hand-rolled
+  Provisioner fakes.** Both `internal/provision/engine_test.go` and
+  `cmd/aide/provision_list_test.go` defined their own
+  13-method test double in different styles and had already drifted
+  (field names, recording conventions, error-injection points). One
+  shared fake now lives in `internal/provision/provisiontest`,
+  supporting both the unified call-log style and per-method slices.
+  Adding a new `Provisioner` method now requires updating exactly
+  one file.
 - **`provision.RunCLI` unifies driver shell-out plumbing.** Three
   drivers (claude/copilot/gemini) repeated the same wrap-err /
   wrap-exit / tolerate-stderr shape across ~12 Install / Uninstall /

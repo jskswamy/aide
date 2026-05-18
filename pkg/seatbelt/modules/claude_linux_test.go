@@ -40,21 +40,25 @@ func TestClaudeAgent_LinuxReadable(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: "/home/u"}
 	paths := provider.LinuxReadable(ctx)
 
-	wantPaths := []string{
-		filepath.Join("/home/u", ".claude.json"),
-		filepath.Join("/home/u", ".mcp.json"),
+	// ~/.claude.json must NOT appear — it is in LinuxAtomicWritableFiles and
+	// the overlay's --bind already grants read+write; a --ro-bind-try here
+	// would produce undefined mount-stacking behavior.
+	for _, p := range paths {
+		if p == filepath.Join("/home/u", ".claude.json") {
+			t.Errorf("LinuxReadable: ~/.claude.json must not appear (it is in LinuxAtomicWritableFiles)")
+		}
 	}
-	for _, want := range wantPaths {
-		found := false
-		for _, p := range paths {
-			if p == want {
-				found = true
-				break
-			}
+	// ~/.mcp.json must be readable.
+	mcpJSON := filepath.Join("/home/u", ".mcp.json")
+	found := false
+	for _, p := range paths {
+		if p == mcpJSON {
+			found = true
+			break
 		}
-		if !found {
-			t.Errorf("LinuxReadable: expected %q, got %v", want, paths)
-		}
+	}
+	if !found {
+		t.Errorf("LinuxReadable: expected %q, got %v", mcpJSON, paths)
 	}
 }
 
@@ -97,6 +101,35 @@ func TestClaudeAgent_LinuxWritable(t *testing.T) {
 	for _, p := range paths {
 		if !strings.HasPrefix(p, "/home/u") {
 			t.Errorf("LinuxWritable: unexpected path outside HOME: %q", p)
+		}
+	}
+}
+
+func TestClaudeAgent_AtomicFilesNotInReadableOrWritable(t *testing.T) {
+	mod := ClaudeAgent()
+	pp, ok := mod.(seatbelt.LinuxPathProvider)
+	if !ok {
+		t.Fatal("ClaudeAgent must implement seatbelt.LinuxPathProvider")
+	}
+	ap, ok := mod.(seatbelt.LinuxAtomicWriteProvider)
+	if !ok {
+		t.Fatal("ClaudeAgent must implement seatbelt.LinuxAtomicWriteProvider")
+	}
+	ctx := &seatbelt.Context{HomeDir: "/home/u"}
+
+	atomic := ap.LinuxAtomicWritableFiles(ctx)
+	atomicSet := make(map[string]bool, len(atomic))
+	for _, f := range atomic {
+		atomicSet[f] = true
+	}
+	for _, p := range pp.LinuxReadable(ctx) {
+		if atomicSet[p] {
+			t.Errorf("%q appears in both LinuxReadable and LinuxAtomicWritableFiles — overlay will emit conflicting bwrap binds", p)
+		}
+	}
+	for _, p := range pp.LinuxWritable(ctx) {
+		if atomicSet[p] {
+			t.Errorf("%q appears in both LinuxWritable and LinuxAtomicWritableFiles — overlay will emit conflicting bwrap binds", p)
 		}
 	}
 }

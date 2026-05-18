@@ -13,14 +13,19 @@ var (
 	_ seatbelt.LinuxAtomicWriteProvider = (*claudeAgentModule)(nil)
 )
 
-// A path must appear in exactly one of LinuxReadable / LinuxWritable. Listing
-// it in both causes the bwrap backend to emit --bind followed by --ro-bind,
-// leaving the path read-only inside the sandbox (EROFS on descendant writes).
+// A path must appear in exactly one of LinuxReadable / LinuxWritable /
+// LinuxAtomicWritableFiles. Listing a path in more than one causes
+// buildAtomicWriteOverlayArgs to emit conflicting bwrap bind mounts for the
+// same destination, producing undefined mount-stacking behavior.
 
 func (m *claudeAgentModule) LinuxReadable(ctx *seatbelt.Context) []string {
 	home := ctx.HomeDir
+	// ~/.claude.json is intentionally absent: it is declared in
+	// LinuxAtomicWritableFiles and its --bind in the overlay namespace
+	// already grants read+write access. Listing it here too would cause
+	// buildAtomicWriteOverlayArgs to emit --ro-bind-try followed by --bind
+	// for the same destination, producing undefined mount-stacking behavior.
 	return []string{
-		filepath.Join(home, ".claude.json"),
 		filepath.Join(home, ".mcp.json"),
 	}
 }

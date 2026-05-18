@@ -34,14 +34,14 @@ func TestSync_PlanOnly_NoMutation(t *testing.T) {
 	if !strings.Contains(out, "+ install") || !strings.Contains(out, "linear") {
 		t.Errorf("plan should include install op for linear:\n%s", out)
 	}
-	if len(theFakeProv.installCalls) != 0 {
-		t.Errorf("--plan should not install anything; calls=%v", theFakeProv.installCalls)
+	if len(theFakeProv.InstallCalls) != 0 {
+		t.Errorf("--plan should not install anything; calls=%v", theFakeProv.InstallCalls)
 	}
 }
 
 func TestSync_Yes_AppliesAndUpdatesState(t *testing.T) {
 	fakeProvReset(t)
-	theFakeProv.requiresTTY = false
+	theFakeProv.RequireTTY = false
 	home := setupProvisionConfig(t,
 		[]string{"linear"}, []string{"shared"},
 		map[string]string{"linear": "linear@1.2"},
@@ -51,8 +51,8 @@ func TestSync_Yes_AppliesAndUpdatesState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
-	if len(theFakeProv.installCalls) != 1 || theFakeProv.installCalls[0].Key != "linear" {
-		t.Errorf("expected linear install, got %v", theFakeProv.installCalls)
+	if len(theFakeProv.InstallCalls) != 1 || theFakeProv.InstallCalls[0].Key != "linear" {
+		t.Errorf("expected linear install, got %v", theFakeProv.InstallCalls)
 	}
 	if !strings.Contains(out, "Sync complete") {
 		t.Errorf("missing summary:\n%s", out)
@@ -80,7 +80,7 @@ func TestSync_Yes_AppliesAndUpdatesState(t *testing.T) {
 
 func TestSync_RequiresTTY_BlocksYes(t *testing.T) {
 	fakeProvReset(t)
-	theFakeProv.requiresTTY = true
+	theFakeProv.RequireTTY = true
 	setupProvisionConfig(t,
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
@@ -89,14 +89,14 @@ func TestSync_RequiresTTY_BlocksYes(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "TTY") {
 		t.Errorf("expected TTY error, got %v", err)
 	}
-	if len(theFakeProv.installCalls) != 0 {
-		t.Errorf("install should be blocked, got %v", theFakeProv.installCalls)
+	if len(theFakeProv.InstallCalls) != 0 {
+		t.Errorf("install should be blocked, got %v", theFakeProv.InstallCalls)
 	}
 }
 
 func TestSync_CapabilityMismatch(t *testing.T) {
 	fakeProvReset(t)
-	theFakeProv.supportsPlug = false
+	theFakeProv.SupportsPlug = false
 	setupProvisionConfig(t,
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
@@ -109,7 +109,7 @@ func TestSync_CapabilityMismatch(t *testing.T) {
 
 func TestSync_ApplyFailure_StateNotUpdated(t *testing.T) {
 	fakeProvReset(t)
-	theFakeProv.requiresTTY = false
+	theFakeProv.RequireTTY = false
 	home := setupProvisionConfig(t,
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
@@ -119,12 +119,10 @@ func TestSync_ApplyFailure_StateNotUpdated(t *testing.T) {
 	// inject the failure via the fake's plugin-install hook. The
 	// current fake records but doesn't error — add an error sentinel
 	// via global. Use a small helper:
-	prevInstall := theFakeProv.installCalls
-	_ = prevInstall
 	// Force capability mismatch path by declaring a NON-plugin scenario
 	// is messy; instead, simulate failure through MCP write error.
 	// Simpler: declare the plugin but flip InstalledPlugins to error.
-	theFakeProv.pluginsErr = errors.New("listing failed")
+	theFakeProv.PluginsErr = errors.New("listing failed")
 
 	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
 	if err == nil {

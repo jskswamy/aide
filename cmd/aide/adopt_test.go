@@ -26,7 +26,7 @@ func runAdoptCmd(t *testing.T, stdin string, args ...string) (string, error) {
 func TestAdopt_YesPromotesUnmanaged(t *testing.T) {
 	fakeProvReset(t)
 	home := setupProvisionConfig(t, nil, nil, nil, nil)
-	theFakeProv.plugins = []provision.Plugin{
+	theFakeProv.InstalledPluginList = []provision.Plugin{
 		{Key: "experimental", Source: "marketplace", Name: "experimental@1.0"},
 	}
 	theFakeProv.mcpInstalled = map[string]provision.MCPServer{
@@ -90,10 +90,10 @@ func TestAdopt_MarketplaceAgentWritesNestedShape(t *testing.T) {
 	fakeProvReset(t)
 	home := setupProvisionConfig(t, nil, nil, nil, nil)
 	// Marketplace agent (fakeProv already returns ShapeMarketplace).
-	theFakeProv.plugins = []provision.Plugin{
+	theFakeProv.InstalledPluginList = []provision.Plugin{
 		{Key: "beads", Source: "marketplace", Name: "beads@beads-marketplace"},
 	}
-	theFakeProv.marketplaces = []provision.Marketplace{
+	theFakeProv.InstalledMarkets = []provision.Marketplace{
 		{Key: "steveyegge/beads", Source: "github:steveyegge/beads", Name: "beads-marketplace"},
 	}
 
@@ -143,7 +143,7 @@ func TestAdopt_MarketplaceAgentWritesNestedShape(t *testing.T) {
 func TestAdopt_PromotesUnmanagedMarketplace(t *testing.T) {
 	fakeProvReset(t)
 	home := setupProvisionConfig(t, nil, nil, nil, nil)
-	theFakeProv.marketplaces = []provision.Marketplace{
+	theFakeProv.InstalledMarkets = []provision.Marketplace{
 		{Key: "jskswamy/aide", Source: "github:jskswamy/aide", Name: "aide-plugins"},
 	}
 

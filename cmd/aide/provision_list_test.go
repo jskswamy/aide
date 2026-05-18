@@ -8,31 +8,34 @@ import (
 	"testing"
 
 	"github.com/jskswamy/aide/internal/provision"
+	"github.com/jskswamy/aide/internal/provision/provisiontest"
 )
 
-// fakeProv is a shared test double registered in the global provisioner
-// registry under agent name "fakeagent". State is reset per-test via
-// fakeProvReset(t).
+// fakeProv wraps the shared FakeProvisioner with a local MCP-state
+// shim. The base behavior (capabilities, error injection, call
+// recording) comes from provisiontest.FakeProvisioner; this wrapper
+// adds the locally-needed mcpInstalled map that feeds fakeMCPHandler.
 type fakeProv struct {
-	plugins             []provision.Plugin
-	mcpInstalled        map[string]provision.MCPServer
-	mcpManaged          map[string]bool
-	installCalls        []provision.Plugin
-	uninstallCall       []string
-	supportsPlug        bool
-	supportsMCP         bool
-	requiresTTY         bool
-	pluginsErr          error
-	marketplaces        []provision.Marketplace
-	marketplacesErr     error
-	addMarketplaceErr   error
-	addedMarketplaces   []provision.Marketplace
-	removeMarketplaces  []string
+	*provisiontest.FakeProvisioner
+	mcpInstalled map[string]provision.MCPServer
+}
+
+// MCPHandler overrides the base no-op handler to return a
+// fakeMCPHandler seeded from the wrapper's mcpInstalled map. Tests
+// set mcpInstalled before calling cmds; the engine then reads
+// back through this handler.
+func (f *fakeProv) MCPHandler(_ provision.Context) provision.MCPHandler {
+	return &fakeMCPHandler{servers: f.mcpInstalled}
 }
 
 var theFakeProv = &fakeProv{
-	supportsPlug: true,
-	supportsMCP:  true,
+	FakeProvisioner: &provisiontest.FakeProvisioner{
+		AgentName:      "fakeagent",
+		SupportsPlug:   true,
+		SupportsMCPCfg: true,
+		Shapes:         []provision.SourceShape{provision.ShapeMarketplace},
+		MCPPath:        "/tmp/fakeagent-mcp.json",
+	},
 }
 
 type fakeMCPHandler struct {
@@ -67,55 +70,17 @@ func (h *fakeMCPHandler) Write(_ string, desired map[string]provision.MCPServer)
 	return nil
 }
 
-func (f *fakeProv) Name() string             { return "fakeagent" }
-func (f *fakeProv) SupportsPlugins() bool    { return f.supportsPlug }
-func (f *fakeProv) SupportsMCP() bool        { return f.supportsMCP }
-func (f *fakeProv) RequiresTTY() bool        { return f.requiresTTY }
-func (f *fakeProv) MCPConfigPath(_ provision.Context) string {
-	return "/tmp/fakeagent-mcp.json"
-}
-func (f *fakeProv) InstalledPlugins(_ provision.Context) ([]provision.Plugin, error) {
-	if f.pluginsErr != nil {
-		return nil, f.pluginsErr
-	}
-	return f.plugins, nil
-}
-func (f *fakeProv) InstallPlugin(_ provision.Context, p provision.Plugin) error {
-	f.installCalls = append(f.installCalls, p)
-	return nil
-}
-func (f *fakeProv) UninstallPlugin(_ provision.Context, name string) error {
-	f.uninstallCall = append(f.uninstallCall, name)
-	return nil
-}
-func (f *fakeProv) MCPHandler(_ provision.Context) provision.MCPHandler {
-	return &fakeMCPHandler{servers: f.mcpInstalled, managed: f.mcpManaged}
-}
-func (f *fakeProv) SupportedSourceShapes() []provision.SourceShape {
-	return []provision.SourceShape{provision.ShapeMarketplace}
-}
-func (f *fakeProv) InstalledMarketplaces(_ provision.Context) ([]provision.Marketplace, error) {
-	return f.marketplaces, f.marketplacesErr
-}
-func (f *fakeProv) AddMarketplace(_ provision.Context, m provision.Marketplace) error {
-	f.addedMarketplaces = append(f.addedMarketplaces, m)
-	return f.addMarketplaceErr
-}
-func (f *fakeProv) RemoveMarketplace(_ provision.Context, name string) error {
-	f.removeMarketplaces = append(f.removeMarketplaces, name)
-	return nil
-}
-
 func init() {
 	provision.RegisterProvisioner(theFakeProv)
 }
 
+// fakeProvReset clears recorded state and per-test data while
+// preserving the agent identity/capability fields the registry knows
+// about.
 func fakeProvReset(t *testing.T) {
 	t.Helper()
-	*theFakeProv = fakeProv{
-		supportsPlug: true,
-		supportsMCP:  true,
-	}
+	theFakeProv.Reset()
+	theFakeProv.mcpInstalled = nil
 }
 
 // setupProvisionConfig writes a config.yaml that registers a "work"
@@ -204,7 +169,7 @@ func TestPluginList_DeclaredInstalledManaged(t *testing.T) {
 		map[string]string{"linear": "linear@1.2", "github": "github"},
 		nil,
 	)
-	theFakeProv.plugins = []provision.Plugin{
+	theFakeProv.InstalledPluginList = []provision.Plugin{
 		{Key: "linear"}, {Key: "github"}, {Key: "experimental"},
 	}
 	writeStateFile(t, home, []string{"linear", "github", "old-tool"}, nil)
@@ -258,7 +223,7 @@ func TestPluginList_ShowsMarketplaceColumn(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	theFakeProv.marketplaces = []provision.Marketplace{
+	theFakeProv.InstalledMarkets = []provision.Marketplace{
 		{Key: "steveyegge/beads", Source: "github:steveyegge/beads", Name: "beads-marketplace"},
 		{Key: "extra-org/extra-marketplace", Source: "github:extra-org/extra-marketplace", Name: "extra-marketplace"},
 	}
@@ -273,10 +238,10 @@ func TestPluginList_ShowsMarketplaceColumn(t *testing.T) {
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"MARKETPLACES",                  // section header
-		"steveyegge/beads",               // declared and installed → ✓ ✓
-		"jskswamy/claude-plugins",        // declared, not installed → ✓ —
-		"extra-org/extra-marketplace",    // installed but not declared → unmanaged
+		"MARKETPLACES",                // section header
+		"steveyegge/beads",            // declared and installed → ✓ ✓
+		"jskswamy/claude-plugins",     // declared, not installed → ✓ —
+		"extra-org/extra-marketplace", // installed but not declared → unmanaged
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in marketplace section:\n%s", want, out)
@@ -293,8 +258,8 @@ func TestMCPList_DeclaredInstalledManaged(t *testing.T) {
 		map[string]string{"shared": "shared-mcp"},
 	)
 	theFakeProv.mcpInstalled = map[string]provision.MCPServer{
-		"shared":     {Command: "shared-mcp"},
-		"extra-mcp":  {Command: "extra"},
+		"shared":    {Command: "shared-mcp"},
+		"extra-mcp": {Command: "extra"},
 	}
 	writeStateFile(t, home, nil, []string{"shared", "stale-mcp"})
 

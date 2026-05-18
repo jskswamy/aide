@@ -24,36 +24,33 @@ import (
 
 const agentName = "claude"
 
-// Driver implements provision.Provisioner for Claude Code.
+// Driver implements provision.Provisioner for Claude Code. The
+// capability stub methods (Name, SupportsPlugins, SupportsMCP,
+// RequiresTTY, SupportedSourceShapes) are promoted from the
+// embedded DriverBase; Claude's plugin CLI surface
+// (install/uninstall/list --json) is fully non-interactive, so
+// RequiresTTY stays false.
 type Driver struct {
+	provision.DriverBase
 	runner provision.Runner
 }
 
 // New returns a Driver using the supplied Runner.
 func New(r provision.Runner) *Driver {
-	return &Driver{runner: r}
+	return &Driver{
+		DriverBase: provision.DriverBase{Caps: provision.Capabilities{
+			AgentName:       agentName,
+			SupportsPlugins: true,
+			SupportsMCP:     true,
+			RequiresTTY:     false,
+			SourceShapes:    []provision.SourceShape{provision.ShapeMarketplace},
+		}},
+		runner: r,
+	}
 }
 
 func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
-}
-
-// Name implements provision.Provisioner.
-func (*Driver) Name() string { return agentName }
-
-// SupportsPlugins implements provision.Provisioner.
-func (*Driver) SupportsPlugins() bool { return true }
-
-// SupportsMCP implements provision.Provisioner.
-func (*Driver) SupportsMCP() bool { return true }
-
-// RequiresTTY implements provision.Provisioner. Claude's plugin CLI
-// surface (install/uninstall/list --json) is fully non-interactive.
-func (*Driver) RequiresTTY() bool { return false }
-
-// SupportedSourceShapes implements provision.Provisioner.
-func (*Driver) SupportedSourceShapes() []provision.SourceShape {
-	return []provision.SourceShape{provision.ShapeMarketplace}
 }
 
 // MCPConfigPath returns the project-scope `.mcp.json` at the context's

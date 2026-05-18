@@ -118,6 +118,13 @@
 
 ### 🧹 Internal
 
+- **`provision.DriverBase` collapses per-driver capability stubs.**
+  All four drivers (claude/copilot/codex/gemini) carried the same
+  five trivial methods (`Name`, `SupportsPlugins`, `SupportsMCP`,
+  `RequiresTTY`, `SupportedSourceShapes`). A new
+  `provision.Capabilities` struct + embeddable `DriverBase`
+  promotes them from a single populated literal in each driver's
+  `New()`. Adding a new capability bit is a one-file change.
 - **`provision.SourceRef` centralises marketplace ref parsing.** The
   `github:` / `git:` / `https://` / `http://` / leading-`/` prefix
   vocabulary previously lived in three places (`keyAsSource`,

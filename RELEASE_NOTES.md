@@ -118,6 +118,13 @@
 
 ### 🧹 Internal
 
+- **`provision.SourceRef` centralises marketplace ref parsing.** The
+  `github:` / `git:` / `https://` / `http://` / leading-`/` prefix
+  vocabulary previously lived in three places (`keyAsSource`,
+  `classifySource`, `normalizeMarketplaceRef`). One canonical type
+  now owns it with `.Aide()`, `.Bare()`, and `.Classify()` methods
+  and a table-driven test covering every transport. Adding a new
+  scheme is a one-file change.
 - **`mcp.jsonFlat.Write` calls existing `reconcile()` helper.** The
   preserve-unmanaged + drop-old-managed + marshal-desired + sort
   algorithm was inlined alongside the already-extracted

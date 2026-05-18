@@ -257,14 +257,12 @@ func (d *Driver) RemoveMarketplace(pctx provision.Context, name string) error {
 // keep parity with how `marketplace list --json` emits its source field
 // as the type + repo concatenation — claude itself rejects that prefix
 // on the add side ("Invalid marketplace source format. Try:
-// owner/repo, https://..., or ./path").
+// owner/repo, https://..., or ./path"). Delegates to
+// provision.ParseSourceRef so the prefix vocabulary lives in one place.
 func normalizeMarketplaceRef(source, key string) string {
 	ref := source
 	if ref == "" {
 		ref = key
 	}
-	if rest, ok := strings.CutPrefix(ref, "github:"); ok {
-		return rest
-	}
-	return ref
+	return provision.ParseSourceRef(ref).Bare()
 }

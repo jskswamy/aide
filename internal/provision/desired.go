@@ -2,7 +2,6 @@ package provision
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
 )
@@ -40,7 +39,7 @@ func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 		case config.PluginShapeMarketplace, config.PluginShapeDeclareOnly:
 			desired.Marketplaces[key] = Marketplace{
 				Key:    key,
-				Source: keyAsSource(key),
+				Source: ParseSourceRef(key).Aide(),
 			}
 			for _, plugin := range entry.Plugins {
 				desired.Plugins[plugin] = Plugin{
@@ -52,7 +51,7 @@ func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 		case config.PluginShapeURLDirect:
 			desired.Plugins[key] = Plugin{
 				Key:    key,
-				Source: classifySource(entry.Source),
+				Source: ParseSourceRef(entry.Source).Classify(),
 				Name:   entry.Source,
 			}
 		}
@@ -88,27 +87,6 @@ func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 	return desired, nil
 }
 
-// keyAsSource returns the install ref string for a marketplace key.
-// Bare "owner/repo" gets a "github:" prefix; full URLs pass through.
-func keyAsSource(key string) string {
-	for _, prefix := range []string{"github:", "git:", "https://", "http://"} {
-		if strings.HasPrefix(key, prefix) {
-			return key
-		}
-	}
-	return "github:" + key
-}
-
-// classifySource picks a Plugin.Source label for a URLDirect entry.
-func classifySource(src string) string {
-	switch {
-	case strings.HasPrefix(src, "github:"):
-		return "marketplace"
-	case strings.HasPrefix(src, "git:"):
-		return "git"
-	case strings.HasPrefix(src, "/"):
-		return "local"
-	default:
-		return "marketplace"
-	}
-}
+// keyAsSource / classifySource were inlined here historically; see
+// sourceref.go for the canonical SourceRef helper that owns the
+// transport-prefix vocabulary.

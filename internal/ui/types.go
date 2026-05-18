@@ -1,7 +1,11 @@
 // Package ui provides terminal rendering for aide's startup banner and status output.
 package ui
 
-import "time"
+import (
+	"time"
+
+	"github.com/jskswamy/aide/internal/sandbox"
+)
 
 // CapabilityDisplay holds per-capability information for banner rendering.
 type CapabilityDisplay struct {
@@ -68,6 +72,11 @@ type BannerData struct {
 	ExtraWritable []string
 	ExtraReadable []string
 	ExtraDenied   []string
+
+	// IsolationTier is the OS-level sandbox strength for the current launch.
+	// Nil means sandbox: false (user explicitly disabled sandboxing).
+	// On macOS always primary; on Linux varies by kernel and policy.
+	IsolationTier *sandbox.IsolationTier
 }
 
 // SandboxInfo describes sandbox configuration for display.

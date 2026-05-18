@@ -25,6 +25,7 @@ func mockLookPath(available map[string]string) LookPathFunc {
 }
 
 func TestPassthrough_SingleAgent(t *testing.T) {
+	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
 	var capturedArgs []string
@@ -194,6 +195,7 @@ func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
 }
 
 func TestPassthrough_FirstRunSentinel(t *testing.T) {
+	requireClaudeHome(t)
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
@@ -249,6 +251,7 @@ func TestScanAgents(t *testing.T) {
 }
 
 func TestPassthrough_YoloInjectsFlag(t *testing.T) {
+	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
 	var capturedArgs []string
@@ -286,6 +289,7 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 }
 
 func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
+	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
 	var capturedArgs []string
@@ -325,6 +329,7 @@ func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
 }
 
 func TestPassthrough_YoloWarningShown(t *testing.T) {
+	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
@@ -471,6 +476,7 @@ func TestPassthrough_ExecAgent_UsesCwd(t *testing.T) {
 }
 
 func TestPassthrough_NoOptOut_AlwaysSandboxed(t *testing.T) {
+	requireClaudeHome(t)
 	// Verify that execAgent always applies sandbox — there is no parameter or
 	// field on Launcher that can disable sandbox in passthrough mode.
 	ctrlNO := gomock.NewController(t)

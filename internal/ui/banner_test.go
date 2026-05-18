@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/jskswamy/aide/internal/sandbox"
 )
 
 func init() {
@@ -1222,5 +1223,73 @@ func TestRenderClean_SuggestedCapWithDetectionHint(t *testing.T) {
 	}
 	if !strings.Contains(out, "aide --with git-remote") {
 		t.Errorf("clean render missing enable hint; got:\n%s", out)
+	}
+}
+
+// TestIsolationTierLabel_CanonicalStrings verifies the canonical label strings for each isolation tier.
+func TestIsolationTierLabel_CanonicalStrings(t *testing.T) {
+	cases := []struct {
+		name string
+		tier *sandbox.IsolationTier
+		want string
+	}{
+		{
+			name: "nil (disabled)",
+			tier: nil,
+			want: "sandbox: disabled",
+		},
+		{
+			name: "primary/landlock ABI7",
+			tier: &sandbox.IsolationTier{
+				Tier:      sandbox.TierPrimary,
+				Backend:   sandbox.BackendLandlock,
+				KernelABI: 7,
+			},
+			want: "sandbox: primary (Landlock ABI 7)",
+		},
+		{
+			name: "primary/seatbelt",
+			tier: &sandbox.IsolationTier{
+				Tier:    sandbox.TierPrimary,
+				Backend: sandbox.BackendSeatbelt,
+			},
+			want: "sandbox: primary (Seatbelt)",
+		},
+		{
+			name: "degraded/bwrap with reason",
+			tier: &sandbox.IsolationTier{
+				Tier:    sandbox.TierDegraded,
+				Backend: sandbox.BackendBwrap,
+				Reason:  "bwrap fallback: TCP port filtering not enforced",
+			},
+			want: "sandbox: degraded — bwrap fallback: TCP port filtering not enforced",
+		},
+		{
+			name: "unavailable/none with reason",
+			tier: &sandbox.IsolationTier{
+				Tier:    sandbox.TierUnavailable,
+				Backend: sandbox.BackendNone,
+				Reason:  "no Landlock, no bwrap",
+			},
+			want: "sandbox: unavailable — no Landlock, no bwrap",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			data := &BannerData{IsolationTier: c.tier}
+			got := isolationTierLabel(data)
+			if got != c.want {
+				t.Errorf("isolationTierLabel = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestFuncMap_HasIsolationTierLabel verifies the funcmap exposes the new helper.
+func TestFuncMap_HasIsolationTierLabel(t *testing.T) {
+	fm := colorFuncMap()
+	if _, ok := fm["isolationTierLabel"]; !ok {
+		t.Error("colorFuncMap missing key 'isolationTierLabel'")
 	}
 }

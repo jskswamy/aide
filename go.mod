@@ -9,7 +9,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/fatih/color v1.18.0
 	github.com/getsops/sops/v3 v3.12.2
-	github.com/go-git/go-git/v5 v5.19.0
+	github.com/go-git/go-git/v5 v5.19.1
 	github.com/gobwas/glob v0.2.3
 	github.com/landlock-lsm/go-landlock v0.7.0
 	github.com/pelletier/go-toml/v2 v2.3.1

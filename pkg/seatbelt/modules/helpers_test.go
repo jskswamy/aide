@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/testutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -177,14 +178,14 @@ func TestResolveConfigDirsAdditive_NoOverride(t *testing.T) {
 }
 
 func TestConfigDirRules_Empty(t *testing.T) {
-	rules := configDirRules("Claude", nil)
+	rules := configDirRules("Claude", "/home/user", nil)
 	if rules != nil {
 		t.Errorf("expected nil for empty dirs, got %v", rules)
 	}
 }
 
 func TestConfigDirRules_Single(t *testing.T) {
-	rules := configDirRules("Claude", []string{"/home/user/.claude"})
+	rules := configDirRules("Claude", "/home/user", []string{"/home/user/.claude"})
 	if len(rules) != 2 {
 		t.Fatalf("expected 2 rules (section + grant), got %d", len(rules))
 	}
@@ -205,7 +206,7 @@ func TestConfigDirRules_Single(t *testing.T) {
 
 func TestConfigDirRules_Multiple(t *testing.T) {
 	dirs := []string{"/home/user/.claude", "/home/user/.config/claude"}
-	rules := configDirRules("Claude", dirs)
+	rules := configDirRules("Claude", "/home/user", dirs)
 	// 1 section + 2 grant rules
 	if len(rules) != 3 {
 		t.Fatalf("expected 3 rules, got %d", len(rules))
@@ -216,5 +217,171 @@ func TestConfigDirRules_Multiple(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("rule[%d]: expected %q in %q", i+1, want, got)
 		}
+	}
+}
+
+// allRuleStrings collects every emitted rule body for substring assertions.
+func allRuleStrings(rules []seatbelt.Rule) string {
+	var b strings.Builder
+	for _, r := range rules {
+		b.WriteString(r.String())
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// TestConfigDirRules_SymlinkedDir covers home-manager's whole-dir pattern:
+// ~/.claude is a symlink to ~/dotfiles/claude/. The canonical allow rule
+// alone doesn't cover writes — macOS seatbelt fires policy on the kernel-
+// resolved path, which lands under ~/dotfiles/. Rule generator must emit
+// an additional rule for the resolved target.
+func TestConfigDirRules_SymlinkedDir(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	realDir := filepath.Join(home, "dotfiles", "claude")
+	canonical := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatalf("mkdir realDir: %v", err)
+	}
+	if err := os.Symlink(realDir, canonical); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	rules := configDirRules("Claude", home, []string{canonical})
+	body := allRuleStrings(rules)
+
+	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, canonical)) {
+		t.Errorf("rules should still allow canonical %q; got:\n%s", canonical, body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, realDir)) {
+		t.Errorf("rules must allow resolved target %q; got:\n%s", realDir, body)
+	}
+}
+
+// TestConfigDirRules_SymlinkedFile covers stow / chezmoi-in-symlink-mode:
+// ~/.config/aide/config.yaml is a symlink to ~/dotfiles/aide/config.yaml.
+// The rule generator must emit an allow rule for the target's parent dir
+// (so atomic-write tmp+rename siblings under that dir also work).
+func TestConfigDirRules_SymlinkedFile(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	canonical := filepath.Join(home, ".config", "aide")
+	dotfilesDir := filepath.Join(home, "dotfiles", "aide")
+	if err := os.MkdirAll(canonical, 0o755); err != nil {
+		t.Fatalf("mkdir canonical: %v", err)
+	}
+	if err := os.MkdirAll(dotfilesDir, 0o755); err != nil {
+		t.Fatalf("mkdir dotfilesDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dotfilesDir, "config.yaml"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(dotfilesDir, "config.yaml"), filepath.Join(canonical, "config.yaml")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	rules := configDirRules("Aide", home, []string{canonical})
+	body := allRuleStrings(rules)
+
+	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, canonical)) {
+		t.Errorf("rules should allow canonical dir %q; got:\n%s", canonical, body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, dotfilesDir)) {
+		t.Errorf("rules must allow target parent %q so sibling writes work; got:\n%s", dotfilesDir, body)
+	}
+}
+
+// TestConfigDirRules_SymlinkTargetOutsideHome rejects outside-$HOME targets.
+// Per AIDE-0jx design decision: we don't widen the sandbox to cover dotfiles
+// repos placed outside $HOME. If a user reports breakage we revisit.
+func TestConfigDirRules_SymlinkTargetOutsideHome(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	// outside is a sibling tempdir, deliberately NOT under home.
+	outside := testutil.CanonicalTempDir(t)
+	canonical := filepath.Join(home, ".claude")
+	if err := os.Symlink(outside, canonical); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	rules := configDirRules("Claude", home, []string{canonical})
+	body := allRuleStrings(rules)
+
+	if strings.Contains(body, outside) {
+		t.Errorf("outside-$HOME target %q must NOT be allow-listed; got:\n%s", outside, body)
+	}
+}
+
+// TestConfigDirRules_SymlinkTargetInSensitiveDir rejects targets that land
+// under sensitive home dirs (.ssh, .aws, .gnupg, etc.) even though they
+// are under $HOME. A malicious or careless symlink must not grant sandbox
+// write access to credentials.
+func TestConfigDirRules_SymlinkTargetInSensitiveDir(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	ssh := filepath.Join(home, ".ssh", "claude-stash")
+	if err := os.MkdirAll(ssh, 0o700); err != nil {
+		t.Fatalf("mkdir ssh: %v", err)
+	}
+	canonical := filepath.Join(home, ".claude")
+	if err := os.Symlink(ssh, canonical); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	rules := configDirRules("Claude", home, []string{canonical})
+	body := allRuleStrings(rules)
+
+	if strings.Contains(body, ".ssh") {
+		t.Errorf("sensitive target under .ssh must NOT be allow-listed; got:\n%s", body)
+	}
+}
+
+// TestConfigDirRules_BrokenSymlink ensures EvalSymlinks failure does not
+// crash or pollute the rule set. The canonical dir still gets an allow
+// rule; the broken link is silently skipped.
+func TestConfigDirRules_BrokenSymlink(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	canonical := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(canonical, 0o755); err != nil {
+		t.Fatalf("mkdir canonical: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(home, "does-not-exist"), filepath.Join(canonical, "broken")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	rules := configDirRules("Claude", home, []string{canonical})
+	body := allRuleStrings(rules)
+
+	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, canonical)) {
+		t.Errorf("canonical rule still expected; got:\n%s", body)
+	}
+}
+
+// TestConfigDirRules_DedupesOverlappingTargets ensures we don't emit
+// redundant rules when the dir is a symlink AND a file inside it also
+// symlinks to a path already covered by the resolved-dir rule.
+func TestConfigDirRules_DedupesOverlappingTargets(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	realDir := filepath.Join(home, "dotfiles", "claude")
+	canonical := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatalf("mkdir realDir: %v", err)
+	}
+	if err := os.Symlink(realDir, canonical); err != nil {
+		t.Fatalf("symlink dir: %v", err)
+	}
+	// A file inside the symlinked dir, itself pointing to a sibling under realDir.
+	inner := filepath.Join(realDir, "settings.json")
+	if err := os.WriteFile(inner, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("seed inner: %v", err)
+	}
+	if err := os.Symlink(inner, filepath.Join(realDir, "alias.json")); err != nil {
+		t.Fatalf("inner symlink: %v", err)
+	}
+
+	rules := configDirRules("Claude", home, []string{canonical})
+	body := allRuleStrings(rules)
+
+	// realDir should appear exactly once — the alias-symlink target's parent
+	// is realDir itself, already covered by the dir-resolution rule.
+	count := strings.Count(body, fmt.Sprintf(`(subpath %q)`, realDir))
+	if count != 1 {
+		t.Errorf("expected 1 rule for realDir, got %d; body:\n%s", count, body)
 	}
 }

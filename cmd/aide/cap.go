@@ -304,12 +304,14 @@ func capShowPathSection(out io.Writer, label string, items []string, home string
 	hasResolution := false
 	for _, p := range items {
 		row := annotated{declared: p}
+		// Tilde-expand here because cap-definition strings (unlike
+		// ctx.ExtraReadable in the launcher path) are not pre-expanded.
+		// fsutil.ResolveWidening is intentionally pure — see its docstring.
 		expanded := homepath.Expand(p, home)
-		if resolved, err := filepath.EvalSymlinks(expanded); err == nil && resolved != expanded {
+		resolved, changed, underHome := fsutil.ResolveWidening(expanded, home)
+		if changed {
 			row.resolved = resolved
-			if home != "" && !fsutil.IsUnderDir(resolved, home) {
-				row.outsideHome = true
-			}
+			row.outsideHome = !underHome
 			hasResolution = true
 		}
 		rows = append(rows, row)

@@ -160,21 +160,17 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 }
 
 
-// safeResolvedWidening returns (resolved, true) when path is a symlink whose
-// EvalSymlinks-resolved target differs from path and lies strictly under
-// home. Returns ("", false) for non-symlinks, missing paths, or targets that
-// would escape $HOME. The under-$HOME gate is the safety ceiling for the
-// filesystem guard; outside-$HOME widening is a deliberate user opt-in that
-// belongs upstream at config load (AIDE-mu8), not silently in rule emission.
+// safeResolvedWidening returns (resolved, true) when path is a symlink
+// whose target differs from path AND lives under home. Returns ("", false)
+// for non-symlinks, missing paths, and targets that escape $HOME.
+//
+// This is the guard's drop-if-unsafe wrapper around fsutil.ResolveWidening.
+// Outside-$HOME widening is intentionally suppressed at rule-emission time;
+// surfacing it (for audit) and opt-in widening (for the AIDE-mu8 escape
+// hatch) belong in higher layers (aide cap show, config load).
 func safeResolvedWidening(path, home string) (string, bool) {
-	if home == "" {
-		return "", false
-	}
-	resolved := fsutil.ResolveOrSelf(path)
-	if resolved == path {
-		return "", false
-	}
-	if !fsutil.IsUnderDir(resolved, home) {
+	resolved, changed, underHome := fsutil.ResolveWidening(path, home)
+	if !changed || !underHome {
 		return "", false
 	}
 	return resolved, true

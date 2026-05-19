@@ -240,6 +240,22 @@
 
 ### 🧹 Internal
 
+- **Unify symlink-widening resolution in `fsutil.ResolveWidening`.**
+  The seatbelt filesystem guard and `aide cap show` independently
+  composed EvalSymlinks + an under-`$HOME` classifier and the
+  compositions had already drifted (the guard used `ResolveOrSelf`
+  with no tilde handling, cap show called `EvalSymlinks` directly
+  after `homepath.Expand`). When the next safety-floor change lands
+  (the escape hatch for outside-`$HOME` paths), only one site would
+  have been updated and the audit display would silently diverge
+  from the actual sandbox emission. Both callers now route through
+  one helper that returns `(resolved, changed, underHome)`; each
+  picks its own response — the guard drops outside-`$HOME` targets,
+  cap show annotates them with a warning. The helper stays
+  filesystem-pure (no `homepath` dependency), matching the
+  convention `ResolveOrSelf` and `CheckSymlinkCycle` already
+  established.
+
 - **Move symlink-cycle check into `fsutil.CheckSymlinkCycle`.** The
   capability-layer `checkSymlinkCycle` helper composed three concerns
   (tilde-expand a user path, run EvalSymlinks, translate ELOOP into a

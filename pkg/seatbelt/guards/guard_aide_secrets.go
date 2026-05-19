@@ -7,6 +7,7 @@ package guards
 import (
 	"fmt"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -34,5 +35,16 @@ func (g *aideSecretsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	result.Rules = append(result.Rules, seatbelt.SectionDeny("aide secrets"))
 	result.Rules = append(result.Rules, DenyDir(secretsDir)...)
 	result.Protected = append(result.Protected, secretsDir)
+
+	// If the secrets dir is symlinked (e.g., to an encrypted external
+	// store), the kernel resolves the path on access and our deny rule
+	// for the literal symlink path would not fire. Add a deny for the
+	// resolved target too so the store is genuinely unreachable from
+	// inside the sandbox.
+	if resolved := fsutil.ResolveOrSelf(secretsDir); resolved != secretsDir {
+		result.Rules = append(result.Rules, DenyDir(resolved)...)
+		result.Protected = append(result.Protected, resolved)
+	}
+
 	return result
 }

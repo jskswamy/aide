@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/testutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
@@ -181,6 +182,226 @@ func TestFilesystemGuard_ExtraReadable(t *testing.T) {
 	// ExtraReadable produces individual allow rules
 	if !strings.Contains(output, "(allow file-read*") {
 		t.Error("expected file-read* rule for extra readable path")
+	}
+}
+
+// TestFilesystemGuard_ExtraReadable_ResolvesTwoHopChain reproduces the
+// nix/home-manager case that motivated AIDE-46h: ~/.config/foo/bar is a
+// symlink into the nix-store, which is itself a symlink to the user's
+// nixos-config repo under $HOME. filepath.EvalSymlinks resolves the full
+// chain transitively, and the rule must cover the final target.
+func TestFilesystemGuard_ExtraReadable_ResolvesTwoHopChain(t *testing.T) {
+	tmp := testutil.CanonicalTempDir(t)
+	home := filepath.Join(tmp, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Final target — like ~/nixos-config/.../config.yaml
+	finalTarget := filepath.Join(home, "nixos-config", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(finalTarget), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(finalTarget, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Intermediate hop — like /nix/store/.../config.yaml
+	intermediate := filepath.Join(tmp, "nix-store-fake", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(intermediate), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(finalTarget, intermediate); err != nil {
+		t.Fatal(err)
+	}
+	// Declared path — like ~/.config/bd/config.yaml
+	declared := filepath.Join(home, ".config", "bd", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(declared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(intermediate, declared); err != nil {
+		t.Fatal(err)
+	}
+
+	g := guards.FilesystemGuard()
+	output := renderTestRules(g.Rules(&seatbelt.Context{
+		HomeDir:       home,
+		ProjectRoot:   filepath.Join(home, "project"),
+		ExtraReadable: []string{declared},
+	}).Rules)
+
+	if !strings.Contains(output, finalTarget) {
+		t.Errorf("expected rule covering FINAL resolved target %q (after two hops) in output:\n%s", finalTarget, output)
+	}
+}
+
+// TestFilesystemGuard_ExtraReadable_MissingPathDoesNotCrash locks in the
+// graceful-fallback contract. A capability may declare a path that does
+// not yet exist on disk (cache dir created on first run). EvalSymlinks
+// errors with ENOENT; the guard must still emit the literal rule rather
+// than crashing or skipping the path entirely.
+func TestFilesystemGuard_ExtraReadable_MissingPathDoesNotCrash(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	missing := filepath.Join(home, "does", "not", "exist.yaml")
+
+	g := guards.FilesystemGuard()
+	output := renderTestRules(g.Rules(&seatbelt.Context{
+		HomeDir:       home,
+		ProjectRoot:   filepath.Join(home, "project"),
+		ExtraReadable: []string{missing},
+	}).Rules)
+
+	if !strings.Contains(output, missing) {
+		t.Errorf("expected literal rule for non-existent declared path %q in output:\n%s", missing, output)
+	}
+}
+
+// TestFilesystemGuard_ExtraReadable_RejectsOutsideHomeWidening guards
+// against silently broadening the sandbox. When a capability path's
+// resolved target falls outside $HOME, the guard MUST NOT emit a
+// widening rule — the user's intent is opt-in to the declared path, and
+// outside-$HOME widening is reserved for the upstream escape hatch
+// (AIDE-mu8). The literal rule still emits so the user sees a clear
+// EPERM at runtime rather than confused behavior.
+func TestFilesystemGuard_ExtraReadable_RejectsOutsideHomeWidening(t *testing.T) {
+	tmp := testutil.CanonicalTempDir(t)
+	home := filepath.Join(tmp, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(tmp, "outside-home", "secret.txt")
+	if err := os.MkdirAll(filepath.Dir(outside), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "escape-link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+
+	g := guards.FilesystemGuard()
+	output := renderTestRules(g.Rules(&seatbelt.Context{
+		HomeDir:       home,
+		ProjectRoot:   filepath.Join(home, "project"),
+		ExtraReadable: []string{link},
+	}).Rules)
+
+	if !strings.Contains(output, link) {
+		t.Errorf("expected literal rule for the declared symlink %q in output:\n%s", link, output)
+	}
+	if strings.Contains(output, outside) {
+		t.Errorf("guard MUST NOT widen to outside-$HOME target %q (reserved for opt-in escape hatch); output:\n%s", outside, output)
+	}
+}
+
+// TestFilesystemGuard_ExtraDenied_ResolvesSymlink covers the security-critical
+// symmetric-resolution case. If never_allow or aide-secrets points at a path
+// that happens to be a symlink, the kernel resolves it on write and the deny
+// rule for the literal symlink alone would never fire — the resolved target
+// would be writable through the symlink. Denies therefore widen to the
+// resolved target regardless of where it lives (the user's intent is
+// protection; there is no over-denial harm).
+func TestFilesystemGuard_ExtraDenied_ResolvesSymlink(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	target := filepath.Join(home, "real-secret")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+	link := filepath.Join(home, "secret-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:     home,
+		ProjectRoot: filepath.Join(home, "project"),
+		ExtraDenied: []string{link},
+	}
+	output := renderTestRules(g.Rules(ctx).Rules)
+
+	if !strings.Contains(output, "(deny file-write* "+`(subpath "`+target+`"))`) &&
+		!strings.Contains(output, "(deny file-write* "+`(literal "`+target+`"))`) {
+		t.Errorf("expected deny rule covering resolved target %q in output:\n%s", target, output)
+	}
+	if !strings.Contains(output, "(deny file-read-data "+`(subpath "`+target+`"))`) &&
+		!strings.Contains(output, "(deny file-read-data "+`(literal "`+target+`"))`) {
+		t.Errorf("expected deny-read-data rule covering resolved target %q in output:\n%s", target, output)
+	}
+}
+
+// TestFilesystemGuard_ExtraWritable_ResolvesSymlinkUnderHome covers the
+// write-side analogue of the read-side symlink contract. Capability writable
+// paths bundle into the single (require-any ...) block alongside project /
+// runtime / temp roots; the resolved target must appear in that block so
+// kernel-resolved write paths actually match.
+func TestFilesystemGuard_ExtraWritable_ResolvesSymlinkUnderHome(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	target := filepath.Join(home, "real-write")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+	link := filepath.Join(home, ".local", "writable-link")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatalf("mkdir link parent: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:       home,
+		ProjectRoot:   filepath.Join(home, "project"),
+		ExtraWritable: []string{link},
+	}
+	output := renderTestRules(g.Rules(ctx).Rules)
+
+	if !strings.Contains(output, `"`+link+`"`) {
+		t.Errorf("expected literal rule for symlink path %q in output:\n%s", link, output)
+	}
+	if !strings.Contains(output, `"`+target+`"`) {
+		t.Errorf("expected resolved-target rule for %q (kernel-matched on writes) in output:\n%s", target, output)
+	}
+}
+
+// TestFilesystemGuard_ExtraReadable_ResolvesSymlinkUnderHome pins the symlink-
+// resolution contract for capability/raw-config readable paths. macOS seatbelt
+// matches file-read* policy on the kernel-resolved path, so a literal-only
+// allow rule for a symlinked path never fires — the kernel asks the policy
+// about the resolved target instead. When the resolved target is under $HOME
+// (the common home-manager / dotfiles-repo pattern), the guard must emit an
+// additional rule covering it.
+func TestFilesystemGuard_ExtraReadable_ResolvesSymlinkUnderHome(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	target := filepath.Join(home, "real", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(home, ".config", "foo", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatalf("mkdir link parent: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	g := guards.FilesystemGuard()
+	ctx := &seatbelt.Context{
+		HomeDir:       home,
+		ProjectRoot:   filepath.Join(home, "project"),
+		ExtraReadable: []string{link},
+	}
+	output := renderTestRules(g.Rules(ctx).Rules)
+
+	if !strings.Contains(output, `"`+link+`"`) {
+		t.Errorf("expected literal rule for symlink path %q in output:\n%s", link, output)
+	}
+	if !strings.Contains(output, `"`+target+`"`) {
+		t.Errorf("expected resolved-target rule for %q (the path macOS kernel matches) in output:\n%s", target, output)
 	}
 }
 

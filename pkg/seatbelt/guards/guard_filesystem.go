@@ -7,8 +7,10 @@ package guards
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -43,6 +45,15 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		writable = append(writable, ctx.TempDir)
 	}
 	writable = append(writable, ctx.ExtraWritable...)
+	// Mirror the read-side contract for writes: macOS seatbelt fires
+	// file-write* policy on the kernel-resolved target, so for each
+	// declared symlink we also include its resolved path (when safely
+	// under $HOME) in the require-any block.
+	for _, p := range ctx.ExtraWritable {
+		if resolved, ok := safeResolvedWidening(p, home); ok {
+			writable = append(writable, resolved)
+		}
+	}
 
 	var rules []seatbelt.Rule
 
@@ -82,11 +93,26 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 )`),
 		)
 
-		// ExtraReadable — adds allow rules AND serves as deny opt-out
+		// ExtraReadable — adds allow rules AND serves as deny opt-out.
+		//
+		// macOS seatbelt matches file-read* policy on the kernel-resolved
+		// path, not the literal syscall argument. When the user's path is
+		// a symlink (the home-manager / nix-darwin / stow / chezmoi
+		// pattern), a literal-only rule never fires because the kernel
+		// asks the policy about the resolved target. For each declared
+		// path we emit the literal rule and, if EvalSymlinks resolves to
+		// a different path under $HOME, an additional rule for the target.
+		// Resolved targets outside $HOME are NOT widened here — they need
+		// upstream validation (AIDE-mu8 escape hatch) and surfacing in
+		// aide cap show so the user can see what's being granted.
 		if len(ctx.ExtraReadable) > 0 {
 			for _, p := range ctx.ExtraReadable {
 				rules = append(rules,
 					seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* %s)`, seatbelt.Path(p))))
+				if resolved, ok := safeResolvedWidening(p, home); ok {
+					rules = append(rules,
+						seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* %s)`, seatbelt.Path(resolved))))
+				}
 			}
 		}
 	}
@@ -99,10 +125,30 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		}
 	}
 
-	// Denied paths
+	// Denied paths.
+	//
+	// Resolution is asymmetric to the allow side. For allows we gate
+	// under-$HOME widening to avoid silently broadening the sandbox;
+	// for denies we widen to the EvalSymlinks-resolved target REGARDLESS
+	// of where it lives, because (a) the kernel matches deny rules on
+	// the resolved path so without it a symlink-fronted secret stays
+	// writable through the link, and (b) over-denying has no security
+	// downside — the user's intent is protection.
 	if len(ctx.ExtraDenied) > 0 {
 		expanded := seatbelt.ExpandGlobs(ctx.ExtraDenied)
+		denyTargets := make([]string, 0, len(expanded)*2)
+		seen := make(map[string]bool, len(expanded)*2)
 		for _, p := range expanded {
+			if !seen[p] {
+				seen[p] = true
+				denyTargets = append(denyTargets, p)
+			}
+			if resolved := fsutil.ResolveOrSelf(p); resolved != p && !seen[resolved] {
+				seen[resolved] = true
+				denyTargets = append(denyTargets, resolved)
+			}
+		}
+		for _, p := range denyTargets {
 			expr := seatbelt.Path(p)
 			rules = append(rules,
 				seatbelt.DenyRule(fmt.Sprintf("(deny file-read-data %s)", expr)),
@@ -114,6 +160,35 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	return seatbelt.GuardResult{Rules: rules}
 }
 
+
+// safeResolvedWidening returns (resolved, true) when path is a symlink whose
+// EvalSymlinks-resolved target differs from path and lies strictly under
+// home. Returns ("", false) for non-symlinks, missing paths, or targets that
+// would escape $HOME. The under-$HOME gate is the safety ceiling for the
+// filesystem guard; outside-$HOME widening is a deliberate user opt-in that
+// belongs upstream at config load (AIDE-mu8), not silently in rule emission.
+func safeResolvedWidening(path, home string) (string, bool) {
+	if home == "" {
+		return "", false
+	}
+	resolved := fsutil.ResolveOrSelf(path)
+	if resolved == path {
+		return "", false
+	}
+	if !isUnderDir(resolved, home) {
+		return "", false
+	}
+	return resolved, true
+}
+
+// isUnderDir reports whether path is dir itself or strictly under it,
+// using filepath separator semantics so /home/userX is not under /home/user.
+func isUnderDir(path, dir string) bool {
+	if path == dir {
+		return true
+	}
+	return strings.HasPrefix(path, dir+string(filepath.Separator))
+}
 
 func buildRequireAny(paths []string) string {
 	if len(paths) == 1 {

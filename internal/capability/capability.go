@@ -3,9 +3,12 @@ package capability
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/sliceutil"
 )
 
@@ -206,6 +209,15 @@ func mergeAdditive(a, b *ResolvedCapability) *ResolvedCapability {
 }
 
 // ResolveAll resolves multiple capability names and returns a merged Set.
+//
+// After resolution, every path declared on the resolved capabilities (and
+// in never_allow) is checked for symlink cycles. A cycle is a config-level
+// error — silently falling back would leave the agent with a half-broken
+// capability and no diagnostic, so this validation surfaces the offending
+// capability + path loudly. Missing paths are NOT errors here: they're
+// the common "cache dir created on first run" case and are intentionally
+// tolerated (the literal rule still emits; the resolved-target widening
+// just no-ops until the path exists).
 func ResolveAll(names []string, registry map[string]Capability, neverAllow, neverAllowEnv []string) (*Set, error) {
 	set := &Set{
 		NeverAllow:    neverAllow,
@@ -223,10 +235,58 @@ func ResolveAll(names []string, registry map[string]Capability, neverAllow, neve
 		if err != nil {
 			return nil, err
 		}
+		if err := validateNoSymlinkCycles(resolved); err != nil {
+			return nil, err
+		}
 		set.Capabilities = append(set.Capabilities, *resolved)
 	}
 
+	if err := validateNeverAllowNoCycles(neverAllow); err != nil {
+		return nil, err
+	}
+
 	return set, nil
+}
+
+// validateNoSymlinkCycles returns a wrapped error naming the capability and
+// path if any Readable/Writable/Deny entry resolves through a symlink cycle.
+func validateNoSymlinkCycles(rc *ResolvedCapability) error {
+	for _, group := range []struct {
+		field string
+		paths []string
+	}{
+		{"readable", rc.Readable},
+		{"writable", rc.Writable},
+		{"deny", rc.Deny},
+	} {
+		for _, p := range group.paths {
+			if err := checkSymlinkCycle(p); err != nil {
+				return fmt.Errorf("capability %q: %s path %q: %w", rc.Name, group.field, p, err)
+			}
+		}
+	}
+	return nil
+}
+
+func validateNeverAllowNoCycles(paths []string) error {
+	for _, p := range paths {
+		if err := checkSymlinkCycle(p); err != nil {
+			return fmt.Errorf("never_allow path %q: %w", p, err)
+		}
+	}
+	return nil
+}
+
+// checkSymlinkCycle returns a "symlink cycle" error iff EvalSymlinks on the
+// (home-expanded) path fails with ELOOP. Other errors — including ENOENT
+// for paths that don't exist yet — are tolerated and return nil.
+func checkSymlinkCycle(path string) error {
+	expanded := homepath.Expand(path, "")
+	_, err := filepath.EvalSymlinks(expanded)
+	if fsutil.IsSymlinkCycle(err) {
+		return fmt.Errorf("symlink cycle detected")
+	}
+	return nil
 }
 
 // ToSandboxOverrides merges all capabilities into sandbox policy fields.

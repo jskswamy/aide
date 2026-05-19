@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/testutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
@@ -87,5 +88,34 @@ func TestAideSecrets_SecretsMissing(t *testing.T) {
 	}
 	if len(result.Skipped) == 0 {
 		t.Error("expected Skipped message when secrets directory doesn't exist")
+	}
+}
+
+// TestAideSecrets_SymlinkedSecretsDir_DeniesResolvedTarget pins the
+// symmetric-resolution contract for aide-secrets. If the user's secrets
+// directory is a symlink (e.g., to an encrypted volume or an external
+// store), the deny rule must cover the kernel-resolved target — otherwise
+// writes through the symlink go through and the encrypted store is
+// silently writable by the agent.
+func TestAideSecrets_SymlinkedSecretsDir_DeniesResolvedTarget(t *testing.T) {
+	tmp := testutil.CanonicalTempDir(t)
+	home := filepath.Join(tmp, "home")
+	if err := os.MkdirAll(filepath.Join(home, ".config", "aide"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(tmp, "real-secrets-store")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secretsLink := filepath.Join(home, ".config", "aide", "secrets")
+	if err := os.Symlink(target, secretsLink); err != nil {
+		t.Fatal(err)
+	}
+
+	g := guards.AideSecretsGuard()
+	output := renderTestRules(g.Rules(&seatbelt.Context{HomeDir: home}).Rules)
+
+	if !strings.Contains(output, target) {
+		t.Errorf("expected deny rule covering resolved secrets target %q in output:\n%s", target, output)
 	}
 }

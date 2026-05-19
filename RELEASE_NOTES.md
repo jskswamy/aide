@@ -142,6 +142,32 @@
 
 ### 🐞 Bug Fixes
 
+- **Custom capability paths resolve symlinks for sandbox rule emission.**
+  Closes the same kernel-resolved-path gap that `Allow symlinked dotfiles
+  in sandboxed agents` fixed for built-in agent modules, but for the
+  *capability* and *raw-config* path inputs that bypass the
+  `configDirRules` helper. Before, a custom capability declaring
+  `readable: ["~/.config/bd/config.yaml"]` against a home-manager
+  installation would emit a literal allow rule for the symlink path while
+  the kernel matched against the chain's final target (typically a file
+  inside `~/nixos-config/...`), producing a confusing `EPERM` despite the
+  banner showing `✓ beads`. The filesystem guard now emits both the
+  literal and the EvalSymlinks-resolved rule when the resolved target
+  lives under `$HOME`; outside-`$HOME` targets are intentionally NOT
+  widened here — that's reserved for the upcoming `extra_allow_outside_home`
+  escape hatch so it stays a deliberate user opt-in. Deny rules
+  (`ExtraDenied`, `never_allow`, `aide-secrets`) resolve symmetrically and
+  *without* the `$HOME` gate, since over-denying has no security downside
+  and asymmetric resolution would let a symlink-fronted secret stay
+  writable through the link. Cycle-bearing capability paths are now
+  detected at config load (via `filepath.EvalSymlinks`/`fsutil.IsSymlinkCycle`)
+  and surface a clear `capability "X": readable path "Y": symlink cycle
+  detected` error rather than degrading silently. `aide cap show <name>`
+  annotates each `Readable`/`Writable`/`Deny` entry with its resolved
+  target (`declared  →  resolved`) and marks targets outside `$HOME`
+  with `⚠ outside $HOME` plus a pointer to the escape hatch, so users
+  can audit what the sandbox actually grants before launching a session.
+
 - **Cursor sandbox follows symlinks on install and logs dirs.** The
   cursor-agent module emits subpath allow rules for the resolved
   binary's `versions/<ver>/` and sibling `logs/` directories.

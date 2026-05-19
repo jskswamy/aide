@@ -1,7 +1,9 @@
 package capability
 
 import (
+	"os"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -346,5 +348,40 @@ func TestMergeSelectedVariants_DoesNotAliasNonVariantSlices(t *testing.T) {
 	out.Allow = append(out.Allow, "z")
 	if len(base.Unguard) != 1 || len(base.Deny) != 1 || len(base.Allow) != 1 {
 		t.Errorf("base aliased: Unguard=%v Deny=%v Allow=%v", base.Unguard, base.Deny, base.Allow)
+	}
+}
+
+func TestResolveAll_DetectsSymlinkCycle(t *testing.T) {
+	// A symlink loop on disk: a -> b -> a. EvalSymlinks returns ELOOP.
+	// ResolveAll must surface this as a clear config-level error rather
+	// than silently falling back to the literal path (which would leave
+	// the agent with a non-functional capability and no diagnostic).
+	tmp := t.TempDir()
+	a := tmp + "/a"
+	b := tmp + "/b"
+	if err := os.Symlink(b, a); err != nil {
+		t.Fatalf("symlink a: %v", err)
+	}
+	if err := os.Symlink(a, b); err != nil {
+		t.Fatalf("symlink b: %v", err)
+	}
+
+	registry := map[string]Capability{
+		"loopy": {
+			Name:     "loopy",
+			Readable: []string{a},
+		},
+	}
+
+	_, err := ResolveAll([]string{"loopy"}, registry, nil, nil)
+	if err == nil {
+		t.Fatal("expected error from symlink cycle, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "loopy") {
+		t.Errorf("error message must name the capability; got: %q", msg)
+	}
+	if !strings.Contains(msg, a) {
+		t.Errorf("error message must name the offending path %q; got: %q", a, msg)
 	}
 }

@@ -193,6 +193,86 @@ func TestAtomicWriteRenameOntoNonEmptyDirFails(t *testing.T) {
 	}
 }
 
+func TestAtomicWritePreservesSymlinkInSameDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on windows")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.yaml")
+	link := filepath.Join(dir, "link.yaml")
+
+	if err := os.WriteFile(target, []byte("old"), 0o600); err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	if err := fsutil.AtomicWrite(link, []byte("new")); err != nil {
+		t.Fatalf("AtomicWrite: %v", err)
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("lstat link: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("link is no longer a symlink: mode=%v", info.Mode())
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(got) != "new" {
+		t.Errorf("target contents = %q, want %q", got, "new")
+	}
+}
+
+func TestAtomicWritePreservesSymlinkToDifferentDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on windows")
+	}
+	// Mirrors the dotfiles-repo case: ~/.config/aide/config.yaml is a
+	// symlink into a repo checkout elsewhere on disk.
+	repoDir := t.TempDir()
+	configDir := t.TempDir()
+	target := filepath.Join(repoDir, "config.yaml")
+	link := filepath.Join(configDir, "config.yaml")
+
+	if err := os.WriteFile(target, []byte("old"), 0o600); err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	if err := fsutil.AtomicWrite(link, []byte("new")); err != nil {
+		t.Fatalf("AtomicWrite: %v", err)
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("lstat link: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("link is no longer a symlink: mode=%v", info.Mode())
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(got) != "new" {
+		t.Errorf("target contents = %q, want %q", got, "new")
+	}
+	// Temp file must not leak in the symlink's directory.
+	entries, _ := os.ReadDir(configDir)
+	for _, e := range entries {
+		if e.Name() != "config.yaml" {
+			t.Errorf("symlink dir has leftover entry %q", e.Name())
+		}
+	}
+}
+
 func TestAtomicWriteLeavesNoTempFilesOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.txt")

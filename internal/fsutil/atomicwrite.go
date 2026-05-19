@@ -22,7 +22,14 @@ import (
 // Same-directory placement keeps the rename within one filesystem so it is
 // an atomic inode swap on POSIX. The overwrite path always ends at 0o600
 // regardless of the prior mode.
+//
+// If path is a symlink to an existing file, the symlink is followed so the
+// temp file lands beside the real file and the rename replaces the real
+// file's inode. The symlink entry at path is preserved. This matters for
+// users who manage ~/.config/aide via dotfiles tools (home-manager, stow,
+// chezmoi) that point the config path at a file inside a git repo.
 func AtomicWrite(path string, data []byte) error {
+	path = ResolveOrSelf(path)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("fsutil: creating parent directory: %w", err)

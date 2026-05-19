@@ -3,9 +3,9 @@ package guards
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -65,11 +65,9 @@ func pathExists(path string) bool {
 }
 
 
-// ResolveSymlink resolves symlinks in a path, returning the original path if resolution fails.
+// ResolveSymlink resolves symlinks in a path, returning the original
+// path if resolution fails. Thin wrapper over fsutil.ResolveOrSelf so
+// the symlink-resolution contract has one implementation in the repo.
 func ResolveSymlink(path string) string {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path
-	}
-	return resolved
+	return fsutil.ResolveOrSelf(path)
 }

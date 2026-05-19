@@ -16,6 +16,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/consent"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/trust"
 )
 
@@ -202,10 +203,11 @@ func capShowCmd() *cobra.Command {
 				fmt.Fprintf(out, "Sources:     %s\n", strings.Join(resolved.Sources, " -> "))
 			}
 
+			home, _ := os.UserHomeDir()
 			capShowSection(out, "Unguard", resolved.Unguard)
-			capShowSection(out, "Readable", resolved.Readable)
-			capShowSection(out, "Writable", resolved.Writable)
-			capShowSection(out, "Deny", resolved.Deny)
+			capShowPathSection(out, "Readable", resolved.Readable, home)
+			capShowPathSection(out, "Writable", resolved.Writable, home)
+			capShowPathSection(out, "Deny", resolved.Deny, home)
 			capShowSection(out, "EnvAllow", resolved.EnvAllow)
 
 			if len(entry.Variants) > 0 {
@@ -272,6 +274,69 @@ func capShowSection(out io.Writer, label string, items []string) {
 		return
 	}
 	fmt.Fprintf(out, "%-12s %s\n", label+":", strings.Join(items, ", "))
+}
+
+// capShowPathSection renders a path-bearing field (Readable / Writable /
+// Deny) with symlink-resolution annotation. For each entry:
+//
+//   - declared path is always shown
+//   - if it resolves to a different path via filepath.EvalSymlinks, the
+//     resolved target follows after " → "
+//   - if the resolved target falls outside home, a "⚠ outside $HOME"
+//     marker trails — the sandbox refuses to silently widen there
+//     (AIDE-46h) and writes through the symlink will EPERM until the
+//     user opts in via the escape hatch (AIDE-mu8).
+//
+// When the section has no entries it emits nothing. When no entry has a
+// resolution annotation, format collapses to the single-line "Label:
+// a, b, c" shape used by capShowSection so casual output stays compact.
+func capShowPathSection(out io.Writer, label string, items []string, home string) {
+	if len(items) == 0 {
+		return
+	}
+	type annotated struct {
+		declared    string
+		resolved    string
+		outsideHome bool
+	}
+	rows := make([]annotated, 0, len(items))
+	hasResolution := false
+	for _, p := range items {
+		row := annotated{declared: p}
+		expanded := homepath.Expand(p, home)
+		if resolved, err := filepath.EvalSymlinks(expanded); err == nil && resolved != expanded {
+			row.resolved = resolved
+			if home != "" && !pathUnder(resolved, home) {
+				row.outsideHome = true
+			}
+			hasResolution = true
+		}
+		rows = append(rows, row)
+	}
+	if !hasResolution {
+		fmt.Fprintf(out, "%-12s %s\n", label+":", strings.Join(items, ", "))
+		return
+	}
+	fmt.Fprintf(out, "%s:\n", label)
+	for _, r := range rows {
+		switch {
+		case r.outsideHome:
+			fmt.Fprintf(out, "  %s  →  %s  ⚠ outside $HOME (resolved target will not be widened; use AIDE-mu8 escape hatch to opt in)\n", r.declared, r.resolved)
+		case r.resolved != "":
+			fmt.Fprintf(out, "  %s  →  %s\n", r.declared, r.resolved)
+		default:
+			fmt.Fprintf(out, "  %s\n", r.declared)
+		}
+	}
+}
+
+// pathUnder reports whether p equals dir or is strictly nested below it,
+// honoring path separator boundaries (so /home/userX is not under /home/user).
+func pathUnder(p, dir string) bool {
+	if p == dir {
+		return true
+	}
+	return strings.HasPrefix(p, dir+string(filepath.Separator))
 }
 
 func capCreateCmd() *cobra.Command {

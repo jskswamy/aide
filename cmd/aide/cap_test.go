@@ -58,6 +58,113 @@ func TestCapShow_ListsPythonVariants(t *testing.T) {
 	}
 }
 
+// TestCapShow_DisplaysResolvedSymlinkTarget pins the AIDE-46h diagnostic UX.
+// When a custom capability declares a symlinked path, `aide cap show` must
+// surface BOTH the declared path and the EvalSymlinks-resolved target on
+// the same line, so the user can audit what the sandbox actually grants
+// before launching a session.
+func TestCapShow_DisplaysResolvedSymlinkTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	target := filepath.Join(home, "real", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(home, ".config", "foo", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	aideCfg := filepath.Join(configHome, "aide", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(aideCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "version: 2\ncapabilities:\n  custom-foo:\n    description: \"foo bar\"\n    readable:\n      - " + linkPath + "\n"
+	if err := os.WriteFile(aideCfg, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+
+	var buf bytes.Buffer
+	cmd := capCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"show", "custom-foo"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cap show: %v\nout: %s", err, buf.String())
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, linkPath) {
+		t.Errorf("show output must list declared path %q; got:\n%s", linkPath, out)
+	}
+	if !strings.Contains(out, target) {
+		t.Errorf("show output must surface resolved target %q (the path the sandbox actually matches against); got:\n%s", target, out)
+	}
+}
+
+// TestCapShow_WarnsOnOutsideHomeResolution pins the warning marker for
+// resolved targets that fall outside $HOME. Today the sandbox silently
+// drops outside-$HOME widenings (a safety floor); the show output must
+// make this visible so the user understands why their declared path
+// will EPERM at runtime, and points them at the AIDE-mu8 escape hatch.
+func TestCapShow_WarnsOnOutsideHomeResolution(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	outside := filepath.Join(tmp, "outside-home", "secret.txt")
+	if err := os.MkdirAll(filepath.Dir(outside), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(home, "escape-link")
+	if err := os.Symlink(outside, linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	aideCfg := filepath.Join(configHome, "aide", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(aideCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "version: 2\ncapabilities:\n  out-of-home:\n    description: \"escapes\"\n    readable:\n      - " + linkPath + "\n"
+	if err := os.WriteFile(aideCfg, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+
+	var buf bytes.Buffer
+	cmd := capCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"show", "out-of-home"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cap show: %v\nout: %s", err, buf.String())
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, outside) {
+		t.Errorf("show output must surface the outside-$HOME resolved target %q; got:\n%s", outside, out)
+	}
+	if !strings.Contains(strings.ToLower(out), "outside") {
+		t.Errorf("show output must warn that resolved target is outside $HOME; got:\n%s", out)
+	}
+}
+
 func TestCapVariants_FlatList(t *testing.T) {
 	out := runCapCmd(t, "variants")
 	wants := []string{"python/uv", "python/pyenv", "python/conda", "python/poetry", "python/venv"}

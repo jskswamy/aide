@@ -193,33 +193,12 @@ func TestFilesystemGuard_ExtraReadable(t *testing.T) {
 func TestFilesystemGuard_ExtraReadable_ResolvesTwoHopChain(t *testing.T) {
 	tmp := testutil.CanonicalTempDir(t)
 	home := filepath.Join(tmp, "home")
-	if err := os.MkdirAll(home, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Final target — like ~/nixos-config/.../config.yaml
-	finalTarget := filepath.Join(home, "nixos-config", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(finalTarget), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(finalTarget, []byte(""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Intermediate hop — like /nix/store/.../config.yaml
-	intermediate := filepath.Join(tmp, "nix-store-fake", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(intermediate), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(finalTarget, intermediate); err != nil {
-		t.Fatal(err)
-	}
-	// Declared path — like ~/.config/bd/config.yaml
-	declared := filepath.Join(home, ".config", "bd", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(declared), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(intermediate, declared); err != nil {
-		t.Fatal(err)
-	}
+	chain := testutil.MakeSymlinkChain(t, tmp, []string{
+		"home/.config/bd/config.yaml",       // declared (entry point)
+		"nix-store-fake/config.yaml",        // intermediate (outside home)
+		"home/nixos-config/config.yaml",     // final target (back inside home)
+	})
+	declared, finalTarget := chain[0], chain[2]
 
 	g := guards.FilesystemGuard()
 	output := renderTestRules(g.Rules(&seatbelt.Context{
@@ -264,20 +243,7 @@ func TestFilesystemGuard_ExtraReadable_MissingPathDoesNotCrash(t *testing.T) {
 func TestFilesystemGuard_ExtraReadable_RejectsOutsideHomeWidening(t *testing.T) {
 	tmp := testutil.CanonicalTempDir(t)
 	home := filepath.Join(tmp, "home")
-	if err := os.MkdirAll(home, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	outside := filepath.Join(tmp, "outside-home", "secret.txt")
-	if err := os.MkdirAll(filepath.Dir(outside), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(outside, []byte(""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(home, "escape-link")
-	if err := os.Symlink(outside, link); err != nil {
-		t.Fatal(err)
-	}
+	link, outside := testutil.MakeSymlinkedFile(t, tmp, "home/escape-link", "outside-home/secret.txt")
 
 	g := guards.FilesystemGuard()
 	output := renderTestRules(g.Rules(&seatbelt.Context{
@@ -303,14 +269,7 @@ func TestFilesystemGuard_ExtraReadable_RejectsOutsideHomeWidening(t *testing.T) 
 // protection; there is no over-denial harm).
 func TestFilesystemGuard_ExtraDenied_ResolvesSymlink(t *testing.T) {
 	home := testutil.CanonicalTempDir(t)
-	target := filepath.Join(home, "real-secret")
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		t.Fatalf("mkdir target: %v", err)
-	}
-	link := filepath.Join(home, "secret-link")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatalf("symlink: %v", err)
-	}
+	link, target := testutil.MakeSymlinkedDir(t, home, "secret-link", "real-secret")
 
 	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{
@@ -337,17 +296,7 @@ func TestFilesystemGuard_ExtraDenied_ResolvesSymlink(t *testing.T) {
 // kernel-resolved write paths actually match.
 func TestFilesystemGuard_ExtraWritable_ResolvesSymlinkUnderHome(t *testing.T) {
 	home := testutil.CanonicalTempDir(t)
-	target := filepath.Join(home, "real-write")
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		t.Fatalf("mkdir target: %v", err)
-	}
-	link := filepath.Join(home, ".local", "writable-link")
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
-		t.Fatalf("mkdir link parent: %v", err)
-	}
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatalf("symlink: %v", err)
-	}
+	link, target := testutil.MakeSymlinkedDir(t, home, ".local/writable-link", "real-write")
 
 	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{
@@ -374,20 +323,7 @@ func TestFilesystemGuard_ExtraWritable_ResolvesSymlinkUnderHome(t *testing.T) {
 // additional rule covering it.
 func TestFilesystemGuard_ExtraReadable_ResolvesSymlinkUnderHome(t *testing.T) {
 	home := testutil.CanonicalTempDir(t)
-	target := filepath.Join(home, "real", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		t.Fatalf("mkdir target dir: %v", err)
-	}
-	if err := os.WriteFile(target, []byte("ok"), 0o644); err != nil {
-		t.Fatalf("write target: %v", err)
-	}
-	link := filepath.Join(home, ".config", "foo", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
-		t.Fatalf("mkdir link parent: %v", err)
-	}
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatalf("symlink: %v", err)
-	}
+	link, target := testutil.MakeSymlinkedFile(t, home, ".config/foo/config.yaml", "real/config.yaml")
 
 	g := guards.FilesystemGuard()
 	ctx := &seatbelt.Context{

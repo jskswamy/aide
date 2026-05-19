@@ -240,6 +240,20 @@
 
 ### 🧹 Internal
 
+- **Symlink test scaffolding consolidated into `internal/testutil`.**
+  Five tests across three packages independently spelled out the
+  "mkdir parent, write target, mkdir link parent, symlink declared →
+  target" sequence — once per file, sometimes more, with subtle
+  variations in perms, leaf type (file vs directory), and hop count.
+  Three helpers now carry the contract: `MakeSymlinkedFile` (2-hop,
+  file leaf), `MakeSymlinkedDir` (2-hop, directory leaf, for tests
+  exercising aide-secrets-style scenarios), and `MakeSymlinkChain`
+  (N-hop, reproduces the home-manager `~/.config → /nix/store → ~/repo`
+  pattern). Saves ~100 lines of test scaffolding across
+  filesystem / aide-secrets / cap-show tests and ensures future
+  changes (e.g. permissions tightening, dir-typed leaves elsewhere)
+  only need to touch one place.
+
 - **Parameterize the symlink-cycle validators in the capability layer.**
   `validateNoSymlinkCycles` and `validateNeverAllowNoCycles` shared a
   single inner loop and differed only in the error-prefix string. A new

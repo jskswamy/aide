@@ -100,17 +100,7 @@ func TestAideSecrets_SecretsMissing(t *testing.T) {
 func TestAideSecrets_SymlinkedSecretsDir_DeniesResolvedTarget(t *testing.T) {
 	tmp := testutil.CanonicalTempDir(t)
 	home := filepath.Join(tmp, "home")
-	if err := os.MkdirAll(filepath.Join(home, ".config", "aide"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(tmp, "real-secrets-store")
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	secretsLink := filepath.Join(home, ".config", "aide", "secrets")
-	if err := os.Symlink(target, secretsLink); err != nil {
-		t.Fatal(err)
-	}
+	_, target := testutil.MakeSymlinkedDir(t, tmp, "home/.config/aide/secrets", "real-secrets-store")
 
 	g := guards.AideSecretsGuard()
 	output := renderTestRules(g.Rules(&seatbelt.Context{HomeDir: home}).Rules)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/consent"
+	"github.com/jskswamy/aide/internal/testutil"
 )
 
 // runCapCmd builds a fresh `cap` cobra command, runs it with args, and
@@ -66,20 +67,7 @@ func TestCapShow_ListsPythonVariants(t *testing.T) {
 func TestCapShow_DisplaysResolvedSymlinkTarget(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	target := filepath.Join(home, "real", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(target, []byte(""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	linkPath := filepath.Join(home, ".config", "foo", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(target, linkPath); err != nil {
-		t.Fatal(err)
-	}
+	linkPath, target := testutil.MakeSymlinkedFile(t, home, ".config/foo/config.yaml", "real/config.yaml")
 
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
@@ -119,21 +107,8 @@ func TestCapShow_DisplaysResolvedSymlinkTarget(t *testing.T) {
 func TestCapShow_WarnsOnOutsideHomeResolution(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
-	if err := os.MkdirAll(home, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("HOME", home)
-	outside := filepath.Join(tmp, "outside-home", "secret.txt")
-	if err := os.MkdirAll(filepath.Dir(outside), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(outside, []byte(""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	linkPath := filepath.Join(home, "escape-link")
-	if err := os.Symlink(outside, linkPath); err != nil {
-		t.Fatal(err)
-	}
+	linkPath, outside := testutil.MakeSymlinkedFile(t, tmp, "home/escape-link", "outside-home/secret.txt")
 
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)

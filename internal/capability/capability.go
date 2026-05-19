@@ -250,27 +250,39 @@ func ResolveAll(names []string, registry map[string]Capability, neverAllow, neve
 // validateNoSymlinkCycles returns a wrapped error naming the capability and
 // path if any Readable/Writable/Deny entry resolves through a symlink cycle.
 func validateNoSymlinkCycles(rc *ResolvedCapability) error {
-	for _, group := range []struct {
-		field string
+	fields := []struct {
+		name  string
 		paths []string
 	}{
 		{"readable", rc.Readable},
 		{"writable", rc.Writable},
 		{"deny", rc.Deny},
-	} {
-		for _, p := range group.paths {
-			if err := capabilityCheckCycle(p); err != nil {
-				return fmt.Errorf("capability %q: %s path %q: %w", rc.Name, group.field, p, err)
-			}
+	}
+	for _, f := range fields {
+		if err := checkCyclesIn(f.paths, func(p string, cause error) error {
+			return fmt.Errorf("capability %q: %s path %q: %w", rc.Name, f.name, p, cause)
+		}); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func validateNeverAllowNoCycles(paths []string) error {
+	return checkCyclesIn(paths, func(p string, cause error) error {
+		return fmt.Errorf("never_allow path %q: %w", p, cause)
+	})
+}
+
+// checkCyclesIn runs the symlink-cycle check on every entry in paths and
+// returns the first cycle error found, wrapped via wrapErr. Returns nil
+// when no cycle is found. The wrapErr indirection lets callers attach
+// their own diagnostic context (capability name + field, never_allow
+// origin, etc.) without each one re-implementing the iteration.
+func checkCyclesIn(paths []string, wrapErr func(p string, cause error) error) error {
 	for _, p := range paths {
 		if err := capabilityCheckCycle(p); err != nil {
-			return fmt.Errorf("never_allow path %q: %w", p, err)
+			return wrapErr(p, err)
 		}
 	}
 	return nil

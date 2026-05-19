@@ -240,6 +240,16 @@
 
 ### 🧹 Internal
 
+- **Parameterize the symlink-cycle validators in the capability layer.**
+  `validateNoSymlinkCycles` and `validateNeverAllowNoCycles` shared a
+  single inner loop and differed only in the error-prefix string. A new
+  helper `checkCyclesIn(paths, wrapErr)` carries the iteration once;
+  each caller supplies a one-line `wrapErr` closure for its own
+  diagnostic context (capability name + field, never_allow origin).
+  The never_allow cycle path was previously untested — added a regression
+  test that locks the wrapping contract before the refactor and keeps
+  passing afterward.
+
 - **Unify symlink-widening resolution in `fsutil.ResolveWidening`.**
   The seatbelt filesystem guard and `aide cap show` independently
   composed EvalSymlinks + an under-`$HOME` classifier and the

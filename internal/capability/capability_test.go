@@ -351,6 +351,35 @@ func TestMergeSelectedVariants_DoesNotAliasNonVariantSlices(t *testing.T) {
 	}
 }
 
+// TestResolveAll_DetectsSymlinkCycleInNeverAllow asserts that the
+// never_allow cycle-check path also surfaces the error. Without this,
+// any future regression in validateNeverAllowNoCycles (e.g. an early
+// return on empty input, a swapped wrapping order) would slip through
+// because no other test exercises the never_allow branch of ResolveAll's
+// validation.
+func TestResolveAll_DetectsSymlinkCycleInNeverAllow(t *testing.T) {
+	tmp := t.TempDir()
+	a := tmp + "/never-a"
+	b := tmp + "/never-b"
+	if err := os.Symlink(b, a); err != nil {
+		t.Fatalf("symlink a: %v", err)
+	}
+	if err := os.Symlink(a, b); err != nil {
+		t.Fatalf("symlink b: %v", err)
+	}
+
+	_, err := ResolveAll(nil, map[string]Capability{}, []string{a}, nil)
+	if err == nil {
+		t.Fatal("expected error from never_allow symlink cycle, got nil")
+	}
+	if !strings.Contains(err.Error(), "never_allow") {
+		t.Errorf("error must identify the never_allow source; got: %q", err)
+	}
+	if !strings.Contains(err.Error(), a) {
+		t.Errorf("error must name the offending path %q; got: %q", a, err)
+	}
+}
+
 func TestResolveAll_DetectsSymlinkCycle(t *testing.T) {
 	// A symlink loop on disk: a -> b -> a. EvalSymlinks returns ELOOP.
 	// ResolveAll must surface this as a clear config-level error rather

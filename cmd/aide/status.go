@@ -17,6 +17,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
@@ -47,7 +48,7 @@ func initCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("reading existing config for backup: %w", err)
 				}
-				if err := os.WriteFile(bakPath, data, 0o600); err != nil {
+				if err := fsutil.AtomicWrite(bakPath, data); err != nil {
 					return fmt.Errorf("writing backup: %w", err)
 				}
 				fmt.Fprintf(out, "Backed up existing config to %s\n\n", bakPath)
@@ -158,7 +159,7 @@ func initCmd() *cobra.Command {
 				return fmt.Errorf("creating config directory: %w", err)
 			}
 
-			if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+			if err := fsutil.AtomicWrite(configPath, []byte(yamlContent)); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 

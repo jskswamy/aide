@@ -142,6 +142,17 @@
 
 ### 🐞 Bug Fixes
 
+- **Atomic writes for `aide init` and `aide secrets create`.** Three
+  user-facing write paths — `aide init` writing `config.yaml`, `aide
+  init --force` writing the `.bak` backup, and `aide secrets create`
+  (via `(*Manager).CreateFromContent`) writing the encrypted secrets
+  file — used raw `os.WriteFile`. A crash between truncate and the
+  final byte left a partial file: garbage YAML at best, an
+  undecryptable AES blob at worst. All three now go through
+  `fsutil.AtomicWrite` (tmp + rename), matching the durability
+  guarantees `aide adopt`/`aide sync`/`aide secrets edit` already had.
+  Symlink-preservation comes along for free via the same helper.
+
 - **Sandbox rules follow symlinks for dotfiles-managed config.** macOS
   seatbelt fires `file-write*` policy on the kernel-resolved path, not
   the literal syscall argument. Empirically verified: a

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/provision"
+	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +52,17 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 	}
 	desired, err := provision.ResolveDesired(env.cfg, env.contextName)
 	if err != nil {
+		return err
+	}
+
+	// Template-resolve MCP env values against context secrets so the
+	// plan diff compares already-resolved values against the agent's
+	// installed state. Without this, a desired `{{ .secrets.X }}` would
+	// never equal the agent's "real-value" installed state and aide
+	// sync would propose an unnecessary update every run. Plan output
+	// itself only prints op kind + name (not env values), so resolving
+	// here does not leak secrets to stdout / journal files.
+	if err := resolveMCPSecretsForSync(env, &desired); err != nil {
 		return err
 	}
 
@@ -303,4 +315,37 @@ func parentDir(path string) string {
 		}
 	}
 	return "."
+}
+
+// resolveMCPSecretsForSync mirrors the launcher's secret-decrypt +
+// template-resolve dance, but applies it to the MCP server env map in
+// the sync pipeline. When the context declares a secret file, decrypt
+// it; build a TemplateData; pass it (or nil if no secret is configured)
+// to provision.ResolveSecretsInMCPEnv. ResolveSecretsInMCPEnv's nil-td
+// branch is what catches the misconfiguration where the user references
+// {{ .secrets.X }} in an MCP env without supplying a secret file.
+//
+// RuntimeDir is left empty: sync writes to the agent's config FILE, not
+// the agent's runtime, so {{ .runtime_dir }} has no meaning here.
+// Referencing it in an MCP env will silently substitute an empty string
+// — a known v1 quirk; the canonical use case is {{ .secrets.X }}.
+func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired) error {
+	var td *config.TemplateData
+	if env.ctx.Secret != "" {
+		secretsPath := config.ResolveSecretPath(env.ctx.Secret)
+		identity, err := secrets.DiscoverAgeKey()
+		if err != nil {
+			return fmt.Errorf("discovering age key for context %q: %w", env.contextName, err)
+		}
+		secretsMap, err := secrets.DecryptSecretsFile(secretsPath, identity)
+		if err != nil {
+			return fmt.Errorf("decrypting secrets for context %q: %w", env.contextName, err)
+		}
+		cwd, _ := os.Getwd()
+		td = &config.TemplateData{
+			Secrets:     secretsMap,
+			ProjectRoot: cwd,
+		}
+	}
+	return provision.ResolveSecretsInMCPEnv(desired, td)
 }

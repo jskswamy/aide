@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -131,5 +134,53 @@ func TestSync_ApplyFailure_StateNotUpdated(t *testing.T) {
 	st, _ := provision.LoadState(provision.DefaultStatePath(home))
 	if cs := st.Contexts["work"]; cs != nil && cs.ConfigHash != "" {
 		t.Errorf("context state should not be updated on failure, got hash %q", cs.ConfigHash)
+	}
+}
+
+// TestSync_MCPSecretTemplate_NoSecretsFileErrors pins the wiring of T16
+// (AIDE-4c9.1) end-to-end through the sync command. When config declares
+// an MCP server with env values referencing {{ .secrets.X }} but the
+// context does NOT carry a `secret:` field, sync must fail at resolution
+// time with an error naming the offending MCP server — silently shipping
+// an unresolved template into the agent's .mcp.json would burn the user
+// with an auth failure at agent runtime instead of at sync time.
+//
+// This test covers the nil-TemplateData branch of ResolveSecretsInMCPEnv;
+// the happy path (resolves real values) is covered by the unit tests in
+// internal/provision/secrets_test.go. End-to-end happy path with an
+// encrypted .enc.yaml is intentionally not asserted here — it would
+// duplicate the launcher's secrets-decrypt coverage without adding
+// information beyond what the unit + wiring tests already pin.
+func TestSync_MCPSecretTemplate_NoSecretsFileErrors(t *testing.T) {
+	fakeProvReset(t)
+	home := isolatedConfigDir(t)
+	cwd, _ := os.Getwd()
+	yaml := fmt.Sprintf(`mcp_servers:
+  github:
+    command: github-mcp-server
+    env:
+      TOKEN: "{{ .secrets.api_key }}"
+contexts:
+  work:
+    agent: fakeagent
+    match:
+      - path: %s
+    mcp_servers:
+      - github
+`, cwd)
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runSyncCmd(t, "", "--context", "work", "--plan")
+	if err == nil {
+		t.Fatalf("sync expected to fail (MCP env references secret but no secrets file configured); got nil error and out: %s", out)
+	}
+	if !strings.Contains(err.Error(), "github") {
+		t.Errorf("error must name the offending MCP server %q; got: %v", "github", err)
+	}
+	if !strings.Contains(err.Error(), "secrets") {
+		t.Errorf("error must mention secrets/template misconfiguration; got: %v", err)
 	}
 }

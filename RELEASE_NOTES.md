@@ -116,6 +116,42 @@
   Spec: `docs/specs/2026-05-15-declarative-agent-provisioning-design.md`.
   Capability research: `docs/specs/2026-05-16-agent-capability-research.md`.
 
+- **MCP env values resolve secrets at sync time.** Declare an MCP
+  server that needs a credential the same way you declare any other
+  templated value in `aide`:
+
+  ```yaml
+  mcp_servers:
+    github:
+      command: github-mcp-server
+      env:
+        GITHUB_TOKEN: "{{ .secrets.github_token }}"
+
+  contexts:
+    work:
+      agent: claude
+      secret: personal       # → personal.enc.yaml (age-encrypted)
+      mcp_servers: [github]
+  ```
+
+  `aide sync` decrypts the context's `.enc.yaml`, resolves every
+  `{{ .secrets.X }}` reference in the MCP servers' `env:` maps, and
+  writes the resolved values into the agent's native MCP config
+  (`.mcp.json`, `~/.claude.json` projects entry, or Codex `[mcp_servers.<name>]`
+  table). Plain string values still pass through unchanged. The
+  template engine is the same one launcher.go already uses for
+  context env — same `{{ .secrets.X }}` syntax, same
+  `missingkey=error` semantics — so the secrets infrastructure is
+  unified across both code paths.
+
+  Plan output (`aide sync --plan`) stays safe: only op kind + server
+  name is printed, never env values, so secrets never leak to stdout
+  / journal / state files. Two failure modes fail loudly at sync
+  time (not at agent runtime): a referenced secret missing from
+  the `.enc.yaml` errors with the offending key named; a template
+  reference in a context without a `secret:` field errors with the
+  offending MCP server named.
+
 - **First-class agent profile support.** Multi-profile contexts can
   now declare `profile: <name>` instead of hand-rolling agent-specific
   env vars. The driver computes the right env var and absolute config

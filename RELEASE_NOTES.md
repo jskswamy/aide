@@ -142,6 +142,20 @@
 
 ### 🐞 Bug Fixes
 
+- **Atomic writes preserve symlinked config and secrets files.** When
+  `~/.config/aide/config.yaml` (or an encrypted secrets file) was a
+  symlink into a dotfiles repo, every write that went through
+  `fsutil.AtomicWrite` — `aide adopt`, `aide sync`, `aide context
+  create`/`bind`, `aide secrets edit`, `aide secrets rotate` — replaced
+  the symlink entry with a regular file. The repo file silently stopped
+  receiving updates and lost git history. `AtomicWrite` now resolves
+  symlinks via `filepath.EvalSymlinks` before computing the temp-file
+  directory and rename target, so the rename swaps the underlying
+  file's inode and leaves the symlink intact. Non-symlink installs are
+  unaffected. Note: writes still land at 0o600 — repos that previously
+  held the file at 0o644 will see it tighten on first write. Reported
+  in jskswamy/aide#12.
+
 - **Launcher tilde-expands env values before exec.** `env:
   CLAUDE_CONFIG_DIR: ~/.claude-work` in `config.yaml` previously
   reached the child agent as the literal string `~/.claude-work`.

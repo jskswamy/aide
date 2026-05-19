@@ -142,6 +142,28 @@
 
 ### 🐞 Bug Fixes
 
+- **Sandbox rules follow symlinks for dotfiles-managed config.** macOS
+  seatbelt fires `file-write*` policy on the kernel-resolved path, not
+  the literal syscall argument. Empirically verified: a
+  `(subpath "/tmp/sbA")` allow rule does not cover writes whose path
+  resolves outside `/tmp/sbA`. So when home-manager/stow/chezmoi
+  symlinked either an agent's whole config dir (e.g. `~/.claude →
+  ~/dotfiles/claude/`) or individual files inside it
+  (`~/.config/aide/config.yaml → ~/dotfiles/aide/config.yaml`) into a
+  git repo, sandboxed agent writes through that path were silently
+  denied by the kernel. `configDirRules` now resolves each canonical
+  config dir via `filepath.EvalSymlinks`, walks it at depth 1, and
+  emits additional subpath allow rules for any safe symlink target
+  (under `$HOME`, not under sensitive dirs like `~/.ssh`/`~/.aws`/
+  `~/.gnupg`). File-level symlinks allow-list the *parent directory*
+  of the target so atomic-write tmp+rename siblings — the exact
+  pattern in #12 — also work. Dotfiles placed outside `$HOME` (e.g.
+  `/Volumes/Repos/dotfiles`, `/opt/...`) are not widened automatically;
+  users with that layout can grant access via a custom capability
+  (`aide cap create`) rather than relying on the default policy.
+  Affects every agent: claude, copilot, codex, gemini, cursor-agent,
+  and any future simple-agent driver.
+
 - **Atomic writes preserve symlinked config and secrets files.** When
   `~/.config/aide/config.yaml` (or an encrypted secrets file) was a
   symlink into a dotfiles repo, every write that went through

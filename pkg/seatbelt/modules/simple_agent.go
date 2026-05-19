@@ -42,5 +42,5 @@ func (m *simpleAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		defaults = append(defaults, filepath.Join(ctx.HomeDir, rel))
 	}
 	dirs := resolveConfigDirs(ctx, m.spec.EnvKey, defaults)
-	return seatbelt.GuardResult{Rules: configDirRules(m.spec.SectionName, dirs)}
+	return seatbelt.GuardResult{Rules: configDirRules(m.spec.SectionName, ctx.HomeDir, dirs)}
 }

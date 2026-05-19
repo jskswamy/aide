@@ -2,9 +2,11 @@ package modules
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
@@ -103,19 +105,122 @@ func isUnderHome(home, path string) bool {
 	return strings.HasPrefix(path, home+string(filepath.Separator))
 }
 
-// configDirRules generates file-read* file-write* Allow rules for
-// agent config directories. Each dir gets a subpath rule.
-func configDirRules(sectionName string, dirs []string) []seatbelt.Rule {
+// configDirRules generates file-read* file-write* Allow rules for agent
+// config directories. Each canonical dir gets a subpath rule.
+//
+// macOS seatbelt fires file-write* policy on the kernel-resolved path,
+// not the literal syscall argument. So when a dotfiles tool (home-manager,
+// stow, chezmoi-in-symlink-mode, dotbot) symlinks either the whole config
+// dir or individual files inside it into a git repo, the canonical
+// (subpath ...) rule alone does not cover writes — the resolved target is
+// outside the rule's scope and the kernel denies the write.
+//
+// To cover both patterns, this function also:
+//
+//  1. Resolves each canonical dir via filepath.EvalSymlinks. If the
+//     resolved path differs and passes isSafeConfigOverride (under $HOME,
+//     not under sensitiveHomeDirs), emit an additional subpath rule for
+//     it. This covers whole-dir symlinks.
+//
+//  2. Walks the dir at depth 1 (after resolution). For each entry that is
+//     itself a symlink, take the resolved target's parent directory and
+//     allow-list it if safe. Parent-dir scope (not file literal) is
+//     required so atomic-write tmp+rename siblings under the dotfiles
+//     repo also work — the very pattern that triggered issue #12.
+//
+// Targets outside $HOME are deliberately NOT widened. Dotfiles repos at
+// ~/Code/dotfiles, ~/dotfiles, etc. work; /Volumes or /opt placements
+// don't. If a user reports breakage we revisit the safety gate.
+//
+// Empirical verification of the kernel-resolved-path behavior is stored
+// in bd memory macos-seatbelt-file-write-rules-match-the-kernel.
+func configDirRules(sectionName, home string, dirs []string) []seatbelt.Rule {
 	if len(dirs) == 0 {
 		return nil
 	}
+
+	paths := newPrefixClosedSet()
+	for _, dir := range dirs {
+		paths.add(dir)
+		resolved := fsutil.ResolveOrSelf(dir)
+		if resolved != dir && isSafeConfigOverride(home, resolved) {
+			paths.add(resolved)
+		}
+		for _, parent := range collectSymlinkTargetParents(home, resolved) {
+			paths.add(parent)
+		}
+	}
+
 	rules := []seatbelt.Rule{
 		seatbelt.SectionAllow(sectionName + " config"),
 	}
-	for _, dir := range dirs {
+	for _, p := range paths.values() {
 		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf(
-			`(allow file-read* file-write* (subpath %q))`, dir,
+			`(allow file-read* file-write* (subpath %q))`, p,
 		)))
 	}
 	return rules
 }
+
+// collectSymlinkTargetParents walks dir at depth 1 and returns the safe
+// parent-directory paths for each top-level symlink entry. The parent
+// (not the file literal) is used so atomic-write tmp+rename siblings in
+// the dotfiles repo also work — the exact pattern that triggered #12.
+//
+// Missing/unreadable dirs and broken symlinks yield no parents. Parents
+// outside $HOME or under sensitiveHomeDirs are filtered by
+// isSafeConfigOverride.
+func collectSymlinkTargetParents(home, dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var parents []string
+	for _, e := range entries {
+		if e.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		link := filepath.Join(dir, e.Name())
+		target := fsutil.ResolveOrSelf(link)
+		if target == link {
+			// Broken symlink — ResolveOrSelf falls back to the input on
+			// EvalSymlinks error. Skip; we don't widen the sandbox to a
+			// path that doesn't exist.
+			continue
+		}
+		parent := filepath.Dir(target)
+		if !isSafeConfigOverride(home, parent) {
+			continue
+		}
+		parents = append(parents, parent)
+	}
+	return parents
+}
+
+// prefixClosedSet collects path strings while suppressing entries whose
+// (subpath ...) coverage is already implied by an earlier entry. Order
+// of insertion is preserved on iteration so emitted rules remain
+// deterministic.
+type prefixClosedSet struct {
+	entries []string
+	seen    map[string]bool
+}
+
+func newPrefixClosedSet() *prefixClosedSet {
+	return &prefixClosedSet{seen: map[string]bool{}}
+}
+
+func (s *prefixClosedSet) add(p string) {
+	if s.seen[p] {
+		return
+	}
+	for _, existing := range s.entries {
+		if p == existing || strings.HasPrefix(p, existing+string(filepath.Separator)) {
+			return
+		}
+	}
+	s.seen[p] = true
+	s.entries = append(s.entries, p)
+}
+
+func (s *prefixClosedSet) values() []string { return s.entries }

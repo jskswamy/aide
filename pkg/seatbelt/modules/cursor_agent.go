@@ -49,7 +49,7 @@ func (m *cursorAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	}
 	home := ctx.HomeDir
 
-	rules := configDirRules("Cursor", cursorConfigDirs(ctx))
+	rules := configDirRules("Cursor", home, cursorConfigDirs(ctx))
 
 	activeVerDir, logsDir, ok := m.resolveInstallDirs(home)
 	if ok {

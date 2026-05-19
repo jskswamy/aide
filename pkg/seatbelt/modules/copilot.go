@@ -18,7 +18,7 @@ func (m *copilotAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 
 	// COPILOT_HOME overrides everything — only that path is used.
 	if dir, ok := ctx.EnvLookup("COPILOT_HOME"); ok && dir != "" {
-		return seatbelt.GuardResult{Rules: configDirRules("Copilot", []string{dir})}
+		return seatbelt.GuardResult{Rules: configDirRules("Copilot", home, []string{dir})}
 	}
 
 	// Default config directory.
@@ -35,7 +35,7 @@ func (m *copilotAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	// because they may live outside $HOME when XDG vars are overridden.
 	dirs = append(dirs, xdgCopilotDirs(ctx)...)
 
-	return seatbelt.GuardResult{Rules: configDirRules("Copilot", dirs)}
+	return seatbelt.GuardResult{Rules: configDirRules("Copilot", home, dirs)}
 }
 
 // xdgCopilotDirs returns Copilot config/state directories under XDG base

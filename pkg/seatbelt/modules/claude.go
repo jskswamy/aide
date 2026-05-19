@@ -29,7 +29,7 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		filepath.Join(home, "Library", "Application Support", "Claude"),
 	})
 
-	rules := configDirRules("Claude", configDirs)
+	rules := configDirRules("Claude", home, configDirs)
 
 	// Runtime data paths: always present regardless of CLAUDE_CONFIG_DIR.
 	rules = append(rules,

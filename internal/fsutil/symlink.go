@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -23,6 +24,26 @@ func ResolveOrSelf(path string) string {
 		return resolved
 	}
 	return path
+}
+
+// CheckSymlinkCycle returns a non-nil error iff path traverses a symlink
+// loop (filepath.EvalSymlinks reports ELOOP / "too many links"). Other
+// EvalSymlinks errors — ENOENT for paths that don't exist yet, EACCES on
+// unreadable intermediates — are tolerated and return nil; callers
+// validating user-supplied paths at config load want a loud fail on
+// cycles (the config is broken) but a silent pass on absent files (the
+// path may be a not-yet-created cache dir).
+//
+// Path is used as-is; the caller is responsible for any home-expansion
+// or normalization before invoking. Keeping path semantics out of this
+// package preserves the convention that fsutil holds pure filesystem
+// primitives.
+func CheckSymlinkCycle(path string) error {
+	_, err := filepath.EvalSymlinks(path)
+	if IsSymlinkCycle(err) {
+		return fmt.Errorf("symlink cycle detected at %q", path)
+	}
+	return nil
 }
 
 // IsSymlinkCycle reports whether err (typically from filepath.EvalSymlinks)

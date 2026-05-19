@@ -3,7 +3,6 @@ package capability
 import (
 	"fmt"
 	"maps"
-	"path/filepath"
 	"slices"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -260,7 +259,7 @@ func validateNoSymlinkCycles(rc *ResolvedCapability) error {
 		{"deny", rc.Deny},
 	} {
 		for _, p := range group.paths {
-			if err := checkSymlinkCycle(p); err != nil {
+			if err := capabilityCheckCycle(p); err != nil {
 				return fmt.Errorf("capability %q: %s path %q: %w", rc.Name, group.field, p, err)
 			}
 		}
@@ -270,23 +269,20 @@ func validateNoSymlinkCycles(rc *ResolvedCapability) error {
 
 func validateNeverAllowNoCycles(paths []string) error {
 	for _, p := range paths {
-		if err := checkSymlinkCycle(p); err != nil {
+		if err := capabilityCheckCycle(p); err != nil {
 			return fmt.Errorf("never_allow path %q: %w", p, err)
 		}
 	}
 	return nil
 }
 
-// checkSymlinkCycle returns a "symlink cycle" error iff EvalSymlinks on the
-// (home-expanded) path fails with ELOOP. Other errors — including ENOENT
-// for paths that don't exist yet — are tolerated and return nil.
-func checkSymlinkCycle(path string) error {
-	expanded := homepath.Expand(path, "")
-	_, err := filepath.EvalSymlinks(expanded)
-	if fsutil.IsSymlinkCycle(err) {
-		return fmt.Errorf("symlink cycle detected")
-	}
-	return nil
+// capabilityCheckCycle is the capability-layer adapter around
+// fsutil.CheckSymlinkCycle. It exists only to apply the
+// "tilde-expand against $HOME" convention that user-supplied capability
+// paths use; the filesystem-layer primitive deliberately stays pure
+// and takes already-resolved paths.
+func capabilityCheckCycle(path string) error {
+	return fsutil.CheckSymlinkCycle(homepath.Expand(path, ""))
 }
 
 // ToSandboxOverrides merges all capabilities into sandbox policy fields.

@@ -240,6 +240,21 @@
 
 ### 🧹 Internal
 
+- **Move symlink-cycle check into `fsutil.CheckSymlinkCycle`.** The
+  capability-layer `checkSymlinkCycle` helper composed three concerns
+  (tilde-expand a user path, run EvalSymlinks, translate ELOOP into a
+  sentinel error) and lived in `internal/capability/capability.go`
+  where only the first concern is capability-specific. The
+  filesystem-primitive parts now live alongside `ResolveOrSelf` and
+  `IsSymlinkCycle` in `internal/fsutil` as `CheckSymlinkCycle(path)`,
+  taking an already-resolved path. The capability layer keeps a
+  one-line `capabilityCheckCycle` adapter that applies the
+  `homepath.Expand` convention before delegating. The pure-filesystem
+  helper is now reusable from any package validating user paths
+  (notably the `aide cap show` audit view tracked in a follow-up).
+  Four sub-tests cover the cycle / missing / regular-file / non-cycle
+  chain cases.
+
 - **Consolidate "is path under dir" predicate into `fsutil.IsUnderDir`.**
   Five sites independently implemented the separator-aware prefix check
   used to gate sandbox widening, prefix-closed sets, and sensitive-dir

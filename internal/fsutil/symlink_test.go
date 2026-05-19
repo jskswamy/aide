@@ -39,6 +39,67 @@ func TestResolveOrSelf_RegularPath(t *testing.T) {
 	}
 }
 
+// TestCheckSymlinkCycle pins the "loud-fail on cycle, silent-pass on
+// everything else" contract that capability config-load relies on.
+// Cycles must produce a non-nil error so the surrounding wrapper can
+// surface the offending path; missing paths and non-symlinks must NOT
+// (a capability declaring a not-yet-created cache dir is normal).
+func TestCheckSymlinkCycle(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on windows")
+	}
+	dir := t.TempDir()
+
+	t.Run("cycle returns error", func(t *testing.T) {
+		a := filepath.Join(dir, "cycle-a")
+		b := filepath.Join(dir, "cycle-b")
+		if err := os.Symlink(b, a); err != nil {
+			t.Fatalf("symlink a: %v", err)
+		}
+		if err := os.Symlink(a, b); err != nil {
+			t.Fatalf("symlink b: %v", err)
+		}
+		if err := fsutil.CheckSymlinkCycle(a); err == nil {
+			t.Errorf("CheckSymlinkCycle(%q): expected error, got nil", a)
+		}
+	})
+
+	t.Run("missing path is fine", func(t *testing.T) {
+		missing := filepath.Join(dir, "does-not-exist")
+		if err := fsutil.CheckSymlinkCycle(missing); err != nil {
+			t.Errorf("CheckSymlinkCycle(%q) for ENOENT path: want nil, got %v", missing, err)
+		}
+	})
+
+	t.Run("regular file is fine", func(t *testing.T) {
+		regular := filepath.Join(dir, "regular.txt")
+		if err := os.WriteFile(regular, []byte("x"), 0o600); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if err := fsutil.CheckSymlinkCycle(regular); err != nil {
+			t.Errorf("CheckSymlinkCycle(%q) for plain file: want nil, got %v", regular, err)
+		}
+	})
+
+	t.Run("non-cycle symlink chain is fine", func(t *testing.T) {
+		target := filepath.Join(dir, "chain-target.txt")
+		hop := filepath.Join(dir, "chain-hop")
+		link := filepath.Join(dir, "chain-link")
+		if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
+			t.Fatalf("seed target: %v", err)
+		}
+		if err := os.Symlink(target, hop); err != nil {
+			t.Fatalf("symlink hop: %v", err)
+		}
+		if err := os.Symlink(hop, link); err != nil {
+			t.Fatalf("symlink link: %v", err)
+		}
+		if err := fsutil.CheckSymlinkCycle(link); err != nil {
+			t.Errorf("CheckSymlinkCycle(%q) for two-hop chain: want nil, got %v", link, err)
+		}
+	})
+}
+
 func TestResolveOrSelf_Symlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks require elevated privileges on windows")

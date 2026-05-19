@@ -6,7 +6,6 @@
 package guards
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +65,7 @@ func (g *projectSecretsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult 
 	hooksDir := filepath.Join(ctx.ProjectRoot, ".git", "hooks")
 	if dirExists(hooksDir) {
 		result.Rules = append(result.Rules,
-			seatbelt.DenyRule(fmt.Sprintf(`(deny file-write* (subpath "%s"))`, hooksDir)))
+			seatbelt.DenySubpath(hooksDir, "file-write*"))
 		result.Protected = append(result.Protected, hooksDir)
 	}
 

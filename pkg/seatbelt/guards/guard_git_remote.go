@@ -55,8 +55,8 @@ func (g *gitRemoteGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	gitCredentials := filepath.Join(home, ".git-credentials")
 	result.Rules = append(result.Rules,
 		seatbelt.SectionDeny("Plaintext git credentials (defense-in-depth)"),
-		seatbelt.DenyRule(fmt.Sprintf("(deny file-read-data (literal \"%s\"))", gitCredentials)),
-		seatbelt.DenyRule(fmt.Sprintf("(deny file-write* (literal \"%s\"))", gitCredentials)),
+		seatbelt.DenyLiteral(gitCredentials, "file-read-data"),
+		seatbelt.DenyLiteral(gitCredentials, "file-write*"),
 	)
 	result.Protected = append(result.Protected, gitCredentials)
 

@@ -35,10 +35,9 @@ func homeExpr(form, home, rel string) string {
 // parent directory. Seatbelt subpath rules don't grant lstat on the parent
 // itself, which breaks filepath.EvalSymlinks traversal.
 func SubpathWithParentMetadata(path string) []Rule {
-	parent := filepath.Dir(path)
 	return []Rule{
-		AllowRule(fmt.Sprintf(`(allow file-read* (subpath "%s"))`, path)),
-		AllowRule(fmt.Sprintf(`(allow file-read-metadata (literal "%s"))`, parent)),
+		AllowSubpath(path, "file-read*"),
+		AllowLiteral(filepath.Dir(path), "file-read-metadata"),
 	}
 }
 

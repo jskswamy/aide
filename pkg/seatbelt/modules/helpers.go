@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,9 +154,7 @@ func configDirRules(sectionName, home string, dirs []string) []seatbelt.Rule {
 		seatbelt.SectionAllow(sectionName + " config"),
 	}
 	for _, p := range paths.values() {
-		rules = append(rules, seatbelt.AllowRule(fmt.Sprintf(
-			`(allow file-read* file-write* (subpath %q))`, p,
-		)))
+		rules = append(rules, seatbelt.AllowSubpath(p, "file-read*", "file-write*"))
 	}
 	return rules
 }

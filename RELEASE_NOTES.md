@@ -200,6 +200,18 @@
 
 ### 🧹 Internal
 
+- **Typed seatbelt rule builders replace ad-hoc `fmt.Sprintf` sites.**
+  `seatbelt.AllowSubpath` / `DenySubpath` / `AllowLiteral` /
+  `DenyLiteral` take `(path, ops...)` and use `%q` quoting under the
+  hood, so paths containing `"` or `\` are escaped into valid sexp
+  instead of breaking the surrounding string. Five sites migrated
+  (`guards/helpers.go` DenyDir/DenyFile/AllowReadFile,
+  `guards/guard_git_remote.go` git-credentials deny,
+  `guards/guard_project_secrets.go` hooks-dir deny, `path.go`
+  SubpathWithParentMetadata, `modules/helpers.go` configDirRules
+  emit). Complex multi-path / network / require-any rules still use
+  `fmt.Sprintf` and are tracked separately for a richer builder.
+
 - **`provisiontest.FakeProvisioner` consolidates the two hand-rolled
   Provisioner fakes.** Both `internal/provision/engine_test.go` and
   `cmd/aide/provision_list_test.go` defined their own

@@ -127,8 +127,10 @@ func (m *Manager) CreateFromContent(name, secretsDir, agePublicKey string, conte
 		return fmt.Errorf("failed to create secrets directory: %w", err)
 	}
 
-	// Write encrypted file.
-	if err := os.WriteFile(targetPath, encrypted, 0o600); err != nil {
+	// Write encrypted file atomically. AtomicWrite gives tmp+rename
+	// durability so a crash mid-write can't leave a partial AES blob
+	// that fails to decrypt later.
+	if err := fsutil.AtomicWrite(targetPath, encrypted); err != nil {
 		return fmt.Errorf("failed to write encrypted file: %w", err)
 	}
 

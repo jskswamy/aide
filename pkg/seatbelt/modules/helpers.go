@@ -3,7 +3,6 @@ package modules
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
@@ -83,25 +82,26 @@ func resolveConfigDirsAdditive(ctx *seatbelt.Context, overrideKey, xdgCandidate 
 	return dirs
 }
 
-// isSafeConfigOverride returns true when dir is under $HOME and does not
-// overlap any entry in sensitiveHomeDirs.
+// isSafeConfigOverride returns true when dir is STRICTLY under $HOME and
+// does not overlap any entry in sensitiveHomeDirs.
+//
+// "Strictly under" matters: widening a (subpath $HOME) rule would expose
+// the entire home directory through the sandbox, which the rest of the
+// system already pays attention to avoid (see filesystem guard's narrow
+// baseline). The explicit dir != home guard expresses that requirement
+// at the call site so future readers don't have to infer it from a
+// missing-separator subtlety in the prefix check.
 func isSafeConfigOverride(home, dir string) bool {
-	if !isUnderHome(home, dir) {
+	if home == "" || !fsutil.IsUnderDir(dir, home) || filepath.Clean(dir) == filepath.Clean(home) {
 		return false
 	}
 	for _, sensitive := range sensitiveHomeDirs {
 		sensitiveAbs := filepath.Join(home, sensitive)
-		if dir == sensitiveAbs || strings.HasPrefix(dir, sensitiveAbs+string(filepath.Separator)) {
+		if fsutil.IsUnderDir(dir, sensitiveAbs) {
 			return false
 		}
 	}
 	return true
-}
-
-// isUnderHome uses a separator-aware prefix check to avoid false positives
-// such as /home/user-other matching /home/user.
-func isUnderHome(home, path string) bool {
-	return strings.HasPrefix(path, home+string(filepath.Separator))
 }
 
 // configDirRules generates file-read* file-write* Allow rules for agent
@@ -212,7 +212,7 @@ func (s *prefixClosedSet) add(p string) {
 		return
 	}
 	for _, existing := range s.entries {
-		if p == existing || strings.HasPrefix(p, existing+string(filepath.Separator)) {
+		if fsutil.IsUnderDir(p, existing) {
 			return
 		}
 	}

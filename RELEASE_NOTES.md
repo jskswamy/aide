@@ -240,6 +240,22 @@
 
 ### 🧹 Internal
 
+- **Consolidate "is path under dir" predicate into `fsutil.IsUnderDir`.**
+  Five sites independently implemented the separator-aware prefix check
+  used to gate sandbox widening, prefix-closed sets, and sensitive-dir
+  rejection: `pathUnder` (cmd/aide/cap.go), `isUnderDir`
+  (pkg/seatbelt/guards/guard_filesystem.go), `isUnderHome` and two
+  inline `HasPrefix(... + sep)` expressions (pkg/seatbelt/modules/helpers.go).
+  All now route through one helper in `internal/fsutil` with inclusive
+  `path == dir` semantics. The one site that required strict-under
+  semantics (refusing to widen a sandbox rule to `$HOME` itself, inside
+  `isSafeConfigOverride`) now expresses the constraint with an explicit
+  `dir != home` guard at the call, so the strict-vs-inclusive
+  distinction is visible at the point of use rather than buried in a
+  missing-separator subtlety. Pre-existing behavior preserved across all
+  call sites; eleven sub-test cases cover equality, similar-prefix false
+  positives, trailing separators, and empty inputs.
+
 - **Typed seatbelt rule builders replace ad-hoc `fmt.Sprintf` sites.**
   `seatbelt.AllowSubpath` / `DenySubpath` / `AllowLiteral` /
   `DenyLiteral` take `(path, ops...)` and use `%q` quoting under the

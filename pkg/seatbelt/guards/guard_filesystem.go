@@ -7,7 +7,6 @@ package guards
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/fsutil"
@@ -175,19 +174,10 @@ func safeResolvedWidening(path, home string) (string, bool) {
 	if resolved == path {
 		return "", false
 	}
-	if !isUnderDir(resolved, home) {
+	if !fsutil.IsUnderDir(resolved, home) {
 		return "", false
 	}
 	return resolved, true
-}
-
-// isUnderDir reports whether path is dir itself or strictly under it,
-// using filepath separator semantics so /home/userX is not under /home/user.
-func isUnderDir(path, dir string) bool {
-	if path == dir {
-		return true
-	}
-	return strings.HasPrefix(path, dir+string(filepath.Separator))
 }
 
 func buildRequireAny(paths []string) string {

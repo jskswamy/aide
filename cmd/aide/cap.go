@@ -16,6 +16,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/consent"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/trust"
 )
@@ -306,7 +307,7 @@ func capShowPathSection(out io.Writer, label string, items []string, home string
 		expanded := homepath.Expand(p, home)
 		if resolved, err := filepath.EvalSymlinks(expanded); err == nil && resolved != expanded {
 			row.resolved = resolved
-			if home != "" && !pathUnder(resolved, home) {
+			if home != "" && !fsutil.IsUnderDir(resolved, home) {
 				row.outsideHome = true
 			}
 			hasResolution = true
@@ -330,14 +331,6 @@ func capShowPathSection(out io.Writer, label string, items []string, home string
 	}
 }
 
-// pathUnder reports whether p equals dir or is strictly nested below it,
-// honoring path separator boundaries (so /home/userX is not under /home/user).
-func pathUnder(p, dir string) bool {
-	if p == dir {
-		return true
-	}
-	return strings.HasPrefix(p, dir+string(filepath.Separator))
-}
 
 func capCreateCmd() *cobra.Command {
 	var extends string

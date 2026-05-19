@@ -1,11 +1,11 @@
 package modules
 
 import (
-	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -53,10 +53,18 @@ func (m *cursorAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 
 	activeVerDir, logsDir, ok := m.resolveInstallDirs(home)
 	if ok {
+		// Resolve symlinks on the dirs themselves: cursorActiveInstallDirs
+		// already resolves the binary's parents, but if logsDir or
+		// activeVerDir is itself a symlink (user redirecting logs to an
+		// external volume, for example) the seatbelt rule must reference
+		// the kernel-resolved target — macOS fires file-write* policy on
+		// the resolved path, not the literal syscall argument.
+		activeVerDir = fsutil.ResolveOrSelf(activeVerDir)
+		logsDir = fsutil.ResolveOrSelf(logsDir)
 		rules = append(rules,
 			seatbelt.SectionAllow("Cursor install"),
-			seatbelt.AllowRule(fmt.Sprintf("(allow file-read* file-write*\n    (subpath %q)\n)", logsDir)),
-			seatbelt.AllowRule(fmt.Sprintf("(allow file-read*\n    (subpath %q)\n)", activeVerDir)),
+			seatbelt.AllowSubpath(logsDir, "file-read*", "file-write*"),
+			seatbelt.AllowSubpath(activeVerDir, "file-read*"),
 		)
 	}
 

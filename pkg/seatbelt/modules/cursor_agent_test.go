@@ -1,9 +1,12 @@
 package modules
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/testutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -64,6 +67,38 @@ func TestCursorAgent_Rules_IncludesInstallDirs(t *testing.T) {
 	}
 	if !strings.Contains(got, logsDir) {
 		t.Errorf("Rules() must contain logsDir %q; got:\n%s", logsDir, got)
+	}
+}
+
+// TestCursorAgent_Rules_ResolvesSymlinkedLogsDir pins the symlink-resolution
+// contract for cursor's install dirs: macOS seatbelt fires file-write* policy
+// on the kernel-resolved path, so a literal subpath rule for a symlinked
+// logs dir wouldn't cover the actual write target. resolveInstallDirs
+// already resolves the binary's parents, but if the logs dir itself
+// is a symlink (rare but possible — user redirects logs to an external
+// volume), the rule must reference the resolved target.
+func TestCursorAgent_Rules_ResolvesSymlinkedLogsDir(t *testing.T) {
+	root := testutil.CanonicalTempDir(t)
+	realLogs := filepath.Join(root, "real-logs")
+	linkedLogs := filepath.Join(root, "logs-link")
+	if err := os.MkdirAll(realLogs, 0o755); err != nil {
+		t.Fatalf("mkdir real-logs: %v", err)
+	}
+	if err := os.Symlink(realLogs, linkedLogs); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	activeVerDir := filepath.Join(root, "versions", "1.2.3")
+	if err := os.MkdirAll(activeVerDir, 0o755); err != nil {
+		t.Fatalf("mkdir activeVer: %v", err)
+	}
+	mod := cursorAgentWithInstall(activeVerDir, linkedLogs)
+	ctx := &seatbelt.Context{HomeDir: "/home/user"}
+
+	got := rulesToString(mod.Rules(ctx).Rules)
+
+	if !strings.Contains(got, realLogs) {
+		t.Errorf("Rules() must include resolved logs path %q; got:\n%s", realLogs, got)
 	}
 }
 

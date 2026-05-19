@@ -142,6 +142,20 @@
 
 ### 🐞 Bug Fixes
 
+- **Cursor sandbox follows symlinks on install and logs dirs.** The
+  cursor-agent module emits subpath allow rules for the resolved
+  binary's `versions/<ver>/` and sibling `logs/` directories.
+  `cursorActiveInstallDirs` already calls `filepath.EvalSymlinks` on
+  the binary itself, which resolves any symlinked *parent* dir
+  (e.g., `/Applications/Cursor.app → /Volumes/...`). But if `logsDir`
+  or `activeVerDir` is *itself* a symlink (rare — user redirects
+  logs to an external volume), the literal subpath rule wouldn't
+  match the kernel-resolved write target and the sandbox would deny
+  writes. The module now applies `fsutil.ResolveOrSelf` to both
+  derived dirs before emitting rules. Defensive — closes a narrow
+  gap left after the broader sandbox-symlink fix, which only routed
+  config-dir paths through the symlink-resolving emitter.
+
 - **Atomic writes for `aide init` and `aide secrets create`.** Three
   user-facing write paths — `aide init` writing `config.yaml`, `aide
   init --force` writing the `.bak` backup, and `aide secrets create`

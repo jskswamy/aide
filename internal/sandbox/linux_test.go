@@ -4,12 +4,28 @@ package sandbox
 
 import (
 	"bytes"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
 )
+
+// stubAtomicWriteModule is a minimal seatbelt.Module that also satisfies
+// LinuxAtomicWriteProvider. It lets us assert backend behaviour for the
+// atomic-rename contract without coupling the test to a real agent module.
+type stubAtomicWriteModule struct{ files []string }
+
+func (m *stubAtomicWriteModule) Name() string { return "stub-atomic" }
+func (m *stubAtomicWriteModule) Rules(*seatbelt.Context) seatbelt.GuardResult {
+	return seatbelt.GuardResult{}
+}
+func (m *stubAtomicWriteModule) LinuxAtomicWritableFiles(*seatbelt.Context) []string {
+	return m.files
+}
+
+var _ seatbelt.LinuxAtomicWriteProvider = (*stubAtomicWriteModule)(nil)
 
 func TestLinuxSandbox_NewSandbox_ReturnsLinux(t *testing.T) {
 	s := NewSandbox()
@@ -22,10 +38,8 @@ func TestLinuxSandbox_NewSandbox_ReturnsLinux(t *testing.T) {
 }
 
 func TestLinuxSandbox_LandlockAvailable(t *testing.T) {
-	// Just test that the function doesn't panic.
-	// Whether it returns true depends on the kernel.
-	avail := landlockAvailable()
-	t.Logf("Landlock available: %v", avail)
+	caps := DetectKernelCapabilities()
+	t.Logf("Landlock available: %v (ABI %d)", caps.LandlockEnabled, caps.LandlockABI)
 }
 
 func TestLinuxSandbox_ApplyBwrap_BasicArgs(t *testing.T) {
@@ -56,9 +70,9 @@ func TestLinuxSandbox_ApplyBwrap_BasicArgs(t *testing.T) {
 
 	args := strings.Join(cmd.Args, " ")
 
-	// Check writable bind
-	if !strings.Contains(args, "--bind /tmp/project /tmp/project") {
-		t.Errorf("missing --bind for writable path in: %s", args)
+	// Check writable bind (--bind-try to tolerate module-declared paths that may not exist yet)
+	if !strings.Contains(args, "--bind-try /tmp/project /tmp/project") {
+		t.Errorf("missing --bind-try for writable path in: %s", args)
 	}
 
 	// Check original command is after --
@@ -112,6 +126,44 @@ func TestLinuxSandbox_ApplyBwrap_NoSubprocess(t *testing.T) {
 	args := strings.Join(cmd.Args, " ")
 	if !strings.Contains(args, "--unshare-pid") {
 		t.Errorf("expected --unshare-pid when AllowSubprocess=false, got: %s", args)
+	}
+}
+
+// TestLinuxSandbox_ApplyBwrap_RejectsAtomicWriteFiles asserts that applyBwrap
+// refuses to launch when the agent declares atomic-writable files. Landlock is
+// required to honour the atomic-rename contract; the bwrap-only fallback cannot.
+func TestLinuxSandbox_ApplyBwrap_RejectsAtomicWriteFiles(t *testing.T) {
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		t.Skip("bwrap not on PATH")
+	}
+
+	tmpHome := t.TempDir()
+	fakeFile := tmpHome + "/.fakeagent.json"
+	if writeErr := os.WriteFile(fakeFile, []byte("{}"), 0600); writeErr != nil {
+		t.Fatalf("setup: %v", writeErr)
+	}
+
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hi")
+	policy := Policy{
+		ProjectRoot:     t.TempDir(),
+		RuntimeDir:      t.TempDir(),
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowSubprocess: true,
+		AgentModule:     &stubAtomicWriteModule{files: []string{fakeFile}},
+	}
+
+	err = s.applyBwrap(cmd, policy, bwrapPath)
+	if err == nil {
+		t.Fatal("applyBwrap should return an error when atomic-writable files are declared without Landlock")
+	}
+	if !strings.Contains(err.Error(), "atomic-writable files") {
+		t.Errorf("expected 'atomic-writable files' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Landlock") {
+		t.Errorf("expected 'Landlock' in error, got: %v", err)
 	}
 }
 
@@ -263,24 +315,227 @@ func TestBwrap_PortFiltering_Warning(t *testing.T) {
 		t.Skip("bwrap not on PATH")
 	}
 
-	// Capture log output
-	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(os.Stderr)
+	// Redirect os.Stderr to capture the always-on warning.
+	r, w, _ := os.Pipe()
+	origStderr := os.Stderr
+	os.Stderr = w
 
 	err = s.applyBwrap(cmd, policy, bwrapPath)
+
+	_ = w.Close()
+	os.Stderr = origStderr
+
+	var stderrBuf bytes.Buffer
+	_, _ = stderrBuf.ReadFrom(r)
+
 	if err != nil {
 		t.Fatalf("applyBwrap error: %v", err)
 	}
 
-	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "Port-level filtering not supported by bwrap") {
-		t.Errorf("expected warning about port filtering, got log output: %q", logOutput)
+	stderrOutput := stderrBuf.String()
+	if !strings.Contains(stderrOutput, "Port-level filtering not supported by bwrap") {
+		t.Errorf("expected warning about port filtering on stderr, got: %q", stderrOutput)
 	}
 
 	// Verify execution still proceeds (cmd.Path should be bwrap)
 	if cmd.Path != bwrapPath {
 		t.Errorf("cmd.Path = %q, want %q (execution should proceed despite warning)", cmd.Path, bwrapPath)
+	}
+}
+
+// TestGenerateProfile_ContainsHeaderLines verifies the isolation tier/backend header is present in the generated profile.
+func TestGenerateProfile_ContainsHeaderLines(t *testing.T) {
+	s := &LinuxSandbox{}
+	runtimeDir := t.TempDir()
+	policy := Policy{
+		ProjectRoot:     runtimeDir,
+		RuntimeDir:      runtimeDir,
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowPorts:      []int{443, 80},
+		AllowSubprocess: true,
+		Guards:          []string{},
+	}
+
+	profile, err := s.GenerateProfile(policy)
+	if err != nil {
+		t.Fatalf("GenerateProfile error: %v", err)
+	}
+
+	requiredLines := []string{
+		"# Tier:", "# Backend:", "# Port filtering:",
+		"## Writable paths", "## Network:",
+	}
+	for _, line := range requiredLines {
+		if !strings.Contains(profile, line) {
+			t.Errorf("GenerateProfile missing %q in:\n%s", line, profile)
+		}
+	}
+}
+
+// TestApply_Unavailable_DoesNotMutateCmd verifies that when no sandbox is available,
+// Apply returns nil, does not mutate cmd, and LastTier().Tier == "unavailable".
+func TestApply_Unavailable_DoesNotMutateCmd(t *testing.T) {
+	caps := DetectKernelCapabilities()
+	if caps.LandlockEnabled || caps.BwrapAvailable {
+		t.Skip("skipping: sandbox backends available on this host; cannot reach unavailable path")
+	}
+
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hi")
+	originalPath := cmd.Path
+	originalArgs := strings.Join(cmd.Args, " ")
+	runtimeDir := t.TempDir()
+
+	policy := Policy{
+		ProjectRoot: runtimeDir,
+		RuntimeDir:  runtimeDir,
+		Network:     NetworkOutbound,
+	}
+
+	// Arrange
+	err := s.Apply(cmd, policy, runtimeDir)
+
+	// Assert
+	if err != nil {
+		t.Errorf("Apply returned unexpected error: %v", err)
+	}
+	if cmd.Path != originalPath {
+		t.Errorf("cmd.Path mutated: got %q, want %q", cmd.Path, originalPath)
+	}
+	if strings.Join(cmd.Args, " ") != originalArgs {
+		t.Errorf("cmd.Args mutated: got %q, want %q", strings.Join(cmd.Args, " "), originalArgs)
+	}
+	if s.LastTier() == nil || s.LastTier().Tier != TierUnavailable {
+		t.Errorf("LastTier = %v, want unavailable", s.LastTier())
+	}
+}
+
+// TestApply_BwrapWithPortRules_DegradedTier verifies that when bwrap is the fallback
+// and port rules are configured, the tier is degraded with PortFiltering=degraded.
+func TestApply_BwrapWithPortRules_DegradedTier(t *testing.T) {
+	caps := KernelCapabilities{LandlockEnabled: false, BwrapAvailable: true}
+	policy := Policy{AllowPorts: []int{443}}
+	tier := ComputeIsolationTier(caps, policy)
+
+	if tier.Tier != TierDegraded {
+		t.Errorf("Tier = %q, want degraded", tier.Tier)
+	}
+	if tier.PortFiltering != PortFilteringDegraded {
+		t.Errorf("PortFiltering = %q, want degraded", tier.PortFiltering)
+	}
+	if !strings.Contains(tier.Reason, "bwrap fallback") {
+		t.Errorf("Reason %q should mention bwrap fallback", tier.Reason)
+	}
+}
+
+// TestApply_PolicyJSON_UsesGrantedPathSet verifies Apply writes a policy JSON whose
+// path fields are driven by DeriveGrantedPathSet (no coarse $HOME).
+func TestApply_PolicyJSON_UsesGrantedPathSet(t *testing.T) {
+	runtimeDir := t.TempDir()
+	projectRoot := t.TempDir()
+
+	policy := Policy{
+		ProjectRoot:     projectRoot,
+		RuntimeDir:      runtimeDir,
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowSubprocess: true,
+		Guards:          []string{}, // empty — no guard paths
+	}
+
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hi")
+
+	if err := s.applyLandlock(cmd, policy, runtimeDir); err != nil {
+		t.Fatalf("applyLandlock error: %v", err)
+	}
+
+	policyPath := runtimeDir + "/landlock-policy.json"
+	data, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatalf("reading policy JSON: %v", err)
+	}
+	content := string(data)
+
+	// Writable must contain ProjectRoot
+	if !strings.Contains(content, projectRoot) {
+		t.Errorf("policy JSON should contain ProjectRoot %q, got: %s", projectRoot, content)
+	}
+
+	// Home directory should NOT be present as a plain writable path
+	// (it was only added before as a coarse allow; GrantedPathSet replaces this).
+	home, _ := os.UserHomeDir()
+	if strings.Contains(content, `"`+home+`"`) {
+		t.Errorf("policy JSON must not contain plain $HOME %q as writable; use guard-derived paths instead", home)
+	}
+}
+
+// TestRunSandboxApply_InvalidPort_ReturnsError verifies port validation rejects out-of-range values.
+func TestRunSandboxApply_InvalidPort_ReturnsError(t *testing.T) {
+	if err := ValidatePortRange([]int{99999}); err == nil {
+		t.Error("expected error for port 99999")
+	}
+}
+
+func TestShouldGateNetwork(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       NetworkMode
+		portPolicy PortPolicyEffective
+		want       bool
+	}{
+		{
+			name:       "none mode always gates (deny all TCP)",
+			mode:       NetworkNone,
+			portPolicy: PortPolicyEffective{Mode: "unrestricted"},
+			want:       true,
+		},
+		{
+			name:       "unrestricted mode never gates",
+			mode:       NetworkUnrestricted,
+			portPolicy: PortPolicyEffective{Mode: "unrestricted"},
+			want:       false,
+		},
+		{
+			name:       "unrestricted mode never gates even with stale port rules",
+			mode:       NetworkUnrestricted,
+			portPolicy: PortPolicyEffective{Mode: "allow_only", AllowSet: []int{443}},
+			want:       false,
+		},
+		{
+			name:       "outbound with no port rules does not gate (regression: fixes silent TCP block)",
+			mode:       NetworkOutbound,
+			portPolicy: PortPolicyEffective{Mode: "unrestricted"},
+			want:       false,
+		},
+		{
+			name:       "outbound with allow ports gates and applies allow-set",
+			mode:       NetworkOutbound,
+			portPolicy: PortPolicyEffective{Mode: "allow_only", AllowSet: []int{443, 53}},
+			want:       true,
+		},
+		{
+			name:       "outbound with deny-derived allow set still gates",
+			mode:       NetworkOutbound,
+			portPolicy: PortPolicyEffective{Mode: "deny_complement", AllowSet: []int{80, 443}},
+			want:       true,
+		},
+		{
+			name:       "outbound with empty allow set after deny intersection does not gate",
+			mode:       NetworkOutbound,
+			portPolicy: PortPolicyEffective{Mode: "allow_intersect_deny"},
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldGateNetwork(tt.mode, tt.portPolicy)
+			if got != tt.want {
+				t.Errorf("shouldGateNetwork(%q, %+v) = %v, want %v", tt.mode, tt.portPolicy, got, tt.want)
+			}
+		})
 	}
 }
 

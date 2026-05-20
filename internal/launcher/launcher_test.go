@@ -37,39 +37,60 @@ func writeMinimalConfig(t *testing.T, configDir string, content string) {
 }
 
 // unwrapSandbox extracts the inner binary and args from a sandbox-wrapped exec.
+//
 // On darwin: sandbox-exec -f <profile> <binary> <args...>
 // On linux (bwrap):    bwrap <bwrap-args...> -- <binary> <args...>
 // On linux (landlock): <aide> __sandbox-apply <policy> -- <binary> <args...>
+//
+// On linux, when the agent module declares atomic-writable files (e.g. Claude's
+// ~/.claude.json), the chain becomes a doubly-wrapped:
+//
+//	bwrap <overlay-args...> -- <aide> __sandbox-apply <policy> -- <binary> <args...>
+//
+// This function peels both layers when present.
+//
 // If not sandboxed, it returns the values as-is.
 func unwrapSandbox(t *testing.T, binary string, args []string) (innerBinary string, innerArgs []string) {
 	t.Helper()
 	if runtime.GOOS == "darwin" && binary == "/usr/bin/sandbox-exec" {
-		// args: [sandbox-exec, -f, <profile>, <inner-binary>, <inner-args...>]
 		if len(args) < 4 {
 			t.Fatalf("sandbox-exec args too short: %v", args)
 		}
 		return args[3], args[3:]
 	}
-	// Check for bwrap (Linux)
 	if strings.HasSuffix(binary, "/bwrap") || binary == "bwrap" {
-		// args: [bwrap, <bwrap-flags...>, --, <inner-binary>, <inner-args...>]
-		for i, a := range args {
-			if a == "--" && i+1 < len(args) {
-				return args[i+1], args[i+1:]
-			}
+		afterBwrap := splitAfterDashDash(args)
+		if afterBwrap == nil {
+			t.Fatalf("bwrap args missing -- separator: %v", args)
 		}
-		t.Fatalf("bwrap args missing -- separator: %v", args)
+		if len(afterBwrap) >= 2 && afterBwrap[1] == "__sandbox-apply" {
+			afterLL := splitAfterDashDash(afterBwrap)
+			if afterLL == nil {
+				t.Fatalf("nested landlock args missing -- separator: %v", afterBwrap)
+			}
+			return afterLL[0], afterLL
+		}
+		return afterBwrap[0], afterBwrap
 	}
-	// Check for Landlock re-exec pattern: <aide> __sandbox-apply <policy> -- <binary> <args...>
-	if len(args) >= 4 && args[1] == "__sandbox-apply" {
-		for i, a := range args {
-			if a == "--" && i+1 < len(args) {
-				return args[i+1], args[i+1:]
-			}
+	if len(args) >= 2 && args[1] == "__sandbox-apply" {
+		afterLL := splitAfterDashDash(args)
+		if afterLL == nil {
+			t.Fatalf("landlock args missing -- separator: %v", args)
 		}
-		t.Fatalf("landlock args missing -- separator: %v", args)
+		return afterLL[0], afterLL
 	}
 	return binary, args
+}
+
+// splitAfterDashDash returns the slice of elements after the first "--" sentinel,
+// or nil when no "--" is present (or it is the last element).
+func splitAfterDashDash(args []string) []string {
+	for i, a := range args {
+		if a == "--" && i+1 < len(args) {
+			return args[i+1:]
+		}
+	}
+	return nil
 }
 
 // envValue looks up a key in a KEY=VALUE slice.
@@ -714,6 +735,7 @@ func TestYoloArgs_UnsupportedAgent(t *testing.T) {
 }
 
 func TestLauncher_YoloInjectsFlag(t *testing.T) {
+	requireClaudeHome(t)
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 
@@ -1038,6 +1060,7 @@ func TestLaunch_ShowInfoFalse(t *testing.T) {
 }
 
 func TestLauncher_ConfigYoloEnabled(t *testing.T) {
+	requireClaudeHome(t)
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 
@@ -1090,6 +1113,7 @@ yolo: true
 }
 
 func TestLauncher_NoYoloOverridesConfigYolo(t *testing.T) {
+	requireClaudeHome(t)
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 
@@ -1139,6 +1163,7 @@ yolo: true
 }
 
 func TestLauncher_NoYoloOverridesCliYolo(t *testing.T) {
+	requireClaudeHome(t)
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 
@@ -1243,6 +1268,7 @@ func TestResolveEffectiveYolo(t *testing.T) {
 }
 
 func TestLauncher_YoloWarningContent(t *testing.T) {
+	requireClaudeHome(t)
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 
@@ -1307,6 +1333,7 @@ yolo: true
 }
 
 func TestLauncher_ContextLevelYolo(t *testing.T) {
+	requireClaudeHome(t)
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 

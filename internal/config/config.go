@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -99,6 +100,7 @@ func normalizeMinimal(cfg *Config) *Config {
 			mcpList = append(mcpList, k)
 		}
 	}
+	sort.Strings(mcpList)
 	return &Config{
 		Agents: map[string]AgentDef{
 			agentName: {Binary: agentName},

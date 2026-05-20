@@ -45,8 +45,8 @@ mcp_servers: [git, context7]
 	if ctx.Secret != "personal" {
 		t.Errorf("expected secret 'personal', got %q", ctx.Secret)
 	}
-	if len(ctx.MCPServers) != 2 || ctx.MCPServers[0] != "git" || ctx.MCPServers[1] != "context7" {
-		t.Errorf("expected mcp_servers [git, context7], got %v", ctx.MCPServers)
+	if len(ctx.MCPServers) != 2 || ctx.MCPServers[0] != "context7" || ctx.MCPServers[1] != "git" {
+		t.Errorf("expected mcp_servers [context7, git] (sorted), got %v", ctx.MCPServers)
 	}
 }
 

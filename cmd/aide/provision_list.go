@@ -268,13 +268,16 @@ func runMCPList(out io.Writer, contextName string) error {
 		return err
 	}
 
+	managedItems := map[string]provision.ManagedItem{}
+	if cs, ok := env.state.Contexts[env.contextName]; ok && cs != nil {
+		managedItems = cs.MCPServers
+	}
 	installed := map[string]provision.MCPServer{}
 	if env.prov.SupportsMCP() {
-		handler := env.prov.MCPHandler(env.provCtx)
-		if handler != nil {
-			if got, _, err := handler.Read(env.prov.MCPConfigPath(env.provCtx)); err == nil {
-				installed = got
-			}
+		names := provision.MCPQueryNames(desired.MCPServers, managedItems)
+		got, err := provision.ReadInstalledMCP(env.prov, env.provCtx, names)
+		if err == nil {
+			installed = got
 		}
 	}
 	managed := managedMCPNames(env.state, env.contextName)

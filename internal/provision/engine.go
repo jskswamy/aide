@@ -24,11 +24,19 @@ type ApplyResult struct {
 // failure the engine rolls back via the journal and returns the error.
 // On success it returns the result; the caller persists state.
 func Apply(prov Provisioner, plan Plan, opts ApplyOptions) (ApplyResult, error) {
+	// MCP path: prefer CLI-driven MCPInstaller (claude) over the file-
+	// based MCPHandler (gemini/copilot/codex). Test overrides via
+	// opts.MCPHandler still win — that channel is unchanged.
 	var handler MCPHandler
+	var installer MCPInstaller
 	if opts.MCPHandler != nil {
 		handler = opts.MCPHandler
 	} else if prov.SupportsMCP() {
-		handler = prov.MCPHandler(plan.Context)
+		if mi, ok := prov.(MCPInstaller); ok {
+			installer = mi
+		} else {
+			handler = prov.MCPHandler(plan.Context)
+		}
 	}
 
 	var res ApplyResult
@@ -135,9 +143,17 @@ func Apply(prov Provisioner, plan Plan, opts ApplyOptions) (ApplyResult, error) 
 				_ = j.Rollback()
 				return res, fmt.Errorf("capability mismatch: agent %q does not support MCP (declared server: %q)", prov.Name(), op.Name)
 			}
+			if installer != nil {
+				if err := applyMCPInstallerOp(installer, plan.Context, op, j); err != nil {
+					_ = j.Rollback()
+					return res, err
+				}
+				res.Performed++
+				continue
+			}
 			if handler == nil {
 				_ = j.Rollback()
-				return res, fmt.Errorf("provision: driver %q returned nil MCPHandler", prov.Name())
+				return res, fmt.Errorf("provision: driver %q returned nil MCPHandler and does not implement MCPInstaller", prov.Name())
 			}
 			path := prov.MCPConfigPath(plan.Context)
 			prev, _, err := handler.Read(path)
@@ -165,6 +181,51 @@ func Apply(prov Provisioner, plan Plan, opts ApplyOptions) (ApplyResult, error) 
 	}
 
 	return res, nil
+}
+
+// applyMCPInstallerOp dispatches a single MCP op via the CLI-driven
+// MCPInstaller path. The journal records the inverse op so any later
+// failure in the same plan can roll back. UninstallMCPServer is
+// expected to tolerate already-absent names (per the interface
+// contract), so journal replay won't fail if the install never landed.
+func applyMCPInstallerOp(installer MCPInstaller, ctx Context, op Op, j *Journal) error {
+	switch op.OpKind {
+	case OpInstall, OpUpdate:
+		// For Update, capture the previous server so rollback restores
+		// it rather than leaving the entry missing.
+		var prev *MCPServer
+		if op.OpKind == OpUpdate && op.OldMCP != nil {
+			p := *op.OldMCP
+			prev = &p
+		}
+		if err := installer.InstallMCPServer(ctx, *op.MCP); err != nil {
+			return fmt.Errorf("install MCP %q: %w", op.Name, err)
+		}
+		name := op.Name
+		j.Record(func() error {
+			if prev != nil {
+				return installer.InstallMCPServer(ctx, *prev)
+			}
+			return installer.UninstallMCPServer(ctx, name)
+		})
+	case OpUninstall:
+		// Capture current entry (best-effort) so rollback restores it.
+		var prev *MCPServer
+		if op.OldMCP != nil {
+			p := *op.OldMCP
+			prev = &p
+		}
+		if err := installer.UninstallMCPServer(ctx, op.Name); err != nil {
+			return fmt.Errorf("uninstall MCP %q: %w", op.Name, err)
+		}
+		if prev != nil {
+			p := *prev
+			j.Record(func() error { return installer.InstallMCPServer(ctx, p) })
+		}
+	case OpAdopt, OpIgnore:
+		// handled by the outer switch; unreachable here
+	}
+	return nil
 }
 
 func copyMCPMap(in map[string]MCPServer) map[string]MCPServer {

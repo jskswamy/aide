@@ -663,8 +663,14 @@ mcp:
 ### Aggregator Support
 
 If an aggregator is configured (e.g., 1mcp), aide generates aggregator config
-and points the agent at it. If no aggregator, aide generates native per-agent
-MCP config (e.g., `.mcp.json` for Claude).
+and points the agent at it. If no aggregator, aide installs servers through
+each agent's own `mcp` subcommand: `claude mcp add-json --scope user`,
+`gemini mcp add --scope user`, `codex mcp add`, and so on. The CLI route
+keeps aide insulated from each agent's on-disk format (Claude's `type: http`
+discriminator, Gemini's `~/.gemini/settings.json` schema, Codex's TOML
+layout) — schema drift in any one agent doesn't break aide. Drivers expose
+this via the `MCPInstaller` interface; agents without a non-interactive
+`mcp` CLI fall back to the file-based `MCPHandler` path.
 
 ```yaml
 mcp:

@@ -55,16 +55,27 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 		installedPlugins = got
 	}
 
+	managedMCPItems := map[string]provision.ManagedItem{}
+	if cs, ok := env.state.Contexts[env.contextName]; ok && cs != nil {
+		managedMCPItems = cs.MCPServers
+	}
 	installedMCP := map[string]provision.MCPServer{}
 	if env.prov.SupportsMCP() {
-		handler := env.prov.MCPHandler(env.provCtx)
-		if handler != nil {
-			got, _, err := handler.Read(env.prov.MCPConfigPath(env.provCtx))
-			if err != nil {
-				return fmt.Errorf("reading MCP config: %w", err)
-			}
-			installedMCP = got
+		// Adopt's MCP discovery is bounded for CLI-driven drivers
+		// (claude/gemini/codex/copilot) — there's no enumerate-all over
+		// the agent's CLI surface that distinguishes aide-relevant
+		// entries from plugin-bundled or built-in ones. For those
+		// drivers, adopt won't surface manually-added MCP servers; the
+		// user can add them to config.yaml directly. File-based handlers
+		// (none today, but reserved for future agents without a CLI)
+		// keep their full enumeration via ReadInstalledMCP's handler
+		// branch.
+		names := provision.MCPQueryNames(desired.MCPServers, managedMCPItems)
+		got, err := provision.ReadInstalledMCP(env.prov, env.provCtx, names)
+		if err != nil {
+			return err
 		}
+		installedMCP = got
 	}
 
 	managedPlugins := managedPluginNames(env.state, env.contextName)

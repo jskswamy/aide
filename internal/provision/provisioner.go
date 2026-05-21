@@ -106,11 +106,48 @@ type Provisioner interface {
 	RemoveMarketplace(ctx Context, name string) error
 }
 
+// MCPInstaller is the CLI-driven counterpart to MCPHandler. Drivers
+// implement this when the agent has its own `mcp add/remove/list` CLI
+// surface that aide should drive — same pattern as
+// InstallPlugin/UninstallPlugin/InstalledPlugins. The engine prefers
+// MCPInstaller over MCPHandler when both are available.
+//
+// Why both? File-edit drivers (gemini, copilot, codex) work fine with
+// MCPHandler because their config formats are stable and aide owns the
+// reconcile. Claude, by contrast, exposes scope/user/project semantics
+// (`--scope user|local|project`) and validates entries beyond what's
+// in the JSON on disk — `type: http` is required, file paths drift
+// across versions. Driving claude's own CLI keeps aide insulated from
+// those internals, exactly like InstallPlugin/UninstallPlugin does for
+// plugins.
+type MCPInstaller interface {
+	// InstalledMCPServers reports which of names are currently
+	// installed under the scope this driver manages. Implementations
+	// should ignore entries from other scopes (e.g. project-scope
+	// `.mcp.json`, plugin-bundled, built-in remotes) so aide's diff
+	// stays focused on what aide actually owns.
+	//
+	// The caller passes a bounded name list — typically
+	// (desired ∪ managed) — so drivers needn't enumerate every server
+	// the agent knows about. Names not installed simply omit from the
+	// returned map; an error is reserved for actual failure (binary
+	// missing returns (empty, nil), parallel to InstalledPlugins).
+	InstalledMCPServers(ctx Context, names []string) (map[string]MCPServer, error)
+
+	// InstallMCPServer registers s in the agent. Must be idempotent
+	// for rollback safety (re-running after a partial failure is OK).
+	InstallMCPServer(ctx Context, s MCPServer) error
+
+	// UninstallMCPServer removes name. Must succeed even if name is
+	// already absent so the journal can replay without failing.
+	UninstallMCPServer(ctx Context, name string) error
+}
+
 // MCPHandler is the per-format MCP read/write interface. Each driver
 // picks an implementation matching its agent's config-file format
-// (JSON-flat for Gemini/Copilot, JSON-nested for Claude user-scope,
-// TOML for Codex, and so on). Implementations live in
-// internal/provision/mcp/.
+// (JSON-flat for Gemini/Copilot, TOML for Codex, and so on).
+// Implementations live in internal/provision/mcp/. Claude uses the
+// CLI-driven MCPInstaller path instead.
 type MCPHandler interface {
 	// Read parses the MCP config at path. Returns the full server
 	// map, the set of keys aide owns (per the _aide_managed marker),

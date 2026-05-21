@@ -7,11 +7,9 @@ package gemini
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/provision"
-	"github.com/jskswamy/aide/internal/provision/mcp"
 )
 
 const agentName = "gemini"
@@ -43,16 +41,16 @@ func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
 }
 
-// MCPConfigPath returns ~/.gemini/settings.json.
-func (*Driver) MCPConfigPath(ctx provision.Context) string {
-	return filepath.Join(ctx.HomeDir, ".gemini", "settings.json")
-}
+// MCPConfigPath returns "" — see MCPHandler. Aide drives gemini's
+// `gemini mcp add/remove/list` CLI via MCPInstaller (mcp.go) rather
+// than editing ~/.gemini/settings.json directly. The engine prefers
+// MCPInstaller when both are available; this stub keeps the
+// Provisioner interface satisfied without exposing a file path
+// nobody should rely on.
+func (*Driver) MCPConfigPath(_ provision.Context) string { return "" }
 
-// MCPHandler returns the JSON-flat handler (Gemini stores MCP at the
-// top-level `mcpServers` key).
-func (*Driver) MCPHandler(_ provision.Context) provision.MCPHandler {
-	return mcp.NewJSONFlat()
-}
+// MCPHandler returns nil — see MCPConfigPath.
+func (*Driver) MCPHandler(_ provision.Context) provision.MCPHandler { return nil }
 
 // InstalledPlugins shells out to `gemini extensions list` and parses
 // its output. The list output is one extension per line, with the

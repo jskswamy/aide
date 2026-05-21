@@ -55,12 +55,13 @@ func TestGeminiCapabilities(t *testing.T) {
 	}
 }
 
-func TestGeminiMCPConfigPath(t *testing.T) {
+// TestGeminiMCPConfigPathEmpty pins that gemini is CLI-driven for MCP
+// (MCPInstaller in mcp.go). MCPConfigPath must stay empty so any
+// regression that tries to edit settings.json directly fails loudly.
+func TestGeminiMCPConfigPathEmpty(t *testing.T) {
 	d := gemini.New(&fakeRunner{})
-	got := d.MCPConfigPath(provision.Context{HomeDir: "/home/u"})
-	want := "/home/u/.gemini/settings.json"
-	if got != want {
-		t.Errorf("path = %q, want %q", got, want)
+	if got := d.MCPConfigPath(provision.Context{HomeDir: "/home/u"}); got != "" {
+		t.Errorf("MCPConfigPath should be empty for CLI-driven driver, got %q", got)
 	}
 }
 

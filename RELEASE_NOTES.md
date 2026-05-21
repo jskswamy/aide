@@ -29,7 +29,63 @@
   as cloning a hostile remote — but the upgrade is mechanical and
   the patched release is API-compatible.
 
+### ✨ Architecture
+
+- **MCP management goes through each agent's own CLI, not direct
+  config-file edits.** New `provision.MCPInstaller` interface lets
+  drivers implement `InstalledMCPServers` / `InstallMCPServer` /
+  `UninstallMCPServer` against the agent's native `mcp` subcommand,
+  the same way plugin install/uninstall has always worked. The
+  engine prefers `MCPInstaller` over the legacy file-handler
+  (`MCPHandler`) when both are available, so callers transparently
+  pick up the new path.
+
+  Three drivers migrate to the CLI path in this release:
+
+  - **claude** — uses `claude mcp add-json --scope user`, `claude mcp
+    remove <name> -s user`, and per-name `claude mcp get <name>` to
+    populate the installed set. Claude requires `"type": "http"`
+    alongside HTTP URLs in `~/.claude.json` and silently drops
+    entries that omit it; routing through `add-json` keeps aide on
+    the same schema claude's own CLI uses, so version drift no
+    longer breaks aide. `MCPConfigPath` and `MCPHandler` now return
+    empty/nil — direct edits of `~/.claude.json` (or the previous
+    project-scope `.mcp.json`) are gone.
+
+  - **gemini** — uses `gemini mcp add --scope user --transport ...`
+    and `gemini mcp remove <name> -s user`. `gemini mcp list`
+    output is parsed for the installed set (gemini has no
+    per-name `get` subcommand). Env vars are not exposed in
+    list output, so stdio entries with env may show a benign
+    re-install on each sync until upstream surfaces them.
+
+  - **codex** — uses `codex mcp add <name> --url ...` (HTTP) or
+    `codex mcp add <name> --env K=V -- <command> [args...]`
+    (stdio), and per-name `codex mcp get <name> --json` for the
+    installed set. Codex's `--json` schema was derived from its
+    public reference, not exercised against a live binary in this
+    session; verify if you're running codex sync in production.
+
+  **copilot** stays on the file-handler path for now: GitHub's
+  Copilot CLI documents an interactive `/mcp add` REPL command
+  only, with no confirmed non-interactive subcommand at this
+  release.
+
 ### 🐞 Bug Fixes
+
+- **1mcp (and other URL-based MCP servers) no longer fail silently
+  in Claude.** Previously, `aide sync` for the claude agent wrote
+  `<project>/.mcp.json` (project scope), which requires per-project
+  approval inside Claude before entries appear in `claude mcp list`
+  or connect. Shared aggregators like `1mcp`, declared once at the
+  top level of `config.yaml` and intended to be available
+  everywhere, were unreachable without visiting every matched
+  directory and accepting the prompt. With the CLI-driven refactor
+  above, aide installs to user scope via `claude mcp add-json
+  --scope user`, so a single `aide sync` suffices and `claude mcp
+  list` shows the entry immediately. Existing per-project
+  `.mcp.json` files written by aide remain on disk as orphans;
+  delete them manually after the upgrade.
 
 - **Deterministic order for minimal-format `mcp_servers`.** When
   `config.yaml` used the legacy list-form syntax

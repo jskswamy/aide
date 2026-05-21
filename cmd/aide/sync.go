@@ -96,20 +96,18 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 			installed.Marketplaces[m.Key] = m
 		}
 	}
-	if env.prov.SupportsMCP() {
-		handler := env.prov.MCPHandler(env.provCtx)
-		if handler != nil {
-			got, _, err := handler.Read(env.prov.MCPConfigPath(env.provCtx))
-			if err != nil {
-				return fmt.Errorf("reading MCP config: %w", err)
-			}
-			installed.MCPServers = got
-		}
-	}
-
 	var managedCtxState provision.ContextState
 	if cs, ok := env.state.Contexts[env.contextName]; ok && cs != nil {
 		managedCtxState = *cs
+	}
+
+	if env.prov.SupportsMCP() {
+		names := provision.MCPQueryNames(desired.MCPServers, managedCtxState.MCPServers)
+		got, err := provision.ReadInstalledMCP(env.prov, env.provCtx, names)
+		if err != nil {
+			return err
+		}
+		installed.MCPServers = got
 	}
 
 	plan := provision.ComputePlan(env.provCtx, desired, installed, managedCtxState)

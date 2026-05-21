@@ -128,3 +128,55 @@ func (f *FakeProvisioner) RemoveMarketplace(_ provision.Context, name string) er
 	f.Called = append(f.Called, "remove-marketplace:"+name)
 	return nil
 }
+
+// FakeProvisionerWithMCPCLI extends FakeProvisioner with the
+// MCPInstaller interface — i.e. CLI-driven MCP management. Use this
+// in tests that exercise the engine's MCPInstaller dispatch
+// (claude/gemini/codex pattern). FakeProvisioner alone keeps the
+// older file-handler path so existing tests are unaffected.
+type FakeProvisionerWithMCPCLI struct {
+	*FakeProvisioner
+
+	// State the driver reports back when InstalledMCPServers is queried.
+	InstalledMCP map[string]provision.MCPServer
+
+	// Error injection for the three MCPInstaller methods.
+	InstalledMCPErr error
+	InstallMCPErr   error
+	UninstallMCPErr error
+
+	// Per-method recording.
+	InstalledMCPQuery [][]string // each call's `names` slice
+	InstallMCPCalls   []provision.MCPServer
+	UninstallMCPCalls []string
+}
+
+// InstalledMCPServers implements provision.MCPInstaller.
+func (f *FakeProvisionerWithMCPCLI) InstalledMCPServers(_ provision.Context, names []string) (map[string]provision.MCPServer, error) {
+	cp := append([]string{}, names...)
+	f.InstalledMCPQuery = append(f.InstalledMCPQuery, cp)
+	if f.InstalledMCPErr != nil {
+		return nil, f.InstalledMCPErr
+	}
+	out := map[string]provision.MCPServer{}
+	for _, n := range names {
+		if v, ok := f.InstalledMCP[n]; ok {
+			out[n] = v
+		}
+	}
+	return out, nil
+}
+
+// InstallMCPServer implements provision.MCPInstaller.
+func (f *FakeProvisionerWithMCPCLI) InstallMCPServer(_ provision.Context, s provision.MCPServer) error {
+	f.InstallMCPCalls = append(f.InstallMCPCalls, s)
+	f.Called = append(f.Called, "install-mcp:"+s.Key)
+	return f.InstallMCPErr
+}
+
+// UninstallMCPServer implements provision.MCPInstaller.
+func (f *FakeProvisionerWithMCPCLI) UninstallMCPServer(_ provision.Context, name string) error {
+	f.UninstallMCPCalls = append(f.UninstallMCPCalls, name)
+	f.Called = append(f.Called, "uninstall-mcp:"+name)
+	return f.UninstallMCPErr
+}

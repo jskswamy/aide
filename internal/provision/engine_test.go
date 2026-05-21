@@ -93,6 +93,68 @@ func TestApplyAddsMarketplaceBeforePlugin(t *testing.T) {
 	}
 }
 
+// TestApplyMCPInstallerDispatch pins the engine's preference: when a
+// driver implements MCPInstaller (claude/gemini/codex), install/
+// uninstall ops route through the CLI methods rather than the
+// file-handler path. This is the contract that lets aide stay
+// insulated from each agent's on-disk config format.
+func TestApplyMCPInstallerDispatch(t *testing.T) {
+	fp := &provisiontest.FakeProvisionerWithMCPCLI{
+		FakeProvisioner: &provisiontest.FakeProvisioner{
+			AgentName:      "claude",
+			SupportsMCPCfg: true,
+		},
+	}
+	desired := provision.Desired{
+		MCPServers: map[string]provision.MCPServer{
+			"1mcp": {Key: "1mcp", URL: "http://127.0.0.1:3050/mcp"},
+		},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "default", Agent: "claude"}, desired, provision.Installed{}, provision.ContextState{})
+	res, err := provision.Apply(fp, plan, provision.ApplyOptions{})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if res.Performed != 1 {
+		t.Errorf("performed = %d, want 1", res.Performed)
+	}
+	if len(fp.InstallMCPCalls) != 1 || fp.InstallMCPCalls[0].Key != "1mcp" {
+		t.Errorf("InstallMCPServer not invoked as expected: %v", fp.InstallMCPCalls)
+	}
+}
+
+// TestApplyMCPInstallerRollback pins rollback safety: when a later op
+// in the plan fails, the journal must replay the inverse MCP op
+// (UninstallMCPServer for an earlier install).
+func TestApplyMCPInstallerRollback(t *testing.T) {
+	fp := &provisiontest.FakeProvisionerWithMCPCLI{
+		FakeProvisioner: &provisiontest.FakeProvisioner{
+			AgentName:      "claude",
+			SupportsMCPCfg: true,
+			SupportsPlug:   true,
+			InstallErr:     errors.New("plugin failed"),
+		},
+	}
+	desired := provision.Desired{
+		MCPServers: map[string]provision.MCPServer{
+			"1mcp": {Key: "1mcp", URL: "http://localhost"},
+		},
+		Plugins: map[string]provision.Plugin{
+			"will-fail": {Key: "will-fail", Source: "marketplace", Name: "will-fail"},
+		},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "t", Agent: "claude"}, desired, provision.Installed{}, provision.ContextState{})
+	_, err := provision.Apply(fp, plan, provision.ApplyOptions{})
+	if err == nil {
+		t.Fatal("expected plugin install failure to bubble up")
+	}
+	// Rollback should have invoked the inverse of the successful MCP
+	// install — i.e. UninstallMCPServer("1mcp").
+	if len(fp.UninstallMCPCalls) != 1 || fp.UninstallMCPCalls[0] != "1mcp" {
+		t.Errorf("rollback did not invoke UninstallMCPServer: %v", fp.UninstallMCPCalls)
+	}
+}
+
 func TestSyncCapabilityMismatchErrors(t *testing.T) {
 	fp := &provisiontest.FakeProvisioner{AgentName: "aider", SupportsPlug: false}
 	desired := provision.Desired{

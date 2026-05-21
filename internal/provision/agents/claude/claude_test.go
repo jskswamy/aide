@@ -74,11 +74,16 @@ func TestClaudeUninstallMissingTolerated(t *testing.T) {
 	}
 }
 
-func TestClaudeMCPConfigPathUsesProjectRoot(t *testing.T) {
+// TestClaudeMCPConfigPathEmpty pins the contract that claude is
+// CLI-driven for MCP: the file path is intentionally unset so any
+// regression that tries to fall back to file-edit code fails loudly.
+func TestClaudeMCPConfigPathEmpty(t *testing.T) {
 	d := claude.New(&fakeRunner{})
-	got := d.MCPConfigPath(provision.Context{ProjectRoot: "/tmp/proj", HomeDir: "/home/u"})
-	if got != "/tmp/proj/.mcp.json" {
-		t.Errorf("MCPConfigPath = %q, want /tmp/proj/.mcp.json", got)
+	if got := d.MCPConfigPath(provision.Context{ProjectRoot: "/tmp/proj", HomeDir: "/home/u"}); got != "" {
+		t.Errorf("MCPConfigPath should be empty for CLI-driven driver, got %q", got)
+	}
+	if h := d.MCPHandler(provision.Context{HomeDir: "/home/u"}); h != nil {
+		t.Errorf("MCPHandler should be nil for CLI-driven driver, got %T", h)
 	}
 }
 

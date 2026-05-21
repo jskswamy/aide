@@ -14,12 +14,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/provision"
-	"github.com/jskswamy/aide/internal/provision/mcp"
 )
 
 const agentName = "claude"
@@ -54,38 +51,20 @@ func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
 }
 
-// MCPConfigPath returns the project-scope `.mcp.json` at the context's
-// project root. Project scope is the default for aide so contexts
-// stay self-contained; user-scope MCP at ~/.claude.json can be added
-// later by switching the handler shape.
-func (*Driver) MCPConfigPath(ctx provision.Context) string {
-	root := projectRoot(ctx)
-	if root == "" {
-		// Fallback: write under HomeDir to avoid blowing up.
-		return filepath.Join(ctx.HomeDir, ".mcp.json")
-	}
-	return filepath.Join(root, ".mcp.json")
-}
+// MCPConfigPath returns "" — Claude's user-scope MCP store
+// (`~/.claude.json` top-level `mcpServers`, with `type: http`
+// discriminators and per-version path drift) is not safe to edit
+// directly. Aide drives the official `claude mcp add-json` /
+// `claude mcp remove` / `claude mcp get` CLI surface via the
+// MCPInstaller interface implemented in mcp.go. The engine's
+// dispatch (provision.Apply, provision.ReadInstalledMCP) prefers
+// MCPInstaller, so this path is never consulted; returning ""
+// makes that explicit if a future caller tries.
+func (*Driver) MCPConfigPath(_ provision.Context) string { return "" }
 
-// MCPHandler returns the Claude JSON handler. Project root comes from
-// the resolved context; the handler will autodetect flat vs nested
-// shape.
-func (*Driver) MCPHandler(ctx provision.Context) provision.MCPHandler {
-	return mcp.NewClaudeJSON(projectRoot(ctx))
-}
-
-// projectRoot returns ctx.ProjectRoot, falling back to os.Getwd() so
-// older callers (and tests that build a bare Context) still work.
-func projectRoot(ctx provision.Context) string {
-	if ctx.ProjectRoot != "" {
-		return ctx.ProjectRoot
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	return wd
-}
+// MCPHandler returns nil — see MCPConfigPath. The Provisioner
+// interface still requires the method, so we keep the symbol.
+func (*Driver) MCPHandler(_ provision.Context) provision.MCPHandler { return nil }
 
 // claudePluginEntry mirrors the shape of one element from
 // `claude plugin list --json`. The `id` field is `<name>@<marketplace>`.

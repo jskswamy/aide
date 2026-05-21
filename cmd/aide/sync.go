@@ -125,12 +125,16 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 		}
 
 		if !yes {
-			// Interactive per-item adoption of unmanaged items is a
-			// known gap; for now, bail and ask the user to run
-			// `aide adopt`.
-			// TODO(provision): replace this guard with a real prompt UX.
-			if hasUnmanaged(plan) {
-				return fmt.Errorf("unmanaged plugins/MCP servers detected; run `aide adopt` first or rerun with --yes to skip them")
+			// Unmanaged items used to hard-bail here ("run aide adopt
+			// first"), which forced an unrelated workflow whenever a
+			// context had plugins/MCPs aide didn't know about. The
+			// OpIgnore path is genuinely a no-op (engine.go skips it),
+			// so the gate added friction without preventing harm. Now
+			// we just inform and let the prompt cover consent; users
+			// who want the items managed can still run `aide adopt`
+			// separately.
+			if n := unmanagedCount(plan); n > 0 {
+				fmt.Fprintf(out, "\nNote: %d unmanaged item(s) will be left alone. Run `aide adopt` to bring them under aide.\n", n)
 			}
 			fmt.Fprint(out, "\nApply this plan? [y/N]: ")
 			reader := bufio.NewReader(in)
@@ -202,13 +206,20 @@ func hasPluginMutations(plan provision.Plan) bool {
 	return false
 }
 
-func hasUnmanaged(plan provision.Plan) bool {
+func hasUnmanaged(plan provision.Plan) bool { return unmanagedCount(plan) > 0 }
+
+// unmanagedCount counts OpIgnore ops — items installed in the agent
+// that aide neither declares nor manages. The engine treats them as
+// no-ops; the sync prompt surfaces the count so users know aide saw
+// them and chose to leave them alone.
+func unmanagedCount(plan provision.Plan) int {
+	n := 0
 	for _, op := range plan.Ops {
 		if op.OpKind == provision.OpIgnore {
-			return true
+			n++
 		}
 	}
-	return false
+	return n
 }
 
 func countOps(plan provision.Plan) (installs, updates, uninstalls int) {

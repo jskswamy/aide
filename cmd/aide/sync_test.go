@@ -81,6 +81,44 @@ func TestSync_Yes_AppliesAndUpdatesState(t *testing.T) {
 	}
 }
 
+// TestSync_UnmanagedDoesNotBlockInteractive pins the relaxed gate:
+// plain `aide sync` (no --yes) with unmanaged items in the agent
+// must NOT hard-error. Earlier behaviour was to bail with "run aide
+// adopt first", which forced an unrelated workflow whenever a
+// context had any plugin/MCP aide didn't know about. The OpIgnore
+// items are no-ops in Apply, so blocking on them added friction
+// without preventing harm.
+func TestSync_UnmanagedDoesNotBlockInteractive(t *testing.T) {
+	fakeProvReset(t)
+	theFakeProv.RequireTTY = false
+	setupProvisionConfig(t,
+		[]string{"linear"}, nil,
+		map[string]string{"linear": "linear@1.2"}, nil,
+	)
+	// Inject an installed-but-undeclared plugin so the plan contains
+	// an OpIgnore op alongside the install for "linear". "linear" is
+	// declared but NOT in InstalledPluginList → plan adds install op.
+	// "stranger" is in InstalledPluginList but NOT declared → plan
+	// adds OpIgnore. Both together exercise the relaxed gate.
+	theFakeProv.InstalledPluginList = []provision.Plugin{
+		{Key: "stranger", Name: "stranger@x"},
+	}
+	// Answer "y" at the prompt to actually apply.
+	out, err := runSyncCmd(t, "y\n", "--context", "work")
+	if err != nil {
+		t.Fatalf("execute should not error on unmanaged items, got: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "unmanaged item") {
+		t.Errorf("expected unmanaged-items note in output:\n%s", out)
+	}
+	if strings.Contains(out, "run `aide adopt` first") {
+		t.Errorf("hard-bail wording should be gone:\n%s", out)
+	}
+	if !strings.Contains(out, "Sync complete") {
+		t.Errorf("apply should run after the prompt; output:\n%s", out)
+	}
+}
+
 func TestSync_RequiresTTY_BlocksYes(t *testing.T) {
 	fakeProvReset(t)
 	theFakeProv.RequireTTY = true

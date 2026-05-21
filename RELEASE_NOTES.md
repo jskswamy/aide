@@ -73,6 +73,20 @@
 
 ### 🐞 Bug Fixes
 
+- **`aide sync` no longer hard-bails on unmanaged plugins/MCP
+  servers.** Previously, a plain `aide sync` on a context whose
+  agent already had any plugin or MCP server aide didn't know
+  about would fail with `unmanaged plugins/MCP servers detected;
+  run `aide adopt` first or rerun with --yes`. That forced an
+  unrelated workflow (`aide adopt`) whenever installs touched a
+  context with pre-existing tooling. The block didn't prevent
+  any actual harm — unmanaged items resolve to `OpIgnore`, which
+  the engine genuinely skips — so it only added friction. Sync
+  now prints `Note: N unmanaged item(s) will be left alone. Run
+  `aide adopt` to bring them under aide.` before the existing
+  `[y/N]` prompt and proceeds normally. Behaviour with `--yes`
+  is unchanged.
+
 - **1mcp (and other URL-based MCP servers) no longer fail silently
   in Claude.** Previously, `aide sync` for the claude agent wrote
   `<project>/.mcp.json` (project scope), which requires per-project

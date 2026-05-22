@@ -31,6 +31,7 @@ type GuardResult struct {
 	Rules     []Rule
 	Protected []string   // paths the agent must not access (deny wins)
 	Readable  []string   // paths the agent may read
+	Writable  []string   // paths the agent may read and write
 	Skipped   []string   // "~/.config/op not found" etc.
 	Overrides []Override // env var overrides detected
 	Hints     []string   // user-facing suggestions (e.g. "enable 'ssh' capability for SSH push")

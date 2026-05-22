@@ -210,8 +210,10 @@ type GrantedPathSet struct {
 //   - Guard Protected paths → Denied (deny wins over any allow).
 //   - Explicit policy.ExtraDenied → also Denied.
 //   - policy.ProjectRoot, RuntimeDir, TempDir, ExtraWritable → Writable.
+//   - Guard Writable paths (incl. the agent module's Linux grants routed
+//     through EvaluateGuards) → Writable.
 //   - policy.ExtraReadable → Readable.
-//   - Guard Allowed paths (explicit exceptions) → not added to Denied.
+//   - Guard Readable paths → Readable.
 //   - All paths are resolved via filepath.EvalSymlinks before use.
 func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	homeDir, _ := os.UserHomeDir()
@@ -262,26 +264,20 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 		}
 	}
 
-	// Linux-only paths from the active AgentModule. agentLinuxPaths is a stub
-	// on non-Linux builds (see agent_paths_{linux,other}.go); DD-28 keeps this
-	// strictly AgentModule-sourced — guards never bypass deny-wins via this.
-	ctx := policy.ToSeatbeltContext(homeDir)
-	linuxReadableExtra := make(map[string]bool)
-	linuxWritableExtra := make(map[string]bool)
-	readable, writable := agentLinuxPaths(policy.AgentModule, ctx)
-	for _, p := range readable {
-		if resolved := resolveSymlink(p); resolved != "" {
-			linuxReadableExtra[resolved] = true
-			if origin[resolved] == "" {
-				origin[resolved] = "agent:linux-readable"
-			}
-		}
-	}
-	for _, p := range writable {
-		if resolved := resolveSymlink(p); resolved != "" {
-			linuxWritableExtra[resolved] = true
-			if origin[resolved] == "" {
-				origin[resolved] = "agent:linux-writable"
+	// Collect writable paths from guard Writable lists. The agent module's
+	// Linux path grants flow through EvaluateGuards as a synthetic guard
+	// result, so they land here via the same pipeline as any other
+	// path-vouching evaluator — origin tracking, deny-wins, and conflict
+	// detection all apply uniformly.
+	writableExtra := make(map[string]bool)
+	for _, gr := range guardResults {
+		for _, p := range gr.Writable {
+			resolved := resolveSymlink(p)
+			if resolved != "" {
+				writableExtra[resolved] = true
+				if origin[resolved] == "" {
+					origin[resolved] = gr.Name + ":writable"
+				}
 			}
 		}
 	}
@@ -306,7 +302,7 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 			}
 		}
 	}
-	for p := range linuxWritableExtra {
+	for p := range writableExtra {
 		writableSet[p] = true
 	}
 
@@ -332,9 +328,6 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 		}
 	}
 	for p := range readableExtra {
-		readableSet[p] = true
-	}
-	for p := range linuxReadableExtra {
 		readableSet[p] = true
 	}
 
@@ -401,6 +394,19 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 		result := policy.AgentModule.Rules(ctx)
 		result.Name = policy.AgentModule.Name()
 		results = append(results, result)
+
+		// Agent module Linux-specific path grants flow through the same
+		// pipeline as guard results so audit (OriginGuard), conflict
+		// detection, and deny-wins all apply uniformly. agentLinuxPaths
+		// is a stub on non-Linux builds.
+		linuxReadable, linuxWritable := agentLinuxPaths(policy.AgentModule, ctx)
+		if len(linuxReadable) > 0 || len(linuxWritable) > 0 {
+			results = append(results, seatbelt.GuardResult{
+				Name:     policy.AgentModule.Name() + ":linux",
+				Readable: linuxReadable,
+				Writable: linuxWritable,
+			})
+		}
 	}
 	return results
 }

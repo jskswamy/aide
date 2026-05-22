@@ -201,9 +201,16 @@ func policyToJSON(p Policy) landlockPolicyJSON {
 	}
 	homeDir, _ := os.UserHomeDir()
 	ctx := p.ToSeatbeltContext(homeDir)
-	if lpp, ok := p.AgentModule.(seatbelt.LinuxPathProvider); ok {
-		j.AgentReadable = lpp.LinuxReadable(ctx)
-		j.AgentWritable = lpp.LinuxWritable(ctx)
+	if p.AgentModule != nil {
+		// Re-evaluate the module so we can serialise its Linux-specific
+		// path grants for the re-exec child (which receives AgentModule=nil
+		// after policyFromJSON). The Rules() call is the same one
+		// EvaluateGuards already makes in the parent; the macOS Rules
+		// slice is intentionally discarded — the child enforces via
+		// Landlock, not Seatbelt.
+		moduleResult := p.AgentModule.Rules(ctx)
+		j.AgentReadable = moduleResult.Readable
+		j.AgentWritable = moduleResult.Writable
 	}
 	if lap, ok := p.AgentModule.(seatbelt.LinuxAtomicWriteProvider); ok {
 		j.AgentAtomicWritableFiles = lap.LinuxAtomicWritableFiles(ctx)

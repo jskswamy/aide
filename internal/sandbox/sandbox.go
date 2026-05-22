@@ -394,19 +394,6 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 		result := policy.AgentModule.Rules(ctx)
 		result.Name = policy.AgentModule.Name()
 		results = append(results, result)
-
-		// Agent module Linux-specific path grants flow through the same
-		// pipeline as guard results so audit (OriginGuard), conflict
-		// detection, and deny-wins all apply uniformly. agentLinuxPaths
-		// is a stub on non-Linux builds.
-		linuxReadable, linuxWritable := agentLinuxPaths(policy.AgentModule, ctx)
-		if len(linuxReadable) > 0 || len(linuxWritable) > 0 {
-			results = append(results, seatbelt.GuardResult{
-				Name:     policy.AgentModule.Name() + ":linux",
-				Readable: linuxReadable,
-				Writable: linuxWritable,
-			})
-		}
 	}
 	return results
 }

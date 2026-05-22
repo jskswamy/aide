@@ -31,105 +31,102 @@ func TestClaudeAgent_LinuxAtomicWritableFiles_DeclaresClaudeJSON(t *testing.T) {
 	}
 }
 
-func TestClaudeAgent_LinuxReadable(t *testing.T) {
+// TestClaudeAgent_LinuxReadablePathsInRules asserts the module's Linux readable
+// paths are returned via GuardResult.Readable (single-pipeline contract; no
+// separate LinuxPathProvider interface).
+func TestClaudeAgent_LinuxReadablePathsInRules(t *testing.T) {
 	mod := ClaudeAgent()
-	provider, ok := mod.(seatbelt.LinuxPathProvider)
-	if !ok {
-		t.Fatal("ClaudeAgent must implement seatbelt.LinuxPathProvider")
-	}
-	ctx := &seatbelt.Context{HomeDir: "/home/u"}
-	paths := provider.LinuxReadable(ctx)
+	ctx := &seatbelt.Context{HomeDir: "/home/u", GOOS: "linux"}
+	result := mod.Rules(ctx)
 
 	// ~/.claude.json must NOT appear — it is in LinuxAtomicWritableFiles and
 	// the overlay's --bind already grants read+write; a --ro-bind-try here
 	// would produce undefined mount-stacking behavior.
-	for _, p := range paths {
+	for _, p := range result.Readable {
 		if p == filepath.Join("/home/u", ".claude.json") {
-			t.Errorf("LinuxReadable: ~/.claude.json must not appear (it is in LinuxAtomicWritableFiles)")
+			t.Errorf("Readable: ~/.claude.json must not appear (it is in LinuxAtomicWritableFiles)")
 		}
 	}
 	// ~/.mcp.json must be readable.
 	mcpJSON := filepath.Join("/home/u", ".mcp.json")
 	found := false
-	for _, p := range paths {
+	for _, p := range result.Readable {
 		if p == mcpJSON {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("LinuxReadable: expected %q, got %v", mcpJSON, paths)
+		t.Errorf("Readable: expected %q, got %v", mcpJSON, result.Readable)
 	}
 }
 
-func TestClaudeAgent_LinuxWritable(t *testing.T) {
+// TestClaudeAgent_LinuxWritablePathsInRules asserts the module's Linux writable
+// paths are returned via GuardResult.Writable.
+func TestClaudeAgent_LinuxWritablePathsInRules(t *testing.T) {
 	mod := ClaudeAgent()
-	provider, ok := mod.(seatbelt.LinuxPathProvider)
-	if !ok {
-		t.Fatal("ClaudeAgent must implement seatbelt.LinuxPathProvider")
-	}
-	ctx := &seatbelt.Context{HomeDir: "/home/u"}
-	paths := provider.LinuxWritable(ctx)
+	ctx := &seatbelt.Context{HomeDir: "/home/u", GOOS: "linux"}
+	result := mod.Rules(ctx)
 
-	if len(paths) == 0 {
-		t.Fatal("LinuxWritable: expected at least one path, got none")
+	if len(result.Writable) == 0 {
+		t.Fatal("Writable: expected at least one path, got none")
 	}
 	// ~/.claude must be writable so the agent can persist session state.
 	claudeDir := filepath.Join("/home/u", ".claude")
 	found := false
-	for _, p := range paths {
+	for _, p := range result.Writable {
 		if p == claudeDir {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("LinuxWritable: expected %q in paths, got %v", claudeDir, paths)
+		t.Errorf("Writable: expected %q in paths, got %v", claudeDir, result.Writable)
 	}
-	// No path should appear in both readable and writable (causes EROFS).
-	readable := provider.LinuxReadable(ctx)
-	rset := make(map[string]bool, len(readable))
-	for _, p := range readable {
+	// No path should appear in both Readable and Writable (causes EROFS in
+	// the bwrap backend).
+	rset := make(map[string]bool, len(result.Readable))
+	for _, p := range result.Readable {
 		rset[p] = true
 	}
-	for _, p := range paths {
+	for _, p := range result.Writable {
 		if rset[p] {
-			t.Errorf("LinuxWritable: %q appears in both readable and writable — bwrap backend will leave it read-only", p)
+			t.Errorf("%q appears in both Readable and Writable — bwrap backend will leave it read-only", p)
 		}
 	}
 	// Each writable path must be under $HOME.
-	for _, p := range paths {
+	for _, p := range result.Writable {
 		if !strings.HasPrefix(p, "/home/u") {
-			t.Errorf("LinuxWritable: unexpected path outside HOME: %q", p)
+			t.Errorf("Writable: unexpected path outside HOME: %q", p)
 		}
 	}
 }
 
+// TestClaudeAgent_AtomicFilesNotInReadableOrWritable verifies the exclusivity
+// invariant — overlay would emit conflicting bwrap binds if a path appeared
+// in both LinuxAtomicWritableFiles and the GuardResult path sets.
 func TestClaudeAgent_AtomicFilesNotInReadableOrWritable(t *testing.T) {
 	mod := ClaudeAgent()
-	pp, ok := mod.(seatbelt.LinuxPathProvider)
-	if !ok {
-		t.Fatal("ClaudeAgent must implement seatbelt.LinuxPathProvider")
-	}
 	ap, ok := mod.(seatbelt.LinuxAtomicWriteProvider)
 	if !ok {
 		t.Fatal("ClaudeAgent must implement seatbelt.LinuxAtomicWriteProvider")
 	}
-	ctx := &seatbelt.Context{HomeDir: "/home/u"}
+	ctx := &seatbelt.Context{HomeDir: "/home/u", GOOS: "linux"}
 
+	result := mod.Rules(ctx)
 	atomic := ap.LinuxAtomicWritableFiles(ctx)
 	atomicSet := make(map[string]bool, len(atomic))
 	for _, f := range atomic {
 		atomicSet[f] = true
 	}
-	for _, p := range pp.LinuxReadable(ctx) {
+	for _, p := range result.Readable {
 		if atomicSet[p] {
-			t.Errorf("%q appears in both LinuxReadable and LinuxAtomicWritableFiles — overlay will emit conflicting bwrap binds", p)
+			t.Errorf("%q appears in both Readable and LinuxAtomicWritableFiles — overlay will emit conflicting bwrap binds", p)
 		}
 	}
-	for _, p := range pp.LinuxWritable(ctx) {
+	for _, p := range result.Writable {
 		if atomicSet[p] {
-			t.Errorf("%q appears in both LinuxWritable and LinuxAtomicWritableFiles — overlay will emit conflicting bwrap binds", p)
+			t.Errorf("%q appears in both Writable and LinuxAtomicWritableFiles — overlay will emit conflicting bwrap binds", p)
 		}
 	}
 }

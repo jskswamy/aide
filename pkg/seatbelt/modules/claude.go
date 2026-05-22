@@ -56,5 +56,7 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 )`),
 	)
 
-	return seatbelt.GuardResult{Rules: rules}
+	result := seatbelt.GuardResult{Rules: rules}
+	augmentLinuxPaths(ctx, &result)
+	return result
 }

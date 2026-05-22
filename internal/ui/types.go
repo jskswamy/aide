@@ -94,7 +94,7 @@ type SandboxInfo struct {
 type GuardDisplay struct {
 	Name      string
 	Protected []string
-	Allowed   []string
+	Readable  []string
 	Overrides []GuardOverride
 	Reason    string // for skipped: "~/.kube not found"
 }

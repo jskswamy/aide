@@ -27,10 +27,10 @@ type Guard interface {
 
 // GuardResult holds rules and diagnostics from a guard evaluation.
 type GuardResult struct {
-	Name      string     // guard name, set by the profile builder from Module.Name()
+	Name      string // guard name, set by the profile builder from Module.Name()
 	Rules     []Rule
-	Protected []string   // paths being denied
-	Allowed   []string   // paths explicitly allowed (exceptions)
+	Protected []string   // paths the agent must not access (deny wins)
+	Readable  []string   // paths the agent may read
 	Skipped   []string   // "~/.config/op not found" etc.
 	Overrides []Override // env var overrides detected
 	Hints     []string   // user-facing suggestions (e.g. "enable 'ssh' capability for SSH push")

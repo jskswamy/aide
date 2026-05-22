@@ -106,9 +106,9 @@ func TestDevCredentials_OptOutReadable(t *testing.T) {
 	}
 	result := g.Rules(ctx)
 
-	// gh dir should be in Allowed, not Protected
-	if !slices.Contains(result.Allowed, ghDir) {
-		t.Errorf("expected %s in Allowed, got Allowed=%v", ghDir, result.Allowed)
+	// gh dir should be in Readable, not Protected
+	if !slices.Contains(result.Readable, ghDir) {
+		t.Errorf("expected %s in Readable, got Readable=%v", ghDir, result.Readable)
 	}
 	// Should NOT have deny rules for gh dir
 	output := renderTestRules(result.Rules)
@@ -136,8 +136,8 @@ func TestDevCredentials_OptOutWritable(t *testing.T) {
 	}
 	result := g.Rules(ctx)
 
-	if !slices.Contains(result.Allowed, credFile) {
-		t.Errorf("expected %s in Allowed, got Allowed=%v", credFile, result.Allowed)
+	if !slices.Contains(result.Readable, credFile) {
+		t.Errorf("expected %s in Readable, got Readable=%v", credFile, result.Readable)
 	}
 }
 

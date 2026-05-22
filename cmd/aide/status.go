@@ -291,7 +291,7 @@ func whichCmd() *cobra.Command {
 							display := ui.GuardDisplay{
 								Name:      g.Name,
 								Protected: g.Protected,
-								Allowed:   g.Allowed,
+								Readable:  g.Readable,
 							}
 							for _, o := range g.Overrides {
 								display.Overrides = append(display.Overrides, ui.GuardOverride{

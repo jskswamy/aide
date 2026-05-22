@@ -84,7 +84,7 @@ func (g *customGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	for _, a := range g.cfg.Allowed {
 		expanded := filepath.Clean(homepath.Expand(a, ctx.HomeDir))
 		result.Rules = append(result.Rules, AllowReadFile(expanded))
-		result.Allowed = append(result.Allowed, expanded)
+		result.Readable = append(result.Readable, expanded)
 	}
 
 	return result

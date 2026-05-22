@@ -247,16 +247,16 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 		}
 	}
 
-	// Collect system-required readable paths from guard Allowed lists.
-	// Guard Allowed entries are explicit exceptions (e.g. a capability unlocking ~/.config/gh).
-	allowedExtra := make(map[string]bool)
+	// Collect readable paths from guard Readable lists (e.g. a capability
+	// unlocking ~/.config/gh, or a credential path the agent may read).
+	readableExtra := make(map[string]bool)
 	for _, gr := range guardResults {
-		for _, p := range gr.Allowed {
+		for _, p := range gr.Readable {
 			resolved := resolveSymlink(p)
 			if resolved != "" {
-				allowedExtra[resolved] = true
+				readableExtra[resolved] = true
 				if origin[resolved] == "" {
-					origin[resolved] = gr.Name + ":allowed"
+					origin[resolved] = gr.Name + ":readable"
 				}
 			}
 		}
@@ -331,7 +331,7 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 			}
 		}
 	}
-	for p := range allowedExtra {
+	for p := range readableExtra {
 		readableSet[p] = true
 	}
 	for p := range linuxReadableExtra {

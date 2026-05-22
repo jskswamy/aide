@@ -33,7 +33,7 @@ func fullBannerData() *BannerData {
 				{
 					Name:      "aws",
 					Protected: []string{"~/.aws/credentials", "~/.aws/config"},
-					Allowed:   []string{"/tmp/aws-test"},
+					Readable:  []string{"/tmp/aws-test"},
 				},
 			},
 		},
@@ -198,7 +198,7 @@ func TestRenderCompact_GuardGroups(t *testing.T) {
 				{
 					Name:      "aws",
 					Protected: []string{"~/.aws/credentials"},
-					Allowed:   []string{"/tmp/aws"},
+					Readable:  []string{"/tmp/aws"},
 				},
 				{
 					Name:      "ssh",
@@ -223,7 +223,7 @@ func TestRenderCompact_GuardGroups(t *testing.T) {
 	}
 
 	// Guard names should NOT appear in banner output
-	for _, unwanted := range []string{"denied:", "allowed:", "available (opt-in)"} {
+	for _, unwanted := range []string{"denied:", "readable:", "available (opt-in)"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("guard detail %q should not appear in banner:\n%s", unwanted, out)
 		}
@@ -876,7 +876,7 @@ func TestRenderGuardSection(t *testing.T) {
 				{
 					Name:      "filesystem",
 					Protected: []string{"/home/.ssh", "/home/.aws"},
-					Allowed:   []string{"/home/.ssh/known_hosts"},
+					Readable:  []string{"/home/.ssh/known_hosts"},
 				},
 			},
 		}
@@ -888,8 +888,8 @@ func TestRenderGuardSection(t *testing.T) {
 		if !strings.Contains(out, "denied:") {
 			t.Errorf("expected 'denied:' in output, got %q", out)
 		}
-		if !strings.Contains(out, "allowed:") {
-			t.Errorf("expected 'allowed:' in output, got %q", out)
+		if !strings.Contains(out, "readable:") {
+			t.Errorf("expected 'readable:' in output, got %q", out)
 		}
 	})
 

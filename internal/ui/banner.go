@@ -129,8 +129,8 @@ func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
 		if len(g.Protected) > 0 {
 			fmt.Fprintf(w, "%s    denied:  %s\n", prefix, truncateList(g.Protected, 3))
 		}
-		if len(g.Allowed) > 0 {
-			fmt.Fprintf(w, "%s    allowed: %s\n", prefix, truncateList(g.Allowed, 3))
+		if len(g.Readable) > 0 {
+			fmt.Fprintf(w, "%s    readable: %s\n", prefix, truncateList(g.Readable, 3))
 		}
 		for _, o := range g.Overrides {
 			fmt.Fprintf(w, "%s    override: %s → %s (default: %s)\n",
@@ -159,7 +159,7 @@ func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
 	}
 	needsHint := len(info.Skipped) > 0 || len(info.Available) > 0
 	for _, g := range info.Active {
-		if len(g.Protected) > 3 || len(g.Allowed) > 3 {
+		if len(g.Protected) > 3 || len(g.Readable) > 3 {
 			needsHint = true
 		}
 	}

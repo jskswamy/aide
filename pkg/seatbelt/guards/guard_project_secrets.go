@@ -55,7 +55,7 @@ func (g *projectSecretsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult 
 	envFiles := scanEnvFiles(ctx.ProjectRoot)
 	for _, f := range envFiles {
 		if optOut[f] {
-			result.Allowed = append(result.Allowed, f)
+			result.Readable = append(result.Readable, f)
 			continue
 		}
 		result.Rules = append(result.Rules, DenyFile(f)...)

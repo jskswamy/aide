@@ -55,7 +55,7 @@ func (g *devCredentialsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult 
 		fullPath := filepath.Join(ctx.HomeDir, cred.rel)
 
 		if optOut[fullPath] {
-			result.Allowed = append(result.Allowed, fullPath)
+			result.Readable = append(result.Readable, fullPath)
 			continue
 		}
 

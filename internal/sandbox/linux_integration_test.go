@@ -313,6 +313,27 @@ echo "--- done ---"
 	}
 }
 
+// TestLinuxIntegration_AtomicOverlay_PreflightDetectsEBUSY asserts that the
+// production preflightAtomicRename helper detects the rename-over-bind EBUSY
+// constraint and returns a refusal error rather than silently allowing a
+// launch where every atomic write would be lost.
+func TestLinuxIntegration_AtomicOverlay_PreflightDetectsEBUSY(t *testing.T) {
+	skipIfNoBwrapMount(t)
+
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		t.Skip("bwrap not on PATH")
+	}
+
+	err = preflightAtomicRename(bwrapPath)
+	if err == nil {
+		t.Fatal("preflight should detect kernel EBUSY on rename-over-bind and refuse; got nil error")
+	}
+	if !strings.Contains(err.Error(), "atomic-rename preflight failed") {
+		t.Errorf("expected 'atomic-rename preflight failed' in error, got: %v", err)
+	}
+}
+
 // rename(2) over a bind-mounted target returns EBUSY on Linux. This test pins
 // that constraint so a future overlay redesign (OverlayFS, mount-move) signals
 // when the limitation lifts.

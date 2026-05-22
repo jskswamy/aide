@@ -283,6 +283,9 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir st
 				strings.Join(missing, ", "),
 			)
 		}
+		if err := preflightAtomicRename(bwrapPath); err != nil {
+			return err
+		}
 		gps := linuxLandlockGrantedPaths(policy)
 		agentBin := ""
 		if len(originalArgs) > 0 {
@@ -346,6 +349,72 @@ func needsAtomicWriteOverlay(j landlockPolicyJSON) bool {
 		}
 	}
 	return false
+}
+
+// preflightAtomicRename verifies the atomic-rename pattern works inside a
+// bwrap overlay matching the production configuration. On kernels where
+// rename(2) over a bind-mounted file returns EBUSY (see
+// TestLinuxIntegration_AtomicOverlay_RenameOverBindFileFailsWithEBUSY for
+// the pinned constraint), this check fails and the caller refuses to launch
+// rather than letting the agent silently lose every config write.
+//
+// The probe creates a temp parent dir holding a stub file, asks
+// buildAtomicWriteOverlayArgs to construct the same overlay shape as the real
+// launch (--tmpfs over the parent, --bind of the stub file into it), then
+// runs `echo > tmp && mv tmp file` inside bwrap. If the rename fails (script
+// exits non-zero), the kernel here would also fail the real launch's
+// atomic-write — we surface that as a launch-refusal error instead of
+// silently letting the agent run.
+func preflightAtomicRename(bwrapPath string) error {
+	parent, err := os.MkdirTemp("", "aide-overlay-preflight-")
+	if err != nil {
+		return fmt.Errorf("preflight: create temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(parent) }()
+
+	target := filepath.Join(parent, ".probe.json")
+	if err := os.WriteFile(target, []byte("v1"), 0o600); err != nil {
+		return fmt.Errorf("preflight: create probe file: %w", err)
+	}
+
+	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{target}}
+	overlayArgs := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
+
+	script := fmt.Sprintf("set -e; echo v2 > %s.tmp && mv %s.tmp %s",
+		target, target, target)
+
+	args := append([]string{}, overlayArgs...)
+	args = append(args, "--ro-bind", "/usr", "/usr")
+	for _, lib := range []string{"/lib", "/lib64"} {
+		if _, statErr := os.Stat(lib); statErr == nil {
+			args = append(args, "--ro-bind", lib, lib)
+		}
+	}
+	args = append(args, "--", "/bin/sh", "-c", script)
+
+	out, runErr := exec.Command(bwrapPath, args...).CombinedOutput()
+	if runErr == nil {
+		return nil
+	}
+	// Distinguish kernel EBUSY (the silent-loss bug we exist to catch) from
+	// bwrap-setup errors (no unprivileged userns, missing /proc, etc.) that
+	// would also cause the real launch to fail with a clear error of their
+	// own. We only refuse when EBUSY is the observed failure mode.
+	outStr := string(out)
+	if strings.Contains(outStr, "Device or resource busy") ||
+		strings.Contains(outStr, "EBUSY") {
+		return fmt.Errorf(
+			"atomic-rename preflight failed on this kernel: rename(2) inside the "+
+				"bwrap atomic-write overlay returned EBUSY, which means files declared as "+
+				"LinuxAtomicWritableFiles would silently lose every write. Refusing to "+
+				"launch. Upgrade to a kernel that supports rename over bind-mounted "+
+				"files, or disable the agent's atomic-write declarations. bwrap output: %s",
+			strings.TrimSpace(outStr),
+		)
+	}
+	// Inconclusive — the real launch will surface its own error if bwrap
+	// genuinely cannot run on this host.
+	return nil
 }
 
 // missingAtomicWritableFiles returns declared files absent from disk. bwrap

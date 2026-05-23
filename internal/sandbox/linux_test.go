@@ -8,24 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
-
-	"github.com/jskswamy/aide/pkg/seatbelt"
 )
-
-// stubAtomicWriteModule is a minimal seatbelt.Module that also satisfies
-// LinuxAtomicWriteProvider. It lets us assert backend behaviour for the
-// atomic-rename contract without coupling the test to a real agent module.
-type stubAtomicWriteModule struct{ files []string }
-
-func (m *stubAtomicWriteModule) Name() string { return "stub-atomic" }
-func (m *stubAtomicWriteModule) Rules(*seatbelt.Context) seatbelt.GuardResult {
-	return seatbelt.GuardResult{}
-}
-func (m *stubAtomicWriteModule) LinuxAtomicWritableFiles(*seatbelt.Context) []string {
-	return m.files
-}
-
-var _ seatbelt.LinuxAtomicWriteProvider = (*stubAtomicWriteModule)(nil)
 
 func TestLinuxSandbox_NewSandbox_ReturnsLinux(t *testing.T) {
 	s := NewSandbox()
@@ -126,44 +109,6 @@ func TestLinuxSandbox_ApplyBwrap_NoSubprocess(t *testing.T) {
 	args := strings.Join(cmd.Args, " ")
 	if !strings.Contains(args, "--unshare-pid") {
 		t.Errorf("expected --unshare-pid when AllowSubprocess=false, got: %s", args)
-	}
-}
-
-// TestLinuxSandbox_ApplyBwrap_RejectsAtomicWriteFiles asserts that applyBwrap
-// refuses to launch when the agent declares atomic-writable files. Landlock is
-// required to honour the atomic-rename contract; the bwrap-only fallback cannot.
-func TestLinuxSandbox_ApplyBwrap_RejectsAtomicWriteFiles(t *testing.T) {
-	bwrapPath, err := exec.LookPath("bwrap")
-	if err != nil {
-		t.Skip("bwrap not on PATH")
-	}
-
-	tmpHome := t.TempDir()
-	fakeFile := tmpHome + "/.fakeagent.json"
-	if writeErr := os.WriteFile(fakeFile, []byte("{}"), 0600); writeErr != nil {
-		t.Fatalf("setup: %v", writeErr)
-	}
-
-	s := &LinuxSandbox{}
-	cmd := exec.Command("/usr/bin/echo", "hi")
-	policy := Policy{
-		ProjectRoot:     t.TempDir(),
-		RuntimeDir:      t.TempDir(),
-		TempDir:         "/tmp",
-		Network:         NetworkOutbound,
-		AllowSubprocess: true,
-		AgentModule:     &stubAtomicWriteModule{files: []string{fakeFile}},
-	}
-
-	err = s.applyBwrap(cmd, policy, bwrapPath)
-	if err == nil {
-		t.Fatal("applyBwrap should return an error when atomic-writable files are declared without Landlock")
-	}
-	if !strings.Contains(err.Error(), "atomic-writable files") {
-		t.Errorf("expected 'atomic-writable files' in error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "Landlock") {
-		t.Errorf("expected 'Landlock' in error, got: %v", err)
 	}
 }
 

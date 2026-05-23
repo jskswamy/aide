@@ -13,7 +13,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/landlock-lsm/go-landlock/landlock"
 )
 
@@ -162,7 +161,7 @@ func pathCoveredBy(p string, writable, readable []string) bool {
 
 // landlockPolicyJSON is the serializable Policy projection passed to the
 // __sandbox-apply re-exec. AgentModule is dropped (interface; not JSON-able);
-// AgentReadable/Writable carry its resolved LinuxPathProvider output.
+// AgentReadable/Writable carry its resolved per-platform path output.
 type landlockPolicyJSON struct {
 	Guards          []string    `json:"Guards,omitempty"`
 	ProjectRoot     string      `json:"ProjectRoot,omitempty"`
@@ -178,9 +177,8 @@ type landlockPolicyJSON struct {
 	ExtraAllow      []string    `json:"ExtraAllow,omitempty"`
 	AllowSubprocess bool        `json:"AllowSubprocess"`
 	CleanEnv        bool        `json:"CleanEnv"`
-	AgentReadable            []string `json:"AgentReadable,omitempty"`
-	AgentWritable            []string `json:"AgentWritable,omitempty"`
-	AgentAtomicWritableFiles []string `json:"AgentAtomicWritableFiles,omitempty"`
+	AgentReadable   []string    `json:"AgentReadable,omitempty"`
+	AgentWritable   []string    `json:"AgentWritable,omitempty"`
 }
 
 func policyToJSON(p Policy) landlockPolicyJSON {
@@ -200,32 +198,25 @@ func policyToJSON(p Policy) landlockPolicyJSON {
 		AllowSubprocess: p.AllowSubprocess,
 		CleanEnv:        p.CleanEnv,
 	}
-	homeDir, _ := os.UserHomeDir()
-	ctx := p.ToSeatbeltContext(homeDir)
 	if p.AgentModule != nil {
-		// Re-evaluate the module so we can serialise its Linux-specific
-		// path grants for the re-exec child (which receives AgentModule=nil
-		// after policyFromJSON). The Rules() call is the same one
-		// EvaluateGuards already makes in the parent; the macOS Rules
-		// slice is intentionally discarded — the child enforces via
-		// Landlock, not Seatbelt.
-		moduleResult := p.AgentModule.Rules(ctx)
+		// Re-evaluate the module so we can serialise its per-platform path
+		// grants for the re-exec child (which receives AgentModule=nil after
+		// policyFromJSON). The macOS Rules slice is intentionally discarded
+		// — the child enforces via Landlock, not Seatbelt.
+		homeDir, _ := os.UserHomeDir()
+		moduleResult := p.AgentModule.Rules(p.ToSeatbeltContext(homeDir))
 		j.AgentReadable = moduleResult.Readable
 		j.AgentWritable = moduleResult.Writable
-	}
-	if lap, ok := p.AgentModule.(seatbelt.LinuxAtomicWriteProvider); ok {
-		j.AgentAtomicWritableFiles = lap.LinuxAtomicWritableFiles(ctx)
 	}
 	return j
 }
 
 // policyFromJSON inverts policyToJSON. AgentModule stays nil (unused for
-// enforcement). When AgentAtomicWritableFiles is non-empty the parent dirs are
-// added to ExtraWritable so Landlock permits the per-file tmpfs overlay.
+// enforcement); AgentReadable / AgentWritable are folded into the policy's
+// extra-readable / extra-writable lists.
 func policyFromJSON(j landlockPolicyJSON) Policy {
 	extraWritable := append([]string{}, j.ExtraWritable...)
 	extraWritable = append(extraWritable, j.AgentWritable...)
-	extraWritable = append(extraWritable, uniqueExistingParents(j.AgentAtomicWritableFiles)...)
 	return Policy{
 		Guards:          j.Guards,
 		ProjectRoot:     j.ProjectRoot,
@@ -244,11 +235,9 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 	}
 }
 
-// applyLandlock re-execs aide with __sandbox-apply (Landlock self-sandboxes
-// the caller; we cannot apply it to a child directly). When the policy declares
-// atomic-writable files, the command is additionally wrapped with bwrap to set
-// up a per-file tmpfs overlay so the agent's atomic-rename pattern works
-// without granting broad write access to $HOME.
+// applyLandlock re-execs aide with __sandbox-apply (Landlock can only restrict
+// the calling process; the re-exec target self-applies the filter then execs
+// the agent).
 func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir string) error {
 	policyJSON := policyToJSON(policy)
 	policyBytes, err := json.Marshal(policyJSON)
@@ -271,68 +260,12 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir st
 		[]string{"aide", "__sandbox-apply", policyPath, "--"},
 		originalArgs...,
 	)
-
-	if needsAtomicWriteOverlay(policyJSON) {
-		bwrapPath, lookErr := exec.LookPath("bwrap")
-		if lookErr != nil {
-			return fmt.Errorf("agent declares atomic-writable files but bwrap is not installed; install bwrap to use this agent")
-		}
-		if missing := missingAtomicWritableFiles(policyJSON); len(missing) > 0 {
-			return fmt.Errorf(
-				"agent declares atomic-writable files that do not exist: %s; "+
-					"run the agent once outside the sandbox to initialize its config, then retry",
-				strings.Join(missing, ", "),
-			)
-		}
-		homeDir, _ := os.UserHomeDir()
-		layout, err := setupOverlayLayout(runtimeDir, homeDir,
-			policyJSON.AgentAtomicWritableFiles, policyJSON.AgentReadable)
-		if err != nil {
-			return fmt.Errorf("overlay setup: %w", err)
-		}
-		overlayArgs := buildOverlayBwrapArgs(
-			layout, homeDir,
-			policyJSON.AgentAtomicWritableFiles,
-			policyJSON.AgentReadable,
-			policyJSON.AgentWritable,
-			policyJSON.AllowSubprocess,
-			policyJSON.Network,
-		)
-
-		// Outer wrapper: aide __sandbox-sync waits for the bwrap chain,
-		// then syncs the upper layer's modified atomic files back to host.
-		syncArgs := []string{
-			"__sandbox-sync",
-			"--upper", layout.Upper,
-			"--home", homeDir,
-			"--overlay-root", layout.Root,
-		}
-		for _, f := range policyJSON.AgentAtomicWritableFiles {
-			syncArgs = append(syncArgs, "--sync-file", f)
-		}
-		syncArgs = append(syncArgs, "--")
-
-		fullArgs := append([]string{"aide"}, syncArgs...)
-		fullArgs = append(fullArgs, bwrapPath)
-		fullArgs = append(fullArgs, overlayArgs...)
-		fullArgs = append(fullArgs, "--")
-		fullArgs = append(fullArgs, aideBin)
-		fullArgs = append(fullArgs, innerArgs[1:]...)
-		cmd.Path = aideBin
-		cmd.Args = fullArgs
-		if policy.CleanEnv {
-			cmd.Env = filterEnv(cmd.Env)
-		}
-		return nil
-	}
-
 	cmd.Path = aideBin
 	cmd.Args = innerArgs
 
-	// Pure Landlock path (no bwrap wrapper). The seccomp filter installed
-	// in RunSandboxApply blocks subprocess syscalls; CLONE_NEWPID adds PID
-	// namespace isolation as defence in depth so any future bypass of the
-	// seccomp filter still cannot see host processes.
+	// AllowSubprocess=false: CLONE_NEWPID adds PID-namespace isolation as
+	// defence in depth so any future bypass of the seccomp filter installed
+	// in RunSandboxApply still cannot see host processes.
 	if !policy.AllowSubprocess {
 		if cmd.SysProcAttr == nil {
 			cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -345,82 +278,6 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir st
 	}
 
 	return nil
-}
-
-// atomicWritableFiles is the bwrap-path counterpart of policyToJSON's
-// LinuxAtomicWriteProvider assertion. applyBwrap uses it to fail fast before
-// launching a sandbox that cannot honour the atomic-rename contract.
-func atomicWritableFiles(policy Policy) []string {
-	if policy.AgentModule == nil {
-		return nil
-	}
-	lap, ok := policy.AgentModule.(seatbelt.LinuxAtomicWriteProvider)
-	if !ok {
-		return nil
-	}
-	ctx := policy.ToSeatbeltContext(homeDirOrEmpty())
-	var out []string
-	for _, f := range lap.LinuxAtomicWritableFiles(ctx) {
-		if strings.TrimSpace(f) != "" {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-func homeDirOrEmpty() string {
-	h, _ := os.UserHomeDir()
-	return h
-}
-
-func needsAtomicWriteOverlay(j landlockPolicyJSON) bool {
-	for _, f := range j.AgentAtomicWritableFiles {
-		if strings.TrimSpace(f) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// missingAtomicWritableFiles returns declared files absent from disk. bwrap
-// cannot bind-mount a non-existent path, and the agent's atomic-rename would
-// otherwise land in the overlay and be lost on sandbox exit.
-func missingAtomicWritableFiles(j landlockPolicyJSON) []string {
-	var missing []string
-	for _, f := range j.AgentAtomicWritableFiles {
-		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
-		}
-		if !pathExists(f) {
-			missing = append(missing, f)
-		}
-	}
-	return missing
-}
-
-// uniqueExistingParents returns the unique parent directories of the given
-// files, keeping only those that currently exist on disk. policyFromJSON uses
-// this to mark atomic-writable file parents as writable for Landlock, since
-// the rename(2) at the parent dir's inode needs WRITE/MAKE_REG/REMOVE_FILE.
-func uniqueExistingParents(files []string) []string {
-	seen := make(map[string]bool)
-	var out []string
-	for _, f := range files {
-		if strings.TrimSpace(f) == "" {
-			continue
-		}
-		parent := filepath.Clean(filepath.Dir(f))
-		if seen[parent] {
-			continue
-		}
-		if !pathExists(parent) {
-			continue
-		}
-		seen[parent] = true
-		out = append(out, parent)
-	}
-	return out
 }
 
 // shouldGateNetwork decides whether to enable Landlock network gating.
@@ -595,19 +452,6 @@ func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 }
 
 func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string) error {
-	// Atomic-rename contract is only honoured by the Landlock+bwrap overlay
-	// path. The bwrap-only fallback would expose the declared files via
-	// --ro-bind-try (EBUSY on rename) or accept the rename into a throwaway
-	// tmpfs (silent data loss). Refuse to launch.
-	if atomic := atomicWritableFiles(policy); len(atomic) > 0 {
-		return fmt.Errorf(
-			"sandbox: agent declares atomic-writable files (%s) but Landlock is unavailable; "+
-				"the bwrap-only fallback cannot honour the atomic-rename contract and would silently drop these writes. "+
-				"Upgrade to a kernel with Landlock enabled (≥ 5.13, ABI ≥ 4 for full enforcement) or disable the agent's atomic-write declarations",
-			strings.Join(atomic, ", "),
-		)
-	}
-
 	var bwrapArgs []string
 
 	gps := linuxGrantedPaths(policy)

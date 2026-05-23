@@ -40,15 +40,7 @@ func writeMinimalConfig(t *testing.T, configDir string, content string) {
 //
 // On darwin: sandbox-exec -f <profile> <binary> <args...>
 // On linux (bwrap fallback): bwrap <bwrap-args...> -- <binary> <args...>
-// On linux (pure landlock):  <aide> __sandbox-apply <policy> -- <binary> <args...>
-//
-// On linux, when the agent module declares atomic-writable files (e.g. Claude's
-// ~/.claude.json), the chain is wrapped further by the overlay sync wrapper:
-//
-//	<aide> __sandbox-sync <sync-args...> -- bwrap <overlay-args...> --
-//	    <aide> __sandbox-apply <policy> -- <binary> <args...>
-//
-// This function peels all layers down to the final agent invocation.
+// On linux (Landlock):       <aide> __sandbox-apply <policy> -- <binary> <args...>
 //
 // If not sandboxed, it returns the values as-is.
 func unwrapSandbox(t *testing.T, binary string, args []string) (innerBinary string, innerArgs []string) {
@@ -59,29 +51,10 @@ func unwrapSandbox(t *testing.T, binary string, args []string) (innerBinary stri
 		}
 		return args[3], args[3:]
 	}
-	// __sandbox-sync wrapper (outermost when atomic-write overlay is used).
-	if len(args) >= 2 && args[1] == "__sandbox-sync" {
-		afterSync := splitAfterDashDash(args)
-		if afterSync == nil {
-			t.Fatalf("sandbox-sync args missing -- separator: %v", args)
-		}
-		// Recurse to peel the bwrap+landlock layers underneath.
-		if len(afterSync) == 0 {
-			t.Fatalf("sandbox-sync inner command empty")
-		}
-		return unwrapSandbox(t, afterSync[0], afterSync)
-	}
 	if strings.HasSuffix(binary, "/bwrap") || binary == "bwrap" {
 		afterBwrap := splitAfterDashDash(args)
 		if afterBwrap == nil {
 			t.Fatalf("bwrap args missing -- separator: %v", args)
-		}
-		if len(afterBwrap) >= 2 && afterBwrap[1] == "__sandbox-apply" {
-			afterLL := splitAfterDashDash(afterBwrap)
-			if afterLL == nil {
-				t.Fatalf("nested landlock args missing -- separator: %v", afterBwrap)
-			}
-			return afterLL[0], afterLL
 		}
 		return afterBwrap[0], afterBwrap
 	}

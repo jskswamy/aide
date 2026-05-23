@@ -284,22 +284,41 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir st
 				strings.Join(missing, ", "),
 			)
 		}
-		if err := preflightAtomicRename(bwrapPath); err != nil {
-			return err
+		homeDir, _ := os.UserHomeDir()
+		layout, err := setupOverlayLayout(runtimeDir, homeDir,
+			policyJSON.AgentAtomicWritableFiles, policyJSON.AgentReadable)
+		if err != nil {
+			return fmt.Errorf("overlay setup: %w", err)
 		}
-		gps := linuxLandlockGrantedPaths(policy)
-		agentBin := ""
-		if len(originalArgs) > 0 {
-			if resolved, err := exec.LookPath(originalArgs[0]); err == nil {
-				agentBin = resolved
-			}
+		overlayArgs := buildOverlayBwrapArgs(
+			layout, homeDir,
+			policyJSON.AgentAtomicWritableFiles,
+			policyJSON.AgentReadable,
+			policyJSON.AgentWritable,
+			policyJSON.AllowSubprocess,
+			policyJSON.Network,
+		)
+
+		// Outer wrapper: aide __sandbox-sync waits for the bwrap chain,
+		// then syncs the upper layer's modified atomic files back to host.
+		syncArgs := []string{
+			"__sandbox-sync",
+			"--upper", layout.Upper,
+			"--home", homeDir,
+			"--overlay-root", layout.Root,
 		}
-		overlayArgs := buildAtomicWriteOverlayArgs(policyJSON, gps, aideBin, agentBin)
-		fullArgs := append([]string{"bwrap"}, overlayArgs...)
+		for _, f := range policyJSON.AgentAtomicWritableFiles {
+			syncArgs = append(syncArgs, "--sync-file", f)
+		}
+		syncArgs = append(syncArgs, "--")
+
+		fullArgs := append([]string{"aide"}, syncArgs...)
+		fullArgs = append(fullArgs, bwrapPath)
+		fullArgs = append(fullArgs, overlayArgs...)
 		fullArgs = append(fullArgs, "--")
 		fullArgs = append(fullArgs, aideBin)
 		fullArgs = append(fullArgs, innerArgs[1:]...)
-		cmd.Path = bwrapPath
+		cmd.Path = aideBin
 		cmd.Args = fullArgs
 		if policy.CleanEnv {
 			cmd.Env = filterEnv(cmd.Env)
@@ -363,75 +382,9 @@ func needsAtomicWriteOverlay(j landlockPolicyJSON) bool {
 	return false
 }
 
-// preflightAtomicRename verifies the atomic-rename pattern works inside a
-// bwrap overlay matching the production configuration. On kernels where
-// rename(2) over a bind-mounted file returns EBUSY (see
-// TestLinuxIntegration_AtomicOverlay_RenameOverBindFileFailsWithEBUSY for
-// the pinned constraint), this check fails and the caller refuses to launch
-// rather than letting the agent silently lose every config write.
-//
-// The probe creates a temp parent dir holding a stub file, asks
-// buildAtomicWriteOverlayArgs to construct the same overlay shape as the real
-// launch (--tmpfs over the parent, --bind of the stub file into it), then
-// runs `echo > tmp && mv tmp file` inside bwrap. If the rename fails (script
-// exits non-zero), the kernel here would also fail the real launch's
-// atomic-write — we surface that as a launch-refusal error instead of
-// silently letting the agent run.
-func preflightAtomicRename(bwrapPath string) error {
-	parent, err := os.MkdirTemp("", "aide-overlay-preflight-")
-	if err != nil {
-		return fmt.Errorf("preflight: create temp dir: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(parent) }()
-
-	target := filepath.Join(parent, ".probe.json")
-	if err := os.WriteFile(target, []byte("v1"), 0o600); err != nil {
-		return fmt.Errorf("preflight: create probe file: %w", err)
-	}
-
-	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{target}}
-	overlayArgs := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
-
-	script := fmt.Sprintf("set -e; echo v2 > %s.tmp && mv %s.tmp %s",
-		target, target, target)
-
-	args := append([]string{}, overlayArgs...)
-	args = append(args, "--ro-bind", "/usr", "/usr")
-	for _, lib := range []string{"/lib", "/lib64"} {
-		if _, statErr := os.Stat(lib); statErr == nil {
-			args = append(args, "--ro-bind", lib, lib)
-		}
-	}
-	args = append(args, "--", "/bin/sh", "-c", script)
-
-	out, runErr := exec.Command(bwrapPath, args...).CombinedOutput()
-	if runErr == nil {
-		return nil
-	}
-	// Distinguish kernel EBUSY (the silent-loss bug we exist to catch) from
-	// bwrap-setup errors (no unprivileged userns, missing /proc, etc.) that
-	// would also cause the real launch to fail with a clear error of their
-	// own. We only refuse when EBUSY is the observed failure mode.
-	outStr := string(out)
-	if strings.Contains(outStr, "Device or resource busy") ||
-		strings.Contains(outStr, "EBUSY") {
-		return fmt.Errorf(
-			"atomic-rename preflight failed on this kernel: rename(2) inside the "+
-				"bwrap atomic-write overlay returned EBUSY, which means files declared as "+
-				"LinuxAtomicWritableFiles would silently lose every write. Refusing to "+
-				"launch. Upgrade to a kernel that supports rename over bind-mounted "+
-				"files, or disable the agent's atomic-write declarations. bwrap output: %s",
-			strings.TrimSpace(outStr),
-		)
-	}
-	// Inconclusive — the real launch will surface its own error if bwrap
-	// genuinely cannot run on this host.
-	return nil
-}
-
 // missingAtomicWritableFiles returns declared files absent from disk. bwrap
 // cannot bind-mount a non-existent path, and the agent's atomic-rename would
-// otherwise land in the tmpfs and be lost on sandbox exit.
+// otherwise land in the overlay and be lost on sandbox exit.
 func missingAtomicWritableFiles(j landlockPolicyJSON) []string {
 	var missing []string
 	for _, f := range j.AgentAtomicWritableFiles {
@@ -446,76 +399,10 @@ func missingAtomicWritableFiles(j landlockPolicyJSON) []string {
 	return missing
 }
 
-// buildAtomicWriteOverlayArgs returns bwrap arguments for the per-file
-// atomic-write overlay. For each unique parent dir holding declared files we
-// mount a tmpfs, bind the declared files back from the real filesystem, then
-// restore other Landlock-granted paths under that parent. The aide and agent
-// binaries (and their symlink targets) are explicitly restored so the re-exec
-// chain and the final execve still work.
-func buildAtomicWriteOverlayArgs(j landlockPolicyJSON, gps GrantedPathSet, aideBin, agentBin string) []string {
-	parents := uniqueExistingParents(j.AgentAtomicWritableFiles)
-	args := []string{
-		"--bind", "/", "/",
-		"--proc", "/proc",
-		"--dev", "/dev",
-	}
-
-	for _, parent := range parents {
-		args = append(args, "--tmpfs", parent)
-
-		for _, w := range gps.Writable {
-			if pathInside(w, parent) && w != parent && pathExists(w) {
-				args = append(args, "--bind-try", w, w)
-			}
-		}
-		atomicSet := make(map[string]bool, len(j.AgentAtomicWritableFiles))
-		for _, f := range j.AgentAtomicWritableFiles {
-			atomicSet[f] = true
-		}
-		for _, r := range gps.Readable {
-			if pathInside(r, parent) && r != parent && pathExists(r) && !atomicSet[r] {
-				args = append(args, "--ro-bind-try", r, r)
-			}
-		}
-		for _, f := range j.AgentAtomicWritableFiles {
-			if pathInside(f, parent) && pathExists(f) {
-				args = append(args, "--bind", f, f)
-			}
-		}
-
-		for _, bin := range []string{aideBin, agentBin} {
-			for _, p := range expandBinaryPaths(bin) {
-				if pathInside(p, parent) && pathExists(p) {
-					args = append(args, "--ro-bind", p, p)
-				}
-			}
-		}
-	}
-
-	// AllowSubprocess=false: --unshare-pid for PID-namespace isolation.
-	// Actual subprocess block is the seccomp filter installed inside
-	// RunSandboxApply (the re-exec child) before it execs the agent.
-	if !j.AllowSubprocess {
-		args = append(args, "--unshare-pid")
-	}
-
-	return args
-}
-
-// expandBinaryPaths returns the binary path, its resolved symlink target, and
-// the parent of each so the binary stays usable inside an overlay parent.
-func expandBinaryPaths(bin string) []string {
-	if bin == "" {
-		return nil
-	}
-	clean := filepath.Clean(bin)
-	out := []string{clean, filepath.Dir(clean)}
-	if resolved, err := filepath.EvalSymlinks(clean); err == nil && resolved != clean {
-		out = append(out, resolved, filepath.Dir(resolved))
-	}
-	return out
-}
-
+// uniqueExistingParents returns the unique parent directories of the given
+// files, keeping only those that currently exist on disk. policyFromJSON uses
+// this to mark atomic-writable file parents as writable for Landlock, since
+// the rename(2) at the parent dir's inode needs WRITE/MAKE_REG/REMOVE_FILE.
 func uniqueExistingParents(files []string) []string {
 	seen := make(map[string]bool)
 	var out []string
@@ -534,15 +421,6 @@ func uniqueExistingParents(files []string) []string {
 		out = append(out, parent)
 	}
 	return out
-}
-
-func pathInside(child, parent string) bool {
-	c := filepath.Clean(child)
-	p := filepath.Clean(parent)
-	if c == p {
-		return true
-	}
-	return strings.HasPrefix(c, p+"/")
 }
 
 // shouldGateNetwork decides whether to enable Landlock network gating.

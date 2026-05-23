@@ -56,128 +56,250 @@ func TestUniqueExistingParents_OnlyExistingDirsReturned(t *testing.T) {
 	}
 }
 
-func TestPathInside_HandlesEdgeCases(t *testing.T) {
+func TestRelUnder_HandlesEdgeCases(t *testing.T) {
 	cases := []struct {
-		child, parent string
-		want          bool
+		parent, child string
+		wantOK        bool
+		wantRel       string
 	}{
-		{"/home/u", "/home/u", true},
-		{"/home/u/.claude.json", "/home/u", true},
-		{"/home/user", "/home/u", false},
-		{"/etc/passwd", "/home/u", false},
-		{"/home/u/.config/", "/home/u/.config", true},
+		{"/home/u", "/home/u", false, ""},                          // same path
+		{"/home/u", "/home/u/.claude.json", true, ".claude.json"},  // child of home
+		{"/home/u", "/home/user", false, ""},                       // prefix-but-not-parent
+		{"/home/u", "/etc/passwd", false, ""},                      // unrelated
+		{"/home/u", "/home/u/.config/x", true, ".config/x"},        // nested
+		{"", "/home/u/x", false, ""},                               // empty parent
+		{"/home/u", "", false, ""},                                 // empty child
 	}
 	for _, c := range cases {
-		if got := pathInside(c.child, c.parent); got != c.want {
-			t.Errorf("pathInside(%q, %q) = %v, want %v", c.child, c.parent, got, c.want)
+		rel, ok := relUnder(c.parent, c.child)
+		if ok != c.wantOK || rel != c.wantRel {
+			t.Errorf("relUnder(%q, %q) = %q,%v ; want %q,%v",
+				c.parent, c.child, rel, ok, c.wantRel, c.wantOK)
 		}
 	}
 }
 
-func TestExpandBinaryPaths_EmptyReturnsNil(t *testing.T) {
-	if got := expandBinaryPaths(""); got != nil {
-		t.Errorf("expected nil for empty bin, got %v", got)
+func TestSetupOverlayLayout_CreatesDirsAndStubs(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	readable := filepath.Join(homeDir, ".mcp.json")
+	if err := writeFileForTest(atomic, "{}"); err != nil {
+		t.Fatalf("setup atomic: %v", err)
 	}
-}
+	if err := writeFileForTest(readable, "{}"); err != nil {
+		t.Fatalf("setup readable: %v", err)
+	}
 
-func TestExpandBinaryPaths_IncludesPathAndDir(t *testing.T) {
-	got := expandBinaryPaths("/usr/bin/echo")
-	want := []string{"/usr/bin/echo", "/usr/bin"}
-	if len(got) < len(want) {
-		t.Fatalf("expected at least %d entries, got %d: %v", len(want), len(got), got)
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, []string{readable})
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
 	}
-	for i, w := range want {
-		if got[i] != w {
-			t.Errorf("entry %d = %q, want %q", i, got[i], w)
+	for _, d := range []string{layout.Root, layout.Lower, layout.Upper, layout.Work} {
+		if info, err := os.Stat(d); err != nil || !info.IsDir() {
+			t.Errorf("expected directory at %q (err=%v)", d, err)
+		}
+	}
+	// Stubs should exist as regular files (bwrap --bind will mount on top).
+	for _, rel := range []string{".claude.json", ".mcp.json"} {
+		stub := filepath.Join(layout.Lower, rel)
+		if info, err := os.Stat(stub); err != nil || info.IsDir() {
+			t.Errorf("expected stub file at %q (err=%v)", stub, err)
 		}
 	}
 }
 
-func TestBuildAtomicWriteOverlayArgs_BindsAtomicFileAndOverlaysParent(t *testing.T) {
-	tmp := t.TempDir()
-	atomicFile := filepath.Join(tmp, "config.json")
-	if err := writeFileForTest(atomicFile, "x"); err != nil {
+func TestBuildOverlayBwrapArgs_PopulatesLowerAndMountsOverlay(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	if err := writeFileForTest(atomic, "{}"); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-
-	j := landlockPolicyJSON{
-		AgentAtomicWritableFiles: []string{atomicFile},
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, nil)
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
 	}
-	gps := GrantedPathSet{}
-	args := buildAtomicWriteOverlayArgs(j, gps, "", "")
 
+	args := buildOverlayBwrapArgs(layout, homeDir, []string{atomic}, nil, nil, true, NetworkOutbound)
 	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "--tmpfs "+filepath.Clean(tmp)) {
-		t.Errorf("expected --tmpfs over parent %q in args, got: %s", tmp, joined)
+
+	// The atomic file must be bind-mounted INTO lower at its relative path —
+	// not bound at its host location. That's the overlay's whole point.
+	wantBind := "--bind " + atomic + " " + filepath.Join(layout.Lower, ".claude.json")
+	if !strings.Contains(joined, wantBind) {
+		t.Errorf("expected %q in args, got: %s", wantBind, joined)
 	}
-	if !strings.Contains(joined, "--bind "+atomicFile+" "+atomicFile) {
-		t.Errorf("expected --bind for atomic file %q in args, got: %s", atomicFile, joined)
+	// The overlay must be mounted at $HOME with the synthetic lower.
+	wantOverlay := "--overlay " + layout.Upper + " " + layout.Work + " " + homeDir
+	if !strings.Contains(joined, wantOverlay) {
+		t.Errorf("expected %q in args, got: %s", wantOverlay, joined)
+	}
+	wantOverlaySrc := "--overlay-src " + layout.Lower
+	if !strings.Contains(joined, wantOverlaySrc) {
+		t.Errorf("expected %q in args, got: %s", wantOverlaySrc, joined)
+	}
+	// Atomic file MUST NOT be bound at its host path on top of the overlay —
+	// that would re-introduce the EBUSY problem.
+	if strings.Contains(joined, "--bind "+atomic+" "+atomic) {
+		t.Errorf("atomic file must not be bound at its host path on top of overlay: %s", joined)
 	}
 }
 
-func TestBuildAtomicWriteOverlayArgs_RestoresWritableAndReadableUnderParent(t *testing.T) {
-	parent := t.TempDir()
-	atomicFile := filepath.Join(parent, "config.json")
-	if err := writeFileForTest(atomicFile, "x"); err != nil {
+func TestBuildOverlayBwrapArgs_WritableDirsBoundOnTopOfOverlay(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	if err := writeFileForTest(atomic, "{}"); err != nil {
 		t.Fatalf("setup: %v", err)
+	}
+	writableDir := filepath.Join(homeDir, ".claude")
+	if err := mkdirForTest(writableDir); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, nil)
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
 	}
 
-	writableUnderParent := filepath.Join(parent, "subdir-rw")
-	if err := mkdirForTest(writableUnderParent); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	readableUnderParent := filepath.Join(parent, "subdir-ro")
-	if err := mkdirForTest(readableUnderParent); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	unrelated := filepath.Join(t.TempDir(), "elsewhere")
-	if err := mkdirForTest(unrelated); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{atomicFile}}
-	gps := GrantedPathSet{
-		Writable: []string{writableUnderParent, unrelated},
-		Readable: []string{readableUnderParent},
-	}
-
-	args := buildAtomicWriteOverlayArgs(j, gps, "", "")
+	args := buildOverlayBwrapArgs(layout, homeDir, []string{atomic}, nil, []string{writableDir}, true, NetworkOutbound)
 	joined := strings.Join(args, " ")
 
-	if !strings.Contains(joined, "--bind-try "+writableUnderParent+" "+writableUnderParent) {
-		t.Errorf("expected --bind-try for writable subpath, got: %s", joined)
-	}
-	if !strings.Contains(joined, "--ro-bind-try "+readableUnderParent+" "+readableUnderParent) {
-		t.Errorf("expected --ro-bind-try for readable subpath, got: %s", joined)
-	}
-	if strings.Contains(joined, "--bind-try "+unrelated) {
-		t.Errorf("unrelated path outside parent should not be re-bound under overlay, got: %s", joined)
+	// Writable dirs are bind-mounted at their natural path AFTER the overlay
+	// is mounted — so writes go straight to the real fs (no sync-back needed
+	// for these). Rename within these dirs is fine because they're directory
+	// mounts, not per-file mounts.
+	wantWritable := "--bind " + writableDir + " " + writableDir
+	if !strings.Contains(joined, wantWritable) {
+		t.Errorf("expected writable dir bound on top of overlay: %q in args, got: %s", wantWritable, joined)
 	}
 }
 
-func TestBuildAtomicWriteOverlayArgs_RestoresAgentBinaryUnderParent(t *testing.T) {
-	parent := t.TempDir()
-	atomicFile := filepath.Join(parent, "config.json")
-	if err := writeFileForTest(atomicFile, "x"); err != nil {
-		t.Fatalf("setup: %v", err)
+func TestBuildOverlayBwrapArgs_ReadableFilesGoIntoLower(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	readableFile := filepath.Join(homeDir, ".mcp.json")
+	for _, f := range []string{atomic, readableFile} {
+		if err := writeFileForTest(f, "{}"); err != nil {
+			t.Fatalf("setup %s: %v", f, err)
+		}
+	}
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, []string{readableFile})
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
 	}
 
-	binDir := filepath.Join(parent, "bin")
-	if err := mkdirForTest(binDir); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	agentBin := filepath.Join(binDir, "agent")
-	if err := writeFileForTest(agentBin, "#!/bin/sh\n"); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{atomicFile}}
-	gps := GrantedPathSet{}
-	args := buildAtomicWriteOverlayArgs(j, gps, "", agentBin)
+	args := buildOverlayBwrapArgs(layout, homeDir, []string{atomic}, []string{readableFile}, nil, true, NetworkOutbound)
 	joined := strings.Join(args, " ")
 
-	if !strings.Contains(joined, "--ro-bind "+agentBin) {
-		t.Errorf("expected agent binary to be restored under overlay, got: %s", joined)
+	// Readable files: ro-bind into lower (not at host path).
+	wantROBind := "--ro-bind " + readableFile + " " + filepath.Join(layout.Lower, ".mcp.json")
+	if !strings.Contains(joined, wantROBind) {
+		t.Errorf("readable file should be ro-bound into lower, expected %q in: %s", wantROBind, joined)
+	}
+}
+
+func TestBuildOverlayBwrapArgs_ReadableDirsBoundOnTopOfOverlay(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	if err := writeFileForTest(atomic, "{}"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	readableDir := filepath.Join(homeDir, "docs")
+	if err := mkdirForTest(readableDir); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, []string{readableDir})
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
+	}
+
+	args := buildOverlayBwrapArgs(layout, homeDir, []string{atomic}, []string{readableDir}, nil, true, NetworkOutbound)
+	joined := strings.Join(args, " ")
+
+	// Readable dirs are ro-bound at their natural path (post-overlay).
+	wantROBind := "--ro-bind " + readableDir + " " + readableDir
+	if !strings.Contains(joined, wantROBind) {
+		t.Errorf("readable dir should be ro-bound on top of overlay, expected %q in: %s", wantROBind, joined)
+	}
+}
+
+func TestBuildOverlayBwrapArgs_NonHomePathsAtNaturalLocations(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	if err := writeFileForTest(atomic, "{}"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// /tmp is a writable path outside $HOME; it should be bound at its
+	// natural location, not into the overlay.
+	outsideWritable := "/tmp"
+	outsideReadable := "/etc"
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, nil)
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
+	}
+
+	args := buildOverlayBwrapArgs(layout, homeDir, []string{atomic},
+		[]string{outsideReadable}, []string{outsideWritable}, true, NetworkOutbound)
+	joined := strings.Join(args, " ")
+
+	if !strings.Contains(joined, "--bind "+outsideWritable+" "+outsideWritable) {
+		t.Errorf("non-home writable should be bound at natural location: %s", joined)
+	}
+	if !strings.Contains(joined, "--ro-bind "+outsideReadable+" "+outsideReadable) {
+		t.Errorf("non-home readable should be ro-bound at natural location: %s", joined)
+	}
+}
+
+func TestBuildOverlayBwrapArgs_SkipsNonExistentPaths(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	if err := writeFileForTest(atomic, "{}"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	missing := filepath.Join(homeDir, ".does-not-exist")
+	missingDir := filepath.Join(homeDir, "ghost-dir")
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, nil)
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
+	}
+
+	args := buildOverlayBwrapArgs(layout, homeDir, []string{atomic},
+		[]string{missing}, []string{missingDir}, true, NetworkOutbound)
+	joined := strings.Join(args, " ")
+
+	if strings.Contains(joined, missing) {
+		t.Errorf("missing readable path should be skipped, got: %s", joined)
+	}
+	if strings.Contains(joined, missingDir) {
+		t.Errorf("missing writable path should be skipped, got: %s", joined)
+	}
+}
+
+func TestBuildOverlayBwrapArgs_UnsharePidAndNetwork(t *testing.T) {
+	runtimeDir := t.TempDir()
+	homeDir := t.TempDir()
+	atomic := filepath.Join(homeDir, ".claude.json")
+	if err := writeFileForTest(atomic, "{}"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{atomic}, nil)
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
+	}
+
+	args := buildOverlayBwrapArgs(layout, homeDir, []string{atomic}, nil, nil, false, NetworkNone)
+	joined := strings.Join(args, " ")
+
+	if !strings.Contains(joined, "--unshare-pid") {
+		t.Errorf("AllowSubprocess=false should include --unshare-pid, got: %s", joined)
+	}
+	if !strings.Contains(joined, "--unshare-net") {
+		t.Errorf("Network=none should include --unshare-net, got: %s", joined)
 	}
 }
 
@@ -201,7 +323,7 @@ func TestPolicyFromJSON_AddsOverlayedParentsToWritable(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected parent dir %q in ExtraWritable so Landlock allows tmpfs writes, got: %v",
+		t.Errorf("expected parent dir %q in ExtraWritable so Landlock allows overlay writes, got: %v",
 			tmp, p.ExtraWritable)
 	}
 }

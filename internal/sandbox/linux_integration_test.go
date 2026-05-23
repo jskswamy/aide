@@ -245,34 +245,38 @@ func TestLinuxIntegration_DefaultPolicy_ProjectRootReadable(t *testing.T) {
 	}
 }
 
-func TestLinuxIntegration_AtomicOverlay_InPlaceWritePersistsToHost(t *testing.T) {
+// TestLinuxIntegration_AtomicOverlay_EndToEnd exercises the new OverlayFS
+// design end-to-end: the agent writes via atomic-rename in the sandbox, the
+// sync-back step copies upper→host on exit, and a non-declared sibling on
+// the host is invisible inside the sandbox.
+func TestLinuxIntegration_AtomicOverlay_EndToEnd(t *testing.T) {
 	skipIfNoBwrapMount(t)
 
-	parent := t.TempDir()
-	target := filepath.Join(parent, ".claude.json")
-	if err := os.WriteFile(target, []byte(`{"version":1}`), 0600); err != nil {
-		t.Fatalf("setup target file: %v", err)
+	homeDir := t.TempDir()
+	target := filepath.Join(homeDir, ".claude.json")
+	if err := os.WriteFile(target, []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatalf("setup target: %v", err)
 	}
-
-	secret := filepath.Join(parent, "secret.txt")
-	if err := os.WriteFile(secret, []byte("HOST-ONLY"), 0600); err != nil {
+	secret := filepath.Join(homeDir, ".ssh-private-key")
+	if err := os.WriteFile(secret, []byte("HOST-ONLY"), 0o600); err != nil {
 		t.Fatalf("setup secret: %v", err)
 	}
 
-	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{target}}
-	overlayArgs := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
+	runtimeDir := t.TempDir()
+	layout, err := setupOverlayLayout(runtimeDir, homeDir, []string{target}, nil)
+	if err != nil {
+		t.Fatalf("setupOverlayLayout: %v", err)
+	}
+	overlayArgs := buildOverlayBwrapArgs(layout, homeDir, []string{target}, nil, nil, true, NetworkOutbound)
 
-	script := `
-set -eu
-echo "--- ls inside overlay ---"
-ls ` + parent + `
-echo "--- in-place rewrite of target ---"
-echo '{"version":2,"updated":true}' > ` + target + `
-echo "--- write sibling into overlay tmpfs ---"
-echo 'OVERWRITTEN-IN-SANDBOX' > ` + secret + `
-echo "--- done ---"
+	// Inside the sandbox, attempt atomic-rename of .claude.json and try to
+	// observe the secret. Expected: rename succeeds, secret invisible.
+	script := `set -eu
+ls ` + homeDir + ` > /tmp/listing
+echo '{"version":2,"updated":true}' > ` + target + `.tmp
+mv ` + target + `.tmp ` + target + `
+cat /tmp/listing
 `
-
 	bwrapPath, _ := exec.LookPath("bwrap")
 	args := append([]string{}, overlayArgs...)
 	args = append(args, "--ro-bind", "/usr", "/usr")
@@ -285,106 +289,35 @@ echo "--- done ---"
 
 	cmd := exec.Command(bwrapPath, args...)
 	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("bwrap overlay run failed: %v\noutput:\n%s", err, out)
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		t.Fatalf("bwrap overlay run failed: %v\noutput:\n%s", runErr, out)
+	}
+	if strings.Contains(string(out), ".ssh-private-key") {
+		t.Errorf("sandbox saw a non-declared sibling in $HOME; output:\n%s", out)
 	}
 
-	t.Logf("overlay output:\n%s", out)
-
-	got, err := os.ReadFile(target)
+	// Sync-back step (what __sandbox-sync would run after agent exit).
+	if err := syncOverlayFile(layout.Upper, homeDir, target); err != nil {
+		t.Fatalf("syncOverlayFile: %v", err)
+	}
+	got, err := os.ReadFile(target) // #nosec G304 -- test path under TempDir
 	if err != nil {
-		t.Fatalf("read host target after sandbox: %v", err)
+		t.Fatalf("read host target after sync: %v", err)
 	}
 	if !strings.Contains(string(got), `"updated":true`) {
-		t.Errorf("host target was not updated by the in-sandbox write; got: %q", got)
+		t.Errorf("atomic rename did not persist via sync-back; host file: %q", got)
 	}
-
-	stillSecret, err := os.ReadFile(secret)
+	stillSecret, err := os.ReadFile(secret) // #nosec G304 -- test path under TempDir
 	if err != nil {
 		t.Fatalf("read host secret after sandbox: %v", err)
 	}
 	if string(stillSecret) != "HOST-ONLY" {
-		t.Errorf("secret.txt was modified through the overlay; got: %q want %q", stillSecret, "HOST-ONLY")
-	}
-
-	if strings.Contains(string(out), "secret.txt") {
-		t.Errorf("sandbox could see secret.txt through the overlay; output:\n%s", out)
-	}
-}
-
-// TestLinuxIntegration_AtomicOverlay_PreflightDetectsEBUSY asserts that the
-// production preflightAtomicRename helper detects the rename-over-bind EBUSY
-// constraint and returns a refusal error rather than silently allowing a
-// launch where every atomic write would be lost.
-func TestLinuxIntegration_AtomicOverlay_PreflightDetectsEBUSY(t *testing.T) {
-	skipIfNoBwrapMount(t)
-
-	bwrapPath, err := exec.LookPath("bwrap")
-	if err != nil {
-		t.Skip("bwrap not on PATH")
-	}
-
-	err = preflightAtomicRename(bwrapPath)
-	if err == nil {
-		t.Fatal("preflight should detect kernel EBUSY on rename-over-bind and refuse; got nil error")
-	}
-	if !strings.Contains(err.Error(), "atomic-rename preflight failed") {
-		t.Errorf("expected 'atomic-rename preflight failed' in error, got: %v", err)
-	}
-}
-
-// rename(2) over a bind-mounted target returns EBUSY on Linux. This test pins
-// that constraint so a future overlay redesign (OverlayFS, mount-move) signals
-// when the limitation lifts.
-func TestLinuxIntegration_AtomicOverlay_RenameOverBindFileFailsWithEBUSY(t *testing.T) {
-	skipIfNoBwrapMount(t)
-
-	parent := t.TempDir()
-	target := filepath.Join(parent, ".claude.json")
-	if err := os.WriteFile(target, []byte(`{"v":1}`), 0600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	j := landlockPolicyJSON{AgentAtomicWritableFiles: []string{target}}
-	overlayArgs := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
-
-	script := `
-echo '{"v":2}' > ` + parent + `/.claude.json.tmp.$$
-mv ` + parent + `/.claude.json.tmp.$$ ` + target + `
-`
-
-	bwrapPath, _ := exec.LookPath("bwrap")
-	args := append([]string{}, overlayArgs...)
-	args = append(args, "--ro-bind", "/usr", "/usr")
-	for _, lib := range []string{"/lib", "/lib64"} {
-		if _, err := os.Stat(lib); err == nil {
-			args = append(args, "--ro-bind", lib, lib)
-		}
-	}
-	args = append(args, "--", "/bin/sh", "-c", script)
-
-	cmd := exec.Command(bwrapPath, args...)
-	cmd.Env = os.Environ()
-	out, _ := cmd.CombinedOutput()
-
-	if !strings.Contains(string(out), "Device or resource busy") &&
-		!strings.Contains(string(out), "EBUSY") {
-		t.Errorf("expected mv-over-bind to fail with EBUSY (Linux kernel constraint); got output:\n%s", out)
-	}
-
-	got, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatalf("read host target: %v", err)
-	}
-	if !strings.Contains(string(got), `"v":1`) {
-		t.Errorf("host file was unexpectedly modified by failed rename; got: %q", got)
+		t.Errorf("secret was modified through the sandbox; got: %q want HOST-ONLY", stillSecret)
 	}
 }
 
 func TestLinuxIntegration_AtomicOverlay_MissingFileRefusesToLaunch(t *testing.T) {
-	skipIfNoBwrapMount(t)
-
 	parent := t.TempDir()
 	missing := filepath.Join(parent, ".claude.json")
 
@@ -393,18 +326,8 @@ func TestLinuxIntegration_AtomicOverlay_MissingFileRefusesToLaunch(t *testing.T)
 	if len(got) != 1 || got[0] != missing {
 		t.Fatalf("missingAtomicWritableFiles should report %q as missing, got: %v", missing, got)
 	}
-
 	if !needsAtomicWriteOverlay(j) {
 		t.Error("policy declares an atomic file; needsAtomicWriteOverlay must return true so applyLandlock can hit the missing-file guard")
-	}
-
-	args := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
-	joined := strings.Join(args, " ")
-	if strings.Contains(joined, "--bind "+missing) {
-		t.Errorf("overlay must not --bind a non-existent file; got: %s", joined)
-	}
-	if !strings.Contains(joined, "--tmpfs "+filepath.Clean(parent)) {
-		t.Errorf("overlay should still tmpfs the parent so the missing-file guard runs in applyLandlock; got: %s", joined)
 	}
 }
 
@@ -470,45 +393,10 @@ func TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid(t *testing.T) 
 	}
 }
 
-// TestLinuxIntegration_AllowSubprocessFalse_LandlockOverlay_HasUnsharePid
-// asserts the bwrap overlay wrapper applied around the Landlock re-exec also
-// requests a new PID namespace when AllowSubprocess=false. The actual
-// subprocess block is enforced by seccomp installed inside RunSandboxApply;
-// the PID namespace is defence in depth.
-//
-// Tests buildAtomicWriteOverlayArgs directly so the test runs everywhere on
-// Linux — without this, the chicken-and-egg of preflightAtomicRename
-// (which refuses launch on EBUSY-exhibiting kernels) would block the test
-// on exactly the platforms where the launch would otherwise succeed.
-func TestLinuxIntegration_AllowSubprocessFalse_LandlockOverlay_HasUnsharePid(t *testing.T) {
-	parent := t.TempDir()
-	atomicFile := filepath.Join(parent, ".claude.json")
-	if err := os.WriteFile(atomicFile, []byte("{}"), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	j := landlockPolicyJSON{
-		AgentAtomicWritableFiles: []string{atomicFile},
-		AllowSubprocess:          false,
-	}
-	args := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
-
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "--unshare-pid") {
-		t.Errorf("AllowSubprocess=false should add --unshare-pid to the bwrap overlay args; got: %s", joined)
-	}
-
-	// Sanity: AllowSubprocess=true must NOT add --unshare-pid (avoid
-	// double enforcement when the policy allows subprocesses).
-	jAllowed := landlockPolicyJSON{
-		AgentAtomicWritableFiles: []string{atomicFile},
-		AllowSubprocess:          true,
-	}
-	allowedArgs := buildAtomicWriteOverlayArgs(jAllowed, GrantedPathSet{}, "", "")
-	if strings.Contains(strings.Join(allowedArgs, " "), "--unshare-pid") {
-		t.Errorf("AllowSubprocess=true should not add --unshare-pid; got: %v", allowedArgs)
-	}
-}
+// Note: the --unshare-pid coverage for the overlay path moved to
+// TestBuildOverlayBwrapArgs_UnsharePidAndNetwork in atomic_overlay_test.go,
+// which exercises the new buildOverlayBwrapArgs directly (no bwrap launch
+// needed, so runs on any Linux).
 
 func TestLinuxIntegration_SandboxRefResolution(t *testing.T) {
 	skipIfNoBwrap(t)

@@ -25,6 +25,17 @@ type Guard interface {
 	Description() string
 }
 
+// EnvProvider lets a module inject environment variables into the agent's
+// process. The launcher applies these after merging the user's configured
+// env, so module-supplied values override the user — this is intentional
+// for sandboxing concerns (e.g. redirecting an agent's config dir to a
+// sandbox-controlled location so the agent can't escape to $HOME). A
+// module that wants to defer to the user's existing env var should return
+// nil for that key by checking ctx.EnvLookup first.
+type EnvProvider interface {
+	AgentEnv(ctx *Context) map[string]string
+}
+
 // GuardResult holds rules and diagnostics from a guard evaluation.
 type GuardResult struct {
 	Name      string // guard name, set by the profile builder from Module.Name()

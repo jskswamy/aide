@@ -24,6 +24,7 @@ import (
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/ui"
+	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
 //go:generate mockgen -destination=mocks/mock_execer.go -package=mocks github.com/jskswamy/aide/internal/launcher Execer
@@ -339,6 +340,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			policy.Env = env
 			// 12c. Set agent module for sandbox profile
 			policy.AgentModule = ResolveAgentModule(agentName)
+			// 12d. Apply agent-module env overrides (e.g. claude's
+			// CLAUDE_CONFIG_DIR redirect to a sandbox-friendly location).
+			// AgentEnv observes the un-injected env via ctx.EnvLookup, so a
+			// user-set value is respected — module returns nil for that key
+			// and aide leaves it alone.
+			env = applyAgentEnv(env, policy)
 
 			cmd := &exec.Cmd{
 				Path: binary,
@@ -562,6 +569,28 @@ func mergeEnv(base []string, resolved map[string]string) []string {
 	}
 
 	return result
+}
+
+// applyAgentEnv merges env-var overrides declared by the policy's
+// AgentModule (via the optional seatbelt.EnvProvider interface). Modules
+// use this to inject sandbox-friendly values (e.g. CLAUDE_CONFIG_DIR
+// pointing at an aide-managed dir) while respecting user-set values —
+// each implementation checks ctx.EnvLookup first and returns nil for
+// keys the user already set.
+func applyAgentEnv(env []string, policy *sandbox.Policy) []string {
+	if policy == nil || policy.AgentModule == nil {
+		return env
+	}
+	provider, ok := policy.AgentModule.(seatbelt.EnvProvider)
+	if !ok {
+		return env
+	}
+	homeDir, _ := os.UserHomeDir()
+	overrides := provider.AgentEnv(policy.ToSeatbeltContext(homeDir))
+	if len(overrides) == 0 {
+		return env
+	}
+	return mergeEnv(env, overrides)
 }
 
 // buildBannerData constructs a BannerData from the resolved context and launch state.

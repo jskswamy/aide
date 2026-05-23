@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -309,6 +310,17 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir st
 	cmd.Path = aideBin
 	cmd.Args = innerArgs
 
+	// Pure Landlock path (no bwrap wrapper). The seccomp filter installed
+	// in RunSandboxApply blocks subprocess syscalls; CLONE_NEWPID adds PID
+	// namespace isolation as defence in depth so any future bypass of the
+	// seccomp filter still cannot see host processes.
+	if !policy.AllowSubprocess {
+		if cmd.SysProcAttr == nil {
+			cmd.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWPID
+	}
+
 	if policy.CleanEnv {
 		cmd.Env = filterEnv(cmd.Env)
 	}
@@ -480,6 +492,13 @@ func buildAtomicWriteOverlayArgs(j landlockPolicyJSON, gps GrantedPathSet, aideB
 		}
 	}
 
+	// AllowSubprocess=false: --unshare-pid for PID-namespace isolation.
+	// Actual subprocess block is the seccomp filter installed inside
+	// RunSandboxApply (the re-exec child) before it execs the agent.
+	if !j.AllowSubprocess {
+		args = append(args, "--unshare-pid")
+	}
+
 	return args
 }
 
@@ -622,6 +641,15 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 		}
 	}
 
+	// Block subprocess creation via seccomp, installed AFTER Landlock so a
+	// failure here doesn't leave the filesystem-restriction half applied.
+	// The filter survives execve so the agent inherits it.
+	if !policy.AllowSubprocess {
+		if err := installNoSubprocessSeccomp(); err != nil {
+			return fmt.Errorf("install seccomp: %w", err)
+		}
+	}
+
 	return syscall.Exec(agentPath, agentCmd, os.Environ())
 }
 
@@ -747,10 +775,21 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		fmt.Fprintln(os.Stderr, "aide: warning: Port-level filtering not supported by bwrap; using mode-only network policy")
 	}
 
-	// bwrap has no direct subprocess gate; PID-namespace isolation is the
-	// closest equivalent.
+	// Subprocess gate. Layered: --unshare-pid bounds the blast radius via
+	// PID-namespace isolation (children only see siblings in the namespace);
+	// --seccomp installs a BPF filter that blocks the underlying
+	// clone/fork/vfork syscalls outright so subprocess creation actually
+	// fails rather than just being hidden.
 	if !policy.AllowSubprocess {
 		bwrapArgs = append(bwrapArgs, "--unshare-pid")
+		memFile, err := noSubprocessSeccompMemfd()
+		if err != nil {
+			return fmt.Errorf("seccomp setup: %w", err)
+		}
+		// Each ExtraFiles[i] becomes fd 3+i in the child.
+		childFD := 3 + len(cmd.ExtraFiles)
+		cmd.ExtraFiles = append(cmd.ExtraFiles, memFile)
+		bwrapArgs = append(bwrapArgs, "--seccomp", strconv.Itoa(childFD))
 	}
 
 	bwrapArgs = append(bwrapArgs, "--")

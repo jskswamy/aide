@@ -408,6 +408,108 @@ func TestLinuxIntegration_AtomicOverlay_MissingFileRefusesToLaunch(t *testing.T)
 	}
 }
 
+// TestLinuxIntegration_AllowSubprocessFalse_Bwrap_BlocksFork asserts that the
+// bwrap-only fallback honours AllowSubprocess=false by blocking subprocess
+// creation outright, not merely isolating it via a PID namespace. The shell
+// inside the sandbox attempts to spawn /bin/true; the seccomp filter we install
+// must block the underlying clone()-without-CLONE_THREAD so the shell's `&&`
+// branch never runs and the `||` branch prints FORK_BLOCKED instead.
+func TestLinuxIntegration_AllowSubprocessFalse_Bwrap_BlocksFork(t *testing.T) {
+	skipIfNoBwrap(t)
+
+	bwrapPath, _ := exec.LookPath("bwrap")
+	s := &LinuxSandbox{}
+	policy := Policy{
+		ProjectRoot:     t.TempDir(),
+		RuntimeDir:      t.TempDir(),
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowSubprocess: false,
+	}
+
+	cmd := exec.Command("/bin/sh", "-c",
+		`/bin/true 2>/dev/null && echo FORK_WORKED || echo FORK_BLOCKED`)
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap: %v", err)
+	}
+
+	out, _ := cmd.CombinedOutput()
+	output := string(out)
+	if strings.Contains(output, "FORK_WORKED") {
+		t.Errorf("AllowSubprocess=false should block subprocess creation; output: %s", output)
+	}
+	if !strings.Contains(output, "FORK_BLOCKED") {
+		t.Errorf("expected FORK_BLOCKED in output; got: %s", output)
+	}
+}
+
+// TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid asserts the
+// bwrap fallback also adds --unshare-pid for defence in depth. The PID
+// namespace alone does not block fork; the seccomp filter does. But the
+// namespace bounds the blast radius if seccomp is ever bypassed.
+func TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid(t *testing.T) {
+	skipIfNoBwrap(t)
+
+	bwrapPath, _ := exec.LookPath("bwrap")
+	s := &LinuxSandbox{}
+	policy := Policy{
+		ProjectRoot:     t.TempDir(),
+		RuntimeDir:      t.TempDir(),
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowSubprocess: false,
+	}
+	cmd := exec.Command("/bin/sh", "-c",
+		`echo PPID=$(cut -d' ' -f4 /proc/self/stat)`)
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap: %v", err)
+	}
+	out, _ := cmd.CombinedOutput()
+	if !strings.Contains(string(out), "PPID=0") {
+		t.Errorf("expected sandboxed process to see PPID=0 (PID 1 in new PID namespace); got: %s", out)
+	}
+}
+
+// TestLinuxIntegration_AllowSubprocessFalse_LandlockOverlay_HasUnsharePid
+// asserts the bwrap overlay wrapper applied around the Landlock re-exec also
+// requests a new PID namespace when AllowSubprocess=false. The actual
+// subprocess block is enforced by seccomp installed inside RunSandboxApply;
+// the PID namespace is defence in depth.
+//
+// Tests buildAtomicWriteOverlayArgs directly so the test runs everywhere on
+// Linux — without this, the chicken-and-egg of preflightAtomicRename
+// (which refuses launch on EBUSY-exhibiting kernels) would block the test
+// on exactly the platforms where the launch would otherwise succeed.
+func TestLinuxIntegration_AllowSubprocessFalse_LandlockOverlay_HasUnsharePid(t *testing.T) {
+	parent := t.TempDir()
+	atomicFile := filepath.Join(parent, ".claude.json")
+	if err := os.WriteFile(atomicFile, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	j := landlockPolicyJSON{
+		AgentAtomicWritableFiles: []string{atomicFile},
+		AllowSubprocess:          false,
+	}
+	args := buildAtomicWriteOverlayArgs(j, GrantedPathSet{}, "", "")
+
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--unshare-pid") {
+		t.Errorf("AllowSubprocess=false should add --unshare-pid to the bwrap overlay args; got: %s", joined)
+	}
+
+	// Sanity: AllowSubprocess=true must NOT add --unshare-pid (avoid
+	// double enforcement when the policy allows subprocesses).
+	jAllowed := landlockPolicyJSON{
+		AgentAtomicWritableFiles: []string{atomicFile},
+		AllowSubprocess:          true,
+	}
+	allowedArgs := buildAtomicWriteOverlayArgs(jAllowed, GrantedPathSet{}, "", "")
+	if strings.Contains(strings.Join(allowedArgs, " "), "--unshare-pid") {
+		t.Errorf("AllowSubprocess=true should not add --unshare-pid; got: %v", allowedArgs)
+	}
+}
+
 func TestLinuxIntegration_SandboxRefResolution(t *testing.T) {
 	skipIfNoBwrap(t)
 

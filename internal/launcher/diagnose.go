@@ -37,6 +37,11 @@ type RunResult struct {
 // DiagnoseRunner is the narrow interface the diagnose path consumes.
 // Lets tests inject fakes.
 //
+// extraFiles is forwarded to the spawned child via exec.Cmd.ExtraFiles.
+// The Linux sandbox uses this slot to keep its policy memfd (Landlock) or
+// seccomp BPF memfd (bwrap --seccomp) alive across the fork+exec boundary.
+// Without it, cmd.Start would close those fds before the child reads them.
+//
 // Contract: Run returns exactly one of:
 //   - (result, nil) when the child process completed (regardless of
 //     exit code or signal); the result describes what happened.
@@ -46,7 +51,7 @@ type RunResult struct {
 // Implementations must not return both a non-nil result and a non-nil
 // error; callers may rely on this to simplify branching.
 type DiagnoseRunner interface {
-	Run(binary string, args []string, env []string) (*RunResult, error)
+	Run(binary string, args []string, env []string, extraFiles []*os.File) (*RunResult, error)
 }
 
 // exitError carries the child's exit code back to main so the process

@@ -380,6 +380,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 
 	var pathWarnings []string
 	var diagSandbox diag.SandboxInfo
+	// sandboxExtraFiles parks fds the sandbox layer needs the child to
+	// inherit (Landlock policy memfd, bwrap seccomp memfd). SyscallExecer
+	// ignores it (syscall.Exec preserves all non-CLOEXEC fds), but
+	// runDiagnose uses cmd.Start which closes everything outside
+	// stdin/stdout/stderr + ExtraFiles.
+	var sandboxExtraFiles []*os.File
 	if sbDisabled {
 		diagSandbox.Disabled = true
 	}
@@ -416,6 +422,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			binary = cmd.Path
 			extraArgs = cmd.Args[1:]
 			env = cmd.Env
+			sandboxExtraFiles = cmd.ExtraFiles
 
 			// Capture sandbox info for --diagnose. Best-effort: profile
 			// generation is allowed to fail silently — the report still
@@ -463,7 +470,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	args := append([]string{binary}, extraArgs...)
 	if l.Diagnose {
 		dc := l.buildDiagContext(cfg, rc, diagSandbox)
-		return l.runDiagnose(binary, args, env, dc)
+		return l.runDiagnose(binary, args, env, sandboxExtraFiles, dc)
 	}
 	return l.Execer.Exec(binary, args, env)
 }

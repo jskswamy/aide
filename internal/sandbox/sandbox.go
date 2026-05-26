@@ -293,8 +293,8 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 			origin[resolved] = "policy:runtime"
 		}
 	}
-	for _, p := range policy.ExtraWritable {
-		resolved := resolveSymlink(p)
+	for _, expanded := range expandGlobs(policy.ExtraWritable) {
+		resolved := resolveSymlink(expanded)
 		writableSet[resolved] = true
 		if origin[resolved] == "" {
 			origin[resolved] = "config:extra_writable"
@@ -314,8 +314,8 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	// GuardResult.Writable / Readable so each grant is auditable in
 	// OriginGuard and bounded to the dir the agent actually needs.
 	readableSet := make(map[string]bool)
-	for _, p := range policy.ExtraReadable {
-		resolved := resolveSymlink(p)
+	for _, expanded := range expandGlobs(policy.ExtraReadable) {
+		resolved := resolveSymlink(expanded)
 		readableSet[resolved] = true
 		if origin[resolved] == "" {
 			origin[resolved] = "config:extra_readable"

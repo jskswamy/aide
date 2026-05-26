@@ -6,6 +6,7 @@ package sandbox
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 	"syscall"
 
 	"github.com/landlock-lsm/go-landlock/landlock"
+	"golang.org/x/sys/unix"
 )
 
 // LinuxSandbox implements Sandbox using Landlock (preferred) or bubblewrap (fallback).
@@ -294,7 +296,7 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 // applyLandlock re-execs aide with __sandbox-apply (Landlock can only restrict
 // the calling process; the re-exec target self-applies the filter then execs
 // the agent).
-func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir string) error {
+func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, _ string) error {
 	policyJSON, err := policyToJSON(policy)
 	if err != nil {
 		return fmt.Errorf("build sandbox policy: %w", err)
@@ -304,19 +306,28 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir st
 		return fmt.Errorf("marshal sandbox policy: %w", err)
 	}
 
-	policyPath := filepath.Join(runtimeDir, "landlock-policy.json")
-	if err := os.WriteFile(policyPath, policyBytes, 0600); err != nil {
-		return fmt.Errorf("write sandbox policy: %w", err)
+	policyFD, err := writePolicyToMemfd(policyBytes)
+	if err != nil {
+		return err
 	}
 
 	aideBin, err := os.Executable()
 	if err != nil {
+		_ = policyFD.Close()
 		return fmt.Errorf("resolve aide binary: %w", err)
 	}
 
+	// Pass the kernel-allocated fd number explicitly in argv. cmd.ExtraFiles
+	// is irrelevant at runtime — the launcher uses raw syscall.Exec which
+	// does not honour it — but we still attach the *os.File there to keep a
+	// Go-level reference alive (preventing the runtime finalizer from closing
+	// the fd before exec) and to give tests a stable introspection handle.
+	policyFDNum := int(policyFD.Fd())
+	cmd.ExtraFiles = []*os.File{policyFD}
+
 	originalArgs := cmd.Args
 	innerArgs := append(
-		[]string{"aide", "__sandbox-apply", policyPath, "--"},
+		[]string{"aide", "__sandbox-apply", fmt.Sprintf("--policy-fd=%d", policyFDNum), "--"},
 		originalArgs...,
 	)
 	cmd.Path = aideBin
@@ -347,12 +358,55 @@ func shouldGateNetwork(mode NetworkMode, portPolicy PortPolicyEffective) bool {
 	return len(portPolicy.AllowSet) > 0
 }
 
+// writePolicyToMemfd writes policyBytes to an anonymous in-memory file
+// (memfd_create) and returns an *os.File whose fd is suitable for inheritance
+// across syscall.Exec.
+//
+// MFD_CLOEXEC is intentionally NOT set. The production launcher invokes
+// SyscallExecer.Exec → raw syscall.Exec, which does NOT honour cmd.ExtraFiles
+// (that is a *exec.Cmd.Start-only abstraction). The only way to deliver the
+// memfd to the re-exec child is via fd inheritance, which requires
+// FD_CLOEXEC to be clear at exec time. The caller is expected to encode the
+// kernel-allocated fd number in argv (e.g. --policy-fd=N) so the child can
+// locate it without assuming a fixed fd.
+//
+// Confidentiality is preserved by the kernel-backed memfd never touching disk
+// and being reclaimed once both ends close.
+//
+// Note we deliberately do NOT dup the fd onto a fixed low number such as 3.
+// In Go test processes, fd 3 is occupied by the test framework's testlogfile;
+// dup2'ing onto it silently breaks subsequent tests. Letting the kernel pick
+// the fd avoids that collision and is sufficient because the fd number is
+// passed explicitly in argv.
+func writePolicyToMemfd(policyBytes []byte) (*os.File, error) {
+	fd, err := unix.MemfdCreate("landlock-policy", 0)
+	if err != nil {
+		return nil, fmt.Errorf("memfd_create for sandbox policy: %w", err)
+	}
+	f := os.NewFile(uintptr(fd), "landlock-policy")
+	if _, err := f.Write(policyBytes); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("write sandbox policy to memfd: %w", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("seek sandbox policy memfd: %w", err)
+	}
+	return f, nil
+}
+
 // RunSandboxApply is the __sandbox-apply re-exec handler. Runs in the child
 // process so Landlock restricts only this process and the agent it execs.
-func RunSandboxApply(policyPath string, agentCmd []string) error {
-	policyBytes, err := os.ReadFile(policyPath)
+func RunSandboxApply(policyFDStr string, agentCmd []string) error {
+	fdNum, err := strconv.Atoi(policyFDStr)
 	if err != nil {
-		return fmt.Errorf("read sandbox policy: %w", err)
+		return fmt.Errorf("invalid --policy-fd value %q: %w", policyFDStr, err)
+	}
+	policyFile := os.NewFile(uintptr(fdNum), "landlock-policy")
+	policyBytes, err := io.ReadAll(policyFile)
+	_ = policyFile.Close()
+	if err != nil {
+		return fmt.Errorf("read sandbox policy from fd %d: %w", fdNum, err)
 	}
 
 	var pj landlockPolicyJSON
@@ -701,10 +755,14 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		if err != nil {
 			return fmt.Errorf("seccomp setup: %w", err)
 		}
-		// Each ExtraFiles[i] becomes fd 3+i in the child.
-		childFD := 3 + len(cmd.ExtraFiles)
-		cmd.ExtraFiles = append(cmd.ExtraFiles, memFile)
-		bwrapArgs = append(bwrapArgs, "--seccomp", strconv.Itoa(childFD))
+		// Same exec-boundary problem as the Landlock policy fd: cmd.ExtraFiles
+		// is honoured only by *exec.Cmd.Start(); the launcher uses raw
+		// syscall.Exec to spawn bwrap. The seccomp memfd is created without
+		// MFD_CLOEXEC (see noSubprocessSeccompMemfd) so the kernel-allocated
+		// fd survives exec; pass that fd number explicitly to bwrap.
+		seccompFDNum := int(memFile.Fd())
+		cmd.ExtraFiles = []*os.File{memFile}
+		bwrapArgs = append(bwrapArgs, "--seccomp", strconv.Itoa(seccompFDNum))
 	}
 
 	// Append -- and the original command

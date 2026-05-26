@@ -24,13 +24,22 @@ type DiagnoseExecer struct {
 }
 
 // Run executes binary with args and env, returning observed run state.
-func (d *DiagnoseExecer) Run(binary string, args []string, env []string) (*RunResult, error) {
+//
+// extraFiles is forwarded via cmd.ExtraFiles so the child inherits them at
+// fds 3, 4, .... When non-empty, argv is also remapped so any embedded
+// parent-side memfd numbers (e.g. --policy-fd=42 or --seccomp 42) become
+// the matching child-side fd (3 + index). See remapArgvFDs for the
+// argv-format contract.
+func (d *DiagnoseExecer) Run(binary string, args []string, env []string, extraFiles []*os.File) (*RunResult, error) {
+	args = remapArgvFDs(args, extraFiles)
+
 	cmd := exec.Command(binary, args[1:]...)
 	cmd.Path = binary
 	cmd.Args = args
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
+	cmd.ExtraFiles = extraFiles
 
 	// Intentionally NOT setting Setpgid: keeping the child in aide's
 	// process group means it shares the TTY's foreground group, so
@@ -88,6 +97,48 @@ func (d *DiagnoseExecer) Run(binary string, args []string, env []string) (*RunRe
 		return res, nil
 	}
 	return nil, err
+}
+
+// remapArgvFDs rewrites parent-side memfd numbers embedded in argv to the
+// child-side numbers that exec.Cmd.Start assigns via ExtraFiles
+// (extraFiles[i] becomes child fd 3+i).
+//
+// The Linux sandbox layer (sandbox.applyLandlock / applyBwrap) embeds the
+// parent's actual memfd fd in argv on the assumption that the launcher
+// will use syscall.Exec, which preserves fd numbers across process image
+// replacement. Under --diagnose the launcher uses cmd.Start instead, which
+// dup2s ExtraFiles[i] to fd 3+i in the child — the parent-side number is
+// no longer valid, and without remapping the child reads a closed fd and
+// the sandbox setup fails (Landlock: "bad file descriptor"; bwrap: filter
+// load failure).
+//
+// Two argv formats are matched, mirroring the sandbox emit sites:
+//
+//   - "--policy-fd=N"  (joined; Landlock policy via aide __sandbox-apply)
+//   - "--seccomp N"    (split;  bwrap seccomp BPF)
+//
+// Matching is anchored on the exact flag string so accidental occurrences
+// of the parent fd number elsewhere in argv (unlikely but possible) are
+// not rewritten.
+func remapArgvFDs(args []string, extraFiles []*os.File) []string {
+	if len(extraFiles) == 0 {
+		return args
+	}
+	out := append([]string(nil), args...)
+	for i, f := range extraFiles {
+		parent := strconv.Itoa(int(f.Fd()))
+		child := strconv.Itoa(3 + i)
+		for j := range out {
+			if out[j] == "--policy-fd="+parent {
+				out[j] = "--policy-fd=" + child
+				continue
+			}
+			if out[j] == "--seccomp" && j+1 < len(out) && out[j+1] == parent {
+				out[j+1] = child
+			}
+		}
+	}
+	return out
 }
 
 // captureStderr tees from src to passthrough while collecting up to lineLimit

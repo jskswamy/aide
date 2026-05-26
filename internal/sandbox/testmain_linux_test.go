@@ -12,5 +12,6 @@ import (
 // is unset (the common case), it falls through to the normal test runner.
 func TestMain(m *testing.M) {
 	dispatchPolicyFDHelper()
+	dispatchLandlockRenameHelper()
 	os.Exit(m.Run())
 }

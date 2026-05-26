@@ -461,7 +461,18 @@ func RunSandboxApply(policyFDStr string, agentCmd []string) error {
 		if !pathExists(p) {
 			continue
 		}
-		rule := landlock.RWDirs(p)
+		// WithRefer adds LANDLOCK_ACCESS_FS_REFER, which is required for any
+		// rename or hard-link operation whose source dirfd differs from the
+		// destination dirfd — even within the same writable subtree on the
+		// same filesystem. Without it, the kernel returns synthetic EXDEV.
+		// This breaks ordinary tooling that relies on cross-directory
+		// renames (cargo/rustc rmeta staging, npm/pnpm pack, git temp-rename
+		// commits, atomic-write-via-tempfile patterns), so we grant REFER on
+		// every writable directory rule. REFER is safe to grant: the kernel
+		// still verifies that the destination's parent has at least the same
+		// access rights as the source's parent, so it cannot be used to
+		// escape the sandbox.
+		rule := landlock.RWDirs(p).WithRefer()
 		// /dev needs ioctl for TIOCGWINSZ/TCGETS on tty devices; RWDirs omits it.
 		if p == "/dev" || strings.HasPrefix(p, "/dev/") {
 			rule = rule.WithIoctlDev()

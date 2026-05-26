@@ -876,3 +876,30 @@ func TestFilterEnv_RealClaudeModule_PreservesClaudeConfigDir(t *testing.T) {
 		t.Errorf("ANTHROPIC_API_KEY should still be stripped; filtered=%v", filtered)
 	}
 }
+
+// TestLinuxSystemReadable_SysfsScope verifies that the sysfs grant is narrowed
+// to /sys/fs/cgroup rather than the full /sys tree. Granting the whole tree
+// exposes /sys/class/net, /sys/bus/usb, /sys/kernel/security, and debugfs to
+// the sandboxed agent. Bun/Node only need cgroup membership information, so
+// the allow-list is scoped to /sys/fs/cgroup.
+func TestLinuxSystemReadable_SysfsScope(t *testing.T) {
+	broadSysfs := "/sys"
+	narrowCgroup := "/sys/fs/cgroup"
+
+	var hasBroad, hasNarrow bool
+	for _, p := range linuxSystemReadable {
+		if p == broadSysfs {
+			hasBroad = true
+		}
+		if p == narrowCgroup {
+			hasNarrow = true
+		}
+	}
+
+	if hasBroad {
+		t.Errorf("linuxSystemReadable must not contain %q: exposes /sys/class/net, /sys/bus/usb, /sys/kernel/security, and debugfs", broadSysfs)
+	}
+	if !hasNarrow {
+		t.Errorf("linuxSystemReadable must contain %q for Bun/Node cgroup queries", narrowCgroup)
+	}
+}

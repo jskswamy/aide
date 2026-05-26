@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -35,6 +36,8 @@ func dispatchPolicyFDHelper() {
 	switch os.Getenv("AIDE_TEST_POLICY_FD_MODE") {
 	case "exec":
 		runPolicyFDExecHelper()
+	case "exec_after_gc":
+		runPolicyFDExecAfterGCHelper()
 	case "reader":
 		runPolicyFDReaderHelper()
 	case "seccomp_exec":
@@ -241,6 +244,109 @@ func extractSeccompFD(args []string) (int, bool) {
 		return n, true
 	}
 	return 0, false
+}
+
+// runPolicyFDExecAfterGCHelper reproduces the launcher's actual race window:
+// applyLandlock stashes the policy *os.File in cmd.ExtraFiles, the launcher
+// extracts cmd.Path/Args/Env and then drops the cmd reference, runs unrelated
+// allocation-heavy work (banner rendering, signal setup), and only then calls
+// syscall.Exec. If the *os.File's runtime finalizer fires during that window,
+// fd N is closed in the launcher process and the re-exec child sees EBADF.
+//
+// We simulate the launcher by:
+//  1. building a Cmd, calling applyLandlock to populate ExtraFiles,
+//  2. extracting Path/Args/Env (mirroring lines 387–389 of launcher.go),
+//  3. dropping the cmd reference,
+//  4. forcing two GC passes so the *os.File finalizer runs if it can,
+//  5. then syscall.Exec into the reader.
+//
+// Without the finalizer-disable fix, the reader sees EBADF or empty data.
+func runPolicyFDExecAfterGCHelper() {
+	payload := []byte(os.Getenv("AIDE_TEST_POLICY_FD_PAYLOAD"))
+
+	cmd := exec.Command("/bin/true")
+	policyJSON, err := policyToJSON(Policy{
+		ProjectRoot: "/tmp/aide-fd-gc-test",
+		Network:     NetworkOutbound,
+		Env:         []string{"PAYLOAD_MARKER=" + string(payload)},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "policyToJSON: %v\n", err)
+		os.Exit(2)
+	}
+	_ = policyJSON
+	memFile, err := writePolicyToMemfd(payload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "memfd: %v\n", err)
+		os.Exit(3)
+	}
+	policyFDNum := int(memFile.Fd())
+	cmd.ExtraFiles = []*os.File{memFile}
+
+	// Mirror the launcher: extract the fields the Execer needs, then drop cmd.
+	args := []string{os.Args[0], "-test.run=TestPolicyFD_SurvivesSyscallExec_AfterGC"}
+	envv := withHelperEnv(map[string]string{
+		"AIDE_TEST_POLICY_FD_MODE": "reader",
+		"AIDE_TEST_POLICY_FD_NUM":  strconv.Itoa(policyFDNum),
+	})
+	cmd = nil //nolint:wastedassign // explicit unreachability so GC can collect
+	memFile = nil //nolint:wastedassign // explicit unreachability so GC can collect
+
+	// Force the finalizer to run if the *os.File reference is the only thing
+	// keeping the fd alive. Two passes because finalizers are queued during
+	// the first GC and run between the two.
+	runtime.GC()
+	runtime.GC()
+
+	// Allocate to push the runtime past any conservative-stack-scan retention
+	// of the dropped *os.File pointer.
+	churn := make([][]byte, 0, 256)
+	for range 256 {
+		churn = append(churn, make([]byte, 4096))
+	}
+	_ = churn
+	runtime.GC()
+	runtime.GC()
+
+	if err := syscall.Exec(os.Args[0], args, envv); err != nil {
+		fmt.Fprintf(os.Stderr, "syscall.Exec: %v\n", err)
+		os.Exit(4)
+	}
+}
+
+// TestPolicyFD_SurvivesSyscallExec_AfterGC pins the GC race observed in
+// production: the launcher drops its reference to cmd (and thus to the policy
+// memfd's *os.File) between applyLandlock returning and syscall.Exec running.
+// If os.NewFile's runtime finalizer fires in that window, fd N is closed in
+// the launcher process and the child sees "read landlock-policy: bad file
+// descriptor" intermittently.
+//
+// The exec-after-gc helper deliberately drops the cmd/memFile references and
+// forces multiple GC passes before syscall.Exec, so a working fix must keep
+// fd N open across that boundary.
+func TestPolicyFD_SurvivesSyscallExec_AfterGC(t *testing.T) {
+	if os.Getenv("AIDE_TEST_POLICY_FD_MODE") != "" {
+		t.Skip("subprocess helper invocation; primary assertion runs in parent")
+	}
+
+	const payload = `{"ProjectRoot":"/tmp/proj","Network":"none","gc-marker":"x"}`
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestPolicyFD_SurvivesSyscallExec_AfterGC")
+	cmd.Env = withHelperEnv(map[string]string{
+		"AIDE_TEST_POLICY_FD_MODE":    "exec_after_gc",
+		"AIDE_TEST_POLICY_FD_PAYLOAD": payload,
+	})
+	out, err := cmd.CombinedOutput()
+	output := string(out)
+
+	if err != nil {
+		t.Fatalf("subprocess helper failed: %v\noutput:\n%s", err, output)
+	}
+
+	want := "OK:" + payload
+	if !strings.Contains(output, want) {
+		t.Fatalf("policy fd closed by GC finalizer before syscall.Exec\n  want substring: %q\n  got output:     %q", want, output)
+	}
 }
 
 // TestSeccompFD_SurvivesSyscallExec is the bwrap-path companion to

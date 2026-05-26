@@ -142,10 +142,12 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	policy := sandbox.DefaultPolicy(sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDir.Path(), TempDir: tempDir}, os.Environ())
 	policy.AgentModule = ResolveAgentModule(name)
 
+	env := applyAgentEnv(os.Environ(), &policy)
+
 	cmd := &exec.Cmd{
 		Path: binary,
 		Args: append([]string{binary}, extraArgs...),
-		Env:  os.Environ(),
+		Env:  env,
 	}
 
 	sb := sandbox.NewSandbox()

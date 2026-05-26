@@ -249,11 +249,11 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 		}
 	}
 
-	// Collect readable paths from guard Readable lists (e.g. a capability
+	// Collect readable paths from guard Allowed lists (e.g. a capability
 	// unlocking ~/.config/gh, or a credential path the agent may read).
 	readableExtra := make(map[string]bool)
 	for _, gr := range guardResults {
-		for _, p := range gr.Readable {
+		for _, p := range gr.Allowed {
 			resolved := resolveSymlink(p)
 			if resolved != "" {
 				readableExtra[resolved] = true
@@ -458,11 +458,28 @@ func DetectGuardConflicts(results []seatbelt.GuardResult) []string {
 	return warnings
 }
 
-func filterEnv(env []string) []string {
+// filterEnv reduces env to the essential vars an agent needs to function
+// in a CleanEnv sandbox. The base allow-list covers shell + locale + XDG
+// runtime essentials; on top of that, any env key declared by the policy's
+// AgentModule via the seatbelt.EnvProvider interface is preserved too.
+//
+// Without the EnvProvider passthrough, applyAgentEnv in the launcher would
+// inject e.g. CLAUDE_CONFIG_DIR pointing at aide's redirect path, and then
+// CleanEnv would immediately strip it back out — Claude would fall back to
+// $HOME/.claude*, which Landlock denies, and the agent would crash.
+//
+// The probe context has Env cleared so EnvProvider implementations that
+// "respect user overrides by returning nil" still surface their managed
+// key set. We only use the returned map's KEYS — the values in env have
+// already been chosen by applyAgentEnv (user value or module default).
+func filterEnv(env []string, policy Policy) []string {
 	essential := map[string]bool{
 		"PATH": true, "HOME": true, "USER": true,
 		"SHELL": true, "TERM": true, "LANG": true,
 		"TMPDIR": true, "XDG_RUNTIME_DIR": true, "XDG_CONFIG_HOME": true,
+	}
+	for _, k := range agentEnvKeys(policy) {
+		essential[k] = true
 	}
 	var filtered []string
 	for _, e := range env {
@@ -472,4 +489,50 @@ func filterEnv(env []string) []string {
 		}
 	}
 	return filtered
+}
+
+// agentEnvKeys returns the env keys the policy's AgentModule wants present
+// in the agent process. Returns nil when the module does not implement
+// seatbelt.EnvProvider (e.g. agents with no env-redirect needs).
+//
+// Key discovery prefers seatbelt.EnvKeyProvider (side-effect-free) over
+// probing AgentEnv with a nil-env context. Probing AgentEnv bypasses the
+// "user already set this key" guard and may trigger filesystem side effects
+// (e.g. os.MkdirAll in claude_linux.go). If that fails, AgentEnv returns nil,
+// making the key invisible to filterEnv — a user-set CLAUDE_CONFIG_DIR would
+// then be silently stripped in CleanEnv mode.
+func agentEnvKeys(policy Policy) []string {
+	if policy.AgentModule == nil {
+		return nil
+	}
+	if _, ok := policy.AgentModule.(seatbelt.EnvProvider); !ok {
+		return nil
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	ctx := policy.ToSeatbeltContext(homeDir)
+
+	// Prefer the side-effect-free EnvKeyProvider when available.
+	if keyProvider, ok := policy.AgentModule.(seatbelt.EnvKeyProvider); ok {
+		keys := keyProvider.AgentEnvKeys(ctx)
+		sort.Strings(keys)
+		return keys
+	}
+
+	// Fallback: probe AgentEnv with Env=nil to force the module to reveal its
+	// keys regardless of any user-set override. This path exists for modules
+	// that have not yet implemented EnvKeyProvider; it may have side effects.
+	provider, _ := policy.AgentModule.(seatbelt.EnvProvider)
+	probe := policy.ToSeatbeltContext(homeDir)
+	probe.Env = nil
+	envMap := provider.AgentEnv(probe)
+	if len(envMap) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(envMap))
+	for k := range envMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

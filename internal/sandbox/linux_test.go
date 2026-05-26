@@ -639,6 +639,68 @@ func (n *nonEnvProviderModule) Rules(_ *seatbelt.Context) seatbelt.GuardResult {
 	return seatbelt.GuardResult{}
 }
 
+// recordingAgentModule captures the seatbelt.Context handed to Rules so
+// tests can assert that policyToJSON threads homeDir correctly to the
+// AgentModule (rather than silently passing "").
+type recordingAgentModule struct {
+	gotContext *seatbelt.Context
+	writable   []string
+}
+
+func (r *recordingAgentModule) Name() string { return "recording-agent" }
+func (r *recordingAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
+	r.gotContext = ctx
+	return seatbelt.GuardResult{Writable: r.writable}
+}
+
+// TestPolicyToJSON_AgentModule_ThreadsHomeDir pins the contract that policyToJSON
+// resolves $HOME and passes it through to AgentModule.Rules. Previously the
+// os.UserHomeDir() error was silently discarded; the recording module now
+// asserts the context it actually received.
+func TestPolicyToJSON_AgentModule_ThreadsHomeDir(t *testing.T) {
+	wantHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("os.UserHomeDir not available: %v", err)
+	}
+	mod := &recordingAgentModule{writable: []string{"/agent/state"}}
+	policy := Policy{AgentModule: mod, HomeDir: wantHome}
+
+	got, err := policyToJSON(policy)
+	if err != nil {
+		t.Fatalf("policyToJSON returned error: %v", err)
+	}
+
+	if mod.gotContext == nil {
+		t.Fatal("AgentModule.Rules was not called")
+	}
+	if mod.gotContext.HomeDir != wantHome {
+		t.Errorf("AgentModule received HomeDir=%q, want %q", mod.gotContext.HomeDir, wantHome)
+	}
+	if len(got.AgentWritable) != 1 || got.AgentWritable[0] != "/agent/state" {
+		t.Errorf("AgentWritable = %v, want [/agent/state]", got.AgentWritable)
+	}
+}
+
+// TestPolicyToJSON_NoAgentModule_NoError verifies the AgentModule==nil
+// short-circuit returns cleanly without touching os.UserHomeDir.
+func TestPolicyToJSON_NoAgentModule_NoError(t *testing.T) {
+	policy := Policy{
+		ProjectRoot: "/tmp/proj",
+		RuntimeDir:  "/tmp/rt",
+		Network:     NetworkOutbound,
+	}
+	got, err := policyToJSON(policy)
+	if err != nil {
+		t.Fatalf("policyToJSON returned error: %v", err)
+	}
+	if got.AgentWritable != nil {
+		t.Errorf("AgentWritable = %v, want nil", got.AgentWritable)
+	}
+	if got.ProjectRoot != "/tmp/proj" {
+		t.Errorf("ProjectRoot = %q, want /tmp/proj", got.ProjectRoot)
+	}
+}
+
 func TestFilterEnv_AgentModuleWithoutEnvProvider(t *testing.T) {
 	policy := Policy{AgentModule: &nonEnvProviderModule{}}
 	env := []string{
@@ -661,10 +723,15 @@ func TestFilterEnv_AgentModuleWithoutEnvProvider(t *testing.T) {
 // which must keep the key alive. If this test fails, Claude's state writes
 // land in $HOME/.claude* and get denied by Landlock at runtime.
 func TestFilterEnv_RealClaudeModule_PreservesClaudeConfigDir(t *testing.T) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("os.UserHomeDir not available: %v", err)
+	}
 	policy := Policy{
 		AgentModule: modules.ClaudeAgent(),
 		ProjectRoot: "/proj",
 		TempDir:     "/tmp",
+		HomeDir:     homeDir,
 	}
 	env := []string{
 		"PATH=/usr/bin",

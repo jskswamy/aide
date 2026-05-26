@@ -110,3 +110,65 @@ func TestClaudeAgent_LinuxWritablePathsInRules_UserOverrideHonoured(t *testing.T
 		t.Errorf("Writable should track user's CLAUDE_CONFIG_DIR; got %v want [%q]", result.Writable, userChoice)
 	}
 }
+
+func TestClaudeAgent_AgentEnvKeys_ReturnsCLAUDE_CONFIG_DIR(t *testing.T) {
+	mod := ClaudeAgent()
+	keyProvider, ok := mod.(seatbelt.EnvKeyProvider)
+	if !ok {
+		t.Fatal("ClaudeAgent must implement seatbelt.EnvKeyProvider for side-effect-free key discovery")
+	}
+
+	// Arrange: context is irrelevant — AgentEnvKeys must return the same keys
+	// regardless of whether CLAUDE_CONFIG_DIR is set, and must not call MkdirAll.
+	for _, ctx := range []*seatbelt.Context{
+		nil,
+		{HomeDir: ""},
+		{HomeDir: "/home/user", GOOS: "linux"},
+		{HomeDir: "/home/user", GOOS: "linux", Env: []string{"CLAUDE_CONFIG_DIR=/custom"}},
+	} {
+		// Act
+		keys := keyProvider.AgentEnvKeys(ctx)
+
+		// Assert
+		if len(keys) != 1 || keys[0] != "CLAUDE_CONFIG_DIR" {
+			t.Errorf("AgentEnvKeys(ctx=%v) = %v, want [CLAUDE_CONFIG_DIR]", ctx, keys)
+		}
+	}
+}
+
+func TestClaudeAgent_AgentEnv_MkdirAllFailure_ReturnsNil(t *testing.T) {
+	// Arrange: use a file as the parent so MkdirAll fails.
+	parentFile := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(parentFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// The aide default dir is <homeDir>/.config/aide/claude. By making homeDir
+	// point at a file-as-dir, MkdirAll will fail trying to descend into it.
+	mod := ClaudeAgent()
+	provider, ok := mod.(seatbelt.EnvProvider)
+	if !ok {
+		t.Fatal("ClaudeAgent must implement seatbelt.EnvProvider")
+	}
+	ctx := &seatbelt.Context{HomeDir: parentFile, GOOS: "linux"}
+
+	// Act
+	got := provider.AgentEnv(ctx)
+
+	// Assert: failure must return nil, not inject a broken path.
+	if got != nil {
+		t.Errorf("AgentEnv must return nil when MkdirAll fails; got %v", got)
+	}
+}
+
+func TestClaudeAgent_AugmentLinuxPaths_NilOrEmptyContext(t *testing.T) {
+	result := &seatbelt.GuardResult{}
+
+	// Arrange + Act: nil and empty-HomeDir context must be no-ops.
+	augmentLinuxPaths(nil, result)
+	augmentLinuxPaths(&seatbelt.Context{HomeDir: ""}, result)
+
+	// Assert
+	if len(result.Writable) != 0 {
+		t.Errorf("augmentLinuxPaths with nil/empty context must not append paths; got %v", result.Writable)
+	}
+}

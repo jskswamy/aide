@@ -129,6 +129,11 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	// Resolve project root from cwd (git root or cwd fallback).
 	projectRoot := aidectx.ProjectRoot(cwd)
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolving home directory: %w", err)
+	}
+
 	// Create runtime directory for sandbox profile files.
 	rtDir, err := NewRuntimeDir()
 	if err != nil {
@@ -139,7 +144,7 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 
 	tempDir := os.TempDir()
 
-	policy := sandbox.DefaultPolicy(sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDir.Path(), TempDir: tempDir}, os.Environ())
+	policy := sandbox.DefaultPolicy(sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDir.Path(), HomeDir: homeDir, TempDir: tempDir}, os.Environ())
 	policy.AgentModule = ResolveAgentModule(name)
 
 	env := applyAgentEnv(os.Environ(), &policy)

@@ -63,8 +63,6 @@ func (d *darwinSandbox) GenerateProfile(policy Policy) (string, error) {
 // generateSeatbeltProfile builds a Seatbelt .sb profile string from a Policy
 // by composing modules from the guard registry.
 func generateSeatbeltProfile(policy Policy) (string, error) {
-	homeDir, _ := os.UserHomeDir()
-
 	// Safety: ensure base guard is present
 	hasBase := false
 	for _, name := range policy.Guards {
@@ -79,9 +77,9 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 
 	activeGuards := guards.ResolveActiveGuards(policy.Guards)
 
-	p := seatbelt.New(homeDir).
+	p := seatbelt.New(policy.HomeDir).
 		WithContext(func(c *seatbelt.Context) {
-			*c = *policy.ToSeatbeltContext(homeDir)
+			*c = *policy.ToSeatbeltContext()
 		})
 
 	for _, g := range activeGuards {

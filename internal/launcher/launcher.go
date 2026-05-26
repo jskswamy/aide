@@ -171,13 +171,22 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		}
 	}
 
+	// Resolve the user's home directory once. Every downstream caller
+	// (tilde expansion, sandbox policy, agent-env injection) reads this
+	// value rather than calling os.UserHomeDir() independently. A missing
+	// HOME is a hard configuration error — silently passing "" would cause
+	// sandbox rules and CLAUDE_CONFIG_DIR to resolve to wrong paths.
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolving home directory: %w", err)
+	}
+
 	// 3b. Validate + inject per-profile env (CLAUDE_CONFIG_DIR etc.)
 	// when ctx.Profile is set. Errors here are config errors and
 	// must abort the launch — profile mis-config silently launching
 	// against the wrong dir is the exact class of bug this feature
 	// fixes.
-	homeDirForProfile, _ := os.UserHomeDir()
-	mergedEnv, perr := provision.InjectProfileEnv(rc.Context, rc.Context.Env, homeDirForProfile)
+	mergedEnv, perr := provision.InjectProfileEnv(rc.Context, rc.Context.Env, homeDir)
 	if perr != nil {
 		return fmt.Errorf("context %q: %w", rc.Name, perr)
 	}
@@ -273,7 +282,6 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// Tilde-expand leading "~/" in values so the child agent receives
 	// absolute paths. Agents (e.g. claude reading CLAUDE_CONFIG_DIR) don't
 	// expand "~" themselves, so an unexpanded value reads the wrong dir.
-	homeDir, _ := os.UserHomeDir()
 	for k, v := range resolvedEnv {
 		resolvedEnv[k] = homepath.Expand(v, homeDir)
 	}
@@ -633,8 +641,7 @@ func applyAgentEnv(env []string, policy *sandbox.Policy) []string {
 	if !ok {
 		return env
 	}
-	homeDir, _ := os.UserHomeDir()
-	overrides := provider.AgentEnv(policy.ToSeatbeltContext(homeDir))
+	overrides := provider.AgentEnv(policy.ToSeatbeltContext())
 	if len(overrides) == 0 {
 		return env
 	}

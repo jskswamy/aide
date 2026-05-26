@@ -84,6 +84,11 @@ type Policy struct {
 	// (e.g. "mach-lookup", "iokit-open", "signal").
 	ExtraAllow []string
 
+	// HomeDir is the user's home directory, resolved once by the caller and
+	// stored here so sandbox internals never call os.UserHomeDir() independently.
+	// Every ToSeatbeltContext call and guard evaluation reads from this field.
+	HomeDir string
+
 	// Whether the agent may spawn child processes.
 	AllowSubprocess bool
 
@@ -127,6 +132,7 @@ func DefaultPolicy(p Paths, env []string) Policy {
 		ProjectRoot:     p.ProjectRoot,
 		RuntimeDir:      p.RuntimeDir,
 		TempDir:         p.TempDir,
+		HomeDir:         p.HomeDir,
 		Env:             env,
 		Network:         NetworkOutbound,
 		AllowSubprocess: true,
@@ -164,9 +170,9 @@ func expandGlobs(patterns []string) []string {
 // darwin profile generator route through it so that adding a Policy field
 // is a one-line change in this method instead of a shotgun edit across
 // sandbox.go and darwin.go.
-func (p *Policy) ToSeatbeltContext(homeDir string) *seatbelt.Context {
+func (p *Policy) ToSeatbeltContext() *seatbelt.Context {
 	return &seatbelt.Context{
-		HomeDir:         homeDir,
+		HomeDir:         p.HomeDir,
 		ProjectRoot:     p.ProjectRoot,
 		TempDir:         p.TempDir,
 		RuntimeDir:      p.RuntimeDir,
@@ -375,10 +381,9 @@ func EvaluateGuards(policy *Policy) []seatbelt.GuardResult {
 	if policy == nil {
 		return nil
 	}
-	homeDir, _ := os.UserHomeDir()
 	activeGuards := guards.ResolveActiveGuards(policy.Guards)
 
-	ctx := policy.ToSeatbeltContext(homeDir)
+	ctx := policy.ToSeatbeltContext()
 
 	var results []seatbelt.GuardResult
 	for _, g := range activeGuards {
@@ -505,8 +510,7 @@ func agentEnvKeys(policy Policy) []string {
 		return nil
 	}
 
-	homeDir, _ := os.UserHomeDir()
-	ctx := policy.ToSeatbeltContext(homeDir)
+	ctx := policy.ToSeatbeltContext()
 
 	// Prefer the side-effect-free EnvKeyProvider when available.
 	if keyProvider, ok := policy.AgentModule.(seatbelt.EnvKeyProvider); ok {
@@ -519,7 +523,7 @@ func agentEnvKeys(policy Policy) []string {
 	// keys regardless of any user-set override. This path exists for modules
 	// that have not yet implemented EnvKeyProvider; it may have side effects.
 	provider, _ := policy.AgentModule.(seatbelt.EnvProvider)
-	probe := policy.ToSeatbeltContext(homeDir)
+	probe := policy.ToSeatbeltContext()
 	probe.Env = nil
 	envMap := provider.AgentEnv(probe)
 	if len(envMap) == 0 {

@@ -46,18 +46,26 @@ func (l *LinuxSandbox) Apply(cmd *exec.Cmd, policy Policy, runtimeDir string) er
 		return nil
 	}
 
-	if caps.LandlockEnabled {
+	// Dispatch on the backend ComputeIsolationTier selected, not on raw
+	// capability flags. The tier resolver may pick bwrap over a
+	// kernel-present-but-degraded Landlock when the requested policy is
+	// something bwrap can actually enforce (e.g. network=none on ABI < 4).
+	switch tier.Backend {
+	case BackendLandlock:
 		if tier.Tier == TierDegraded {
 			hasPortRules := len(policy.AllowPorts) > 0 || len(policy.DenyPorts) > 0
-			remedy := "upgrade to kernel ≥ 6.7 (Landlock ABI 4) or set network to unrestricted"
+			remedy := "upgrade to kernel ≥ 6.7 (Landlock ABI 4), install bubblewrap, or set network to unrestricted"
 			if hasPortRules {
 				remedy = "upgrade to kernel ≥ 6.7 (Landlock ABI 4) or remove port rules"
 			}
 			return fmt.Errorf("sandbox: %s; %s", tier.Reason, remedy)
 		}
 		return l.applyLandlock(cmd, policy, runtimeDir)
-	}
-	if bwrapPath, err := exec.LookPath("bwrap"); err == nil {
+	case BackendBwrap:
+		bwrapPath, err := exec.LookPath("bwrap")
+		if err != nil {
+			return fmt.Errorf("sandbox: tier selected bubblewrap but `bwrap` not found on PATH: %w", err)
+		}
 		if tier.Tier == TierDegraded {
 			fmt.Fprintf(os.Stderr, "aide: warning: sandbox degraded: %s\n", tier.Reason)
 		}

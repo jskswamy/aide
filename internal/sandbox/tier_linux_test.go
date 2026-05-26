@@ -84,6 +84,83 @@ func TestComputeIsolationTier_LandlockABI3_WithPortRules(t *testing.T) {
 	}
 }
 
+// TestComputeIsolationTier_LandlockABI3_NetworkNone_BwrapAvailable_PrefersBwrap
+// verifies the kernel-present-but-degraded-Landlock + bwrap-available case for
+// network=none falls back to bwrap (which can enforce it via --unshare-net)
+// instead of refusing the launch. Regression guard for a P1 reported by
+// Greptile on PR #2 — Ubuntu 22.04 hosts (Landlock ABI 2) were hard-blocked
+// from `network: none` policies even when bwrap could honour them.
+func TestComputeIsolationTier_LandlockABI3_NetworkNone_BwrapAvailable_PrefersBwrap(t *testing.T) {
+	caps := KernelCapabilities{
+		LandlockEnabled: true,
+		LandlockABI:     3,
+		BwrapAvailable:  true,
+		KernelRelease:   "6.2.0",
+	}
+	policy := Policy{Network: NetworkNone}
+	tier := ComputeIsolationTier(caps, policy)
+
+	if tier.Tier != TierDegraded {
+		t.Errorf("Tier = %q, want %q", tier.Tier, TierDegraded)
+	}
+	if tier.Backend != BackendBwrap {
+		t.Errorf("Backend = %q, want %q (bwrap can enforce network=none via --unshare-net)", tier.Backend, BackendBwrap)
+	}
+	if tier.PortFiltering != PortFilteringUnsupported {
+		t.Errorf("PortFiltering = %q, want %q", tier.PortFiltering, PortFilteringUnsupported)
+	}
+	if tier.Reason == "" {
+		t.Error("degraded tier must carry a Reason explaining the fallback")
+	}
+}
+
+// TestComputeIsolationTier_LandlockABI3_NetworkNone_NoBwrap_StaysLandlockDegraded
+// pins the contract that the bwrap fallback is conditional on bwrap actually
+// being installed. Without bwrap we still surface a hard error via the
+// Landlock-degraded path so the user sees the unmet requirement.
+func TestComputeIsolationTier_LandlockABI3_NetworkNone_NoBwrap_StaysLandlockDegraded(t *testing.T) {
+	caps := KernelCapabilities{
+		LandlockEnabled: true,
+		LandlockABI:     3,
+		BwrapAvailable:  false,
+		KernelRelease:   "6.2.0",
+	}
+	policy := Policy{Network: NetworkNone}
+	tier := ComputeIsolationTier(caps, policy)
+
+	if tier.Tier != TierDegraded {
+		t.Errorf("Tier = %q, want %q", tier.Tier, TierDegraded)
+	}
+	if tier.Backend != BackendLandlock {
+		t.Errorf("Backend = %q, want %q (no bwrap → no fallback possible)", tier.Backend, BackendLandlock)
+	}
+}
+
+// TestComputeIsolationTier_LandlockABI3_PortRules_BwrapAvailable_StaysLandlockDegraded
+// pins that the bwrap fallback only applies to network=none. Port-level rules
+// cannot be enforced by bwrap, so the tier resolver must NOT silently swap
+// backends — it must keep Landlock-degraded so Apply errors out.
+func TestComputeIsolationTier_LandlockABI3_PortRules_BwrapAvailable_StaysLandlockDegraded(t *testing.T) {
+	caps := KernelCapabilities{
+		LandlockEnabled: true,
+		LandlockABI:     3,
+		BwrapAvailable:  true,
+		KernelRelease:   "6.2.0",
+	}
+	policy := Policy{AllowPorts: []int{443}}
+	tier := ComputeIsolationTier(caps, policy)
+
+	if tier.Tier != TierDegraded {
+		t.Errorf("Tier = %q, want %q", tier.Tier, TierDegraded)
+	}
+	if tier.Backend != BackendLandlock {
+		t.Errorf("Backend = %q, want %q (bwrap cannot enforce per-port TCP rules)", tier.Backend, BackendLandlock)
+	}
+	if tier.PortFiltering != PortFilteringDegraded {
+		t.Errorf("PortFiltering = %q, want %q", tier.PortFiltering, PortFilteringDegraded)
+	}
+}
+
 // TestComputeIsolationTier_LandlockABI3_NoPortRules verifies primary tier on ABI3 without port rules.
 func TestComputeIsolationTier_LandlockABI3_NoPortRules(t *testing.T) {
 	caps := KernelCapabilities{LandlockEnabled: true, LandlockABI: 3}

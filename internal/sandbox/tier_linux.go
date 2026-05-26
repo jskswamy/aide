@@ -87,6 +87,21 @@ func ComputeIsolationTier(caps KernelCapabilities, policy Policy) IsolationTier 
 		}
 		// ABI < 4 cannot enforce per-port TCP filtering or network=none.
 		if requiresNetworkABI4 {
+			// Bwrap can enforce network=none via --unshare-net, but cannot
+			// do per-port TCP filtering. Prefer the bwrap backend in the
+			// narrow case where the kernel's Landlock gap is exactly
+			// "network=none" and bwrap is installed; otherwise stay on
+			// Landlock-degraded so the caller surfaces a hard error rather
+			// than silently mis-enforcing the policy.
+			if !hasPortRules && policy.Network == NetworkNone && caps.BwrapAvailable {
+				return IsolationTier{
+					Tier:          TierDegraded,
+					Backend:       BackendBwrap,
+					KernelABI:     caps.LandlockABI,
+					Reason:        fmt.Sprintf("kernel %s (Landlock ABI %d < 4): network=none not enforceable by Landlock; using bubblewrap (--unshare-net)", caps.KernelRelease, caps.LandlockABI),
+					PortFiltering: PortFilteringUnsupported,
+				}
+			}
 			reason := fmt.Sprintf("kernel %s (Landlock ABI %d < 4): TCP port filtering not enforced", caps.KernelRelease, caps.LandlockABI)
 			if !hasPortRules && policy.Network == NetworkNone {
 				reason = fmt.Sprintf("kernel %s (Landlock ABI %d < 4): network=none not enforced (requires ABI >= 4)", caps.KernelRelease, caps.LandlockABI)

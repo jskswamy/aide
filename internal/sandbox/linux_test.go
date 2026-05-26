@@ -408,6 +408,46 @@ func TestApply_Unavailable_DoesNotMutateCmd(t *testing.T) {
 	}
 }
 
+// TestApply_LandlockDegradedNetworkNone_PrefersBwrap is an integration regression
+// guard for the P1 reported on PR #2 (Greptile): on hosts with Landlock present
+// but ABI < 4 AND bubblewrap installed, a policy of `network: none` must NOT
+// hard-error out of Apply. The tier resolver picks bwrap (which can enforce
+// network=none via --unshare-net) and Apply must honour that selection.
+//
+// Skips unless the host shape actually matches (Landlock ABI < 4 + bwrap on
+// PATH). Real exercise happens on CI's ubuntu-22.04 matrix entry.
+func TestApply_LandlockDegradedNetworkNone_PrefersBwrap(t *testing.T) {
+	caps := DetectKernelCapabilities()
+	if !caps.LandlockEnabled || caps.LandlockABI >= 4 || !caps.BwrapAvailable {
+		t.Skipf("skipping: requires Landlock ABI < 4 + bwrap on PATH; got landlock=%v abi=%d bwrap=%v",
+			caps.LandlockEnabled, caps.LandlockABI, caps.BwrapAvailable)
+	}
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		t.Skipf("skipping: bwrap not on PATH: %v", err)
+	}
+
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hi")
+	runtimeDir := t.TempDir()
+	policy := Policy{
+		ProjectRoot: runtimeDir,
+		RuntimeDir:  runtimeDir,
+		Network:     NetworkNone,
+	}
+
+	if applyErr := s.Apply(cmd, policy, runtimeDir); applyErr != nil {
+		t.Fatalf("Apply returned error: %v (regression: degraded Landlock + bwrap-supported policy must fall back, not error)", applyErr)
+	}
+	tier := s.LastTier()
+	if tier == nil || tier.Backend != BackendBwrap {
+		t.Fatalf("LastTier = %+v, want Backend=%q", tier, BackendBwrap)
+	}
+	if cmd.Path != bwrapPath {
+		t.Errorf("cmd.Path = %q, want %q (Apply did not dispatch to bwrap)", cmd.Path, bwrapPath)
+	}
+}
+
 // TestApply_BwrapWithPortRules_DegradedTier verifies that when bwrap is the fallback
 // and port rules are configured, the tier is degraded with PortFiltering=degraded.
 func TestApply_BwrapWithPortRules_DegradedTier(t *testing.T) {

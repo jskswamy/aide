@@ -182,7 +182,7 @@ type landlockPolicyJSON struct {
 	AgentWritable   []string    `json:"AgentWritable,omitempty"`
 }
 
-func policyToJSON(p Policy) landlockPolicyJSON {
+func policyToJSON(p Policy) (landlockPolicyJSON, error) {
 	j := landlockPolicyJSON{
 		Guards:          p.Guards,
 		ProjectRoot:     p.ProjectRoot,
@@ -204,12 +204,22 @@ func policyToJSON(p Policy) landlockPolicyJSON {
 		// grants for the re-exec child (which receives AgentModule=nil after
 		// policyFromJSON). The macOS Rules slice is intentionally discarded
 		// — the child enforces via Landlock, not Seatbelt.
-		homeDir, _ := os.UserHomeDir()
-		moduleResult := p.AgentModule.Rules(p.ToSeatbeltContext(homeDir))
+		//
+		// HomeDir is required: every Linux agent module derives its
+		// writable/readable paths from $HOME (e.g. Claude's CLAUDE_CONFIG_DIR
+		// under ~/.config/aide/claude). Silently swallowing the error here
+		// would yield j.AgentWritable == nil, which means the re-exec child
+		// enforces a Landlock allow-list with no agent-config dir at all —
+		// every subsequent agent write is then dropped by the kernel with no
+		// user-visible diagnostic. Fail fast instead.
+		if p.HomeDir == "" {
+			return landlockPolicyJSON{}, fmt.Errorf("resolve $HOME for agent module %q: HomeDir not set on policy", p.AgentModule.Name())
+		}
+		moduleResult := p.AgentModule.Rules(p.ToSeatbeltContext())
 		j.AgentReadable = moduleResult.Allowed
 		j.AgentWritable = moduleResult.Writable
 	}
-	return j
+	return j, nil
 }
 
 // policyFromJSON inverts policyToJSON. AgentModule stays nil (unused for
@@ -240,7 +250,10 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 // the calling process; the re-exec target self-applies the filter then execs
 // the agent).
 func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir string) error {
-	policyJSON := policyToJSON(policy)
+	policyJSON, err := policyToJSON(policy)
+	if err != nil {
+		return fmt.Errorf("build sandbox policy: %w", err)
+	}
 	policyBytes, err := json.Marshal(policyJSON)
 	if err != nil {
 		return fmt.Errorf("marshal sandbox policy: %w", err)

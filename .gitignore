@@ -34,3 +34,6 @@ dist/
 
 # Test secrets (plaintext only; encrypted .enc.yaml is safe to commit)
 testdata/test-secrets.yaml
+
+coverage.out
+CLAUDE.md

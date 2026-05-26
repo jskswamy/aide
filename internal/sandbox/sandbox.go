@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
@@ -133,30 +134,19 @@ func DefaultPolicy(p Paths, env []string) Policy {
 	}
 }
 
-// NewSandbox returns a Sandbox implementation for the current platform.
-// On macOS it returns darwinSandbox, on unsupported platforms it returns
-// a no-op sandbox. Platform-specific implementations are in build-tagged files.
-// This function is defined in darwin.go and sandbox_other.go.
+// NewSandbox is provided per platform in darwin.go, linux.go, sandbox_other.go.
 
-// noopSandbox is a fallback Sandbox that does nothing.
-// Used when no platform-specific sandbox is available.
 type noopSandbox struct{}
 
-// Apply is a no-op; the command runs unsandboxed.
 func (n *noopSandbox) Apply(_ *exec.Cmd, _ Policy, _ string) error {
 	return nil
 }
 
-// GenerateProfile returns a message indicating sandbox is unavailable.
 func (n *noopSandbox) GenerateProfile(_ Policy) (string, error) {
 	return "Sandbox not available on this platform (no-op sandbox)", nil
 }
 
-
-// expandGlobs expands glob patterns in a list of paths.
-// Non-glob paths are passed through unchanged.
-// Used by linux.go — appears unused on darwin.
-func expandGlobs(patterns []string) []string { //nolint:unused,nolintlint // used by linux.go, not compiled on darwin
+func expandGlobs(patterns []string) []string {
 	var result []string
 	for _, p := range patterns {
 		if strings.ContainsAny(p, "*?[") {
@@ -192,6 +182,195 @@ func (p *Policy) ToSeatbeltContext(homeDir string) *seatbelt.Context {
 		AllowSubprocess: p.AllowSubprocess,
 		ExtraAllow:      p.ExtraAllow,
 	}
+}
+
+// GrantedPathSet is the projection of a sandbox policy onto concrete filesystem paths.
+// The deny-wins invariant is enforced: paths in Denied are always absent from
+// Writable and Readable before paths reach the backend enforcer.
+type GrantedPathSet struct {
+	// Writable is the set of absolute paths the agent may read and write.
+	Writable []string
+
+	// Readable is the set of absolute paths the agent may read (but not write).
+	Readable []string
+
+	// Denied is the set of absolute paths that are explicitly inaccessible,
+	// regardless of any allow rule in Writable or Readable.
+	Denied []string
+
+	// OriginGuard maps each path to the guard name that produced the rule.
+	// Used by aide sandbox show for annotated output.
+	OriginGuard map[string]string
+}
+
+// DeriveGrantedPathSet computes the concrete path set for Linux enforcement
+// by evaluating active guards and merging explicit policy fields.
+//
+// Design:
+//   - Guard Protected paths → Denied (deny wins over any allow).
+//   - Explicit policy.ExtraDenied → also Denied.
+//   - policy.ProjectRoot, RuntimeDir, TempDir, ExtraWritable → Writable.
+//   - Guard Writable paths (incl. the agent module's Linux grants routed
+//     through EvaluateGuards) → Writable.
+//   - policy.ExtraReadable → Readable.
+//   - Guard Readable paths → Readable.
+//   - All paths are resolved via filepath.EvalSymlinks before use.
+func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
+	homeDir, _ := os.UserHomeDir()
+	origin := make(map[string]string)
+
+	// Collect guard-protected (denied) paths.
+	deniedSet := make(map[string]bool)
+	guardResults := EvaluateGuards(&policy)
+	for _, gr := range guardResults {
+		for _, p := range gr.Protected {
+			resolved := resolveSymlink(p)
+			if resolved == "" {
+				continue
+			}
+			deniedSet[resolved] = true
+			if origin[resolved] == "" {
+				origin[resolved] = gr.Name
+			}
+		}
+	}
+
+	// Add explicit extra-denied paths from policy.
+	for _, p := range policy.ExtraDenied {
+		for _, expanded := range expandGlobs([]string{p}) {
+			resolved := resolveSymlink(expanded)
+			if resolved == "" {
+				continue
+			}
+			deniedSet[resolved] = true
+			if origin[resolved] == "" {
+				origin[resolved] = "config:extra_denied"
+			}
+		}
+	}
+
+	// Collect readable paths from guard Readable lists (e.g. a capability
+	// unlocking ~/.config/gh, or a credential path the agent may read).
+	readableExtra := make(map[string]bool)
+	for _, gr := range guardResults {
+		for _, p := range gr.Readable {
+			resolved := resolveSymlink(p)
+			if resolved != "" {
+				readableExtra[resolved] = true
+				if origin[resolved] == "" {
+					origin[resolved] = gr.Name + ":readable"
+				}
+			}
+		}
+	}
+
+	// Collect writable paths from guard Writable lists. The agent module's
+	// Linux path grants flow through EvaluateGuards as a synthetic guard
+	// result, so they land here via the same pipeline as any other
+	// path-vouching evaluator — origin tracking, deny-wins, and conflict
+	// detection all apply uniformly.
+	writableExtra := make(map[string]bool)
+	for _, gr := range guardResults {
+		for _, p := range gr.Writable {
+			resolved := resolveSymlink(p)
+			if resolved != "" {
+				writableExtra[resolved] = true
+				if origin[resolved] == "" {
+					origin[resolved] = gr.Name + ":writable"
+				}
+			}
+		}
+	}
+
+	// Build writable set: policy runtime paths + user config.
+	writableSet := make(map[string]bool)
+	for _, p := range []string{policy.ProjectRoot, policy.RuntimeDir, policy.TempDir} {
+		if p != "" {
+			if resolved := resolveSymlink(p); resolved != "" {
+				writableSet[resolved] = true
+				if origin[resolved] == "" {
+					origin[resolved] = "policy:runtime"
+				}
+			}
+		}
+	}
+	for _, p := range policy.ExtraWritable {
+		if resolved := resolveSymlink(p); resolved != "" {
+			writableSet[resolved] = true
+			if origin[resolved] == "" {
+				origin[resolved] = "config:extra_writable"
+			}
+		}
+	}
+	for p := range writableExtra {
+		writableSet[p] = true
+	}
+
+	readableSet := make(map[string]bool)
+	if homeDir != "" {
+		// Scope aide's own state to specific subdirs rather than all of $HOME.
+		for _, rel := range []string{".config/aide", ".local/share/aide", ".cache/aide"} {
+			p := filepath.Join(homeDir, rel)
+			if resolved := resolveSymlink(p); resolved != "" {
+				readableSet[resolved] = true
+				if origin[resolved] == "" {
+					origin[resolved] = "guard:filesystem"
+				}
+			}
+		}
+	}
+	for _, p := range policy.ExtraReadable {
+		if resolved := resolveSymlink(p); resolved != "" {
+			readableSet[resolved] = true
+			if origin[resolved] == "" {
+				origin[resolved] = "config:extra_readable"
+			}
+		}
+	}
+	for p := range readableExtra {
+		readableSet[p] = true
+	}
+
+	// Apply deny-wins: remove any denied path from writable and readable.
+	for p := range deniedSet {
+		delete(writableSet, p)
+		delete(readableSet, p)
+	}
+
+	return GrantedPathSet{
+		Writable:    sortedKeys(writableSet),
+		Readable:    sortedKeys(readableSet),
+		Denied:      sortedKeys(deniedSet),
+		OriginGuard: origin,
+	}
+}
+
+// resolveSymlink wraps filepath.EvalSymlinks. Returns "" on error (path does
+// not exist or cannot be resolved) — callers drop such paths rather than
+// expanding them unexpectedly.
+func resolveSymlink(p string) string {
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		// Path may not exist yet (e.g. runtime dir not created). Return as-is
+		// for non-existent paths that are still valid targets.
+		if os.IsNotExist(err) {
+			return filepath.Clean(p)
+		}
+		return ""
+	}
+	return resolved
+}
+
+func sortedKeys(m map[string]bool) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(m))
+	for k := range m {
+		result = append(result, k)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // EvaluateGuards runs all guards from the policy and returns their diagnostics
@@ -279,7 +458,6 @@ func DetectGuardConflicts(results []seatbelt.GuardResult) []string {
 	return warnings
 }
 
-// filterEnv returns only essential env vars when CleanEnv is true (DD-17).
 func filterEnv(env []string) []string {
 	essential := map[string]bool{
 		"PATH": true, "HOME": true, "USER": true,

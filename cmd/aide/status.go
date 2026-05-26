@@ -1293,13 +1293,28 @@ func statusCmd() *cobra.Command {
 				}
 			}
 
+			// Compute isolation tier for Linux (and platform-native on others).
+			var sandboxTierLine string
+			if sandboxDisabled {
+				sandboxTierLine = "disabled"
+			} else {
+				homeDir, _ := os.UserHomeDir()
+				tempDir := os.TempDir()
+				pol, _, polErr := sandbox.PolicyFromConfig(sandboxPolicy, sandbox.Paths{ProjectRoot: cwd, HomeDir: homeDir, TempDir: tempDir})
+				switch {
+				case polErr != nil:
+					sandboxTierLine = fmt.Sprintf("policy load failed: %v", polErr)
+				case pol == nil:
+					sandboxTierLine = "policy unavailable"
+				default:
+					tier := sandbox.PlatformIsolationTier(*pol)
+					sandboxTierLine = formatIsolationTierStatus(tier)
+				}
+			}
+
 			fmt.Fprintln(out)
 			fmt.Fprintf(out, "Network: %s\n", networkMode)
-			if sandboxDisabled {
-				fmt.Fprintln(out, "Sandbox: disabled")
-			} else {
-				fmt.Fprintf(out, "Sandbox: active (%d guards)\n", guardCount)
-			}
+			fmt.Fprintf(out, "Sandbox: %s (%d guards)\n", sandboxTierLine, guardCount)
 			if autoApprove {
 				fmt.Fprintln(out, "Auto-approve: yes")
 			} else {
@@ -1309,5 +1324,25 @@ func statusCmd() *cobra.Command {
 
 			return nil
 		},
+	}
+}
+
+func formatIsolationTierStatus(tier sandbox.IsolationTier) string {
+	switch tier.Tier {
+	case sandbox.TierPrimary:
+		switch tier.Backend {
+		case sandbox.BackendLandlock:
+			return fmt.Sprintf("primary (Landlock ABI %d)", tier.KernelABI)
+		case sandbox.BackendSeatbelt:
+			return "primary (Seatbelt)"
+		default:
+			return fmt.Sprintf("primary (%s)", tier.Backend)
+		}
+	case sandbox.TierDegraded:
+		return fmt.Sprintf("degraded (%s)", tier.Backend)
+	case sandbox.TierUnavailable:
+		return "unavailable"
+	default:
+		return tier.Tier
 	}
 }

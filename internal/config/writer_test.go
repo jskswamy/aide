@@ -119,6 +119,9 @@ func TestWriteConfig_AtomicOnError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("read-only directory test not reliable on Windows")
 	}
+	if os.Getuid() == 0 {
+		t.Skip("read-only directory test not reliable when running as root")
+	}
 
 	dir := t.TempDir()
 	original := filepath.Join(dir, "config.yaml")

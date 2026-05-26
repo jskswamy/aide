@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/jskswamy/aide/internal/sandbox"
 )
 
 func init() {
@@ -465,14 +466,14 @@ func capabilityBannerData() *BannerData {
 		AgentPath:   "/usr/local/bin/claude",
 		Capabilities: []CapabilityDisplay{
 			{
-				Name:   "k8s",
-				WritablePaths:  []string{"~/.kube/config"},
-				Source: "context config",
+				Name:          "k8s",
+				WritablePaths: []string{"~/.kube/config"},
+				Source:        "context config",
 			},
 			{
-				Name:   "docker",
-				WritablePaths:  []string{"~/.docker/config.json"},
-				Source: "--with",
+				Name:          "docker",
+				WritablePaths: []string{"~/.docker/config.json"},
+				Source:        "--with",
 			},
 		},
 		DisabledCaps: []CapabilityDisplay{
@@ -1026,13 +1027,13 @@ func TestRenderCompact_VariantAndFresh(t *testing.T) {
 		},
 		Capabilities: []CapabilityDisplay{
 			{
-				Name:       "python",
-				WritablePaths:      []string{"~/.local/share/uv"},
-				Variants:   []string{"uv"},
-				FreshGrant: true,
+				Name:          "python",
+				WritablePaths: []string{"~/.local/share/uv"},
+				Variants:      []string{"uv"},
+				FreshGrant:    true,
 			},
 			{
-				Name:  "github",
+				Name:          "github",
 				WritablePaths: []string{"~/.config/gh"},
 			},
 		},
@@ -1089,7 +1090,7 @@ func TestRenderClean_ProvenanceTags(t *testing.T) {
 				},
 				Capabilities: []CapabilityDisplay{{
 					Name:          "python",
-					WritablePaths:         []string{"~/.local/share/uv"},
+					WritablePaths: []string{"~/.local/share/uv"},
 					Variants:      []string{"uv"},
 					ProvenanceTag: tc.tag,
 				}},
@@ -1124,7 +1125,7 @@ func TestRenderClean_NoProvenanceTagForNoVariantCap(t *testing.T) {
 			Ports:   "all",
 		},
 		Capabilities: []CapabilityDisplay{{
-			Name:  "github",
+			Name:          "github",
 			WritablePaths: []string{"~/.config/gh"},
 			// No Variants, no ProvenanceTag
 		}},
@@ -1161,7 +1162,7 @@ func TestRenderBoxed_EvidenceAndConfirmed(t *testing.T) {
 		},
 		Capabilities: []CapabilityDisplay{{
 			Name:            "python",
-			WritablePaths:           []string{"~/.local/share/uv"},
+			WritablePaths:   []string{"~/.local/share/uv"},
 			EnvVars:         []string{"UV_CACHE_DIR"},
 			Variants:        []string{"uv"},
 			ProvenanceTag:   "detected",
@@ -1205,7 +1206,7 @@ func TestRenderBoxed_NoEvidenceLinesWhenAbsent(t *testing.T) {
 			Ports:   "all",
 		},
 		Capabilities: []CapabilityDisplay{{
-			Name:  "github",
+			Name:          "github",
 			WritablePaths: []string{"~/.config/gh"},
 			// No EvidenceSummary, no ConfirmedAt
 		}},
@@ -1240,7 +1241,7 @@ func TestRenderClean_SuggestedCapWithDetectionHint(t *testing.T) {
 		},
 		SuggestedCaps: []CapabilityDisplay{{
 			Name:          "git-remote",
-			WritablePaths:         []string{"ssh"},
+			WritablePaths: []string{"ssh"},
 			DetectionHint: "[remote in .git/config",
 		}},
 	}
@@ -1396,5 +1397,73 @@ func TestTrustWantsLine_TruncatesEnvVars(t *testing.T) {
 	got := trustWantsLine(data)
 	if !strings.Contains(got, "+2 more") {
 		t.Errorf("trustWantsLine with 5 vars should truncate: got %q", got)
+	}
+}
+
+// TestIsolationTierLabel_CanonicalStrings verifies the canonical label strings for each isolation tier.
+func TestIsolationTierLabel_CanonicalStrings(t *testing.T) {
+	cases := []struct {
+		name string
+		tier *sandbox.IsolationTier
+		want string
+	}{
+		{
+			name: "nil (disabled)",
+			tier: nil,
+			want: "sandbox: disabled",
+		},
+		{
+			name: "primary/landlock ABI7",
+			tier: &sandbox.IsolationTier{
+				Tier:      sandbox.TierPrimary,
+				Backend:   sandbox.BackendLandlock,
+				KernelABI: 7,
+			},
+			want: "sandbox: primary (Landlock ABI 7)",
+		},
+		{
+			name: "primary/seatbelt",
+			tier: &sandbox.IsolationTier{
+				Tier:    sandbox.TierPrimary,
+				Backend: sandbox.BackendSeatbelt,
+			},
+			want: "sandbox: primary (Seatbelt)",
+		},
+		{
+			name: "degraded/bwrap with reason",
+			tier: &sandbox.IsolationTier{
+				Tier:    sandbox.TierDegraded,
+				Backend: sandbox.BackendBwrap,
+				Reason:  "bwrap fallback: TCP port filtering not enforced",
+			},
+			want: "sandbox: degraded — bwrap fallback: TCP port filtering not enforced",
+		},
+		{
+			name: "unavailable/none with reason",
+			tier: &sandbox.IsolationTier{
+				Tier:    sandbox.TierUnavailable,
+				Backend: sandbox.BackendNone,
+				Reason:  "no Landlock, no bwrap",
+			},
+			want: "sandbox: unavailable — no Landlock, no bwrap",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			data := &BannerData{IsolationTier: c.tier}
+			got := isolationTierLabel(data)
+			if got != c.want {
+				t.Errorf("isolationTierLabel = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestFuncMap_HasIsolationTierLabel verifies the funcmap exposes the new helper.
+func TestFuncMap_HasIsolationTierLabel(t *testing.T) {
+	fm := colorFuncMap()
+	if _, ok := fm["isolationTierLabel"]; !ok {
+		t.Error("colorFuncMap missing key 'isolationTierLabel'")
 	}
 }

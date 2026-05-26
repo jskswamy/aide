@@ -4,12 +4,29 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/trust"
 )
+
+// requireClaudeHome redirects HOME to a hermetic temp dir and creates the
+// minimal on-disk state that the Linux sandbox needs for the Claude agent:
+// ~/.claude.json must exist before the Landlock+bwrap atomic-write overlay
+// can be constructed. No-op on non-Linux platforms.
+func requireClaudeHome(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return
+	}
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	if err := os.WriteFile(filepath.Join(tmpHome, ".claude.json"), []byte("{}"), 0600); err != nil {
+		t.Fatalf("requireClaudeHome: %v", err)
+	}
+}
 
 func TestFilterEssentialEnv(t *testing.T) {
 	env := []string{

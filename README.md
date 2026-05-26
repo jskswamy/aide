@@ -146,7 +146,7 @@ Config and encrypted secrets live in git. Clone your config on a new machine and
 ## Quick Start
 
 ```bash
-# Install latest release (macOS)
+# Install latest release (macOS and Linux)
 curl -sSfL https://raw.githubusercontent.com/jskswamy/aide/main/install.sh | sh
 
 # Install to a specific directory
@@ -204,7 +204,7 @@ This works with any agent — aide resolves context and sandbox, then execs the 
 3. It resolves the context: agent, credentials, capabilities, and sandbox policy.
 4. Secrets decrypt in-process via the sops Go library. Nothing hits disk.
 5. Capabilities translate to sandbox rules — each `--with` flag unlocks specific tool access while keeping everything else locked.
-6. aide applies the sandbox via macOS Seatbelt and execs the agent inside it. Linux sandbox support (Landlock) is planned.
+6. aide applies the sandbox via the platform-native enforcer — macOS Seatbelt or Linux Landlock (kernel ≥ 5.13, with full port enforcement on kernel ≥ 6.7) — and execs the agent inside it. When Landlock is unavailable, bubblewrap provides filesystem isolation. See [Supported Linux tier](docs/sandbox.md#supported-linux-tier-minimum-system-requirements) for details.
 
 No config file? aide detects your agent on PATH and launches it directly.
 

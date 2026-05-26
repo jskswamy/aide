@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/jskswamy/aide/internal/sandbox"
 )
 
 // colorFuncMap returns the template.FuncMap for banner templates.
@@ -87,6 +88,39 @@ func colorFuncMap() template.FuncMap {
 				len(d.ExtraReadable) > 0 ||
 				len(d.ExtraDenied) > 0
 		},
+		"isolationTierLabel": isolationTierLabel,
+	}
+}
+
+// isolationTierLabel renders the banner string for an IsolationTier.
+// Examples: "sandbox: primary (Landlock ABI 7)", "sandbox: degraded — <reason>".
+func isolationTierLabel(d *BannerData) string {
+	if d.IsolationTier == nil {
+		return "sandbox: disabled"
+	}
+	t := d.IsolationTier
+	switch t.Tier {
+	case sandbox.TierPrimary:
+		switch t.Backend {
+		case sandbox.BackendLandlock:
+			return fmt.Sprintf("sandbox: primary (Landlock ABI %d)", t.KernelABI)
+		case sandbox.BackendSeatbelt:
+			return "sandbox: primary (Seatbelt)"
+		default:
+			return fmt.Sprintf("sandbox: primary (%s)", t.Backend)
+		}
+	case sandbox.TierDegraded:
+		if t.Reason != "" {
+			return fmt.Sprintf("sandbox: degraded — %s", t.Reason)
+		}
+		return fmt.Sprintf("sandbox: degraded (%s)", t.Backend)
+	case sandbox.TierUnavailable:
+		if t.Reason != "" {
+			return fmt.Sprintf("sandbox: unavailable — %s", t.Reason)
+		}
+		return "sandbox: unavailable"
+	default:
+		return fmt.Sprintf("sandbox: %s", t.Tier)
 	}
 }
 

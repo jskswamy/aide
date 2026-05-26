@@ -49,7 +49,8 @@ func (m *cursorAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	}
 	home := ctx.HomeDir
 
-	rules := configDirRules("Cursor", home, cursorConfigDirs(ctx))
+	configDirs := cursorConfigDirs(ctx)
+	rules := configDirRules("Cursor", home, configDirs)
 
 	activeVerDir, logsDir, ok := m.resolveInstallDirs(home)
 	if ok {
@@ -68,7 +69,9 @@ func (m *cursorAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		)
 	}
 
-	return seatbelt.GuardResult{Rules: rules}
+	result := seatbelt.GuardResult{Rules: rules}
+	augmentCursorLinuxPaths(ctx, configDirs, logsDir, activeVerDir, &result)
+	return result
 }
 
 // cursorConfigDirs resolves config directories for cursor-agent.

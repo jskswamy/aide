@@ -138,7 +138,16 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 
 	for _, p := range linuxSystemReadable {
 		if _, err := os.Stat(p); err == nil {
-			resolved := filepath.Clean(p)
+			// Use resolveSymlink so the resolved path matches the symlink-resolved
+			// entries in deniedSet. On merged-usr Linux (Ubuntu 22.04+, Fedora 36+)
+			// /bin, /lib, /lib64, /sbin are symlinks to /usr/{bin,lib,…}. Using
+			// filepath.Clean would produce "/bin" while deniedSet holds "/usr/bin",
+			// letting a Landlock RODirs("/bin") rule grant access to the denied
+			// /usr subtree at enforcement time (kernel follows the symlink).
+			resolved := resolveSymlink(p)
+			if resolved == "" {
+				resolved = filepath.Clean(p)
+			}
 			// Honour deny-wins: a guard or config that explicitly denied this
 			// path (or any ancestor directory it lives under) must not be
 			// overridden by the system-path bootstrap list.
@@ -154,7 +163,10 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 
 	for _, p := range linuxSystemWritable {
 		if _, err := os.Stat(p); err == nil {
-			resolved := filepath.Clean(p)
+			resolved := resolveSymlink(p)
+			if resolved == "" {
+				resolved = filepath.Clean(p)
+			}
 			if isUnderDeniedTree(resolved, deniedSet) {
 				continue
 			}
@@ -185,9 +197,15 @@ func pathCoveredBy(p string, writable, readable []string) bool {
 // landlockPolicyJSON is the serializable Policy projection passed to the
 // __sandbox-apply re-exec. AgentModule is dropped (interface; not JSON-able);
 // AgentReadable/Writable carry its resolved per-platform path output.
+// Env must be included so that capability guards in the re-exec child can
+// evaluate env-var-dependent paths (e.g. KUBECONFIG, AWS_CONFIG_FILE,
+// DOCKER_CERT_PATH) identically to the parent — omitting it causes those
+// guards to fall back to HOME-based defaults and their actual paths are
+// absent from the Landlock allow-list, silently denying agent reads.
 type landlockPolicyJSON struct {
 	Guards          []string    `json:"Guards,omitempty"`
 	HomeDir         string      `json:"HomeDir,omitempty"`
+	Env             []string    `json:"Env,omitempty"`
 	ProjectRoot     string      `json:"ProjectRoot,omitempty"`
 	RuntimeDir      string      `json:"RuntimeDir,omitempty"`
 	TempDir         string      `json:"TempDir,omitempty"`
@@ -209,6 +227,7 @@ func policyToJSON(p Policy) (landlockPolicyJSON, error) {
 	j := landlockPolicyJSON{
 		Guards:          p.Guards,
 		HomeDir:         p.HomeDir,
+		Env:             p.Env,
 		ProjectRoot:     p.ProjectRoot,
 		RuntimeDir:      p.RuntimeDir,
 		TempDir:         p.TempDir,
@@ -255,6 +274,7 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 	return Policy{
 		Guards:          j.Guards,
 		HomeDir:         j.HomeDir,
+		Env:             j.Env,
 		ProjectRoot:     j.ProjectRoot,
 		RuntimeDir:      j.RuntimeDir,
 		TempDir:         j.TempDir,
@@ -369,9 +389,11 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 	// ForkExec returns EACCES for non-/usr installs (e.g. ~/go/bin/aide).
 	execPaths := collectAgentExecPaths(agentPath)
 	if !policy.AllowSubprocess {
-		if aideBin, aerr := os.Executable(); aerr == nil {
-			execPaths = append(execPaths, collectAgentExecPaths(filepath.Clean(aideBin))...)
+		aideBin, aerr := os.Executable()
+		if aerr != nil {
+			return fmt.Errorf("resolve aide executable path for Landlock allow-list: %w", aerr)
 		}
+		execPaths = append(execPaths, collectAgentExecPaths(filepath.Clean(aideBin))...)
 	}
 	allReadable := appendMissingPaths(gps.Readable, gps.Writable, execPaths)
 

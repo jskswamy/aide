@@ -199,6 +199,114 @@ func TestDeriveGrantedPathSet_AideSecretsNotSubtreeCovered(t *testing.T) {
 	}
 }
 
+// TestDeriveGrantedPathSet_DenyWinsSubtree ensures that denying a directory also
+// excludes its children from Writable and Readable (tree-based deny semantics).
+func TestDeriveGrantedPathSet_DenyWinsSubtree(t *testing.T) {
+	// Arrange
+	parent := t.TempDir()
+	child := filepath.Join(parent, "nested", "file")
+	if err := os.MkdirAll(filepath.Dir(child), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(child, []byte("secret"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	policy := Policy{
+		ExtraDenied:  []string{parent},
+		ExtraWritable: []string{child},
+		ExtraReadable: []string{child},
+		Guards:       []string{},
+	}
+
+	// Act
+	gps := DeriveGrantedPathSet(policy)
+
+	// Assert: child is inside the denied parent subtree — must not appear in either set.
+	if containsPath(gps.Writable, child) {
+		t.Errorf("child of denied dir %q must not appear in Writable; Writable=%v", parent, gps.Writable)
+	}
+	if containsPath(gps.Readable, child) {
+		t.Errorf("child of denied dir %q must not appear in Readable; Readable=%v", parent, gps.Readable)
+	}
+	if !containsPath(gps.Denied, parent) {
+		t.Errorf("denied parent %q must appear in Denied: %v", parent, gps.Denied)
+	}
+}
+
+// TestDeriveGrantedPathSet_DenyWinsSubtree_SiblingUnaffected confirms that a
+// sibling path (same prefix but different directory) is NOT excluded by a deny.
+func TestDeriveGrantedPathSet_DenyWinsSubtree_SiblingUnaffected(t *testing.T) {
+	// Arrange
+	base := t.TempDir()
+	denied := filepath.Join(base, "secrets")
+	sibling := filepath.Join(base, "secrets-backup") // same prefix, different directory
+	for _, d := range []string{denied, sibling} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatalf("MkdirAll %s: %v", d, err)
+		}
+	}
+
+	policy := Policy{
+		ExtraDenied:  []string{denied},
+		ExtraReadable: []string{sibling},
+		Guards:       []string{},
+	}
+
+	// Act
+	gps := DeriveGrantedPathSet(policy)
+
+	// Assert: sibling shares a name prefix but is a separate directory — must be readable.
+	if !containsPath(gps.Readable, sibling) {
+		t.Errorf("sibling %q must remain in Readable after denying %q; Readable=%v", sibling, denied, gps.Readable)
+	}
+}
+
+// TestIsUnderDeniedTree_ExactMatch verifies exact-path denial.
+func TestIsUnderDeniedTree_ExactMatch(t *testing.T) {
+	denied := map[string]bool{"/home/user/.aws": true}
+
+	if !isUnderDeniedTree("/home/user/.aws", denied) {
+		t.Error("exact match must be denied")
+	}
+}
+
+// TestIsUnderDeniedTree_ChildDenied verifies child-path denial.
+func TestIsUnderDeniedTree_ChildDenied(t *testing.T) {
+	denied := map[string]bool{"/home/user/.aws": true}
+
+	if !isUnderDeniedTree("/home/user/.aws/credentials", denied) {
+		t.Error("child of denied dir must be denied")
+	}
+	if !isUnderDeniedTree("/home/user/.aws/config", denied) {
+		t.Error("child of denied dir must be denied")
+	}
+}
+
+// TestIsUnderDeniedTree_SiblingAllowed verifies sibling paths are not denied.
+func TestIsUnderDeniedTree_SiblingAllowed(t *testing.T) {
+	denied := map[string]bool{"/home/user/.aws": true}
+
+	if isUnderDeniedTree("/home/user/.aws-backup", denied) {
+		t.Error("sibling with shared prefix must NOT be denied")
+	}
+	if isUnderDeniedTree("/home/user/.awsome", denied) {
+		t.Error("path with shared prefix but different suffix must NOT be denied")
+	}
+}
+
+// TestIsUnderDeniedTree_UnrelatedAllowed verifies unrelated paths are not denied.
+func TestIsUnderDeniedTree_UnrelatedAllowed(t *testing.T) {
+	denied := map[string]bool{"/home/user/.aws": true}
+
+	if isUnderDeniedTree("/home/user/.ssh", denied) {
+		t.Error("unrelated path must NOT be denied")
+	}
+	if isUnderDeniedTree("/tmp/work", denied) {
+		t.Error("unrelated path must NOT be denied")
+	}
+}
+
 // containsPath checks if a path or its EvalSymlinks-resolved form appears in list.
 func containsPath(list []string, target string) bool {
 	resolved, _ := filepath.EvalSymlinks(target)

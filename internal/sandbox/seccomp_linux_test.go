@@ -105,6 +105,8 @@ func TestBuildNoSubprocessFilter_ShapeAndSyscalls(t *testing.T) {
 		{"CLONE_THREAD", uint32(unix.CLONE_THREAD)},
 		{"SECCOMP_RET_ALLOW", seccompRetAllow},
 		{"SECCOMP_RET_ERRNO|EPERM", seccompRetErrnoEPERM},
+		// clone3 must return ENOSYS so glibc 2.34+ falls back to clone().
+		{"SECCOMP_RET_ERRNO|ENOSYS", seccompRetErrnoENOSYS},
 	} {
 		if !immediates[want.val] {
 			t.Errorf("filter does not reference %s (0x%x); expected at least one BPF immediate matching", want.name, want.val)
@@ -149,6 +151,65 @@ func TestNoSubprocessSeccompMemfd_ContentMatchesBuilder(t *testing.T) {
 				i, op, jt, jf, k, ri.Op, ri.Jt, ri.Jf, ri.K)
 		}
 	}
+}
+
+// TestNoSubprocessSeccomp_Clone3ReturnsENOSYS verifies that the filter returns
+// ENOSYS (not EPERM) for the clone3 syscall, enabling glibc 2.34+ fallback to
+// clone() for pthread_create inside Node.js/Electron agents.
+func TestNoSubprocessSeccomp_Clone3ReturnsENOSYS(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("seccomp filter rejection semantics differ for uid 0; skipping")
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run", "^TestHelperSeccomp_Clone3ENOSYS$")
+	cmd.Env = append(os.Environ(), "AIDE_TEST_SECCOMP=clone3_enosys")
+	out, _ := cmd.CombinedOutput()
+	output := string(out)
+
+	if strings.Contains(output, "INSTALL_FAILED") {
+		t.Fatalf("seccomp install failed in child: %s", output)
+	}
+	if strings.Contains(output, "CLONE3_EPERM") {
+		t.Errorf("clone3 must return ENOSYS, not EPERM (glibc 2.34+ would not fall back to clone()): %s", output)
+	}
+	if !strings.Contains(output, "CLONE3_ENOSYS") {
+		t.Errorf("expected CLONE3_ENOSYS indicator in child output; got: %s", output)
+	}
+}
+
+// TestHelperSeccomp_Clone3ENOSYS is invoked as a child process. It installs
+// the no-subprocess seccomp filter, then issues a raw clone3 syscall with
+// arguments that would create a subprocess (no CLONE_THREAD). It reports
+// whether the returned errno is ENOSYS or something else.
+//
+// clone3 syscall number is 435 on both x86_64 and arm64; the test uses the
+// package-level constant directly to stay in sync with the filter definition.
+func TestHelperSeccomp_Clone3ENOSYS(_ *testing.T) {
+	if os.Getenv("AIDE_TEST_SECCOMP") != "clone3_enosys" {
+		return
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		fmt.Fprintln(os.Stdout, "CLONE3_SKIPPED: unsupported arch")
+		os.Exit(0)
+	}
+	if err := installNoSubprocessSeccomp(); err != nil {
+		fmt.Fprintln(os.Stdout, "INSTALL_FAILED:", err)
+		os.Exit(0)
+	}
+	// Issue clone3(NULL, 0) — the kernel would normally return EFAULT for a
+	// NULL pointer, but the seccomp filter intercepts the syscall *before* the
+	// kernel validates arguments, so we observe the filter's return value.
+	// sysX86_64Clone3 == sysARM64Clone3 == 435 on both architectures.
+	_, _, errno := unix.RawSyscall(uintptr(sysX86_64Clone3), 0, 0, 0)
+	switch errno {
+	case unix.ENOSYS:
+		fmt.Fprintln(os.Stdout, "CLONE3_ENOSYS")
+	case unix.EPERM:
+		fmt.Fprintln(os.Stdout, "CLONE3_EPERM")
+	default:
+		fmt.Fprintf(os.Stdout, "CLONE3_OTHER: errno=%d\n", errno)
+	}
+	os.Exit(0)
 }
 
 // TestHelperSeccomp_BlocksFork is invoked as a child process. It installs the

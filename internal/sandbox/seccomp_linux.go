@@ -37,12 +37,19 @@ const (
 	sysARM64Clone3 uint32 = 435
 )
 
-// seccompRetAllow / seccompRetErrnoEPERM are the action values returned by
-// the BPF program for the kernel to interpret. SECCOMP_RET_ERRNO is in the
-// high 16 bits; the errno number (here EPERM = 1) is in the low 16.
+// seccompRetAllow / seccompRetErrnoEPERM / seccompRetErrnoENOSYS are the
+// action values returned by the BPF program. SECCOMP_RET_ERRNO occupies the
+// high 16 bits; the errno number is in the low 16 bits.
+//
+// clone3 must return ENOSYS (not EPERM): glibc 2.34+ (Ubuntu 22.04+) uses
+// clone3 inside pthread_create and only falls back to clone() when clone3
+// returns ENOSYS. An EPERM response propagates directly to the caller, making
+// pthread_create fail — which crashes any Node.js/libuv agent that creates a
+// thread pool at startup (e.g. Claude on Electron).
 const (
-	seccompRetAllow      uint32 = 0x7FFF0000
-	seccompRetErrnoEPERM uint32 = 0x00050001
+	seccompRetAllow       uint32 = 0x7FFF0000
+	seccompRetErrnoEPERM  uint32 = 0x00050001
+	seccompRetErrnoENOSYS uint32 = 0x00050026
 )
 
 // sockFprog mirrors the Linux struct sock_fprog used by prctl(PR_SET_SECCOMP,
@@ -60,34 +67,45 @@ type sockFprog struct {
 // unblocked on those hosts; the PID namespace created by forkExecInPIDNamespace
 // (Landlock path) still provides containment, but does not prevent fork/clone.
 //
+// clone3 returns ENOSYS (not EPERM) on both architectures so that glibc 2.34+
+// (Ubuntu 22.04+) falls back to clone() for pthread_create. With EPERM, glibc
+// propagates the error directly to the caller, crashing any agent that creates
+// a thread pool at start-up (Node.js/libuv, Electron). ENOSYS triggers the
+// standard "syscall not implemented" fallback path in glibc.
+//
 // Filter pseudocode:
 //
 //	load arch
-//	if arch == x86_64:  goto x86_64_block          (instr 11)
+//	if arch == x86_64:  goto x86_64_block          (instr 12)
 //	if arch == aarch64: goto arm64_block            (instr 4)
 //	ALLOW                                           (unknown arch)
 //
-//	arm64_block (instrs 4–10):
+//	arm64_block (instrs 4–11):
 //	  load nr
-//	  if nr == clone3:                 return EPERM
-//	  if nr != clone:                  ALLOW
+//	  if nr == clone3:                 return ENOSYS (instr 10)
+//	  if nr != clone:                  ALLOW         (instr 11)
 //	  load flags (args[0] low 32)
-//	  if flags & CLONE_THREAD:         ALLOW
-//	  return EPERM
+//	  if flags & CLONE_THREAD:         ALLOW         (instr 11)
+//	  return EPERM                                   (instr 9)
+//	  return ENOSYS                                  (instr 10)
+//	  ALLOW                                          (instr 11)
 //
-//	x86_64_block (instrs 11–19):
+//	x86_64_block (instrs 12–21):
 //	  load nr
-//	  if nr == fork|vfork|clone3:      return EPERM
-//	  if nr != clone:                  ALLOW
+//	  if nr == fork|vfork:             return EPERM  (instr 19)
+//	  if nr == clone3:                 return ENOSYS (instr 20)
+//	  if nr != clone:                  ALLOW         (instr 21)
 //	  load flags (args[0] low 32)
-//	  if flags & CLONE_THREAD:         ALLOW
-//	  return EPERM
+//	  if flags & CLONE_THREAD:         ALLOW         (instr 21)
+//	  return EPERM                                   (instr 19)
+//	  return ENOSYS                                  (instr 20)
+//	  ALLOW                                          (instr 21)
 func buildNoSubprocessFilter() ([]bpf.RawInstruction, error) {
 	insts := []bpf.Instruction{
 		// 0: load arch (seccomp_data.arch at offset 4)
 		bpf.LoadAbsolute{Off: 4, Size: 4},
-		// 1: if arch == x86_64, skip 9 → land at instr 11 (x86_64 block)
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: auditArchX86_64, SkipTrue: 9, SkipFalse: 0},
+		// 1: if arch == x86_64, skip 10 → land at instr 12 (x86_64 block)
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: auditArchX86_64, SkipTrue: 10, SkipFalse: 0},
 		// 2: if arch == aarch64, skip 1 → land at instr 4 (arm64 block); else fall to 3
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: auditArchAARCH64, SkipTrue: 1, SkipFalse: 0},
 		// 3: unknown arch — ALLOW
@@ -96,37 +114,41 @@ func buildNoSubprocessFilter() ([]bpf.RawInstruction, error) {
 		// arm64 block ────────────────────────────────────────────────────────
 		// 4: load nr (seccomp_data.nr at offset 0)
 		bpf.LoadAbsolute{Off: 0, Size: 4},
-		// 5: if nr == clone3(435), skip 3 → EPERM at instr 9
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysARM64Clone3, SkipTrue: 3, SkipFalse: 0},
-		// 6: if nr != clone(220), skip 3 → ALLOW at instr 10
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysARM64Clone, SkipTrue: 0, SkipFalse: 3},
+		// 5: if nr == clone3(435), skip 4 → ENOSYS at instr 10
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysARM64Clone3, SkipTrue: 4, SkipFalse: 0},
+		// 6: if nr != clone(220), skip 4 → ALLOW at instr 11
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysARM64Clone, SkipTrue: 0, SkipFalse: 4},
 		// 7: load args[0] low 32 (clone flags; little-endian, low half at offset 16)
 		bpf.LoadAbsolute{Off: 16, Size: 4},
-		// 8: if CLONE_THREAD set, skip 1 → ALLOW at instr 10; else fall to EPERM
-		bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: unix.CLONE_THREAD, SkipTrue: 1, SkipFalse: 0},
-		// 9: EPERM (shared by both arm64 syscall branches)
+		// 8: if CLONE_THREAD set, skip 2 → ALLOW at instr 11; else fall to EPERM
+		bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: unix.CLONE_THREAD, SkipTrue: 2, SkipFalse: 0},
+		// 9: EPERM (clone without CLONE_THREAD → subprocess blocked)
 		bpf.RetConstant{Val: seccompRetErrnoEPERM},
-		// 10: ALLOW (shared by both arm64 pass-through branches)
+		// 10: ENOSYS (clone3 on arm64 → glibc fallback to clone())
+		bpf.RetConstant{Val: seccompRetErrnoENOSYS},
+		// 11: ALLOW
 		bpf.RetConstant{Val: seccompRetAllow},
 
 		// x86_64 block ───────────────────────────────────────────────────────
-		// 11: load nr
+		// 12: load nr
 		bpf.LoadAbsolute{Off: 0, Size: 4},
-		// 12: if nr == fork(57), skip 5 → EPERM at instr 18
+		// 13: if nr == fork(57), skip 5 → EPERM at instr 19
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysX86_64Fork, SkipTrue: 5, SkipFalse: 0},
-		// 13: if nr == vfork(58), skip 4 → EPERM at instr 18
+		// 14: if nr == vfork(58), skip 4 → EPERM at instr 19
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysX86_64VFork, SkipTrue: 4, SkipFalse: 0},
-		// 14: if nr == clone3(435), skip 3 → EPERM at instr 18
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysX86_64Clone3, SkipTrue: 3, SkipFalse: 0},
-		// 15: if nr != clone(56), skip 3 → ALLOW at instr 19
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysX86_64Clone, SkipTrue: 0, SkipFalse: 3},
-		// 16: load args[0] low 32 (clone flags)
+		// 15: if nr == clone3(435), skip 4 → ENOSYS at instr 20
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysX86_64Clone3, SkipTrue: 4, SkipFalse: 0},
+		// 16: if nr != clone(56), skip 4 → ALLOW at instr 21
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: sysX86_64Clone, SkipTrue: 0, SkipFalse: 4},
+		// 17: load args[0] low 32 (clone flags)
 		bpf.LoadAbsolute{Off: 16, Size: 4},
-		// 17: if CLONE_THREAD set, skip 1 → ALLOW at instr 19; else fall to EPERM
-		bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: unix.CLONE_THREAD, SkipTrue: 1, SkipFalse: 0},
-		// 18: EPERM
+		// 18: if CLONE_THREAD set, skip 2 → ALLOW at instr 21; else fall to EPERM
+		bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: unix.CLONE_THREAD, SkipTrue: 2, SkipFalse: 0},
+		// 19: EPERM (fork/vfork/clone-without-thread → subprocess blocked)
 		bpf.RetConstant{Val: seccompRetErrnoEPERM},
-		// 19: ALLOW
+		// 20: ENOSYS (clone3 on x86_64 → glibc fallback to clone())
+		bpf.RetConstant{Val: seccompRetErrnoENOSYS},
+		// 21: ALLOW
 		bpf.RetConstant{Val: seccompRetAllow},
 	}
 	raw, err := bpf.Assemble(insts)

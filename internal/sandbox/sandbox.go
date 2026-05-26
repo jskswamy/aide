@@ -2,7 +2,6 @@ package sandbox
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -117,8 +116,11 @@ type Paths struct {
 	ProjectRoot string
 	// RuntimeDir is the $XDG_RUNTIME_DIR/aide-<pid>/ directory.
 	RuntimeDir string
-	// HomeDir is the user's home directory. Used by PolicyFromConfig for
-	// path-template expansion; DefaultPolicy ignores it.
+	// HomeDir is the user's home directory. Copied into Policy.HomeDir by
+	// both DefaultPolicy and PolicyFromConfig; consumed by guard evaluation,
+	// agent-module Rules(), and the macOS Seatbelt profile generator. Omit
+	// it and Seatbelt profile generation silently produces a profile with
+	// no $HOME expansion.
 	HomeDir string
 	// TempDir is the os.TempDir() result.
 	TempDir string
@@ -256,11 +258,9 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	for _, gr := range guardResults {
 		for _, p := range gr.Allowed {
 			resolved := resolveSymlink(p)
-			if resolved != "" {
-				readableExtra[resolved] = true
-				if origin[resolved] == "" {
-					origin[resolved] = gr.Name + ":readable"
-				}
+			readableExtra[resolved] = true
+			if origin[resolved] == "" {
+				origin[resolved] = gr.Name + ":readable"
 			}
 		}
 	}
@@ -274,11 +274,9 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	for _, gr := range guardResults {
 		for _, p := range gr.Writable {
 			resolved := resolveSymlink(p)
-			if resolved != "" {
-				writableExtra[resolved] = true
-				if origin[resolved] == "" {
-					origin[resolved] = gr.Name + ":writable"
-				}
+			writableExtra[resolved] = true
+			if origin[resolved] == "" {
+				origin[resolved] = gr.Name + ":writable"
 			}
 		}
 	}
@@ -286,21 +284,20 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	// Build writable set: policy runtime paths + user config.
 	writableSet := make(map[string]bool)
 	for _, p := range []string{policy.ProjectRoot, policy.RuntimeDir, policy.TempDir} {
-		if p != "" {
-			if resolved := resolveSymlink(p); resolved != "" {
-				writableSet[resolved] = true
-				if origin[resolved] == "" {
-					origin[resolved] = "policy:runtime"
-				}
-			}
+		if p == "" {
+			continue
+		}
+		resolved := resolveSymlink(p)
+		writableSet[resolved] = true
+		if origin[resolved] == "" {
+			origin[resolved] = "policy:runtime"
 		}
 	}
 	for _, p := range policy.ExtraWritable {
-		if resolved := resolveSymlink(p); resolved != "" {
-			writableSet[resolved] = true
-			if origin[resolved] == "" {
-				origin[resolved] = "config:extra_writable"
-			}
+		resolved := resolveSymlink(p)
+		writableSet[resolved] = true
+		if origin[resolved] == "" {
+			origin[resolved] = "config:extra_writable"
 		}
 	}
 	for p := range writableExtra {
@@ -318,21 +315,27 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	// OriginGuard and bounded to the dir the agent actually needs.
 	readableSet := make(map[string]bool)
 	for _, p := range policy.ExtraReadable {
-		if resolved := resolveSymlink(p); resolved != "" {
-			readableSet[resolved] = true
-			if origin[resolved] == "" {
-				origin[resolved] = "config:extra_readable"
-			}
+		resolved := resolveSymlink(p)
+		readableSet[resolved] = true
+		if origin[resolved] == "" {
+			origin[resolved] = "config:extra_readable"
 		}
 	}
 	for p := range readableExtra {
 		readableSet[p] = true
 	}
 
-	// Apply deny-wins: remove any denied path from writable and readable.
-	for p := range deniedSet {
-		delete(writableSet, p)
-		delete(readableSet, p)
+	// Apply deny-wins: remove any path that is exactly denied or resides
+	// inside a denied directory subtree (prefix match with separator boundary).
+	for w := range writableSet {
+		if isUnderDeniedTree(w, deniedSet) {
+			delete(writableSet, w)
+		}
+	}
+	for r := range readableSet {
+		if isUnderDeniedTree(r, deniedSet) {
+			delete(readableSet, r)
+		}
 	}
 
 	return GrantedPathSet{
@@ -343,36 +346,50 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	}
 }
 
-// resolveSymlink wraps filepath.EvalSymlinks. Returns "" on error (path does
-// not exist or cannot be resolved) — callers drop such paths rather than
-// expanding them unexpectedly.
+// resolveSymlink wraps filepath.EvalSymlinks and never drops the path on
+// error: on any EvalSymlinks failure (ENOENT, EACCES on a parent component,
+// ELOOP on a circular chain) the cleaned input is returned. Silently dropping
+// would remove a guard-vouched grant from the Landlock allow-list and surface
+// later as a bare EACCES at runtime with no diagnostic. The kernel resolves
+// symlinks at access time anyway, so passing the unresolved form when
+// resolution fails is no less safe than the resolved form when it succeeds.
 //
-// For denied (Protected) paths, callers should use resolveSymlinkForDeny which
-// always returns a usable path to avoid silently dropping security constraints.
+// resolveSymlinkForDeny exists as a separate alias for protected paths: both
+// helpers now share the same fallback semantics, but the deny-side name
+// documents intent at the call site (a silent drop on the deny side would
+// also remove a security constraint).
 func resolveSymlink(p string) string {
-	resolved, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		// Path may not exist yet (e.g. runtime dir not created). Return as-is
-		// for non-existent paths that are still valid targets.
-		if os.IsNotExist(err) {
-			return filepath.Clean(p)
-		}
-		return ""
-	}
-	return resolved
-}
-
-// resolveSymlinkForDeny resolves a path for inclusion in the denied (Protected)
-// set. Unlike resolveSymlink, it never drops the path on error: returning ""
-// would silently remove a security constraint, potentially allowing a
-// subsequently-added writable rule to grant access to a protected location.
-// On any error the cleaned input path is used as-is.
-func resolveSymlinkForDeny(p string) string {
 	resolved, err := filepath.EvalSymlinks(p)
 	if err != nil {
 		return filepath.Clean(p)
 	}
 	return resolved
+}
+
+// resolveSymlinkForDeny is an intent-named alias of resolveSymlink for
+// inclusion in the denied (Protected) set. Dropping a deny entry could let a
+// subsequently-added writable rule grant access to a protected location, so
+// the conservative "always return a cleaned path" behaviour is mandatory
+// here — but it is also what resolveSymlink does, so the two functions share
+// a body.
+func resolveSymlinkForDeny(p string) string {
+	return resolveSymlink(p)
+}
+
+// isUnderDeniedTree reports whether p is exactly in the denied set, or is a
+// descendant of a denied directory (prefix match terminated by a separator).
+// This ensures deny-wins applies to the entire subtree of a denied path, not
+// just the exact path, preventing a subtree allow from bypassing a point deny.
+func isUnderDeniedTree(p string, denied map[string]bool) bool {
+	if denied[p] {
+		return true
+	}
+	for d := range denied {
+		if strings.HasPrefix(p, d+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func sortedKeys(m map[string]bool) []string {

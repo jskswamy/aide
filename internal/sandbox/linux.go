@@ -140,8 +140,9 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 		if _, err := os.Stat(p); err == nil {
 			resolved := filepath.Clean(p)
 			// Honour deny-wins: a guard or config that explicitly denied this
-			// path must not be overridden by the system-path bootstrap list.
-			if deniedSet[resolved] {
+			// path (or any ancestor directory it lives under) must not be
+			// overridden by the system-path bootstrap list.
+			if isUnderDeniedTree(resolved, deniedSet) {
 				continue
 			}
 			if !pathCoveredBy(resolved, gps.Writable, gps.Readable) {
@@ -154,7 +155,7 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 	for _, p := range linuxSystemWritable {
 		if _, err := os.Stat(p); err == nil {
 			resolved := filepath.Clean(p)
-			if deniedSet[resolved] {
+			if isUnderDeniedTree(resolved, deniedSet) {
 				continue
 			}
 			if !pathCoveredBy(resolved, gps.Writable, nil) {

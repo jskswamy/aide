@@ -48,7 +48,7 @@ aide auto-detects known agent config directories and adds them to the writable l
 |--------------|---------------------|---------------------------------------|
 | Aider        | (none)              | `~/.aider`                            |
 | Amp          | `AMP_HOME`          | `~/.amp`, `~/.config/amp`             |
-| Claude       | `CLAUDE_CONFIG_DIR` | `~/.claude`, `~/.config/claude`, `~/Library/Application Support/Claude` |
+| Claude       | `CLAUDE_CONFIG_DIR` | **Linux**: `~/.config/aide/claude` (aide-managed redirect; this is the only path in the Landlock writable allow-list). **macOS**: `~/.claude`, `~/.config/claude`, `~/Library/Application Support/Claude`. Setting `CLAUDE_CONFIG_DIR` to a path outside the managed directory on Linux requires adding it to `writable_extra`. |
 | Codex        | `CODEX_HOME`        | `~/.codex`                            |
 | Cursor       | `CURSOR_CONFIG_DIR` | `~/.cursor` (also `$XDG_CONFIG_HOME/cursor` on Linux when set) |
 | Gemini       | `GEMINI_HOME`       | `~/.gemini`                           |
@@ -242,18 +242,6 @@ When neither is available, aide logs `aide: warning: OS-level sandboxing unavail
 - **Filesystem**: macOS Seatbelt enforces per-subpath rules including glob patterns. Landlock enforces directory-level rules (no per-file glob inside a writable directory).
 - **Network**: Both enforce mode (outbound / none / unrestricted). Port allow/deny lists require Landlock ABI ≥ 4 on Linux; all ports apply on earlier kernels.
 - **Diagnostics**: `aide sandbox test` on Linux prints a human-readable profile; on macOS it prints the raw `.sb` file.
-
-### Atomic-write file overlay (Linux)
-
-Some agents persist state by writing a sibling temp file and renaming it over the target — for example, Claude Code rewrites `~/.claude.json` on every interaction using `~/.claude.json.tmp.<pid>.<hex>` and `rename(2)`. Landlock's subtree model has no glob support, so allowing creation of that random-named temp file would otherwise require granting broad write access to the parent directory (`$HOME`), which holds `~/.ssh`, `~/.aws`, `~/.gnupg`, and other secrets.
-
-When an agent module declares such files via `seatbelt.LinuxAtomicWriteProvider`, the Linux backend creates a per-launch mount namespace (via `bwrap`) where:
-
-- The parent directory is replaced by an empty tmpfs in the agent's namespace.
-- Each declared file is bind-mounted from the real filesystem onto its tmpfs path (read-write).
-- Other granted paths under the same parent are restored via individual `--bind` / `--ro-bind` so the granted view inside the sandbox matches what Landlock expects.
-
-Inside the sandbox the agent sees a writable parent containing only the explicitly bound items; everything else in the real parent is invisible — not just denied, physically absent. Writes to declared files persist; everything else lives on the tmpfs and dies with the agent process. This requires `bwrap` to be installed on the host.
 
 ## Debugging
 

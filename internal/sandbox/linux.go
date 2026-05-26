@@ -131,9 +131,19 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 		gps.OriginGuard = make(map[string]string)
 	}
 
+	deniedSet := make(map[string]bool, len(gps.Denied))
+	for _, d := range gps.Denied {
+		deniedSet[d] = true
+	}
+
 	for _, p := range linuxSystemReadable {
 		if _, err := os.Stat(p); err == nil {
 			resolved := filepath.Clean(p)
+			// Honour deny-wins: a guard or config that explicitly denied this
+			// path must not be overridden by the system-path bootstrap list.
+			if deniedSet[resolved] {
+				continue
+			}
 			if !pathCoveredBy(resolved, gps.Writable, gps.Readable) {
 				gps.Readable = append(gps.Readable, resolved)
 				gps.OriginGuard[resolved] = "linux:system"
@@ -144,6 +154,9 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 	for _, p := range linuxSystemWritable {
 		if _, err := os.Stat(p); err == nil {
 			resolved := filepath.Clean(p)
+			if deniedSet[resolved] {
+				continue
+			}
 			if !pathCoveredBy(resolved, gps.Writable, nil) {
 				gps.Writable = append(gps.Writable, resolved)
 				gps.OriginGuard[resolved] = "linux:system-writable"

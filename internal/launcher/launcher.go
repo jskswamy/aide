@@ -779,6 +779,8 @@ func (l *Launcher) buildBannerData(
 		tempDir := os.TempDir()
 		policy, _, _ := sandbox.PolicyFromConfig(sandboxCfg, sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDirPath, HomeDir: homeDir, TempDir: tempDir})
 		if policy != nil {
+			tier := sandbox.PlatformIsolationTier(*policy)
+			data.IsolationTier = &tier
 			guardResults := sandbox.EvaluateGuards(policy)
 			availableNames := sandbox.AvailableGuardNames(policy.Guards)
 			si := &ui.SandboxInfo{

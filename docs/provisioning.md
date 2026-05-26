@@ -202,6 +202,42 @@ Three keywords:
 - **`only:`** — replace the inherited set entirely with this list.
 
 The same three keywords apply to `mcp_servers:` blocks per-context.
+Entries use the full inline-table form (just like the top-level schema),
+and `env:` values support `{{ .secrets.<name> }}` templating resolved
+from the context's `secret:` store at sync time:
+
+```yaml
+contexts:
+  work:
+    agent: claude
+    profile: work
+    secret: work
+    mcp_servers:
+      # add GitHub + Jira on top of the inherited set
+      extra:
+        github:
+          command: npx
+          args: ["-y", "@modelcontextprotocol/server-github"]
+          env:
+            GITHUB_PERSONAL_ACCESS_TOKEN: "{{ .secrets.github_token }}"
+        jira:
+          command: npx
+          args: ["-y", "@modelcontextprotocol/server-jira"]
+          env:
+            JIRA_URL: "https://my-org.atlassian.net"
+            JIRA_API_TOKEN: "{{ .secrets.jira_token }}"
+
+  oss:
+    agent: claude
+    profile: oss
+    mcp_servers:
+      # OSS work only needs GitHub — replace the inherited set
+      only: [github]
+```
+
+Keep the literal token inline (`GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_…"`)
+only for throwaway tests; prefer the `{{ .secrets.<name> }}` form so the
+value stays out of version-controlled config.
 
 ## CLI commands
 

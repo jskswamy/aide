@@ -6,3 +6,9 @@ package sandbox
 func NewSandbox() Sandbox {
 	return &noopSandbox{}
 }
+
+// PlatformGrantedPaths falls back to DeriveGrantedPathSet on platforms that
+// have no OS-specific bootstrap paths to add.
+func PlatformGrantedPaths(policy Policy) GrantedPathSet {
+	return DeriveGrantedPathSet(policy)
+}

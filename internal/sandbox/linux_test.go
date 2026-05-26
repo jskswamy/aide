@@ -391,6 +391,37 @@ func TestGenerateProfile_ContainsHeaderLines(t *testing.T) {
 	}
 }
 
+// TestGenerateProfile_IncludesSystemPaths verifies that GenerateProfile uses
+// linuxLandlockGrantedPaths rather than linuxGrantedPaths, so the profile
+// includes the system-path bootstrap entries that Landlock actually enforces
+// (/usr, /proc, /dev, etc.). Previously it used linuxGrantedPaths which
+// returned only guard-derived paths, making "aide sandbox show" omit the
+// majority of the allow-list.
+func TestGenerateProfile_IncludesSystemPaths(t *testing.T) {
+	s := &LinuxSandbox{}
+	runtimeDir := t.TempDir()
+	policy := Policy{
+		ProjectRoot:     runtimeDir,
+		RuntimeDir:      runtimeDir,
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowSubprocess: true,
+		Guards:          []string{},
+	}
+
+	profile, err := s.GenerateProfile(policy)
+	if err != nil {
+		t.Fatalf("GenerateProfile error: %v", err)
+	}
+
+	// /usr is always present in linuxSystemReadable and exists on every Linux
+	// host; if it's missing from the profile, GenerateProfile is using the
+	// incomplete linuxGrantedPaths instead of linuxLandlockGrantedPaths.
+	if !strings.Contains(profile, "/usr") {
+		t.Errorf("GenerateProfile omits /usr — profile is incomplete; system paths are missing:\n%s", profile)
+	}
+}
+
 // TestApply_Unavailable_DoesNotMutateCmd verifies that when no sandbox is available,
 // Apply returns nil, does not mutate cmd, and LastTier().Tier == "unavailable".
 func TestApply_Unavailable_DoesNotMutateCmd(t *testing.T) {

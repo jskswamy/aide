@@ -97,3 +97,10 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 	return result.Profile, nil
 }
 
+// PlatformGrantedPaths falls back to DeriveGrantedPathSet on macOS; the
+// Seatbelt backend does not augment the set with OS bootstrap entries at the
+// GrantedPathSet level (they are embedded directly in the .sb profile).
+func PlatformGrantedPaths(policy Policy) GrantedPathSet {
+	return DeriveGrantedPathSet(policy)
+}
+

@@ -517,6 +517,23 @@ func RunSandboxApply(policyFDStr string, agentCmd []string) error {
 // it, and exits with the same code/signal. Seccomp is NOT installed on
 // this (parent) process so that the fork itself succeeds; the child installs
 // it before replacing itself with the agent.
+//
+// Architectural note — why syscall.ForkExec here does not violate the
+// single-exec-point rule enforced by internal/launcher:
+//
+// The parent aide process reaches the launcher's Execer.Exec call exactly
+// once. That call does syscall.Exec (replacing the process image) with
+// aide __sandbox-apply as the target, which lands in RunSandboxApply.
+// forkExecInPIDNamespace is called from RunSandboxApply — i.e. it runs
+// inside the already-exec'd __sandbox-apply child, not inside the original
+// launcher. The parent aide process no longer exists at this point.
+//
+// Consequence for future pre-exec hooks: any hook registered in
+// internal/launcher fires before Execer.Exec and therefore runs before
+// __sandbox-apply is ever invoked. It will NOT fire again for the
+// grandchild (agent) spawned here. That is intentional: sandbox setup,
+// seccomp, and Landlock are all in-process operations that must happen
+// inside the re-exec child; they are not subject to launcher-level hooks.
 func forkExecInPIDNamespace(agentPath string, agentCmd []string) error {
 	aideBin, err := os.Executable()
 	if err != nil {

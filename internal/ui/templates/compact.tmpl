@@ -27,7 +27,7 @@
    🛡 sandbox: disabled
 {{- else if hasCapOrExtra .}}
 
-   🛡 sandbox: network {{networkLabel .}}
+   🛡 sandbox: {{isolationTierLabel .}}, network {{networkLabel .}}
 {{- with sandboxPorts .}}
    🛡 ports: {{.}}
 {{- end}}
@@ -58,7 +58,7 @@
 {{- end}}
 {{- else}}
 
-   🛡 sandbox: network {{networkLabel .}}, code-only
+   🛡 sandbox: {{isolationTierLabel .}}, network {{networkLabel .}}, code-only
 {{- with sandboxPorts .}}
    🛡 ports: {{.}}
 {{- end}}

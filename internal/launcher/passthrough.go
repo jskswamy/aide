@@ -148,6 +148,12 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	policy.AgentModule = ResolveAgentModule(name)
 
 	env := applyAgentEnv(os.Environ(), &policy)
+	// Sync policy.Env with the post-injection env so the Landlock re-exec
+	// child builds its allow-list from the same env that cmd.Env carries.
+	// Mirrors step 12e in launcher.go; without this the child evaluates
+	// env-var-dependent guards (e.g. CLAUDE_CONFIG_DIR) from the stale
+	// pre-injection snapshot.
+	policy.Env = env
 
 	cmd := &exec.Cmd{
 		Path: binary,
@@ -159,6 +165,12 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	if err := sb.Apply(cmd, policy, rtDir.Path()); err != nil {
 		return fmt.Errorf("applying sandbox: %w", err)
 	}
+
+	// Compute the active isolation tier from the resolved policy. Mirrors the
+	// non-passthrough path in launcher.go so the banner reflects whether
+	// Landlock / Seatbelt is in force, instead of falling through to
+	// isolationTierLabel's nil-IsolationTier → "sandbox: disabled" default.
+	tier := sandbox.PlatformIsolationTier(policy)
 
 	// Render minimal startup banner
 	guardResults := sandbox.EvaluateGuards(&policy)
@@ -190,10 +202,11 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	}
 	si.Available = availableNames
 	bannerData := &ui.BannerData{
-		AgentName: name,
-		AgentPath: binary,
-		Sandbox:   si,
-		Yolo:      l.Yolo && !l.NoYolo,
+		AgentName:     name,
+		AgentPath:     binary,
+		Sandbox:       si,
+		IsolationTier: &tier,
+		Yolo:          l.Yolo && !l.NoYolo,
 	}
 	if err := ui.RenderBanner(l.stderr(), "compact", bannerData); err != nil {
 		fmt.Fprintf(l.stderr(), "warning: banner render failed: %v\n", err)

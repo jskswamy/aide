@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -107,8 +108,12 @@ func TestLinuxSandbox_ApplyBwrap_NoSubprocess(t *testing.T) {
 	}
 
 	args := strings.Join(cmd.Args, " ")
-	if !strings.Contains(args, "--unshare-pid") {
-		t.Errorf("expected --unshare-pid when AllowSubprocess=false, got: %s", args)
+	// Subprocess enforcement is via seccomp (--seccomp <fd>), not --unshare-pid.
+	if strings.Contains(args, "--unshare-pid") {
+		t.Errorf("--unshare-pid should not be present (seccomp is the enforcement mechanism), got: %s", args)
+	}
+	if !strings.Contains(args, "--seccomp") {
+		t.Errorf("expected --seccomp when AllowSubprocess=false, got: %s", args)
 	}
 }
 
@@ -168,6 +173,50 @@ func TestLinuxSandbox_Apply_FallsBackGracefully(t *testing.T) {
 	err := s.Apply(cmd, policy, runtimeDir)
 	if err != nil {
 		t.Fatalf("Apply should not error: %v", err)
+	}
+}
+
+// TestApplyLandlock_NoSubprocess_NoCLONE_NEWPID pins that applyLandlock no
+// longer sets SysProcAttr.Cloneflags to CLONE_NEWPID. The flag was dead code
+// (syscall.Exec ignores SysProcAttr); real PID namespace isolation is now done
+// inside RunSandboxApply via forkExecInPIDNamespace, which calls ForkExec with
+// CLONE_NEWPID after Landlock is applied in the child.
+func TestApplyLandlock_NoSubprocess_NoCLONE_NEWPID(t *testing.T) {
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo", "hi")
+	runtimeDir := t.TempDir()
+	policy := Policy{
+		ProjectRoot:     runtimeDir,
+		RuntimeDir:      runtimeDir,
+		Network:         NetworkOutbound,
+		AllowSubprocess: false,
+	}
+
+	if err := s.applyLandlock(cmd, policy, runtimeDir); err != nil {
+		t.Fatalf("applyLandlock: %v", err)
+	}
+
+	if cmd.SysProcAttr != nil && (cmd.SysProcAttr.Cloneflags&syscall.CLONE_NEWPID) != 0 {
+		t.Errorf("applyLandlock must not set CLONE_NEWPID on SysProcAttr (syscall.Exec ignores it; PID namespace is created by forkExecInPIDNamespace inside RunSandboxApply)")
+	}
+}
+
+// TestRunSandboxExec_MissingAgent_ReturnsError confirms RunSandboxExec fails
+// cleanly when given a non-existent agent binary rather than panicking or
+// silently succeeding.
+func TestRunSandboxExec_MissingAgent_ReturnsError(t *testing.T) {
+	err := RunSandboxExec([]string{"/nonexistent/agent-binary"})
+	if err == nil {
+		t.Fatal("RunSandboxExec with nonexistent binary should return error")
+	}
+}
+
+// TestRunSandboxExec_EmptyArgs_ReturnsError confirms the guard for empty arg
+// slice.
+func TestRunSandboxExec_EmptyArgs_ReturnsError(t *testing.T) {
+	err := RunSandboxExec(nil)
+	if err == nil {
+		t.Fatal("RunSandboxExec with nil args should return error")
 	}
 }
 

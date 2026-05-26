@@ -9,6 +9,12 @@ threshold:
   total:   60
 
 override:
+  # seccomp_linux.go is dominated by syscall error returns (prctl,
+  # memfd_create, write, seek) that cannot be exercised without dependency
+  # injection. Happy paths plus filter-shape validation are tested in
+  # seccomp_linux_test.go; the unreachable branches cap coverage near 70%.
+  - threshold: 70
+    path: internal/sandbox/seccomp_linux.go
   - threshold: 80
     path: pkg/seatbelt
   - threshold: 80

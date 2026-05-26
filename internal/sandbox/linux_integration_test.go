@@ -245,6 +245,73 @@ func TestLinuxIntegration_DefaultPolicy_ProjectRootReadable(t *testing.T) {
 	}
 }
 
+// TestLinuxIntegration_AllowSubprocessFalse_Bwrap_BlocksFork asserts that the
+// bwrap-only fallback honours AllowSubprocess=false by blocking subprocess
+// creation outright, not merely isolating it via a PID namespace. The shell
+// inside the sandbox attempts to spawn /bin/true; the seccomp filter we install
+// must block the underlying clone()-without-CLONE_THREAD so the shell's `&&`
+// branch never runs and the `||` branch prints FORK_BLOCKED instead.
+func TestLinuxIntegration_AllowSubprocessFalse_Bwrap_BlocksFork(t *testing.T) {
+	skipIfNoBwrap(t)
+
+	bwrapPath, _ := exec.LookPath("bwrap")
+	s := &LinuxSandbox{}
+	policy := Policy{
+		ProjectRoot:     t.TempDir(),
+		RuntimeDir:      t.TempDir(),
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowSubprocess: false,
+	}
+
+	cmd := exec.Command("/bin/sh", "-c",
+		`/bin/true 2>/dev/null && echo FORK_WORKED || echo FORK_BLOCKED`)
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap: %v", err)
+	}
+
+	out, _ := cmd.CombinedOutput()
+	output := string(out)
+	if strings.Contains(output, "FORK_WORKED") {
+		t.Errorf("AllowSubprocess=false should block subprocess creation; output: %s", output)
+	}
+	if !strings.Contains(output, "FORK_BLOCKED") {
+		t.Errorf("expected FORK_BLOCKED in output; got: %s", output)
+	}
+}
+
+// TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid asserts the
+// bwrap fallback also adds --unshare-pid for defence in depth. The PID
+// namespace alone does not block fork; the seccomp filter does. But the
+// namespace bounds the blast radius if seccomp is ever bypassed.
+func TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid(t *testing.T) {
+	skipIfNoBwrap(t)
+
+	bwrapPath, _ := exec.LookPath("bwrap")
+	s := &LinuxSandbox{}
+	policy := Policy{
+		ProjectRoot:     t.TempDir(),
+		RuntimeDir:      t.TempDir(),
+		TempDir:         "/tmp",
+		Network:         NetworkOutbound,
+		AllowSubprocess: false,
+	}
+	cmd := exec.Command("/bin/sh", "-c",
+		`echo PPID=$(cut -d' ' -f4 /proc/self/stat)`)
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap: %v", err)
+	}
+	out, _ := cmd.CombinedOutput()
+	if !strings.Contains(string(out), "PPID=0") {
+		t.Errorf("expected sandboxed process to see PPID=0 (PID 1 in new PID namespace); got: %s", out)
+	}
+}
+
+// Note: the --unshare-pid coverage for the overlay path moved to
+// TestBuildOverlayBwrapArgs_UnsharePidAndNetwork in atomic_overlay_test.go,
+// which exercises the new buildOverlayBwrapArgs directly (no bwrap launch
+// needed, so runs on any Linux).
+
 func TestLinuxIntegration_SandboxRefResolution(t *testing.T) {
 	skipIfNoBwrap(t)
 

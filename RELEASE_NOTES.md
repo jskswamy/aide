@@ -1,26 +1,53 @@
-## v1.14.1 — 2026-06-04
+## v1.15.0 — 2026-06-04
 
 ### ✨ Features
 
-- **`aide prompt` suppresses context name when an icon is set.**
-  When a context has an `icon:` field configured, `aide prompt` now
-  shows the icon *in place of* the text name, eliminating redundant
-  output like `default 🏠 🤖 🛡` in favour of the cleaner `🏠 🤖 🛡`.
-  Contexts that have no `icon:` field (or whose icon sanitises to an
-  empty string) continue to display the name unchanged — fully
-  backwards-compatible.
+- **`aide explain` — configuration overview and how-to recipes.**
+  A new `aide explain` command prints a redacted snapshot of the current
+  aide configuration alongside topic-based how-to recipes. It never
+  resolves or decrypts secrets (T1 threat model): literal credential
+  values are replaced with `<redacted>` and secret-ref templates are
+  shown symbolically (`{{ .secrets.github_token }}`). Non-credential
+  literals and safe templates (e.g. `{{ .project_root }}/data`) are
+  shown verbatim so the output is actually useful.
 
-- **`aide prompt --compact` flag for space-free prompt output.**
-  A new `--compact` flag joins all prompt segments without spaces,
-  producing `🏠🤖🛡` instead of `🏠 🤖 🛡`. Useful for tighter
-  Starship right-prompt configurations where every character counts.
+  Three output formats are supported:
 
-  Example Starship snippet for compact mode:
+  - `aide explain` — human-readable terminal overview (default)
+  - `aide explain --format=agent` — consolidated markdown for injecting
+    into an agent's context window
+  - `aide explain --format=json` — machine-readable JSON for tooling
 
-  ```toml
-  [custom.aide]
-  command = "aide prompt --compact"
-  when = "true"
-  symbol = ""
-  timeout = 100
+- **`aide explain <topic>` — print a single recipe.**
+  Pass a topic name to print just that recipe body, making it easy to
+  pipe a specific how-to into an agent context:
+
+  ```sh
+  aide explain add-mcp-server
+  aide explain scope-a-sandbox
+  aide explain configure-hooks
   ```
+
+  Running `aide explain` without a topic lists all available topics.
+
+- **Built-in recipes for MCP servers, sandbox scoping, and hooks.**
+  Three recipes ship with this release:
+
+  - `add-mcp-server` — add a top-level MCP server, scope it to one
+    context via `extra:`, or exclude a server from specific contexts
+  - `scope-a-sandbox` — add writable/readable/denied paths to a
+    context sandbox, use a named sandbox profile, or disable the sandbox
+  - `configure-hooks` — configure global hooks, add context-scoped
+    extra hooks, or exclude inherited hooks per context
+
+- **Hooks summarised in `aide explain` output.**
+  Top-level hook counts and per-context hook overrides (exclude/extra)
+  are now included in the explain output so the full configuration
+  picture is visible at a glance.
+
+### Security
+
+- **Secrets store is read-only during `configure` and `doctor` sandbox
+  operations.** The secrets provider now opens the keystore in read-only
+  mode when called from the explain/configure/doctor code path, preventing
+  accidental writes during introspection.

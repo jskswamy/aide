@@ -216,7 +216,6 @@ type GrantedPathSet struct {
 //   - Guard Readable paths → Readable.
 //   - All paths are resolved via filepath.EvalSymlinks before use.
 func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
-	homeDir, _ := os.UserHomeDir()
 	origin := make(map[string]string)
 
 	// Collect guard-protected (denied) paths.
@@ -306,19 +305,16 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 		writableSet[p] = true
 	}
 
+	// Aide's own state dirs (~/.config/aide, ~/.local/share/aide,
+	// ~/.cache/aide) are intentionally NOT added to the readable set.
+	// Granting subtree read on ~/.config/aide would also expose
+	// ~/.config/aide/secrets/*.enc.yaml — Landlock has no deny rules and
+	// the exact-match deny-wins below cannot withdraw access from inside
+	// a parent allow. Agent modules that need specific subdirs (e.g.
+	// Claude's ~/.config/aide/claude redirect) declare them through
+	// GuardResult.Writable / Readable so each grant is auditable in
+	// OriginGuard and bounded to the dir the agent actually needs.
 	readableSet := make(map[string]bool)
-	if homeDir != "" {
-		// Scope aide's own state to specific subdirs rather than all of $HOME.
-		for _, rel := range []string{".config/aide", ".local/share/aide", ".cache/aide"} {
-			p := filepath.Join(homeDir, rel)
-			if resolved := resolveSymlink(p); resolved != "" {
-				readableSet[resolved] = true
-				if origin[resolved] == "" {
-					origin[resolved] = "guard:filesystem"
-				}
-			}
-		}
-	}
 	for _, p := range policy.ExtraReadable {
 		if resolved := resolveSymlink(p); resolved != "" {
 			readableSet[resolved] = true

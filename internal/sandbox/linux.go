@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -365,6 +367,113 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 		}
 	}
 
+	if !policy.AllowSubprocess {
+		// Fork into a new PID namespace so the agent and all its descendants
+		// are isolated from host processes. The child (__sandbox-exec) installs
+		// the seccomp filter before exec-ing the agent; seccomp must be
+		// installed INSIDE the new namespace so this process (the parent,
+		// which still needs to fork) is not itself restricted. Landlock is
+		// inherited across fork and execve so the child is already restricted.
+		return forkExecInPIDNamespace(agentPath, agentCmd)
+	}
+
+	return syscall.Exec(agentPath, agentCmd, os.Environ())
+}
+
+// forkExecInPIDNamespace forks into a new PID namespace, runs
+// __sandbox-exec (which installs seccomp and execs the agent), waits for
+// it, and exits with the same code/signal. Seccomp is NOT installed on
+// this (parent) process so that the fork itself succeeds; the child installs
+// it before replacing itself with the agent.
+func forkExecInPIDNamespace(agentPath string, agentCmd []string) error {
+	aideBin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve aide binary for PID namespace fork: %w", err)
+	}
+
+	// Phase 2 of __sandbox-apply: args[0] == "--" signals the seccomp+exec
+	// path. The resolved agent path is passed directly so the child doesn't
+	// need LookPath (which may fail under Landlock restriction).
+	execArgs := append([]string{"aide", "__sandbox-apply", "--", agentPath}, agentCmd[1:]...)
+
+	pid, err := syscall.ForkExec(aideBin, execArgs, &syscall.ProcAttr{
+		Env:   os.Environ(),
+		Files: []uintptr{0, 1, 2}, // inherit stdin/stdout/stderr
+		Sys:   &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWPID},
+	})
+	if err != nil {
+		return fmt.Errorf("fork into PID namespace: %w", err)
+	}
+
+	// Forward signals from this process to the child. Subscribe only to
+	// forwarding-relevant signals; subscribing to all signals with an
+	// unbuffered-per-signal channel can cause drops under high signal load
+	// (e.g. a burst of SIGCHLD from other goroutines before Wait drains the
+	// channel). SIGCHLD is intentionally excluded — it is not meaningful for
+	// the child process and is handled by Wait4.
+	sigCh := make(chan os.Signal, 32)
+	signal.Notify(sigCh,
+		syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP,
+		syscall.SIGUSR1, syscall.SIGUSR2,
+		syscall.SIGWINCH, syscall.SIGCONT, syscall.SIGTSTP,
+	)
+	go func() {
+		for sig := range sigCh {
+			if s, ok := sig.(syscall.Signal); ok {
+				_ = syscall.Kill(pid, s)
+			}
+		}
+	}()
+
+	var wstatus syscall.WaitStatus
+	for {
+		_, werr := syscall.Wait4(pid, &wstatus, 0, nil)
+		if werr == nil {
+			break
+		}
+		if werr == syscall.EINTR {
+			continue
+		}
+		signal.Stop(sigCh)
+		return fmt.Errorf("wait for sandboxed agent: %w", werr)
+	}
+
+	signal.Stop(sigCh)
+
+	if wstatus.Exited() {
+		os.Exit(wstatus.ExitStatus())
+	}
+	if wstatus.Signaled() {
+		// Re-raise so the parent sees the same signal termination.
+		_ = syscall.Kill(os.Getpid(), wstatus.Signal())
+	}
+	os.Exit(1)
+	return nil // unreachable; satisfies the error return signature
+}
+
+// RunSandboxExec is the __sandbox-exec re-exec handler. It runs inside the
+// PID namespace created by forkExecInPIDNamespace, installs the no-subprocess
+// seccomp filter, and then execs the agent. The filter must be installed here
+// (inside the fork) rather than in the parent so the parent's fork() call is
+// not itself blocked by seccomp.
+//
+// The agent path is validated before seccomp is installed so that a missing
+// binary returns a clean error rather than leaving the process in a seccomp-
+// restricted state that cannot exec anything else.
+func RunSandboxExec(agentCmd []string) error {
+	if len(agentCmd) == 0 {
+		return fmt.Errorf("no agent command")
+	}
+
+	agentPath := agentCmd[0]
+	if _, err := os.Stat(agentPath); err != nil {
+		return fmt.Errorf("agent not found: %w", err)
+	}
+
+	if err := installNoSubprocessSeccomp(); err != nil {
+		return fmt.Errorf("install seccomp: %w", err)
+	}
+
 	return syscall.Exec(agentPath, agentCmd, os.Environ())
 }
 
@@ -485,11 +594,19 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		fmt.Fprintln(os.Stderr, "aide: warning: Port-level filtering not supported by bwrap; using mode-only network policy")
 	}
 
-	// Subprocess control
-	// bwrap has no direct subprocess gate; PID-namespace isolation is the
-	// closest equivalent.
+	// Subprocess gate. A seccomp BPF filter blocks clone/fork/vfork at the
+	// syscall level — the agent cannot create child processes at all. No
+	// --unshare-pid needed: seccomp is the hard enforcement layer, not a
+	// namespace-scoped containment.
 	if !policy.AllowSubprocess {
-		bwrapArgs = append(bwrapArgs, "--unshare-pid")
+		memFile, err := noSubprocessSeccompMemfd()
+		if err != nil {
+			return fmt.Errorf("seccomp setup: %w", err)
+		}
+		// Each ExtraFiles[i] becomes fd 3+i in the child.
+		childFD := 3 + len(cmd.ExtraFiles)
+		cmd.ExtraFiles = append(cmd.ExtraFiles, memFile)
+		bwrapArgs = append(bwrapArgs, "--seccomp", strconv.Itoa(childFD))
 	}
 
 	// Append -- and the original command

@@ -1,7 +1,9 @@
 package sandbox
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -168,6 +170,61 @@ func TestDetectGuardConflicts_NoConflict(t *testing.T) {
 	warnings := DetectGuardConflicts(results)
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings, got: %v", warnings)
+	}
+}
+
+// TestResolveSymlink_NonexistentPath confirms that paths which do not exist
+// are still surfaced as their cleaned form — Landlock applies rules at boot,
+// so a runtime dir that gets created later must still receive a rule.
+func TestResolveSymlink_NonexistentPath(t *testing.T) {
+	got := resolveSymlink("/definitely/does/not/exist")
+	if got != "/definitely/does/not/exist" {
+		t.Errorf("resolveSymlink(missing) = %q, want cleaned input (must never drop guard-vouched paths)", got)
+	}
+}
+
+// TestResolveSymlink_PreservesPathOnEACCES pins the Greptile P2 fix: when
+// EvalSymlinks fails for a non-ENOENT reason (here, EACCES on a parent dir
+// component the test user cannot traverse), the helper must fall back to
+// filepath.Clean rather than returning "". Returning "" silently dropped
+// guard-vouched grants from the Landlock allow-list and surfaced later as a
+// bare EACCES inside the agent with no diagnostic.
+func TestResolveSymlink_PreservesPathOnEACCES(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory traversal permissions; this test depends on EACCES")
+	}
+	parent := filepath.Join(t.TempDir(), "no-traverse")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatalf("setup parent: %v", err)
+	}
+	target := filepath.Join(parent, "child")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup target: %v", err)
+	}
+	// Strip search permission on parent so EvalSymlinks fails with EACCES
+	// when traversing into it from the test process.
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("chmod parent: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+	got := resolveSymlink(target)
+	if got == "" {
+		t.Fatalf("resolveSymlink(%q) returned empty; must fall back to cleaned input on EACCES (else guard-vouched grants are silently dropped)", target)
+	}
+	if got != filepath.Clean(target) {
+		t.Errorf("resolveSymlink(%q) = %q, want %q (cleaned input)", target, got, filepath.Clean(target))
+	}
+}
+
+// TestResolveSymlinkForDeny_StillFallsBack pins the equivalence with
+// resolveSymlink — the deny-side helper has always had this behaviour; the
+// fix made the allow-side match. If they diverge again, deny entries could
+// silently drop and a later allow rule could pierce a protected location.
+func TestResolveSymlinkForDeny_StillFallsBack(t *testing.T) {
+	got := resolveSymlinkForDeny("/no/such/path")
+	if got != "/no/such/path" {
+		t.Errorf("resolveSymlinkForDeny(missing) = %q, want cleaned input", got)
 	}
 }
 

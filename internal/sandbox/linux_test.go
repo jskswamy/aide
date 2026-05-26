@@ -4,6 +4,7 @@ package sandbox
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,6 +14,41 @@ import (
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
+
+// readPolicyFromExtraFiles reads and returns the policy JSON from
+// cmd.ExtraFiles[0], which applyLandlock writes to a memfd instead of disk.
+func readPolicyFromExtraFiles(t *testing.T, cmd *exec.Cmd) string {
+	t.Helper()
+	if len(cmd.ExtraFiles) == 0 {
+		t.Fatal("cmd.ExtraFiles is empty; expected memfd policy file at index 0")
+	}
+	data, err := io.ReadAll(cmd.ExtraFiles[0])
+	if err != nil {
+		t.Fatalf("reading policy from memfd ExtraFiles[0]: %v", err)
+	}
+	return string(data)
+}
+
+// TestWritePolicyToMemfd verifies that writePolicyToMemfd stores the payload in
+// anonymous memory (not on the filesystem) and that the data round-trips
+// correctly through the returned *os.File.
+func TestWritePolicyToMemfd(t *testing.T) {
+	payload := []byte(`{"ProjectRoot":"/tmp/project","Network":"outbound"}`)
+
+	f, err := writePolicyToMemfd(payload)
+	if err != nil {
+		t.Fatalf("writePolicyToMemfd: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	got, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("ReadAll from memfd: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("memfd round-trip: got %q, want %q", got, payload)
+	}
+}
 
 func TestLinuxSandbox_NewSandbox_ReturnsLinux(t *testing.T) {
 	s := NewSandbox()
@@ -241,27 +277,18 @@ func TestLandlock_PortFiltering_RewritesCmd(t *testing.T) {
 		t.Fatalf("applyLandlock error: %v", err)
 	}
 
-	// Read the policy JSON that was written
-	policyPath := runtimeDir + "/landlock-policy.json"
-	policyBytes, err := os.ReadFile(policyPath)
-	if err != nil {
-		t.Fatalf("reading policy file: %v", err)
-	}
+	policyJSON := readPolicyFromExtraFiles(t, cmd)
 
-	policyJSON := string(policyBytes)
-
-	// Verify the policy JSON contains AllowPorts with 443
 	if !strings.Contains(policyJSON, `"AllowPorts":[443]`) {
 		t.Errorf("policy JSON should contain AllowPorts=[443], got: %s", policyJSON)
 	}
 
-	// Verify the command was rewritten to use aide __sandbox-apply
 	args := strings.Join(cmd.Args, " ")
 	if !strings.Contains(args, "__sandbox-apply") {
 		t.Errorf("expected __sandbox-apply in args, got: %s", args)
 	}
-	if !strings.Contains(args, policyPath) {
-		t.Errorf("expected policy path %s in args, got: %s", policyPath, args)
+	if !strings.Contains(args, "--policy-fd=") {
+		t.Errorf("expected --policy-fd= in args, got: %s", args)
 	}
 }
 
@@ -283,13 +310,7 @@ func TestLandlock_PortFiltering_DenyPorts(t *testing.T) {
 		t.Fatalf("applyLandlock error: %v", err)
 	}
 
-	policyPath := runtimeDir + "/landlock-policy.json"
-	policyBytes, err := os.ReadFile(policyPath)
-	if err != nil {
-		t.Fatalf("reading policy file: %v", err)
-	}
-
-	policyJSON := string(policyBytes)
+	policyJSON := readPolicyFromExtraFiles(t, cmd)
 	if !strings.Contains(policyJSON, `"DenyPorts":[22,25]`) {
 		t.Errorf("policy JSON should contain DenyPorts=[22,25], got: %s", policyJSON)
 	}
@@ -488,14 +509,8 @@ func TestApply_PolicyJSON_UsesGrantedPathSet(t *testing.T) {
 		t.Fatalf("applyLandlock error: %v", err)
 	}
 
-	policyPath := runtimeDir + "/landlock-policy.json"
-	data, err := os.ReadFile(policyPath)
-	if err != nil {
-		t.Fatalf("reading policy JSON: %v", err)
-	}
-	content := string(data)
+	content := readPolicyFromExtraFiles(t, cmd)
 
-	// Writable must contain ProjectRoot
 	if !strings.Contains(content, projectRoot) {
 		t.Errorf("policy JSON should contain ProjectRoot %q, got: %s", projectRoot, content)
 	}

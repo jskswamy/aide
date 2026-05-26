@@ -24,7 +24,7 @@ func TestRunDiagnose_WritesReportFile(t *testing.T) {
 
 	var stderr bytes.Buffer
 	l := &Launcher{Diagnose: true, Stderr: &stderr}
-	err := l.runDiagnose("/bin/sh", []string{"sh", "-c", "echo bang 1>&2; exit 3"}, os.Environ(), diagContext{})
+	err := l.runDiagnose("/bin/sh", []string{"sh", "-c", "echo bang 1>&2; exit 3"}, os.Environ(), nil, diagContext{})
 	if err == nil {
 		t.Fatal("expected non-nil error from non-zero child")
 	}
@@ -82,7 +82,7 @@ func TestRunDiagnose_PopulatesContext(t *testing.T) {
 			RenderedSB: "(version 1)",
 		},
 	}
-	if err := l.runDiagnose("/bin/echo", []string{"echo", "hi"}, nil, dc); err != nil {
+	if err := l.runDiagnose("/bin/echo", []string{"echo", "hi"}, nil, nil, dc); err != nil {
 		t.Fatalf("runDiagnose returned error: %v", err)
 	}
 

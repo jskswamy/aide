@@ -20,7 +20,10 @@ var diagExecerFactory = func(lineLimit int, byteLimit int64) DiagnoseRunner {
 // renders a post-mortem report, persists it, and prints a terminal
 // summary plus the file path. Returns an exitError carrying the child's
 // exit code so main can propagate it.
-func (l *Launcher) runDiagnose(binary string, args, env []string, dc diagContext) error {
+//
+// extraFiles carries fds set by the sandbox layer (policy memfd for
+// Landlock, seccomp memfd for bwrap) that must be inherited by the child.
+func (l *Launcher) runDiagnose(binary string, args, env []string, extraFiles []*os.File, dc diagContext) error {
 	lineLimit := envIntDefault("AIDE_DIAGNOSE_STDERR_LINES", 200)
 	byteLimit := int64(envIntDefault("AIDE_DIAGNOSE_STDERR_BYTES", 65536))
 	runner := diagExecerFactory(lineLimit, byteLimit)
@@ -28,7 +31,7 @@ func (l *Launcher) runDiagnose(binary string, args, env []string, dc diagContext
 	pre := l.buildDiagPreInput(binary, args, env, dc)
 	report := diag.Pre(pre)
 
-	res, runErr := runner.Run(binary, args, env)
+	res, runErr := runner.Run(binary, args, env, extraFiles)
 	if runErr != nil {
 		return runErr
 	}

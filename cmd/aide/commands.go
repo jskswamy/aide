@@ -39,6 +39,7 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(syncCmd())
 	rootCmd.AddCommand(adoptCmd())
 	rootCmd.AddCommand(promptCmd())
+	rootCmd.AddCommand(explainCmd())
 }
 
 // askMatchRule prompts the user with human-friendly questions to build a match rule.

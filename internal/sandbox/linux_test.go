@@ -741,6 +741,39 @@ func TestPolicyToJSON_NoAgentModule_NoError(t *testing.T) {
 	}
 }
 
+// TestPolicyToJSON_EnvRoundtrip verifies that policy.Env is preserved through
+// policyToJSON → policyFromJSON so guard env-var lookups (KUBECONFIG,
+// AWS_CONFIG_FILE, etc.) in the re-exec child match the parent evaluation.
+func TestPolicyToJSON_EnvRoundtrip(t *testing.T) {
+	env := []string{
+		"KUBECONFIG=/opt/kube/config",
+		"AWS_CONFIG_FILE=/opt/aws/config",
+		"PATH=/usr/bin",
+	}
+	policy := Policy{
+		ProjectRoot: "/tmp/proj",
+		Env:         env,
+	}
+
+	j, err := policyToJSON(policy)
+	if err != nil {
+		t.Fatalf("policyToJSON: %v", err)
+	}
+	if len(j.Env) != len(env) {
+		t.Fatalf("Env length after policyToJSON: got %d, want %d", len(j.Env), len(env))
+	}
+
+	restored := policyFromJSON(j)
+	if len(restored.Env) != len(env) {
+		t.Fatalf("Env length after policyFromJSON: got %d, want %d", len(restored.Env), len(env))
+	}
+	for i, e := range env {
+		if restored.Env[i] != e {
+			t.Errorf("Env[%d]: got %q, want %q", i, restored.Env[i], e)
+		}
+	}
+}
+
 func TestFilterEnv_AgentModuleWithoutEnvProvider(t *testing.T) {
 	policy := Policy{AgentModule: &nonEnvProviderModule{}}
 	env := []string{
@@ -753,6 +786,37 @@ func TestFilterEnv_AgentModuleWithoutEnvProvider(t *testing.T) {
 	for _, e := range filtered {
 		if strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
 			t.Errorf("CLAUDE_CONFIG_DIR must not be preserved when no EnvProvider is in play: %s", e)
+		}
+	}
+}
+
+// TestLinuxLandlockGrantedPaths_DenyWinsForSymlinkedSystemPath verifies that
+// linuxLandlockGrantedPaths uses symlink-resolved paths for system entries so
+// that deny-wins works correctly on merged-usr Linux (where /bin → /usr/bin).
+// If a symlink target is denied, the unresolved name must also be excluded.
+func TestLinuxLandlockGrantedPaths_DenyWinsForSymlinkedSystemPath(t *testing.T) {
+	// Arrange: create a directory that will act as the "real" system path, and
+	// a symlink pointing to it (simulating the merged-usr /bin → /usr/bin pattern).
+	realDir := t.TempDir()
+	symlinkDir := t.TempDir() + "/symlink-bin"
+	if err := os.Symlink(realDir, symlinkDir); err != nil {
+		t.Skip("cannot create symlink:", err)
+	}
+	// Deny the real (resolved) target. linuxLandlockGrantedPaths should resolve
+	// the symlink before checking deny-wins, so the symlink itself is also excluded.
+	policy := Policy{
+		ExtraDenied: []string{realDir},
+		Guards:      []string{},
+	}
+	gps := linuxLandlockGrantedPaths(policy)
+
+	// The symlink itself must not appear in Readable (it resolves to a denied dir).
+	for _, p := range gps.Readable {
+		if p == symlinkDir {
+			t.Errorf("symlink %q pointing to denied %q must not appear in Readable", symlinkDir, realDir)
+		}
+		if p == realDir {
+			t.Errorf("denied dir %q must not appear in Readable", realDir)
 		}
 	}
 }

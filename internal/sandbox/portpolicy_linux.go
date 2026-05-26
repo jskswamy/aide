@@ -16,8 +16,9 @@ type PortPolicyEffective struct {
 	Enforceable bool
 }
 
-// CommonPorts seeds the complement when only DenyPorts is configured.
-// Port 0 is excluded.
+// CommonPorts is used for documentation and status display to show
+// representative well-known ports. It is NOT used for deny-list complement
+// computation — see DerivePortPolicy for the full-range complement semantics.
 var CommonPorts = []int{
 	22,    // SSH
 	53,    // DNS (UDP handled by OS; TCP fallback)
@@ -65,8 +66,11 @@ func DerivePortPolicy(policy Policy, landlockABI4 bool) PortPolicyEffective {
 		}
 
 	case len(allow) == 0 && len(deny) > 0:
+		// Allow the full TCP port range (1–65535) minus the denied ports.
+		// Using only CommonPorts as the complement seed would silently block
+		// legitimate ports (e.g. 5173, 8888) that are absent from that list.
 		denySet := portSet(validatePorts(deny))
-		for _, p := range CommonPorts {
+		for p := 1; p <= 65535; p++ {
 			if !denySet[p] {
 				allowSet = append(allowSet, p)
 			}

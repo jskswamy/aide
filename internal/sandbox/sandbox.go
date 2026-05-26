@@ -224,15 +224,14 @@ type GrantedPathSet struct {
 func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	origin := make(map[string]string)
 
-	// Collect guard-protected (denied) paths.
+	// Collect guard-protected (denied) paths. Use resolveSymlinkForDeny so
+	// that resolution errors never silently drop a protected path — dropping
+	// a deny entry could allow a later writable grant to bypass deny-wins.
 	deniedSet := make(map[string]bool)
 	guardResults := EvaluateGuards(&policy)
 	for _, gr := range guardResults {
 		for _, p := range gr.Protected {
-			resolved := resolveSymlink(p)
-			if resolved == "" {
-				continue
-			}
+			resolved := resolveSymlinkForDeny(p)
 			deniedSet[resolved] = true
 			if origin[resolved] == "" {
 				origin[resolved] = gr.Name
@@ -243,10 +242,7 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	// Add explicit extra-denied paths from policy.
 	for _, p := range policy.ExtraDenied {
 		for _, expanded := range expandGlobs([]string{p}) {
-			resolved := resolveSymlink(expanded)
-			if resolved == "" {
-				continue
-			}
+			resolved := resolveSymlinkForDeny(expanded)
 			deniedSet[resolved] = true
 			if origin[resolved] == "" {
 				origin[resolved] = "config:extra_denied"
@@ -350,6 +346,9 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 // resolveSymlink wraps filepath.EvalSymlinks. Returns "" on error (path does
 // not exist or cannot be resolved) — callers drop such paths rather than
 // expanding them unexpectedly.
+//
+// For denied (Protected) paths, callers should use resolveSymlinkForDeny which
+// always returns a usable path to avoid silently dropping security constraints.
 func resolveSymlink(p string) string {
 	resolved, err := filepath.EvalSymlinks(p)
 	if err != nil {
@@ -359,6 +358,19 @@ func resolveSymlink(p string) string {
 			return filepath.Clean(p)
 		}
 		return ""
+	}
+	return resolved
+}
+
+// resolveSymlinkForDeny resolves a path for inclusion in the denied (Protected)
+// set. Unlike resolveSymlink, it never drops the path on error: returning ""
+// would silently remove a security constraint, potentially allowing a
+// subsequently-added writable rule to grant access to a protected location.
+// On any error the cleaned input path is used as-is.
+func resolveSymlinkForDeny(p string) string {
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return filepath.Clean(p)
 	}
 	return resolved
 }

@@ -3,6 +3,7 @@
 package modules
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -51,7 +52,13 @@ func (m *claudeAgentModule) AgentEnv(ctx *seatbelt.Context) map[string]string {
 	// Landlock grants access on a path but cannot create the path itself
 	// (creation needs write on the parent, which we don't grant). aide
 	// ensures the aide-managed default exists before the sandbox is applied.
-	_ = os.MkdirAll(dir, 0o700)
+	// If MkdirAll fails, do not inject CLAUDE_CONFIG_DIR: pointing the agent
+	// at an inaccessible directory would cause every Claude write to be denied
+	// by Landlock with no user-visible diagnostic.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		fmt.Fprintf(os.Stderr, "aide: warning: cannot create Claude config dir %q: %v; CLAUDE_CONFIG_DIR not injected\n", dir, err)
+		return nil
+	}
 	return map[string]string{
 		"CLAUDE_CONFIG_DIR": dir,
 	}

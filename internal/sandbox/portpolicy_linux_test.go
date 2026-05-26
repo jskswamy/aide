@@ -51,14 +51,23 @@ func TestDerivePortPolicy_DenyComplement(t *testing.T) {
 	if pp.Mode != "deny_complement" {
 		t.Errorf("Mode = %q, want deny_complement", pp.Mode)
 	}
+	// Denied ports must be absent.
 	if containsInt(pp.AllowSet, 22) {
 		t.Error("port 22 should be excluded from AllowSet (denied)")
 	}
 	if containsInt(pp.AllowSet, 80) {
 		t.Error("port 80 should be excluded from AllowSet (denied)")
 	}
-	if !containsInt(pp.AllowSet, 443) {
-		t.Error("port 443 should be in AllowSet (not denied)")
+	// Well-known ports NOT in CommonPorts must be present (previously missing).
+	for _, port := range []int{443, 5173, 8888, 9090, 1234, 65535} {
+		if !containsInt(pp.AllowSet, port) {
+			t.Errorf("port %d should be in AllowSet (not denied)", port)
+		}
+	}
+	// AllowSet is the full range (1–65535) minus 2 denied ports.
+	wantLen := 65535 - 2
+	if len(pp.AllowSet) != wantLen {
+		t.Errorf("AllowSet len = %d, want %d (full range minus 2 denied ports)", len(pp.AllowSet), wantLen)
 	}
 }
 

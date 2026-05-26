@@ -173,6 +173,7 @@ func pathCoveredBy(p string, writable, readable []string) bool {
 // AgentReadable/Writable carry its resolved per-platform path output.
 type landlockPolicyJSON struct {
 	Guards          []string    `json:"Guards,omitempty"`
+	HomeDir         string      `json:"HomeDir,omitempty"`
 	ProjectRoot     string      `json:"ProjectRoot,omitempty"`
 	RuntimeDir      string      `json:"RuntimeDir,omitempty"`
 	TempDir         string      `json:"TempDir,omitempty"`
@@ -193,6 +194,7 @@ type landlockPolicyJSON struct {
 func policyToJSON(p Policy) (landlockPolicyJSON, error) {
 	j := landlockPolicyJSON{
 		Guards:          p.Guards,
+		HomeDir:         p.HomeDir,
 		ProjectRoot:     p.ProjectRoot,
 		RuntimeDir:      p.RuntimeDir,
 		TempDir:         p.TempDir,
@@ -238,6 +240,7 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 	extraWritable = append(extraWritable, j.AgentWritable...)
 	return Policy{
 		Guards:          j.Guards,
+		HomeDir:         j.HomeDir,
 		ProjectRoot:     j.ProjectRoot,
 		RuntimeDir:      j.RuntimeDir,
 		TempDir:         j.TempDir,
@@ -423,6 +426,16 @@ func forkExecInPIDNamespace(agentPath string, agentCmd []string) error {
 		Sys:   &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWPID},
 	})
 	if err != nil {
+		if err == syscall.EPERM {
+			// CLONE_NEWPID without a user namespace requires CAP_SYS_ADMIN,
+			// which unprivileged users don't have. Fall back to seccomp-only
+			// enforcement: the child installs the no-subprocess filter and
+			// execs the agent without PID namespace isolation. Subprocess
+			// creation is still blocked by seccomp; only namespace containment
+			// is lost.
+			fmt.Fprintf(os.Stderr, "aide: sandbox: CLONE_NEWPID unavailable (EPERM), using seccomp-only subprocess enforcement\n")
+			return syscall.Exec(aideBin, execArgs, os.Environ())
+		}
 		return fmt.Errorf("fork into PID namespace: %w", err)
 	}
 
@@ -545,11 +558,21 @@ func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 	fmt.Fprintf(&b, "\n## Network: %s\n", policy.Network)
 	fmt.Fprintf(&b, "## Port policy mode: %s\n", portPolicy.Mode)
 	if len(portPolicy.AllowSet) > 0 {
-		b.WriteString("## Allow ports:")
-		for _, port := range portPolicy.AllowSet {
-			fmt.Fprintf(&b, " %d", port)
+		if portPolicy.Mode == "deny_complement" {
+			// AllowSet spans the full port range (1-65535 minus denied) — printing
+			// every entry would be unreadably verbose. Show only the denied list.
+			b.WriteString("## Deny ports:")
+			for _, p := range policy.DenyPorts {
+				fmt.Fprintf(&b, " %d", p)
+			}
+			b.WriteString("\n")
+		} else {
+			b.WriteString("## Allow ports:")
+			for _, port := range portPolicy.AllowSet {
+				fmt.Fprintf(&b, " %d", port)
+			}
+			b.WriteString("\n")
 		}
-		b.WriteString("\n")
 	}
 	if !portPolicy.Enforceable {
 		b.WriteString("## Warning: port filtering not enforceable with current backend\n")

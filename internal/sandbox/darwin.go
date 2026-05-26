@@ -49,7 +49,7 @@ func (d *darwinSandbox) Apply(cmd *exec.Cmd, policy Policy, runtimeDir string) e
 
 	// 4. Handle clean_env (DD-17)
 	if policy.CleanEnv {
-		cmd.Env = filterEnv(cmd.Env)
+		cmd.Env = filterEnv(cmd.Env, policy)
 	}
 
 	return nil

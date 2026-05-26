@@ -9,6 +9,9 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 func TestLinuxSandbox_NewSandbox_ReturnsLinux(t *testing.T) {
@@ -543,7 +546,7 @@ func TestFilterEnv(t *testing.T) {
 		"XDG_CONFIG_HOME=/home/user/.config",
 	}
 
-	filtered := filterEnv(env)
+	filtered := filterEnv(env, Policy{})
 
 	kept := make(map[string]bool)
 	for _, e := range filtered {
@@ -568,5 +571,122 @@ func TestFilterEnv(t *testing.T) {
 	}
 	if kept["ANTHROPIC_API_KEY"] {
 		t.Error("ANTHROPIC_API_KEY should be filtered out")
+	}
+}
+
+// fakeEnvProviderModule lets the test assert filterEnv preserves the keys an
+// AgentModule declares via the seatbelt.EnvProvider interface, without
+// depending on a specific real module's key surface.
+type fakeEnvProviderModule struct {
+	name string
+	keys []string
+}
+
+func (f *fakeEnvProviderModule) Name() string { return f.name }
+
+func (f *fakeEnvProviderModule) Rules(_ *seatbelt.Context) seatbelt.GuardResult {
+	return seatbelt.GuardResult{}
+}
+
+func (f *fakeEnvProviderModule) AgentEnv(_ *seatbelt.Context) map[string]string {
+	out := make(map[string]string, len(f.keys))
+	for _, k := range f.keys {
+		out[k] = "value-set-by-module"
+	}
+	return out
+}
+
+func TestFilterEnv_PreservesAgentModuleEnvKeys(t *testing.T) {
+	policy := Policy{
+		AgentModule: &fakeEnvProviderModule{
+			name: "fake-agent",
+			keys: []string{"CLAUDE_CONFIG_DIR", "FAKE_AGENT_STATE"},
+		},
+	}
+	env := []string{
+		"PATH=/usr/bin",
+		"CLAUDE_CONFIG_DIR=/run/aide-1234/claude",
+		"FAKE_AGENT_STATE=/run/aide-1234/fake",
+		"SECRET_API_KEY=sk-123",
+	}
+
+	filtered := filterEnv(env, policy)
+
+	got := make(map[string]string)
+	for _, e := range filtered {
+		k, v, _ := strings.Cut(e, "=")
+		got[k] = v
+	}
+
+	if got["CLAUDE_CONFIG_DIR"] != "/run/aide-1234/claude" {
+		t.Errorf("CLAUDE_CONFIG_DIR should survive CleanEnv strip when AgentModule injects it; got %q", got["CLAUDE_CONFIG_DIR"])
+	}
+	if got["FAKE_AGENT_STATE"] != "/run/aide-1234/fake" {
+		t.Errorf("FAKE_AGENT_STATE should survive CleanEnv strip when AgentModule injects it; got %q", got["FAKE_AGENT_STATE"])
+	}
+	if _, present := got["SECRET_API_KEY"]; present {
+		t.Errorf("SECRET_API_KEY should still be stripped; got %q", got["SECRET_API_KEY"])
+	}
+}
+
+// nonEnvProviderModule covers the path where the AgentModule does not
+// implement seatbelt.EnvProvider — filterEnv must fall back to the bare
+// essentials list and not panic on the type assertion.
+type nonEnvProviderModule struct{}
+
+func (n *nonEnvProviderModule) Name() string { return "non-env" }
+func (n *nonEnvProviderModule) Rules(_ *seatbelt.Context) seatbelt.GuardResult {
+	return seatbelt.GuardResult{}
+}
+
+func TestFilterEnv_AgentModuleWithoutEnvProvider(t *testing.T) {
+	policy := Policy{AgentModule: &nonEnvProviderModule{}}
+	env := []string{
+		"PATH=/usr/bin",
+		"CLAUDE_CONFIG_DIR=/should/be/stripped",
+	}
+
+	filtered := filterEnv(env, policy)
+
+	for _, e := range filtered {
+		if strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
+			t.Errorf("CLAUDE_CONFIG_DIR must not be preserved when no EnvProvider is in play: %s", e)
+		}
+	}
+}
+
+// TestFilterEnv_RealClaudeModule_PreservesClaudeConfigDir is the end-to-end
+// regression guard for the Linux Claude agent: launcher injects
+// CLAUDE_CONFIG_DIR via applyAgentEnv, then sandbox.Apply calls filterEnv,
+// which must keep the key alive. If this test fails, Claude's state writes
+// land in $HOME/.claude* and get denied by Landlock at runtime.
+func TestFilterEnv_RealClaudeModule_PreservesClaudeConfigDir(t *testing.T) {
+	policy := Policy{
+		AgentModule: modules.ClaudeAgent(),
+		ProjectRoot: "/proj",
+		TempDir:     "/tmp",
+	}
+	env := []string{
+		"PATH=/usr/bin",
+		"CLAUDE_CONFIG_DIR=/run/aide-9/claude",
+		"ANTHROPIC_API_KEY=sk-leak",
+	}
+
+	filtered := filterEnv(env, policy)
+
+	var sawClaude, sawSecret bool
+	for _, e := range filtered {
+		switch strings.SplitN(e, "=", 2)[0] {
+		case "CLAUDE_CONFIG_DIR":
+			sawClaude = true
+		case "ANTHROPIC_API_KEY":
+			sawSecret = true
+		}
+	}
+	if !sawClaude {
+		t.Errorf("CLAUDE_CONFIG_DIR was stripped by CleanEnv; filtered=%v", filtered)
+	}
+	if sawSecret {
+		t.Errorf("ANTHROPIC_API_KEY should still be stripped; filtered=%v", filtered)
 	}
 }

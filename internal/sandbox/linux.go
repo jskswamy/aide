@@ -206,7 +206,7 @@ func policyToJSON(p Policy) landlockPolicyJSON {
 		// — the child enforces via Landlock, not Seatbelt.
 		homeDir, _ := os.UserHomeDir()
 		moduleResult := p.AgentModule.Rules(p.ToSeatbeltContext(homeDir))
-		j.AgentReadable = moduleResult.Readable
+		j.AgentReadable = moduleResult.Allowed
 		j.AgentWritable = moduleResult.Writable
 	}
 	return j
@@ -265,7 +265,7 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, runtimeDir st
 	cmd.Args = innerArgs
 
 	if policy.CleanEnv {
-		cmd.Env = filterEnv(cmd.Env)
+		cmd.Env = filterEnv(cmd.Env, policy)
 	}
 
 	return nil
@@ -618,7 +618,7 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 	cmd.Args = append([]string{"bwrap"}, bwrapArgs...)
 
 	if policy.CleanEnv {
-		cmd.Env = filterEnv(cmd.Env)
+		cmd.Env = filterEnv(cmd.Env, policy)
 	}
 
 	return nil

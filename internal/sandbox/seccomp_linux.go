@@ -221,5 +221,12 @@ func noSubprocessSeccompMemfd() (*os.File, error) {
 		_ = unix.Close(memfd)
 		return nil, fmt.Errorf("seek memfd: %w", err)
 	}
-	return os.NewFile(uintptr(memfd), "aide-seccomp-bpf"), nil
+	f := os.NewFile(uintptr(memfd), "aide-seccomp-bpf")
+	// Pin against GC so the launcher's runtime finalizer cannot close the fd
+	// after applyBwrap returns and cmd is dropped. Symmetric to the policy
+	// memfd in writePolicyToMemfd; same EBADF-in-child symptom otherwise.
+	// (runtime.SetFinalizer(f, nil) does not work — finalizer is on the
+	// unexported f.file inner struct.)
+	pinSandboxMemfd(f)
+	return f, nil
 }

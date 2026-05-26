@@ -379,6 +379,22 @@ func shouldGateNetwork(mode NetworkMode, portPolicy PortPolicyEffective) bool {
 // dup2'ing onto it silently breaks subsequent tests. Letting the kernel pick
 // the fd avoids that collision and is sufficient because the fd number is
 // passed explicitly in argv.
+//
+// CRITICAL — Pinned against GC: os.NewFile installs a runtime finalizer
+// (on its unexported *file inner struct) that calls Close(). Once the
+// launcher extracts cmd.Path/Args/Env and drops the cmd reference, the
+// *os.File becomes unreachable; the finalizer can fire during the
+// allocation-heavy work that follows (banner rendering, signal setup) and
+// silently close fd N. The re-exec child then sees EBADF on read, with the
+// symptom "read landlock-policy: bad file descriptor" appearing only
+// sometimes (whenever GC happens to run in the race window).
+//
+// runtime.SetFinalizer(f, nil) does NOT help here — the finalizer lives on
+// the unexported f.file pointer, not on f itself. The only reliable way to
+// suppress it is to keep the *os.File reachable. We do that by appending
+// it to pinnedSandboxMemfds; the launcher process is short-lived (it
+// syscall.Exec's into the re-exec child shortly after this returns), so
+// the pin is reclaimed by process image replacement and not a real leak.
 func writePolicyToMemfd(policyBytes []byte) (*os.File, error) {
 	fd, err := unix.MemfdCreate("landlock-policy", 0)
 	if err != nil {
@@ -393,7 +409,22 @@ func writePolicyToMemfd(policyBytes []byte) (*os.File, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("seek sandbox policy memfd: %w", err)
 	}
+	pinSandboxMemfd(f)
 	return f, nil
+}
+
+// pinnedSandboxMemfds keeps *os.File references alive past the launcher's
+// drop of cmd.ExtraFiles, suppressing the runtime finalizer that would
+// otherwise close the kernel fd before syscall.Exec inherits it. See the
+// CRITICAL comment in writePolicyToMemfd for details.
+//
+// The slice is intentionally append-only and never read from; its purpose is
+// reachability, not retrieval. It is freed by syscall.Exec replacing the
+// process image, or by process exit on error paths.
+var pinnedSandboxMemfds []*os.File
+
+func pinSandboxMemfd(f *os.File) {
+	pinnedSandboxMemfds = append(pinnedSandboxMemfds, f)
 }
 
 // RunSandboxApply is the __sandbox-apply re-exec handler. Runs in the child

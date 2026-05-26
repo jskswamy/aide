@@ -408,6 +408,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			// user-set value is respected — module returns nil for that key
 			// and aide leaves it alone.
 			env = applyAgentEnv(env, policy)
+			// 12e. Sync policy.Env with the post-injection env so the
+			// re-exec child receives injected keys (e.g. CLAUDE_CONFIG_DIR)
+			// in its serialised policy. Without this, capability guards in
+			// the child evaluate env-var-dependent paths from the stale
+			// pre-injection snapshot and may grant the wrong Landlock path.
+			policy.Env = env
 
 			cmd := &exec.Cmd{
 				Path: binary,

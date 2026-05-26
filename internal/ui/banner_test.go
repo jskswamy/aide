@@ -1410,7 +1410,7 @@ func TestIsolationTierLabel_CanonicalStrings(t *testing.T) {
 		{
 			name: "nil (disabled)",
 			tier: nil,
-			want: "sandbox: disabled",
+			want: "disabled",
 		},
 		{
 			name: "primary/landlock ABI7",
@@ -1419,7 +1419,7 @@ func TestIsolationTierLabel_CanonicalStrings(t *testing.T) {
 				Backend:   sandbox.BackendLandlock,
 				KernelABI: 7,
 			},
-			want: "sandbox: primary (Landlock ABI 7)",
+			want: "primary (Landlock ABI 7)",
 		},
 		{
 			name: "primary/seatbelt",
@@ -1427,7 +1427,7 @@ func TestIsolationTierLabel_CanonicalStrings(t *testing.T) {
 				Tier:    sandbox.TierPrimary,
 				Backend: sandbox.BackendSeatbelt,
 			},
-			want: "sandbox: primary (Seatbelt)",
+			want: "primary (Seatbelt)",
 		},
 		{
 			name: "degraded/bwrap with reason",
@@ -1436,7 +1436,7 @@ func TestIsolationTierLabel_CanonicalStrings(t *testing.T) {
 				Backend: sandbox.BackendBwrap,
 				Reason:  "bwrap fallback: TCP port filtering not enforced",
 			},
-			want: "sandbox: degraded — bwrap fallback: TCP port filtering not enforced",
+			want: "degraded — bwrap fallback: TCP port filtering not enforced",
 		},
 		{
 			name: "unavailable/none with reason",
@@ -1445,7 +1445,7 @@ func TestIsolationTierLabel_CanonicalStrings(t *testing.T) {
 				Backend: sandbox.BackendNone,
 				Reason:  "no Landlock, no bwrap",
 			},
-			want: "sandbox: unavailable — no Landlock, no bwrap",
+			want: "unavailable — no Landlock, no bwrap",
 		},
 	}
 

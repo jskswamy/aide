@@ -25,16 +25,16 @@ func colorFuncMap() template.FuncMap {
 		"cyan":      func(s string) string { return color.New(color.FgCyan).Sprint(s) },
 
 		// Data helpers (wrapping existing functions)
-		"agentDisplay":      agentDisplay,
-		"secretDisplay":     secretDisplay,
-		"envItemLines":      envItemLines,
-		"hasTrust":          hasTrust,
-		"trustStatusLine":   trustStatusLine,
-		"trustWantsLine":    trustWantsLine,
+		"agentDisplay":       agentDisplay,
+		"secretDisplay":      secretDisplay,
+		"envItemLines":       envItemLines,
+		"hasTrust":           hasTrust,
+		"trustStatusLine":    trustStatusLine,
+		"trustWantsLine":     trustWantsLine,
 		"contextIconDisplay": contextIconDisplay,
-		"agentIconPrefix":   agentIconPrefix,
-		"networkLabel":      sandboxNetworkLabel,
-		"truncate":          truncateList,
+		"agentIconPrefix":    agentIconPrefix,
+		"networkLabel":       sandboxNetworkLabel,
+		"truncate":           truncateList,
 		"capPaths": func(cd CapabilityDisplay) string {
 			var parts []string
 			parts = append(parts, cd.WritablePaths...)
@@ -96,31 +96,31 @@ func colorFuncMap() template.FuncMap {
 // Examples: "sandbox: primary (Landlock ABI 7)", "sandbox: degraded — <reason>".
 func isolationTierLabel(d *BannerData) string {
 	if d.IsolationTier == nil {
-		return "sandbox: disabled"
+		return "disabled"
 	}
 	t := d.IsolationTier
 	switch t.Tier {
 	case sandbox.TierPrimary:
 		switch t.Backend {
 		case sandbox.BackendLandlock:
-			return fmt.Sprintf("sandbox: primary (Landlock ABI %d)", t.KernelABI)
+			return fmt.Sprintf("primary (Landlock ABI %d)", t.KernelABI)
 		case sandbox.BackendSeatbelt:
-			return "sandbox: primary (Seatbelt)"
+			return "primary (Seatbelt)"
 		default:
-			return fmt.Sprintf("sandbox: primary (%s)", t.Backend)
+			return fmt.Sprintf("primary (%s)", t.Backend)
 		}
 	case sandbox.TierDegraded:
 		if t.Reason != "" {
-			return fmt.Sprintf("sandbox: degraded — %s", t.Reason)
+			return fmt.Sprintf("degraded — %s", t.Reason)
 		}
-		return fmt.Sprintf("sandbox: degraded (%s)", t.Backend)
+		return fmt.Sprintf("degraded (%s)", t.Backend)
 	case sandbox.TierUnavailable:
 		if t.Reason != "" {
-			return fmt.Sprintf("sandbox: unavailable — %s", t.Reason)
+			return fmt.Sprintf("unavailable — %s", t.Reason)
 		}
-		return "sandbox: unavailable"
+		return "unavailable"
 	default:
-		return fmt.Sprintf("sandbox: %s", t.Tier)
+		return t.Tier
 	}
 }
 

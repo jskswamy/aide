@@ -566,6 +566,42 @@ func TestPassthrough_NoConfigNoAgents_ErrorListsCursorAgent(t *testing.T) {
 	}
 }
 
+// TestPassthrough_BannerReflectsActiveSandboxTier guards against a regression
+// where execAgent constructs BannerData without populating IsolationTier. The
+// compact-template's isolationTierLabel falls back to "sandbox: disabled"
+// whenever IsolationTier is nil, so the banner would lie even though Landlock
+// (or Seatbelt) is in fact applied via sb.Apply. The fix populates
+// IsolationTier from sandbox.PlatformIsolationTier on the actual policy.
+func TestPassthrough_BannerReflectsActiveSandboxTier(t *testing.T) {
+	requireClaudeHome(t)
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	var stderrBuf bytes.Buffer
+	l := &Launcher{
+		Execer:   mockExec,
+		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+		Stderr:   &stderrBuf,
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	if err := l.Passthrough(t.TempDir(), "", nil); err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	banner := stderrBuf.String()
+	if strings.Contains(banner, "sandbox: disabled") {
+		t.Errorf("banner reports sandbox disabled but sb.Apply was invoked; banner:\n%s", banner)
+	}
+	// On any supported platform the active backend produces a recognisable
+	// label fragment. We accept either Landlock (Linux) or Seatbelt (darwin)
+	// so the test stays platform-agnostic.
+	if !strings.Contains(banner, "sandbox: primary") && !strings.Contains(banner, "sandbox: degraded") {
+		t.Errorf("banner is missing the IsolationTier label; expected 'sandbox: primary' or 'sandbox: degraded'; got:\n%s", banner)
+	}
+}
+
 func TestPassthrough_AmbiguousIncludesCursorAgent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)

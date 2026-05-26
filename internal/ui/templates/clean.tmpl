@@ -28,7 +28,7 @@
   {{cyan "sandbox:  "}}disabled
 {{- else if hasCapOrExtra .}}
 
-  {{cyan "sandbox:  "}}network {{networkLabel .}}
+  {{cyan "sandbox: "}} {{isolationTierLabel .}}, network {{networkLabel .}}
 {{- with sandboxPorts .}}
   {{cyan "ports:    "}}{{.}}
 {{- end}}
@@ -60,7 +60,7 @@
 {{- end}}
 {{- else}}
 
-  {{cyan "sandbox:  "}}network {{networkLabel .}}, code-only
+  {{cyan "sandbox: "}} {{isolationTierLabel .}}, network {{networkLabel .}}, code-only
 {{- with sandboxPorts .}}
   {{cyan "ports:    "}}{{.}}
 {{- end}}

@@ -600,17 +600,26 @@ func forkExecInPIDNamespace(agentPath string, agentCmd []string) error {
 			continue
 		}
 		signal.Stop(sigCh)
+		close(sigCh)
 		return fmt.Errorf("wait for sandboxed agent: %w", werr)
 	}
 
 	signal.Stop(sigCh)
+	close(sigCh)
 
 	if wstatus.Exited() {
 		os.Exit(wstatus.ExitStatus())
 	}
 	if wstatus.Signaled() {
-		// Re-raise so the parent sees the same signal termination.
-		_ = syscall.Kill(os.Getpid(), wstatus.Signal())
+		// Reset disposition to SIG_DFL first so the kernel terminates this
+		// process synchronously, then block to avoid os.Exit racing with
+		// the still-async delivery. Without this, the parent sometimes
+		// sees WIFEXITED(1) instead of WIFSIGNALED(sig), which shells
+		// and supervisors use to distinguish crashes from clean exits.
+		sig := wstatus.Signal()
+		signal.Reset(sig)
+		_ = syscall.Kill(os.Getpid(), sig)
+		select {}
 	}
 	os.Exit(1)
 	return nil // unreachable; satisfies the error return signature

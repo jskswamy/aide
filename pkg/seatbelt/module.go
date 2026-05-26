@@ -32,6 +32,16 @@ type Guard interface {
 // sandbox-controlled location so the agent can't escape to $HOME). A
 // module that wants to defer to the user's existing env var should return
 // nil for that key by checking ctx.EnvLookup first.
+//
+// Contract: AgentEnv MUST be safe to call with ctx.Env == nil. The
+// sandbox key-discovery probe (agentEnvKeys) calls AgentEnv with a
+// synthetic context whose Env is nil but whose HomeDir is the real home
+// directory. An implementation that guards side effects only with
+// ctx.HomeDir == "" will still execute filesystem operations (e.g.
+// os.MkdirAll) during the probe. To avoid this, either:
+//   - implement EnvKeyProvider as well (preferred: side-effect-free key
+//     listing; the probe never calls AgentEnv for such modules), or
+//   - guard side effects with both ctx.HomeDir == "" AND ctx.Env == nil.
 type EnvProvider interface {
 	AgentEnv(ctx *Context) map[string]string
 }

@@ -89,7 +89,8 @@ var linuxSystemReadable = []string{
 	"/lib32",
 	"/libx32",
 	"/proc",
-	"/sys",  // Bun/Node runtime queries cpu/cgroup info; non-fatal if blocked but cleaner to allow
+	"/sys/fs/cgroup", // Bun/Node runtime queries cgroup membership; scoped to avoid exposing
+	// /sys/class/net, /sys/bus/usb, /sys/kernel/security, and debugfs.
 	"/etc/ld.so.cache",
 	"/etc/resolv.conf",
 	"/etc/ssl",

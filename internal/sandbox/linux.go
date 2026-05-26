@@ -579,6 +579,12 @@ func forkExecInPIDNamespace(agentPath string, agentCmd []string) error {
 	go func() {
 		for sig := range sigCh {
 			if s, ok := sig.(syscall.Signal); ok {
+				// ESRCH: child already exited before Wait4 drained the channel — harmless.
+				// EPERM: unexpected; would mean the PID namespace boundary blocked the signal,
+				// but forkExecInPIDNamespace is the init process of the new namespace so Kill
+				// should always succeed while the child lives. Both cases are non-actionable
+				// here: the signal loop is best-effort forwarding and Wait4 will surface the
+				// true exit status regardless.
 				_ = syscall.Kill(pid, s)
 			}
 		}

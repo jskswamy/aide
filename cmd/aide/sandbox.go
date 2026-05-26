@@ -163,7 +163,11 @@ func sandboxShowCmd() *cobra.Command {
 			fmt.Fprintf(out, "Effective sandbox policy (%s):\n", source)
 			fmt.Fprintf(out, "  Guards:     %s\n", strings.Join(policy.Guards, ", "))
 
-			gps := sandbox.DeriveGrantedPathSet(*policy)
+			// PlatformGrantedPaths includes OS bootstrap entries (e.g. /usr,
+			// /lib, /proc on Linux) that the Landlock backend must allow.
+			// DeriveGrantedPathSet only returns the guard-derived subset and
+			// produced an incomplete output for the Landlock backend.
+			gps := sandbox.PlatformGrantedPaths(*policy)
 			if len(gps.Writable) > 0 {
 				fmt.Fprintln(out, "  Writable:")
 				for _, p := range gps.Writable {

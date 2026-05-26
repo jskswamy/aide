@@ -708,7 +708,12 @@ func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 	}
 	fmt.Fprintf(&b, "# Port filtering: %s\n\n", tier.PortFiltering)
 
-	gps := linuxGrantedPaths(policy)
+	// Use linuxLandlockGrantedPaths so the profile includes the system-path
+	// bootstrap entries (/usr, /lib, /proc, /dev, etc.) that Landlock must
+	// allow before any process can exec or do I/O. linuxGrantedPaths only
+	// returns the guard-derived set and was giving aide sandbox show an
+	// incomplete picture of what the Landlock backend actually enforces.
+	gps := linuxLandlockGrantedPaths(policy)
 	writable := gps.Writable
 	readable := gps.Readable
 	denied := gps.Denied
@@ -896,6 +901,15 @@ func appendMissingPaths(readable, writable, candidates []string) []string {
 		}
 	}
 	return result
+}
+
+// PlatformGrantedPaths returns the complete GrantedPathSet that the Linux
+// backend will enforce, including the Landlock system-path bootstrap entries
+// (/usr, /lib, /proc, /dev, /tmp, etc.) that are required for any process to
+// exec or do I/O. Callers that only need the guard-derived set should use
+// DeriveGrantedPathSet instead.
+func PlatformGrantedPaths(policy Policy) GrantedPathSet {
+	return linuxLandlockGrantedPaths(policy)
 }
 
 // filterEnv and expandGlobs are in sandbox.go (shared across platforms).

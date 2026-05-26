@@ -363,8 +363,16 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 	}
 
 	// Both the agent symlink and its resolved target must be readable for execve.
-	agentExecPaths := collectAgentExecPaths(agentPath)
-	allReadable := appendMissingPaths(gps.Readable, gps.Writable, agentExecPaths)
+	// When AllowSubprocess=false, Phase 2 re-execs the aide binary inside the
+	// new PID namespace; that binary must also be in the Landlock allow-list or
+	// ForkExec returns EACCES for non-/usr installs (e.g. ~/go/bin/aide).
+	execPaths := collectAgentExecPaths(agentPath)
+	if !policy.AllowSubprocess {
+		if aideBin, aerr := os.Executable(); aerr == nil {
+			execPaths = append(execPaths, collectAgentExecPaths(filepath.Clean(aideBin))...)
+		}
+	}
+	allReadable := appendMissingPaths(gps.Readable, gps.Writable, execPaths)
 
 	for _, p := range allReadable {
 		info, err := os.Stat(p)
@@ -389,18 +397,28 @@ func RunSandboxApply(policyPath string, agentCmd []string) error {
 	portPolicy := DerivePortPolicy(policy, caps.LandlockABI >= 4)
 
 	cfg := landlock.V5.BestEffort()
+
+	// Filesystem restriction — its own ruleset (~50 rules, well under the
+	// per-ruleset kernel limit of 65536).
+	if err := cfg.RestrictPaths(rules...); err != nil {
+		return fmt.Errorf("landlock restrict-paths: %w", err)
+	}
+
+	// Network restriction — separate ruleset so filesystem rules and network
+	// rules never share a ruleset. deny_complement generates up to 65534
+	// ConnectTCP rules; combined with ~50 filesystem rules in a single ruleset
+	// that would exceed the kernel's 65536-rule-per-ruleset ceiling (EMFILE).
+	// Calling RestrictNet separately keeps each ruleset well within the limit.
+	// RestrictNet with zero rules (NetworkNone) blocks all TCP connections.
 	if shouldGateNetwork(policy.Network, portPolicy) {
+		var portRules []landlock.Rule
 		for _, port := range portPolicy.AllowSet {
 			if port >= 0 && port <= 65535 {
-				rules = append(rules, landlock.ConnectTCP(uint16(port)))
+				portRules = append(portRules, landlock.ConnectTCP(uint16(port)))
 			}
 		}
-		if err := cfg.Restrict(rules...); err != nil {
-			return fmt.Errorf("landlock restrict: %w", err)
-		}
-	} else {
-		if err := cfg.RestrictPaths(rules...); err != nil {
-			return fmt.Errorf("landlock restrict-paths: %w", err)
+		if err := cfg.RestrictNet(portRules...); err != nil {
+			return fmt.Errorf("landlock restrict-net: %w", err)
 		}
 	}
 

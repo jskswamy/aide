@@ -280,11 +280,10 @@ func TestLinuxIntegration_AllowSubprocessFalse_Bwrap_BlocksFork(t *testing.T) {
 	}
 }
 
-// TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid asserts the
-// bwrap fallback also adds --unshare-pid for defence in depth. The PID
-// namespace alone does not block fork; the seccomp filter does. But the
-// namespace bounds the blast radius if seccomp is ever bypassed.
-func TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid(t *testing.T) {
+// TestLinuxIntegration_AllowSubprocessFalse_BwrapUsesSeccomp asserts the
+// bwrap fallback uses --seccomp for subprocess enforcement (not --unshare-pid,
+// which was removed because seccomp is the hard blocker).
+func TestLinuxIntegration_AllowSubprocessFalse_BwrapUsesSeccomp(t *testing.T) {
 	skipIfNoBwrap(t)
 
 	bwrapPath, _ := exec.LookPath("bwrap")
@@ -296,14 +295,16 @@ func TestLinuxIntegration_AllowSubprocessFalse_BwrapHasUnsharePid(t *testing.T) 
 		Network:         NetworkOutbound,
 		AllowSubprocess: false,
 	}
-	cmd := exec.Command("/bin/sh", "-c",
-		`echo PPID=$(cut -d' ' -f4 /proc/self/stat)`)
+	cmd := exec.Command("/bin/echo", "hello")
 	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
 		t.Fatalf("applyBwrap: %v", err)
 	}
-	out, _ := cmd.CombinedOutput()
-	if !strings.Contains(string(out), "PPID=0") {
-		t.Errorf("expected sandboxed process to see PPID=0 (PID 1 in new PID namespace); got: %s", out)
+	args := strings.Join(cmd.Args, " ")
+	if strings.Contains(args, "--unshare-pid") {
+		t.Errorf("--unshare-pid must not be present (seccomp is the enforcement layer): %s", args)
+	}
+	if !strings.Contains(args, "--seccomp") {
+		t.Errorf("--seccomp must be present for AllowSubprocess=false: %s", args)
 	}
 }
 

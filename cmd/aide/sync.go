@@ -206,8 +206,6 @@ func hasPluginMutations(plan provision.Plan) bool {
 	return false
 }
 
-func hasUnmanaged(plan provision.Plan) bool { return unmanagedCount(plan) > 0 }
-
 // unmanagedCount counts OpIgnore ops — items installed in the agent
 // that aide neither declares nor manages. The engine treats them as
 // no-ops; the sync prompt surfaces the count so users know aide saw

@@ -11,7 +11,10 @@ import "github.com/jskswamy/aide/pkg/seatbelt"
 //
 // Paths granted:
 //   - configDirs (e.g. ~/.config/cursor, ~/.cursor) → Writable: cursor-agent
-//     reads and writes auth.json, settings, and cached state here.
+//     reads and writes auth.json, settings, and cached state here. Expanded
+//     via expandConfigDirWritable so depth-1 symlinks (e.g. a user-managed
+//     ~/.cursor/skills -> ~/dotfiles/cursor-skills) resolve to inodes that
+//     Landlock will actually grant access to.
 //   - logsDir (e.g. ~/.local/share/cursor-agent/logs) → Writable: log output.
 //   - activeVerDir (e.g. ~/.local/share/cursor-agent/versions/<v>) → Allowed:
 //     read-only; the binary itself lives here and may read its own files.
@@ -19,7 +22,9 @@ func augmentCursorLinuxPaths(ctx *seatbelt.Context, configDirs []string, logsDir
 	if ctx == nil || ctx.HomeDir == "" {
 		return
 	}
-	result.Writable = append(result.Writable, configDirs...)
+	for _, dir := range configDirs {
+		result.Writable = append(result.Writable, expandConfigDirWritable(ctx.HomeDir, dir)...)
+	}
 	if logsDir != "" {
 		result.Writable = append(result.Writable, logsDir)
 	}

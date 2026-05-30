@@ -5,6 +5,7 @@ package modules
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,6 +93,38 @@ func TestClaudeAgent_LinuxWritablePathsInRules_OnlyRedirectDir(t *testing.T) {
 				t.Errorf("legacy hardcoded path %q must not appear in Writable", p)
 			}
 		}
+	}
+}
+
+// TestClaudeAgent_LinuxWritablePathsInRules_FollowsSkillsSymlink mirrors the
+// Cursor symlink-following test: a user-managed symlink at
+// CLAUDE_CONFIG_DIR/skills pointing at a dotfiles repo must result in the
+// resolved target being added to Writable. Without it Landlock denies access
+// at the resolved inode and Claude can't load skills.
+func TestClaudeAgent_LinuxWritablePathsInRules_FollowsSkillsSymlink(t *testing.T) {
+	home := t.TempDir()
+	configDir := filepath.Join(home, ".config", "aide", "claude")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("setup config dir: %v", err)
+	}
+	skillsTarget := filepath.Join(home, "dotfiles", "claude-skills")
+	if err := os.MkdirAll(skillsTarget, 0o700); err != nil {
+		t.Fatalf("setup skills target: %v", err)
+	}
+	if err := os.Symlink(skillsTarget, filepath.Join(configDir, "skills")); err != nil {
+		t.Fatalf("setup symlink: %v", err)
+	}
+
+	mod := ClaudeAgent()
+	ctx := &seatbelt.Context{HomeDir: home, GOOS: "linux"}
+	result := mod.Rules(ctx)
+
+	if !slices.Contains(result.Writable, configDir) {
+		t.Errorf("Writable must contain config dir %q; got %v", configDir, result.Writable)
+	}
+	if !slices.Contains(result.Writable, skillsTarget) {
+		t.Errorf("Writable must contain symlink target %q so Landlock allows skill reads/writes; got %v",
+			skillsTarget, result.Writable)
 	}
 }
 

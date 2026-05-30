@@ -3,6 +3,9 @@
 package modules
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
@@ -147,6 +150,38 @@ func TestCursorAgentRules_Linux_WritableIncludesConfigDirs(t *testing.T) {
 		if w == activeVerDir {
 			t.Errorf("activeVerDir must not be in Writable; got %v", result.Writable)
 		}
+	}
+}
+
+// TestAugmentCursorLinuxPaths_FollowsSkillsSymlink uses real symlinks to pin
+// the dotfiles workflow: when a user has symlinked ~/.cursor/skills to a
+// dotfiles repo elsewhere under $HOME, the resolved target must end up in
+// the Landlock writable allow-list. Without this, the kernel denies access
+// at the resolved inode and skills/commands fail to load.
+func TestAugmentCursorLinuxPaths_FollowsSkillsSymlink(t *testing.T) {
+	home := t.TempDir()
+	cursorDir := filepath.Join(home, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0o700); err != nil {
+		t.Fatalf("setup ~/.cursor: %v", err)
+	}
+	skillsTarget := filepath.Join(home, "dotfiles", "cursor-skills")
+	if err := os.MkdirAll(skillsTarget, 0o700); err != nil {
+		t.Fatalf("setup skills target: %v", err)
+	}
+	if err := os.Symlink(skillsTarget, filepath.Join(cursorDir, "skills")); err != nil {
+		t.Fatalf("setup symlink: %v", err)
+	}
+
+	ctx := &seatbelt.Context{HomeDir: home}
+	result := &seatbelt.GuardResult{}
+	augmentCursorLinuxPaths(ctx, []string{cursorDir}, "", "", result)
+
+	if !slices.Contains(result.Writable, cursorDir) {
+		t.Errorf("Writable must contain %q; got %v", cursorDir, result.Writable)
+	}
+	if !slices.Contains(result.Writable, skillsTarget) {
+		t.Errorf("Writable must contain symlink target %q so Landlock allows skill reads/writes; got %v",
+			skillsTarget, result.Writable)
 	}
 }
 

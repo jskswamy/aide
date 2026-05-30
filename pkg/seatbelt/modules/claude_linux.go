@@ -72,16 +72,19 @@ func (m *claudeAgentModule) AgentEnvKeys(_ *seatbelt.Context) []string {
 	return []string{"CLAUDE_CONFIG_DIR"}
 }
 
-// augmentLinuxPaths populates GuardResult with the single Landlock-granted
-// writable path: Claude's CLAUDE_CONFIG_DIR. Claude relocates every piece of
-// its state (the atomic-renamed .claude.json, settings.json, .credentials.json,
-// projects/, plugins/, cache/, backups/, session-env/) inside that one
-// directory — verified by strace under Claude Code CLI ≥ 2.x. Granting one
-// path replaces the previous hardcoded list and eliminates the need for the
-// atomic-rename overlay entirely.
+// augmentLinuxPaths populates GuardResult with the Landlock-granted writable
+// paths for Claude. The primary entry is CLAUDE_CONFIG_DIR — Claude relocates
+// every piece of its state (the atomic-renamed .claude.json, settings.json,
+// .credentials.json, projects/, plugins/, cache/, backups/, session-env/)
+// inside that one directory, verified by strace under Claude Code CLI ≥ 2.x.
+//
+// expandConfigDirWritable widens the set when the user has symlinked entries
+// inside the config dir to a dotfiles repo (the common pattern: a user-
+// curated skills/ or commands/ dir symlinked to ~/dotfiles/.claude/...).
+// Without expansion, Landlock would deny access at the resolved inode.
 func augmentLinuxPaths(ctx *seatbelt.Context, result *seatbelt.GuardResult) {
 	if ctx == nil || ctx.HomeDir == "" {
 		return
 	}
-	result.Writable = append(result.Writable, claudeConfigDir(ctx))
+	result.Writable = append(result.Writable, expandConfigDirWritable(ctx.HomeDir, claudeConfigDir(ctx))...)
 }

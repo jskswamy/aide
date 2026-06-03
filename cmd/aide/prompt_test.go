@@ -19,6 +19,10 @@ func TestFormatPromptLine(t *testing.T) {
 		{"work", "💼", "🤖", true, "trusted", "work 💼 🤖"},
 		{"work", "💼", "🤖", false, "untrusted", "work 💼 🤖 ⚠"},
 		{"work", "💼", "🤖", false, "denied", "work 💼 🤖 🚫"},
+		// ESC-only icon sanitizes to "" and is skipped
+		{"work", "\x1b", "", false, "trusted", "work 🛡"},
+		// ANSI sequence: ESC stripped, remaining "[2J" is safe printable text
+		{"work", "", "\x1b[2J", false, "trusted", "work [2J 🛡"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {

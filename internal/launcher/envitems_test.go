@@ -86,14 +86,14 @@ func TestBuildEnvItems_DetailedMode(t *testing.T) {
 	items := BuildEnvItems(
 		map[string]string{"API_KEY": "{{ .secrets.api_key }}"},
 		nil, nil,
-		map[string]string{"API_KEY": "sk-ant-abc123xyz"},
+		map[string]string{"API_KEY": "sk-ant-abc123xyz01"},
 	)
 	if len(items) != 1 {
 		t.Fatalf("len = %d, want 1", len(items))
 	}
-	// RedactValue shows first 8 chars + ***
-	if items[0].ResolvedValue != "sk-ant-a***" {
-		t.Errorf("ResolvedValue = %q, want sk-ant-a***", items[0].ResolvedValue)
+	// RedactValue shows 4-char prefix + fixed mask for secrets >16 chars
+	if items[0].ResolvedValue != "sk-a••••••••" {
+		t.Errorf("ResolvedValue = %q, want sk-a••••••••", items[0].ResolvedValue)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/launcher/mocks"
 	"github.com/jskswamy/aide/internal/secrets"
 )
@@ -1393,5 +1394,92 @@ func TestLauncher_DiagnoseDefaultsOff(t *testing.T) {
 	}
 	if l.DiagnoseTrace {
 		t.Error("DiagnoseTrace should default to false")
+	}
+}
+
+// TestLaunch_NeverAllowEnvNotPassedToAgent verifies that environment variables
+// in the never_allow_env list are filtered out before exec, even if they exist
+// in the calling process environment.
+func TestLaunch_NeverAllowEnvNotPassedToAgent(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// Set a never-allow var in the current process env
+	t.Setenv("BLOCKED_SECRET", "should-not-reach-agent")
+	t.Setenv("ALLOWED_VAR", "should-reach-agent")
+
+	// Write a config with never_allow_env set at the top level
+	writeMinimalConfig(t, configDir, `
+agent: /usr/local/bin/my-agent
+never_allow_env:
+  - BLOCKED_SECRET
+`)
+
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, _ []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
+
+	l := &Launcher{
+		Execer:    mockExec,
+		ConfigDir: configDir,
+	}
+
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// Verify BLOCKED_SECRET is NOT in the environment
+	if _, ok := envValue(capturedEnv, "BLOCKED_SECRET"); ok {
+		t.Error("BLOCKED_SECRET should not be in agent env (should be filtered by never_allow_env)")
+	}
+
+	// Verify ALLOWED_VAR is still in the environment
+	if _, ok := envValue(capturedEnv, "ALLOWED_VAR"); !ok {
+		t.Error("ALLOWED_VAR should be in agent env (not in never_allow_env)")
+	}
+}
+
+// TestApplyTrustGate_FailClosedOnReadError verifies that if the project config
+// file cannot be read, ProjectOverride is nil'd and a warning is logged.
+func TestApplyTrustGate_FailClosedOnReadError(t *testing.T) {
+	// Set up stderr capture
+	var stderrBuf bytes.Buffer
+
+	l := &Launcher{
+		Stderr: &stderrBuf,
+	}
+
+	// Create a config with a ProjectOverride pointing to a non-existent file
+	cfg := &config.Config{
+		Agent: "/usr/local/bin/my-agent",
+		ProjectConfigPath: "/nonexistent/path/.aide.yaml",
+		ProjectOverride: &config.ProjectOverride{
+			Agent: "claude",
+		},
+	}
+
+	// Call applyTrustGate
+	trustInfo := l.applyTrustGate(cfg)
+
+	// Verify ProjectOverride was nil'd
+	if cfg.ProjectOverride != nil {
+		t.Error("ProjectOverride should be nil after read error, but got non-nil")
+	}
+
+	// Verify a warning was written to stderr
+	stderrText := stderrBuf.String()
+	if !strings.Contains(stderrText, "warning") || !strings.Contains(stderrText, "could not read") {
+		t.Errorf("expected warning about read failure in stderr, got: %s", stderrText)
+	}
+
+	// trustInfo should be nil (no disclosure of untrusted wants on read error)
+	if trustInfo != nil {
+		t.Errorf("trustInfo should be nil on read error, got %v", trustInfo)
 	}
 }

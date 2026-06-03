@@ -59,12 +59,17 @@ func ResolveEnvDisplay(val, _, secretKey string, secretMap map[string]string) st
 	return val
 }
 
-// RedactValue shows the first 8 characters of a value then ***.
+const redactMask = "••••••••"
+
+// RedactValue redacts credential values securely.
+// For values > 16 chars, shows first 4 chars + fixed mask (for debugging identification).
+// For values ≤ 16 chars, shows fixed mask only (prevents full exposure).
+// Uses fixed-length output to avoid leaking secret length via output length variation.
 func RedactValue(s string) string {
-	if len(s) <= 8 {
-		return s + "***"
+	if len(s) > 16 {
+		return s[:4] + redactMask
 	}
-	return s[:8] + "***"
+	return redactMask
 }
 
 // EnvAnnotation returns a display annotation for a config env value.

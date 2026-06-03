@@ -277,3 +277,27 @@ func TestSuggestedEvidence(t *testing.T) {
 		t.Errorf("got %q; want \" evidence: uv.lock\"", got)
 	}
 }
+
+func TestSanitizeIcon(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"🤖", "🤖"},                          // normal emoji: pass through
+		{"💼", "💼"},                           // normal emoji: pass through
+		{"\x1b[2J", "[2J"},                     // ANSI clear screen: ESC stripped, leaving [2J
+		{"🤖\n fake warning", "🤖 fa"},         // newline injection: stripped, then capped at 4
+		{"abc\x00def", "abcd"},                 // null byte stripped, capped at 4
+		{"12345", "1234"},                       // capped at 4 runes
+		{"", ""},                               // empty: pass through
+		{"\x1b]0;hacked\x07", "]0;h"},          // terminal title escape: ESC/BEL stripped, capped at 4
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := SanitizeIcon(tt.input)
+			if got != tt.want {
+				t.Errorf("SanitizeIcon(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

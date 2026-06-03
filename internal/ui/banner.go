@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"text/template"
+	"unicode"
 
 	"github.com/fatih/color"
 )
@@ -106,6 +107,23 @@ func hasTrust(data *BannerData) bool {
 	return data.Trust != nil
 }
 
+// SanitizeIcon removes Unicode control characters (category C) from an icon
+// string and caps it at 4 runes. This prevents ANSI injection and newline
+// injection from user-controlled .aide.yaml icon fields.
+func SanitizeIcon(s string) string {
+	var runes []rune
+	for _, r := range s {
+		if !unicode.Is(unicode.C, r) {
+			runes = append(runes, r)
+		}
+	}
+	s = strings.TrimSpace(string(runes))
+	if r := []rune(s); len(r) > 4 {
+		s = string(r[:4])
+	}
+	return s
+}
+
 // trustStatusLine returns the single-line trust status for compact mode.
 func trustStatusLine(data *BannerData) string {
 	if data.Trust == nil {
@@ -135,7 +153,7 @@ func trustWantsLine(data *BannerData) string {
 	parts = append(parts, w.Writable...)
 	parts = append(parts, w.Unguard...)
 	if len(w.EnvVars) > 0 {
-		parts = append(parts, strings.Join(w.EnvVars, ", "))
+		parts = append(parts, truncateList(w.EnvVars, 3))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -146,7 +164,7 @@ func trustWantsLine(data *BannerData) string {
 // contextIconDisplay returns "icon name" when icon is set, or just "name".
 func contextIconDisplay(data *BannerData) string {
 	if data.ContextIcon != "" {
-		return data.ContextIcon + " " + data.ContextName
+		return SanitizeIcon(data.ContextIcon) + " " + data.ContextName
 	}
 	return data.ContextName
 }
@@ -154,7 +172,7 @@ func contextIconDisplay(data *BannerData) string {
 // agentIconPrefix returns "icon " when AgentIcon is set, or "".
 func agentIconPrefix(data *BannerData) string {
 	if data.AgentIcon != "" {
-		return data.AgentIcon + " "
+		return SanitizeIcon(data.AgentIcon) + " "
 	}
 	return ""
 }

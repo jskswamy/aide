@@ -68,6 +68,36 @@ aide status
 
 ---
 
+## aide prompt
+
+```
+aide prompt [--starship-config]
+```
+
+Output a compact context line for shell prompt integration.
+
+**Flags:**
+- `--starship-config` — Print a ready-to-use `starship.toml` snippet to stdout
+
+**Output format:**
+```
+context [context-icon] [agent-icon] [status]
+```
+
+Status indicators:
+- `🛡` — sandbox is active
+- `⚠` — `.aide.yaml` is present but untrusted (run `aide trust`)
+- `🚫` — `.aide.yaml` has been denied
+
+**Exits 1** with no output when no context matches the current directory. Starship hides the module automatically on non-zero exit.
+
+**Starship setup:**
+```bash
+aide prompt --starship-config >> ~/.config/starship.toml
+```
+
+---
+
 ## aide validate
 
 ```

@@ -1110,3 +1110,105 @@ capability_variants:
 		t.Errorf("node variants = %v, want [pnpm corepack]", got)
 	}
 }
+
+func TestTopLevelHooksUnmarshal(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - matcher: shell
+      command: rtk hook {agent}
+    - command: bd prime
+  session_start:
+    - command: echo start
+contexts:
+  work:
+    agent: claude
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Hooks["pre_tool"]) != 2 {
+		t.Errorf("pre_tool entries = %d, want 2", len(cfg.Hooks["pre_tool"]))
+	}
+	if cfg.Hooks["pre_tool"][0].Matcher != "shell" {
+		t.Errorf("matcher = %q, want %q", cfg.Hooks["pre_tool"][0].Matcher, "shell")
+	}
+	if cfg.Hooks["pre_tool"][0].Command != "rtk hook {agent}" {
+		t.Errorf("command = %q", cfg.Hooks["pre_tool"][0].Command)
+	}
+	if len(cfg.Hooks["session_start"]) != 1 {
+		t.Errorf("session_start entries = %d, want 1", len(cfg.Hooks["session_start"]))
+	}
+}
+
+func TestContextHooksOverrideUnmarshal(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - matcher: shell
+      command: rtk hook {agent}
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude: [session_start]
+      extra:
+        pre_tool:
+          - matcher: shell
+            command: personal-specific-hook
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	ctx := cfg.Contexts["personal"]
+	if ctx.Hooks == nil {
+		t.Fatal("ctx.Hooks should be non-nil")
+	}
+	if len(ctx.Hooks.Exclude) != 1 || ctx.Hooks.Exclude[0] != "session_start" {
+		t.Errorf("Exclude = %v, want [session_start]", ctx.Hooks.Exclude)
+	}
+	extra := ctx.Hooks.Extra["pre_tool"]
+	if len(extra) != 1 || extra[0].Command != "personal-specific-hook" {
+		t.Errorf("Extra[pre_tool] = %v", extra)
+	}
+}
+
+func TestContextHooksMarshalRoundTrip(t *testing.T) {
+	y := `
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude: [session_start]
+      extra:
+        pre_tool:
+          - matcher: shell
+            command: personal-hook
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// Marshal back to YAML
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Unmarshal again to verify round-trip
+	var cfg2 config.Config
+	if err := yaml.Unmarshal(out, &cfg2); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
+	}
+	ctx2 := cfg2.Contexts["personal"]
+	if ctx2.Hooks == nil {
+		t.Fatal("ctx2.Hooks should be non-nil after round-trip")
+	}
+	if len(ctx2.Hooks.Exclude) != 1 || ctx2.Hooks.Exclude[0] != "session_start" {
+		t.Errorf("Exclude after round-trip = %v", ctx2.Hooks.Exclude)
+	}
+	if len(ctx2.Hooks.Extra["pre_tool"]) != 1 {
+		t.Errorf("Extra[pre_tool] after round-trip = %v", ctx2.Hooks.Extra["pre_tool"])
+	}
+}

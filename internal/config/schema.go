@@ -28,6 +28,7 @@ type Config struct {
 	// values so normalizeMinimal can still propagate them as a
 	// MCPServersList on the synthesised default context.
 	MCPServers  MCPServerMap `yaml:"mcp_servers,omitempty"`
+	Hooks       HooksMap     `yaml:"hooks,omitempty"`
 	Preferences *Preferences `yaml:"preferences,omitempty"`
 
 	// --- Minimal (flat) format fields ---
@@ -102,6 +103,10 @@ type Context struct {
 	// `plugins:` value is a mapping (v2 delta form). The yaml tag is
 	// "-" because UnmarshalYAML handles it directly.
 	Plugins *ContextOverride[PluginEntry] `yaml:"-"`
+	// Hooks is populated by UnmarshalYAML when the per-context
+	// `hooks:` value is a mapping (v2 delta form). The yaml tag is
+	// "-" because UnmarshalYAML handles it directly.
+	Hooks *HooksOverride `yaml:"-"`
 }
 
 // MarshalYAML emits the Context with mcp_servers/plugins serialized
@@ -143,6 +148,9 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	if c.Plugins != nil {
 		out["plugins"] = c.Plugins
 	}
+	if c.Hooks != nil {
+		out["hooks"] = c.Hooks
+	}
 	return out, nil
 }
 
@@ -164,6 +172,7 @@ func (c *Context) UnmarshalYAML(node *yaml.Node) error {
 		Capabilities []string          `yaml:"capabilities,omitempty"`
 		MCPServers   yaml.Node         `yaml:"mcp_servers,omitempty"`
 		Plugins      yaml.Node         `yaml:"plugins,omitempty"`
+		Hooks        yaml.Node         `yaml:"hooks,omitempty"`
 	}
 	var r rawCtx
 	if err := node.Decode(&r); err != nil {
@@ -212,6 +221,19 @@ func (c *Context) UnmarshalYAML(node *yaml.Node) error {
 		// reconstructs the desired set from the polymorphic top-level.
 	default:
 		return fmt.Errorf("context.plugins: unsupported YAML kind %v", r.Plugins.Kind)
+	}
+
+	switch r.Hooks.Kind {
+	case 0:
+		// absent
+	case yaml.MappingNode:
+		var ov HooksOverride
+		if err := r.Hooks.Decode(&ov); err != nil {
+			return fmt.Errorf("context.hooks: %w", err)
+		}
+		c.Hooks = &ov
+	default:
+		return fmt.Errorf("context.hooks: unsupported YAML kind %v", r.Hooks.Kind)
 	}
 	return nil
 }
@@ -377,6 +399,23 @@ func (p PluginEntry) MarshalYAML() (interface{}, error) {
 // skips a value-level UnmarshalYAML when the YAML value is null, so
 // shape detection for `key: ~` (declare-only) must happen here.
 type PluginMap map[string]PluginEntry
+
+// HookEntry is one entry in the normalized hooks map.
+type HookEntry struct {
+	Matcher string `yaml:"matcher,omitempty"`
+	Command string `yaml:"command"`
+	Timeout int    `yaml:"timeout,omitempty"` // seconds; 0 means use the driver's default
+}
+
+// HooksMap maps a normalized event name to its list of HookEntry values.
+type HooksMap map[string][]HookEntry
+
+// HooksOverride holds per-context additions and removals over the top-level
+// hooks block. Exclude lists event names to suppress; Extra adds entries.
+type HooksOverride struct {
+	Exclude []string `yaml:"exclude,omitempty"`
+	Extra   HooksMap `yaml:"extra,omitempty"`
+}
 
 // UnmarshalYAML decodes a mapping node into the polymorphic plugin map.
 // Iterates the mapping pairs explicitly so null-valued entries are

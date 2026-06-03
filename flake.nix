@@ -7,8 +7,15 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-stable, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      nixpkgs-stable,
+      flake-utils,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         stable = nixpkgs-stable.legacyPackages.${system};
@@ -19,6 +26,8 @@
             pkgs.go
             pkgs.gnumake
             pkgs.golangci-lint
+            pkgs.gosec
+            pkgs.govulncheck
             pkgs.gitleaks
             pkgs.yq-go
             stable.pre-commit
@@ -38,15 +47,6 @@
               pre-commit install --allow-missing-config -q 2>/dev/null
               pre-commit install --hook-type pre-push --allow-missing-config -q 2>/dev/null
               touch "$_sentinel" 2>/dev/null
-            fi
-
-            # Install Go security tools (built against the devshell Go version)
-            _gobin_sentinel="$GOBIN/.installed-$(go version | awk '{print $3}')"
-            if [ ! -f "$_gobin_sentinel" ]; then
-              echo "Installing Go security tools for $(go version | awk '{print $3}')..."
-              go install github.com/securego/gosec/v2/cmd/gosec@latest 2>/dev/null
-              go install golang.org/x/vuln/cmd/govulncheck@latest 2>/dev/null
-              touch "$_gobin_sentinel" 2>/dev/null
             fi
 
             echo "aide dev environment ready (Go $(go version | awk '{print $3}' | sed 's/go//'))"

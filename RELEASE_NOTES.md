@@ -1,5 +1,57 @@
 ## Unreleased
 
+### ✨ Features
+
+- **Declarative hook management for five coding agents.** A new `hooks:`
+  config block and `aide hook` CLI let you declare agent lifecycle hooks in
+  `config.yaml` and reconcile them into each agent's config via `aide sync`
+  — the same plan/apply model used for plugins and MCP servers.
+
+  Declare once, apply everywhere:
+
+  ```yaml
+  hooks:
+    pre_tool:
+      - command: "rtk hook {agent}"   # {agent} expands per context
+  ```
+
+  The `{agent}` template variable is replaced with each context's resolved
+  agent name, so a single top-level declaration covers all contexts without
+  duplication. Per-context `hooks.extra` and `hooks.exclude` let individual
+  contexts add or suppress events.
+
+  **Agent support matrix:**
+
+  | Agent | `pre_tool` | `post_tool` | `session_start` | `session_end` | Storage format |
+  |-------|-----------|------------|----------------|--------------|---------------|
+  | Claude | ✓ | ✓ | ✓ | ✓ | `~/.claude/settings.json` |
+  | Gemini | ✓ | — | — | — | `~/.gemini/hooks/aide_*.sh` |
+  | Cursor | ✓ | — | — | — | `~/.cursor/hooks.json` |
+  | Copilot | ✓ | — | — | — | `~/.config/copilot/hooks/aide-*.json` |
+  | Hermes | ✓ | — | — | — | `~/.hermes/plugins/aide_*/` |
+  | Codex | — | — | — | — | not supported |
+
+  The `shell` matcher narrows a hook to the Bash/shell tool; it maps to the
+  agent's native name (`Bash` for Claude, `Shell` for Cursor).
+
+  Aide uses `managed.json` as the sole ownership record for hooks it writes.
+  `WriteHooks` receives the previously-managed set and the desired set: it
+  removes only entries aide wrote last time and writes the new desired set,
+  so user-added hooks in agent config files are never touched.
+
+  Shell metacharacters (`;|&\`$(){}!<>\\\"'\n\r\t*?[]#~`) are rejected in
+  command values to prevent injection.
+
+  **CLI:**
+
+  ```bash
+  aide hook list [--context <name>]
+  aide hook add  --event <event> --command <cmd> [--matcher <matcher>]
+  aide hook remove --event <event> --command <cmd> [--matcher <matcher>]
+  aide sync   # writes to agent config
+  ```
+
+
 ### 🔒 Security
 
 - **Bump `github.com/go-git/go-git/v5` from 5.19.0 to 5.19.1.**

@@ -1,56 +1,65 @@
 {{- boldGreen "aide" -}}
-{{- if .ContextName}} · context: {{boldGreen .ContextName}}{{end}}
-  {{cyan "Agent     "}}{{agentDisplay .}}
+{{- if .ContextName}} · context: {{boldGreen (contextIconDisplay .)}}{{end}}
+  {{cyan "Agent     "}}{{agentIconPrefix .}}{{agentDisplay .}}
 {{- if .MatchReason}}
   {{cyan "Matched   "}}{{.MatchReason}}
 {{- end}}
 {{- if .SecretName}}
   {{cyan "Secret    "}}{{secretDisplay .}}
 {{- end}}
-{{- $lines := envLines . -}}
+{{- if hasTrust .}}
+
+  {{red (trustStatusLine .)}}
+{{- with trustWantsLine .}}
+  {{yellow "          "}}{{.}}
+  {{dim "          aide trust · aide deny · aide --ignore-project-config"}}
+{{- end}}
+{{- end}}
+{{- $lines := envItemLines . -}}
 {{- if $lines}}
+
   {{cyan "Env       "}}{{index $lines 0}}
 {{- range slice $lines 1}}
             {{.}}
 {{- end}}
 {{- end}}
 {{- if sandboxDisabled .}}
+
   {{cyan "sandbox:  "}}disabled
 {{- else if hasCapOrExtra .}}
+
   {{cyan "sandbox:  "}}network {{networkLabel .}}
 {{- with sandboxPorts .}}
   {{cyan "ports:    "}}{{.}}
 {{- end}}
 {{- range .Capabilities}}
-    {{boldGreen "✓"}} {{printf "%-10s" (print .Name (variantSuffix .Variants))}}{{freshMarker .FreshGrant}} {{truncate .Paths 3}}
+    {{boldGreen "✓"}} {{printf "%-10s" (print .Name (variantSuffix .Variants))}}{{freshMarker .FreshGrant}} {{capPaths .}}
 {{- if .ProvenanceTag}}  {{dim (printf "(%s)" .ProvenanceTag)}}{{end}}
 {{- if and .Source (ne .Source "context config")}}  {{dim (printf "← %s" .Source)}}{{end}}
 {{- end}}
 {{- if .ExtraWritable}}
-    {{yellow "⊕"}} writable:  {{truncate .ExtraWritable 3}}
+    {{yellow "⊕"}} writable:  {{join .ExtraWritable ", "}}
 {{- end}}
 {{- if .ExtraReadable}}
     {{yellow "⊕"}} readable:  {{truncate .ExtraReadable 3}}
 {{- end}}
 {{- if .ExtraDenied}}
-    {{red "⊘"}} denied:    {{truncate .ExtraDenied 3}}
+    {{red "⊘"}} denied:    {{join .ExtraDenied ", "}}
 {{- end}}
 {{- range .DisabledCaps}}
     {{dim "○"}} {{printf "%-10s" .Name}} disabled for this session  ← --without
 {{- end}}
 {{- range .SuggestedCaps}}
-    {{dim "○"}} {{printf "%-10s" .Name}} {{truncate .Paths 3}}  {{dim (printf "detected%s — aide --with %s" (suggestedEvidence .DetectionHint) .Name)}}
+    {{dim "○"}} {{printf "%-10s" .Name}} {{capPaths .}}  {{dim (printf "detected%s — aide --with %s" (suggestedEvidence .DetectionHint) .Name)}}
 {{- end}}
 {{- range .NeverAllow}}
     {{red "✗"}} denied    {{.}} (never-allow)
-{{- end}}
-{{- if .CredWarnings}}
-    {{yellow "⚠"}} credentials exposed: {{join .CredWarnings ", "}}
 {{- end}}
 {{- range .CompWarnings}}
     {{yellow "⚠"}} {{.}}
 {{- end}}
 {{- else}}
+
   {{cyan "sandbox:  "}}network {{networkLabel .}}, code-only
 {{- with sandboxPorts .}}
   {{cyan "ports:    "}}{{.}}

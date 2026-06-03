@@ -5,7 +5,6 @@ import (
 	"embed"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"text/template"
 
@@ -70,29 +69,94 @@ func secretDisplay(data *BannerData) string {
 	return data.SecretName
 }
 
-// envLines returns formatted env variable lines sorted by key.
-func envLines(data *BannerData) []string {
-	if len(data.Env) == 0 {
+// envItemLines returns formatted env variable lines from EnvItems.
+// Credential warnings render inline as "⚠ credential".
+// Blocked items render as "⊘ KEY  never-allow".
+func envItemLines(data *BannerData) []string {
+	if len(data.EnvItems) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(data.Env))
-	for k := range data.Env {
-		keys = append(keys, k)
+	maxKeyLen := 0
+	for _, item := range data.EnvItems {
+		if len(item.Key) > maxKeyLen {
+			maxKeyLen = len(item.Key)
+		}
 	}
-	sort.Strings(keys)
-
 	var lines []string
-	for _, k := range keys {
-		annotation := data.Env[k]
-		if data.EnvResolved != nil {
-			if rv, ok := data.EnvResolved[k]; ok {
-				lines = append(lines, fmt.Sprintf("%s %s (%s)", k, annotation, rv))
-				continue
+	for _, item := range data.EnvItems {
+		var line string
+		if item.Blocked {
+			line = fmt.Sprintf("⊘  %-*s %s", maxKeyLen, item.Key, item.Annotation)
+		} else {
+			line = fmt.Sprintf("%s %-*s %s", item.Badge, maxKeyLen, item.Key, item.Annotation)
+			if item.ResolvedValue != "" {
+				line += fmt.Sprintf(" (%s)", item.ResolvedValue)
+			}
+			if item.CredWarning {
+				line += "  ⚠ credential"
 			}
 		}
-		lines = append(lines, fmt.Sprintf("%s %s", k, annotation))
+		lines = append(lines, line)
 	}
 	return lines
+}
+
+// hasTrust reports whether BannerData has a trust warning to display.
+func hasTrust(data *BannerData) bool {
+	return data.Trust != nil
+}
+
+// trustStatusLine returns the single-line trust status for compact mode.
+func trustStatusLine(data *BannerData) string {
+	if data.Trust == nil {
+		return ""
+	}
+	switch data.Trust.Status {
+	case "denied":
+		return fmt.Sprintf("🚫 .aide.yaml denied at %s — run aide deny --remove to undo", data.Trust.Path)
+	default:
+		return fmt.Sprintf("🚨 UNTRUSTED: %s — run aide trust to approve", data.Trust.Path)
+	}
+}
+
+// trustWantsLine returns a compact summary of what the untrusted config wants.
+func trustWantsLine(data *BannerData) string {
+	if data.Trust == nil || data.Trust.Status == "denied" {
+		return ""
+	}
+	w := data.Trust.Wants
+	var parts []string
+	if w.Agent != "" {
+		parts = append(parts, w.Agent+" agent")
+	}
+	for _, c := range w.Capabilities {
+		parts = append(parts, c+" capability")
+	}
+	parts = append(parts, w.Writable...)
+	parts = append(parts, w.Unguard...)
+	if len(w.EnvVars) > 0 {
+		parts = append(parts, strings.Join(w.EnvVars, ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "wants: " + strings.Join(parts, " · ")
+}
+
+// contextIconDisplay returns "icon name" when icon is set, or just "name".
+func contextIconDisplay(data *BannerData) string {
+	if data.ContextIcon != "" {
+		return data.ContextIcon + " " + data.ContextName
+	}
+	return data.ContextName
+}
+
+// agentIconPrefix returns "icon " when AgentIcon is set, or "".
+func agentIconPrefix(data *BannerData) string {
+	if data.AgentIcon != "" {
+		return data.AgentIcon + " "
+	}
+	return ""
 }
 
 // truncateList caps a list at maxItems and appends "(+N more)" if truncated.

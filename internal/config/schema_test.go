@@ -1212,3 +1212,45 @@ contexts:
 		t.Errorf("Extra[pre_tool] after round-trip = %v", ctx2.Hooks.Extra["pre_tool"])
 	}
 }
+
+func TestAgentDefIcon(t *testing.T) {
+	input := `
+agents:
+  claude:
+    binary: claude
+    icon: 🤖
+  gemini:
+    binary: gemini
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Agents["claude"].Icon != "🤖" {
+		t.Errorf("claude icon = %q, want 🤖", cfg.Agents["claude"].Icon)
+	}
+	if cfg.Agents["gemini"].Icon != "" {
+		t.Errorf("gemini icon = %q, want empty", cfg.Agents["gemini"].Icon)
+	}
+}
+
+func TestContextIcon(t *testing.T) {
+	input := `
+contexts:
+  work:
+    agent: claude
+    icon: 💼
+  personal:
+    agent: claude
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Contexts["work"].Icon != "💼" {
+		t.Errorf("work icon = %q, want 💼", cfg.Contexts["work"].Icon)
+	}
+	if cfg.Contexts["personal"].Icon != "" {
+		t.Errorf("personal icon = %q, want empty", cfg.Contexts["personal"].Icon)
+	}
+}

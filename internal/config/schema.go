@@ -74,6 +74,7 @@ type CapabilityDef struct {
 // AgentDef defines an agent binary. Agents carry no env or secrets (DD-5).
 type AgentDef struct {
 	Binary string `yaml:"binary"`
+	Icon   string `yaml:"icon,omitempty"`
 }
 
 // Context holds everything needed to launch an agent in a specific environment.
@@ -81,6 +82,7 @@ type AgentDef struct {
 type Context struct {
 	Match              []MatchRule          `yaml:"match,omitempty"`
 	Agent              string               `yaml:"agent"`
+	Icon               string               `yaml:"icon,omitempty"`
 	Secret             string               `yaml:"secret,omitempty"`
 	Env                map[string]string    `yaml:"env,omitempty"`
 	// Profile selects a per-context agent config directory. When set,
@@ -118,6 +120,9 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	}
 	if c.Agent != "" {
 		out["agent"] = c.Agent
+	}
+	if c.Icon != "" {
+		out["icon"] = c.Icon
 	}
 	if c.Secret != "" {
 		out["secret"] = c.Secret
@@ -163,6 +168,7 @@ func (c *Context) UnmarshalYAML(node *yaml.Node) error {
 	type rawCtx struct {
 		Match        []MatchRule       `yaml:"match,omitempty"`
 		Agent        string            `yaml:"agent"`
+		Icon         string            `yaml:"icon,omitempty"`
 		Secret       string            `yaml:"secret,omitempty"`
 		Env          map[string]string `yaml:"env,omitempty"`
 		Profile      string            `yaml:"profile,omitempty"`
@@ -180,6 +186,7 @@ func (c *Context) UnmarshalYAML(node *yaml.Node) error {
 	}
 	c.Match = r.Match
 	c.Agent = r.Agent
+	c.Icon = r.Icon
 	c.Secret = r.Secret
 	c.Env = r.Env
 	c.Profile = r.Profile

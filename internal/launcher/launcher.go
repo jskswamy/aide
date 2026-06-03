@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -126,10 +127,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// 1b. Trust-gate: check .aide.yaml before applying ProjectOverride.
+	var trustInfo *ui.TrustInfo
 	if l.IgnoreProjectConfig {
 		cfg.ProjectOverride = nil
 	} else if cfg.ProjectOverride != nil && cfg.ProjectConfigPath != "" {
-		l.applyTrustGate(cfg)
+		trustInfo = l.applyTrustGate(cfg)
 	}
 
 	// 2. Detect git remote + project root
@@ -399,7 +401,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefs.InfoDetail = "detailed"
 	}
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
-		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra)
+		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra, trustInfo)
 		bannerData.Yolo = effectiveYolo
 		bannerData.AutoApprove = effectiveYolo
 		style := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
@@ -594,6 +596,7 @@ func (l *Launcher) buildBannerData(
 	withoutCaps []string,
 	cfg *config.Config,
 	configWritableExtra, configReadableExtra, configDeniedExtra []string,
+	trustInfo *ui.TrustInfo,
 ) *ui.BannerData {
 	data := &ui.BannerData{
 		ContextName: rc.Name,
@@ -602,31 +605,36 @@ func (l *Launcher) buildBannerData(
 		AgentPath:   binary,
 		SecretName:  rc.Context.Secret,
 		Warnings:    pathWarnings,
+		Trust:       trustInfo,
 	}
 
-	// Build env annotations
-	if len(rc.Context.Env) > 0 {
-		data.Env = make(map[string]string, len(rc.Context.Env))
-		for k, v := range rc.Context.Env {
-			source, _ := display.ClassifyEnvSource(v)
-			data.Env[k] = "← " + source
-		}
+	// Populate icons
+	data.ContextIcon = rc.Context.Icon
+	if agentDef, ok := cfg.Agents[agentName]; ok {
+		data.AgentIcon = ResolveAgentIcon(agentName, &agentDef)
+	} else {
+		data.AgentIcon = ResolveAgentIcon(agentName, nil)
 	}
 
-	// In detailed mode, add resolved env values
-	if prefs.InfoDetail == "detailed" && len(resolvedEnv) > 0 {
-		data.EnvResolved = make(map[string]string, len(resolvedEnv))
-		for k, v := range resolvedEnv {
-			data.EnvResolved[k] = display.RedactValue(v)
-		}
+	// Build unified env items: context env + capability env_allow + never-allow markers.
+	var detailedEnv map[string]string
+	if prefs.InfoDetail == "detailed" {
+		detailedEnv = resolvedEnv
 	}
+	var neverAllowEnv []string
+	if resolvedCapSet != nil {
+		neverAllowEnv = resolvedCapSet.NeverAllowEnv
+	}
+	var resolvedCaps []capability.ResolvedCapability
+	if resolvedCapSet != nil {
+		resolvedCaps = resolvedCapSet.Capabilities
+	}
+	data.EnvItems = BuildEnvItems(rc.Context.Env, resolvedCaps, neverAllowEnv, detailedEnv)
 
 	// Populate capability display data
 	if resolvedCapSet != nil && len(resolvedCapSet.Capabilities) > 0 {
 		effectiveStyle := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
 		for _, rc := range resolvedCapSet.Capabilities {
-			paths := append([]string{}, rc.Readable...)
-			paths = append(paths, rc.Writable...)
 			source := "--with"
 			if contextCapSet[rc.Name] {
 				source = "context config"
@@ -634,7 +642,8 @@ func (l *Launcher) buildBannerData(
 			prov := capProvenance[rc.Name]
 			disp := ui.CapabilityDisplay{
 				Name:            rc.Name,
-				Paths:           paths,
+				ReadablePaths:   rc.Readable,
+				WritablePaths:   rc.Writable,
 				EnvVars:         rc.EnvAllow,
 				Source:          source,
 				Variants:        prov.Variants,
@@ -657,7 +666,6 @@ func (l *Launcher) buildBannerData(
 			data.Capabilities = append(data.Capabilities, disp)
 		}
 		data.NeverAllow = cfg.NeverAllow
-		data.CredWarnings = capability.CredentialWarnings(capOverrides.EnvAllow)
 		data.CompWarnings = capability.CompositionWarnings(resolvedCapSet.Capabilities)
 	}
 
@@ -684,13 +692,12 @@ func (l *Launcher) buildBannerData(
 				continue
 			}
 			if capDef, ok := registry[name]; ok {
-				paths := append([]string{}, capDef.Readable...)
-				paths = append(paths, capDef.Writable...)
 				data.SuggestedCaps = append(data.SuggestedCaps, ui.CapabilityDisplay{
-					Name:      name,
-					Paths:     paths,
-					Suggested: true,
-					Source:    "detected",
+					Name:          name,
+					ReadablePaths: capDef.Readable,
+					WritablePaths: capDef.Writable,
+					Suggested:     true,
+					Source:        "detected",
 				})
 			}
 		}
@@ -810,54 +817,66 @@ func (l *Launcher) trustStore() *trust.Store {
 }
 
 // applyTrustGate checks the trust status of .aide.yaml and nils out
-// ProjectOverride if the file is not trusted.
-func (l *Launcher) applyTrustGate(cfg *config.Config) {
+// ProjectOverride if the file is not trusted. Returns TrustInfo for
+// banner display when the status is untrusted or denied; nil when trusted.
+func (l *Launcher) applyTrustGate(cfg *config.Config) *ui.TrustInfo {
+	if cfg.ProjectConfigPath == "" || cfg.ProjectOverride == nil {
+		return nil
+	}
 	absPath, err := filepath.Abs(cfg.ProjectConfigPath)
 	if err != nil {
-		return // can't resolve path, proceed without override
+		return nil
 	}
 	contents, err := os.ReadFile(absPath)
 	if err != nil {
-		return // can't read file, proceed without override
+		return nil
 	}
 
 	store := l.trustStore()
 	status := store.Check(absPath, contents)
+
+	homeDir, _ := os.UserHomeDir()
 	switch status {
 	case trust.Denied:
 		cfg.ProjectOverride = nil
+		return &ui.TrustInfo{
+			Status: "denied",
+			Path:   homepath.Collapse(absPath, homeDir),
+		}
 	case trust.Untrusted:
-		printUntrustedWarning(l.stderr(), absPath, cfg.ProjectOverride)
+		po := cfg.ProjectOverride
 		cfg.ProjectOverride = nil
-	case trust.Trusted:
-		// proceed normally
+		return buildTrustInfo(absPath, homeDir, po)
+	default: // trust.Trusted
+		return nil
 	}
 }
 
-// printUntrustedWarning prints a warning about untrusted .aide.yaml contents.
-func printUntrustedWarning(w io.Writer, path string, po *config.ProjectOverride) {
-	fmt.Fprintf(w, "! %s is not trusted\n\n", path)
-	if po.Agent != "" {
-		fmt.Fprintf(w, "  Agent:        %s\n", po.Agent)
+// buildTrustInfo constructs a TrustInfo from an untrusted ProjectOverride.
+func buildTrustInfo(absPath, homeDir string, po *config.ProjectOverride) *ui.TrustInfo {
+	if po == nil {
+		return &ui.TrustInfo{
+			Status: "untrusted",
+			Path:   homepath.Collapse(absPath, homeDir),
+		}
 	}
-	if len(po.Capabilities) > 0 {
-		fmt.Fprintf(w, "  Capabilities: %s\n", strings.Join(po.Capabilities, ", "))
+	wants := ui.TrustWants{
+		Agent:        po.Agent,
+		Capabilities: po.Capabilities,
 	}
 	if po.Sandbox != nil {
-		if len(po.Sandbox.WritableExtra) > 0 {
-			fmt.Fprintf(w, "  Writable:     %v\n", po.Sandbox.WritableExtra)
-		}
-		if len(po.Sandbox.Unguard) > 0 {
-			fmt.Fprintf(w, "  Unguard:      %v\n", po.Sandbox.Unguard)
-		}
+		wants.Writable = po.Sandbox.WritableExtra
+		wants.Unguard = po.Sandbox.Unguard
 	}
-	if len(po.Env) > 0 {
-		fmt.Fprintf(w, "  Env vars:     %d configured\n", len(po.Env))
+	for k := range po.Env {
+		wants.EnvVars = append(wants.EnvVars, k)
 	}
-	fmt.Fprintf(w, "\n")
-	fmt.Fprintf(w, "  Run `aide trust` to approve this configuration.\n")
-	fmt.Fprintf(w, "  Run `aide deny` to permanently block it.\n")
-	fmt.Fprintf(w, "  Run `aide --ignore-project-config` to launch without it.\n")
+	sort.Strings(wants.EnvVars)
+	return &ui.TrustInfo{
+		Status: "untrusted",
+		Path:   homepath.Collapse(absPath, homeDir),
+		Wants:  wants,
+	}
 }
 
 // handleEmptyStateLaunch delegates to the empty-state helper and, on

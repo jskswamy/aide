@@ -107,3 +107,29 @@ func RemoveFromSlice(slice []string, item string) []string {
 	return result
 }
 
+// DefaultAgentIcons maps known agent binary names to their default display icons.
+var DefaultAgentIcons = map[string]string{
+	"claude":  "🤖",
+	"gemini":  "✨",
+	"codex":   "📝",
+	"copilot": "✈️",
+	"cursor":  "🖱",
+}
+
+// BadgeForSource returns the emoji badge for a given env source classification
+// as returned by ClassifyEnvSource.
+func BadgeForSource(source string) string {
+	switch {
+	case strings.HasPrefix(source, "from secrets."):
+		return "🔐"
+	case source == "from project_root":
+		return "📁"
+	case source == "from runtime_dir":
+		return "⚙"
+	case source == "template":
+		return "📐"
+	default:
+		return "📌" // literal and unknown
+	}
+}
+

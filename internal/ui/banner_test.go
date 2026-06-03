@@ -21,9 +21,9 @@ func fullBannerData() *BannerData {
 		AgentPath:   "/usr/local/bin/claude",
 		SecretName:  "work",
 		SecretKeys:  []string{"api_key", "org_id", "token"},
-		Env: map[string]string{
-			"ANTHROPIC_API_KEY": "<- secrets.api_key",
-			"ORG_ID":            "= acme",
+		EnvItems: []EnvItem{
+			{Key: "ANTHROPIC_API_KEY", Badge: "🔐", Annotation: "<- secrets.api_key"},
+			{Key: "ORG_ID", Badge: "📌", Annotation: "= acme"},
 		},
 		Sandbox: &SandboxInfo{
 			Network: "outbound",
@@ -154,7 +154,7 @@ func TestRenderBanner_NoSecret(t *testing.T) {
 
 func TestRenderBanner_NoEnv(t *testing.T) {
 	data := fullBannerData()
-	data.Env = nil
+	data.EnvItems = nil
 	var buf bytes.Buffer
 	if err := RenderBanner(&buf, "compact", data); err != nil {
 		t.Fatal(err)
@@ -230,7 +230,8 @@ func TestRenderCompact_GuardGroups(t *testing.T) {
 }
 
 func TestRenderCompact_ListTruncation(t *testing.T) {
-	// With capabilities that have many paths, truncation marker should appear
+	// WritablePaths are shown in full (security-critical), ReadablePaths truncate at 3.
+	// This test verifies that WritablePaths are all shown without truncation.
 	data := &BannerData{
 		AgentName: "claude",
 		Sandbox: &SandboxInfo{
@@ -239,8 +240,8 @@ func TestRenderCompact_ListTruncation(t *testing.T) {
 		},
 		Capabilities: []CapabilityDisplay{
 			{
-				Name:  "filesystem",
-				Paths: []string{"/a", "/b", "/c", "/d", "/e"},
+				Name:          "filesystem",
+				WritablePaths: []string{"/a", "/b", "/c", "/d", "/e"},
 			},
 		},
 	}
@@ -250,8 +251,9 @@ func TestRenderCompact_ListTruncation(t *testing.T) {
 	}
 	out := buf.String()
 
-	if !strings.Contains(out, "(+2 more)") {
-		t.Errorf("expected truncation marker (+2 more) in output:\n%s", out)
+	// WritablePaths shown in full (all 5 paths)
+	if !strings.Contains(out, "/a") || !strings.Contains(out, "/e") {
+		t.Errorf("expected all writable paths in output:\n%s", out)
 	}
 	if !strings.Contains(out, "filesystem") {
 		t.Errorf("expected capability name in output:\n%s", out)
@@ -464,12 +466,12 @@ func capabilityBannerData() *BannerData {
 		Capabilities: []CapabilityDisplay{
 			{
 				Name:   "k8s",
-				Paths:  []string{"~/.kube/config"},
+				WritablePaths:  []string{"~/.kube/config"},
 				Source: "context config",
 			},
 			{
 				Name:   "docker",
-				Paths:  []string{"~/.docker/config.json"},
+				WritablePaths:  []string{"~/.docker/config.json"},
 				Source: "--with",
 			},
 		},
@@ -481,7 +483,6 @@ func capabilityBannerData() *BannerData {
 			},
 		},
 		NeverAllow:   []string{"~/.kube/prod-config"},
-		CredWarnings: []string{"AWS_SECRET_ACCESS_KEY (via aws)"},
 		CompWarnings: []string{"docker + k8s share /var/run"},
 	}
 }
@@ -563,16 +564,26 @@ func TestRenderCompact_NeverAllow(t *testing.T) {
 }
 
 func TestRenderCompact_CredWarnings(t *testing.T) {
+	// CredWarnings are now inline in EnvItems with CredWarning flag
+	data := capabilityBannerData()
+	data.EnvItems = []EnvItem{
+		{Key: "AWS_SECRET_ACCESS_KEY", Badge: "🔐", Annotation: "← aws", CredWarning: true},
+	}
 	var buf bytes.Buffer
-	if err := RenderBanner(&buf, "compact", capabilityBannerData()); err != nil {
+	if err := RenderBanner(&buf, "compact", data); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "credentials exposed") {
-		t.Errorf("compact output missing credential warning:\n%s", out)
+	// Now we expect the credential badge and variable name
+	if !strings.Contains(out, "🔐") {
+		t.Errorf("compact output missing credential badge:\n%s", out)
 	}
 	if !strings.Contains(out, "AWS_SECRET_ACCESS_KEY") {
 		t.Errorf("compact output missing credential var name:\n%s", out)
+	}
+	// Should also show the warning emoji when CredWarning is set
+	if !strings.Contains(out, "⚠ credential") {
+		t.Errorf("compact output missing credential warning marker:\n%s", out)
 	}
 }
 
@@ -976,6 +987,33 @@ func TestSandboxNetworkLabel_Unrestricted(t *testing.T) {
 	}
 }
 
+func TestCleanBannerWithIcons(t *testing.T) {
+	data := &BannerData{
+		ContextName: "work",
+		ContextIcon: "💼",
+		AgentName:   "claude",
+		AgentIcon:   "🤖",
+		AgentPath:   "/usr/bin/claude",
+		EnvItems: []EnvItem{
+			{Key: "MODEL", Badge: "📌", Annotation: "= claude-sonnet-4-6"},
+		},
+	}
+	var buf strings.Builder
+	if err := RenderBanner(&buf, "clean", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "💼 work") {
+		t.Errorf("missing context icon, got:\n%s", out)
+	}
+	if !strings.Contains(out, "🤖 claude") {
+		t.Errorf("missing agent icon, got:\n%s", out)
+	}
+	if !strings.Contains(out, "📌") {
+		t.Errorf("missing env badge, got:\n%s", out)
+	}
+}
+
 func TestRenderCompact_VariantAndFresh(t *testing.T) {
 	data := &BannerData{
 		ContextName: "default",
@@ -989,13 +1027,13 @@ func TestRenderCompact_VariantAndFresh(t *testing.T) {
 		Capabilities: []CapabilityDisplay{
 			{
 				Name:       "python",
-				Paths:      []string{"~/.local/share/uv"},
+				WritablePaths:      []string{"~/.local/share/uv"},
 				Variants:   []string{"uv"},
 				FreshGrant: true,
 			},
 			{
 				Name:  "github",
-				Paths: []string{"~/.config/gh"},
+				WritablePaths: []string{"~/.config/gh"},
 			},
 		},
 	}
@@ -1051,7 +1089,7 @@ func TestRenderClean_ProvenanceTags(t *testing.T) {
 				},
 				Capabilities: []CapabilityDisplay{{
 					Name:          "python",
-					Paths:         []string{"~/.local/share/uv"},
+					WritablePaths:         []string{"~/.local/share/uv"},
 					Variants:      []string{"uv"},
 					ProvenanceTag: tc.tag,
 				}},
@@ -1087,7 +1125,7 @@ func TestRenderClean_NoProvenanceTagForNoVariantCap(t *testing.T) {
 		},
 		Capabilities: []CapabilityDisplay{{
 			Name:  "github",
-			Paths: []string{"~/.config/gh"},
+			WritablePaths: []string{"~/.config/gh"},
 			// No Variants, no ProvenanceTag
 		}},
 	}
@@ -1123,7 +1161,7 @@ func TestRenderBoxed_EvidenceAndConfirmed(t *testing.T) {
 		},
 		Capabilities: []CapabilityDisplay{{
 			Name:            "python",
-			Paths:           []string{"~/.local/share/uv"},
+			WritablePaths:           []string{"~/.local/share/uv"},
 			EnvVars:         []string{"UV_CACHE_DIR"},
 			Variants:        []string{"uv"},
 			ProvenanceTag:   "detected",
@@ -1168,7 +1206,7 @@ func TestRenderBoxed_NoEvidenceLinesWhenAbsent(t *testing.T) {
 		},
 		Capabilities: []CapabilityDisplay{{
 			Name:  "github",
-			Paths: []string{"~/.config/gh"},
+			WritablePaths: []string{"~/.config/gh"},
 			// No EvidenceSummary, no ConfirmedAt
 		}},
 	}
@@ -1202,7 +1240,7 @@ func TestRenderClean_SuggestedCapWithDetectionHint(t *testing.T) {
 		},
 		SuggestedCaps: []CapabilityDisplay{{
 			Name:          "git-remote",
-			Paths:         []string{"ssh"},
+			WritablePaths:         []string{"ssh"},
 			DetectionHint: "[remote in .git/config",
 		}},
 	}
@@ -1222,5 +1260,128 @@ func TestRenderClean_SuggestedCapWithDetectionHint(t *testing.T) {
 	}
 	if !strings.Contains(out, "aide --with git-remote") {
 		t.Errorf("clean render missing enable hint; got:\n%s", out)
+	}
+}
+
+func TestEnvItemLines(t *testing.T) {
+	data := &BannerData{
+		EnvItems: []EnvItem{
+			{Key: "ANTHROPIC_API_KEY", Badge: "🔐", Annotation: "← secrets.api_key"},
+			{Key: "ANTHROPIC_MODEL", Badge: "📌", Annotation: "= claude-sonnet-4-6"},
+			{Key: "AWS_KEY", Badge: "🔧", Annotation: "← aws", CredWarning: true},
+			{Key: "BLOCKED", Badge: "⊘", Annotation: "never-allow", Blocked: true},
+		},
+	}
+	lines := envItemLines(data)
+	if len(lines) != 4 {
+		t.Fatalf("len(envItemLines) = %d, want 4", len(lines))
+	}
+	if !strings.Contains(lines[0], "🔐") || !strings.Contains(lines[0], "ANTHROPIC_API_KEY") {
+		t.Errorf("line[0] = %q, want badge+key", lines[0])
+	}
+	if !strings.Contains(lines[2], "⚠") {
+		t.Errorf("line[2] = %q, want ⚠ credential marker", lines[2])
+	}
+	if !strings.Contains(lines[3], "⊘") {
+		t.Errorf("line[3] = %q, want ⊘ blocked marker", lines[3])
+	}
+}
+
+func TestEnvItemLinesDetailed(t *testing.T) {
+	data := &BannerData{
+		EnvItems: []EnvItem{
+			{Key: "API_KEY", Badge: "🔐", Annotation: "← secrets.api_key", ResolvedValue: "sk-ant-a***"},
+		},
+	}
+	lines := envItemLines(data)
+	if len(lines) != 1 {
+		t.Fatalf("len = %d, want 1", len(lines))
+	}
+	if !strings.Contains(lines[0], "sk-ant-a***") {
+		t.Errorf("detailed line = %q, want resolved value", lines[0])
+	}
+}
+
+func TestBoxedBannerWithFullTrustBlock(t *testing.T) {
+	data := &BannerData{
+		ContextName: "work",
+		ContextIcon: "💼",
+		AgentName:   "claude",
+		AgentIcon:   "🤖",
+		AgentPath:   "/usr/bin/claude",
+		Trust: &TrustInfo{
+			Status: "untrusted",
+			Path:   "~/work/.aide.yaml",
+			Wants: TrustWants{
+				Capabilities: []string{"aws"},
+				Writable:     []string{"~/extra"},
+				EnvVars:      []string{"FOO", "BAR"},
+			},
+		},
+		EnvItems: []EnvItem{
+			{Key: "MODEL", Badge: "📌", Annotation: "= claude-sonnet-4-6"},
+		},
+	}
+	var buf strings.Builder
+	if err := RenderBanner(&buf, "boxed", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "FOO") || !strings.Contains(out, "BAR") {
+		t.Errorf("trust wants env vars not shown in full:\n%s", out)
+	}
+	if !strings.Contains(out, "~/extra") {
+		t.Errorf("trust wants writable path missing:\n%s", out)
+	}
+	if !strings.Contains(out, "💼 work") {
+		t.Errorf("missing context icon:\n%s", out)
+	}
+}
+
+func TestHasTrust(t *testing.T) {
+	if hasTrust(&BannerData{}) {
+		t.Error("hasTrust should be false when Trust is nil")
+	}
+	if !hasTrust(&BannerData{Trust: &TrustInfo{Status: "untrusted"}}) {
+		t.Error("hasTrust should be true when Trust is set")
+	}
+}
+
+func TestCompactBannerWithTrustAndEnvItems(t *testing.T) {
+	data := &BannerData{
+		ContextName: "work",
+		ContextIcon: "💼",
+		AgentName:   "claude",
+		AgentIcon:   "🤖",
+		AgentPath:   "/usr/bin/claude",
+		MatchReason: "path glob: ~/work/**",
+		Trust: &TrustInfo{
+			Status: "untrusted",
+			Path:   "~/work/.aide.yaml",
+			Wants:  TrustWants{Capabilities: []string{"aws"}},
+		},
+		EnvItems: []EnvItem{
+			{Key: "API_KEY", Badge: "🔐", Annotation: "← secrets.api_key"},
+		},
+	}
+	var buf strings.Builder
+	if err := RenderBanner(&buf, "compact", data); err != nil {
+		t.Fatalf("RenderBanner: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "💼 work") {
+		t.Errorf("output missing context icon+name, got:\n%s", out)
+	}
+	if !strings.Contains(out, "🤖 claude") {
+		t.Errorf("output missing agent icon+name, got:\n%s", out)
+	}
+	if !strings.Contains(out, "🚨") {
+		t.Errorf("output missing trust warning emoji, got:\n%s", out)
+	}
+	if !strings.Contains(out, "aws capability") {
+		t.Errorf("output missing trust wants, got:\n%s", out)
+	}
+	if !strings.Contains(out, "🔐") {
+		t.Errorf("output missing env badge, got:\n%s", out)
 	}
 }

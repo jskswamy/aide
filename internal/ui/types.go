@@ -5,12 +5,13 @@ import "time"
 
 // CapabilityDisplay holds per-capability information for banner rendering.
 type CapabilityDisplay struct {
-	Name      string
-	Paths     []string // readable/writable paths granted
-	EnvVars   []string // env vars passed through
-	Source    string   // "context config", "--with", "--without"
-	Disabled  bool     // true if --without excluded this
-	Suggested bool     // true if detected but not enabled
+	Name           string
+	WritablePaths  []string // always shown in full (security-critical)
+	ReadablePaths  []string // may be truncated (informational, lower risk)
+	EnvVars        []string // env vars passed through
+	Source         string   // "context config", "--with", "--without"
+	Disabled       bool     // true if --without excluded this
+	Suggested      bool     // true if detected but not enabled
 
 	// Variant + provenance (added for AIDE-j6m).
 	// Variants: active variant names, e.g. []string{"uv"} or
@@ -44,6 +45,33 @@ type CapabilityDisplay struct {
 	DetectionHint string
 }
 
+// EnvItem represents a single env var entry in the banner env section.
+type EnvItem struct {
+	Key           string // env var name
+	Badge         string // "🔐", "📌", "🔧", "📁", "⚙", "📐", "⊘"
+	Annotation    string // "← secrets.api_key", "= claude-sonnet-4-6", "← aws", "never-allow"
+	ResolvedValue string // redacted resolved value in detailed mode; empty in normal mode
+	CredWarning   bool   // true when this var is a known credential bearer
+	Blocked       bool   // true when blocked by never_allow_env
+}
+
+// TrustInfo carries trust display data populated when .aide.yaml is untrusted or denied.
+type TrustInfo struct {
+	Status string     // "untrusted" | "denied"
+	Path   string     // display path of .aide.yaml (tilde-contracted)
+	Wants  TrustWants // what the untrusted config is requesting
+}
+
+// TrustWants describes what an untrusted .aide.yaml is requesting.
+// All fields are shown in full — no truncation for trust decisions.
+type TrustWants struct {
+	Agent        string
+	Capabilities []string
+	Writable     []string
+	Unguard      []string
+	EnvVars      []string // var names (not a count — names are not sensitive)
+}
+
 // BannerData holds all information needed to render an aide banner.
 type BannerData struct {
 	ContextName string
@@ -51,9 +79,11 @@ type BannerData struct {
 	AgentName   string
 	AgentPath   string
 	SecretName  string
-	SecretKeys  []string          // nil = normal (show count), populated = detailed (list names)
-	Env         map[string]string // key → annotation (e.g. "← secrets.api_key" or "= literal")
-	EnvResolved map[string]string // key → redacted value, nil in normal mode
+	SecretKeys  []string  // nil = normal (show count), populated = detailed (list names)
+	ContextIcon string    // resolved context icon from config; empty if not set
+	AgentIcon   string    // resolved agent icon (config or built-in default); empty if none
+	EnvItems    []EnvItem // replaces Env + EnvResolved + CredWarnings
+	Trust       *TrustInfo // nil when trusted or no project config
 	Sandbox       *SandboxInfo
 	Yolo          bool
 	Warnings      []string
@@ -61,7 +91,6 @@ type BannerData struct {
 	DisabledCaps  []CapabilityDisplay // --without caps
 	SuggestedCaps []CapabilityDisplay // detected but not enabled
 	NeverAllow    []string
-	CredWarnings  []string // "AWS_SECRET_ACCESS_KEY (via aws)"
 	CompWarnings  []string // composition warnings
 	AutoApprove   bool     // replaces Yolo for new banner display
 	// Extra sandbox paths from config (not from capabilities)

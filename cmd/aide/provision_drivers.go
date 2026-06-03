@@ -8,5 +8,7 @@ import (
 	_ "github.com/jskswamy/aide/internal/provision/agents/claude"
 	_ "github.com/jskswamy/aide/internal/provision/agents/codex"
 	_ "github.com/jskswamy/aide/internal/provision/agents/copilot"
+	_ "github.com/jskswamy/aide/internal/provision/agents/cursor"
 	_ "github.com/jskswamy/aide/internal/provision/agents/gemini"
+	_ "github.com/jskswamy/aide/internal/provision/agents/hermes"
 )

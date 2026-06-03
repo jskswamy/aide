@@ -66,18 +66,20 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 		return err
 	}
 
-	// Capability mismatch surfaces here so we don't even build a plan
-	// the engine would refuse to execute.
-	if !env.prov.SupportsPlugins() && len(desired.Plugins) > 0 {
-		return fmt.Errorf("agent %q does not support plugins (declared: %d)", env.prov.Name(), len(desired.Plugins))
-	}
-	if !env.prov.SupportsMCP() && len(desired.MCPServers) > 0 {
-		return fmt.Errorf("agent %q does not support MCP servers (declared: %d)", env.prov.Name(), len(desired.MCPServers))
-	}
+	// Warn and filter Desired fields for capabilities the agent doesn't support.
+	// Sync continues for supported capabilities.
+	warnAndFilterDesired(out, env.prov, &desired)
 
 	installed := provision.Installed{
 		MCPServers:   map[string]provision.MCPServer{},
 		Marketplaces: map[string]provision.Marketplace{},
+	}
+	if hi, ok := env.prov.(provision.HookInstaller); ok {
+		hooks, err := hi.ReadHooks(env.provCtx)
+		if err != nil {
+			return fmt.Errorf("listing installed hooks: %w", err)
+		}
+		installed.Hooks = hooks
 	}
 	if env.prov.SupportsPlugins() {
 		got, err := env.prov.InstalledPlugins(env.provCtx)
@@ -271,6 +273,8 @@ func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan pro
 				delete(cs.MCPServers, op.Name)
 			case provision.KindMarketplace:
 				delete(cs.Marketplaces, op.Name)
+			case provision.KindHook:
+				// hooks are managed via WriteHooks; no per-name map entry to delete
 			}
 		}
 	}
@@ -297,6 +301,15 @@ func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan pro
 		}
 		mi.Source = m.Source
 		cs.Marketplaces[k] = mi
+	}
+	// Hooks: replace managed list entirely with the desired set after sync.
+	cs.Hooks = nil
+	for _, h := range desired.Hooks {
+		cs.Hooks = append(cs.Hooks, provision.ManagedHook{
+			Event:   h.Event,
+			Matcher: h.Matcher,
+			Command: h.Command,
+		})
 	}
 	cs.ConfigHash = hash
 	cs.SyncedAt = now
@@ -355,4 +368,35 @@ func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired) err
 		}
 	}
 	return provision.ResolveSecretsInMCPEnv(desired, td)
+}
+
+// warnAndFilterDesired emits a warning and zeros out Desired fields
+// for capabilities the agent does not support. Sync continues for all
+// capabilities the agent does support.
+func warnAndFilterDesired(out io.Writer, prov provision.Provisioner, d *provision.Desired) {
+	if !prov.SupportsPlugins() && len(d.Plugins) > 0 {
+		fmt.Fprintf(out, "warning: agent %q does not support plugins (%d declared) — skipping\n",
+			prov.Name(), len(d.Plugins))
+		d.Plugins = nil
+		d.Marketplaces = nil
+	}
+	if !prov.SupportsMCP() && len(d.MCPServers) > 0 {
+		fmt.Fprintf(out, "warning: agent %q does not support MCP servers (%d declared) — skipping\n",
+			prov.Name(), len(d.MCPServers))
+		d.MCPServers = nil
+	}
+	if !prov.SupportsHooks() && len(d.Hooks) > 0 {
+		fmt.Fprintf(out, "warning: agent %q does not support hooks (%d declared) — skipping\n",
+			prov.Name(), len(d.Hooks))
+		d.Hooks = nil
+	}
+}
+
+// warnAndFilterHooks is a testable shim used by tests that only need the hooks branch.
+func warnAndFilterHooks(out io.Writer, prov provision.Provisioner, d *provision.Desired) {
+	if !prov.SupportsHooks() && len(d.Hooks) > 0 {
+		fmt.Fprintf(out, "warning: agent %q does not support hooks (%d declared) — skipping\n",
+			prov.Name(), len(d.Hooks))
+		d.Hooks = nil
+	}
 }

@@ -142,10 +142,19 @@ func TestSync_CapabilityMismatch(t *testing.T) {
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
 	)
-	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
-	if err == nil || !strings.Contains(err.Error(), "does not support plugins") {
-		t.Errorf("expected capability mismatch, got %v", err)
+	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	if err != nil {
+		t.Errorf("sync should warn and continue, not error; got %v", err)
 	}
+	if !strings.Contains(out, "does not support plugins") {
+		t.Errorf("expected warning about missing plugin capability, got %q", out)
+	}
+	// The plan should be empty since the unsupported plugins were filtered out.
+	if !strings.Contains(out, "no changes") {
+		t.Errorf("plan should have no changes after filtering unsupported plugins, got %q", out)
+	}
+	// Restore capability flag for next tests.
+	theFakeProv.SupportsPlug = true
 }
 
 func TestSync_ApplyFailure_StateNotUpdated(t *testing.T) {
@@ -220,5 +229,23 @@ contexts:
 	}
 	if !strings.Contains(err.Error(), "secrets") {
 		t.Errorf("error must mention secrets/template misconfiguration; got: %v", err)
+	}
+}
+
+func TestSyncWarnsWhenAgentDoesNotSupportHooks(t *testing.T) {
+	fakeProvReset(t)
+	theFakeProv.SupportsHooksCfg = false
+	var buf bytes.Buffer
+	desired := provision.Desired{
+		Hooks: []provision.Hook{
+			{Event: "pre_tool", Matcher: "shell", Command: "rtk hook codex"},
+		},
+	}
+	warnAndFilterHooks(&buf, theFakeProv, &desired)
+	if len(desired.Hooks) != 0 {
+		t.Errorf("Hooks should be nil after warn-and-filter, got %v", desired.Hooks)
+	}
+	if !strings.Contains(buf.String(), "does not support hooks") {
+		t.Errorf("expected warning, got %q", buf.String())
 	}
 }

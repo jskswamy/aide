@@ -35,6 +35,7 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(untrustCmd())
 	rootCmd.AddCommand(pluginCmd())
 	rootCmd.AddCommand(mcpCmd())
+	rootCmd.AddCommand(hookCmd())
 	rootCmd.AddCommand(syncCmd())
 	rootCmd.AddCommand(adoptCmd())
 }

@@ -1385,3 +1385,16 @@ func TestCompactBannerWithTrustAndEnvItems(t *testing.T) {
 		t.Errorf("output missing env badge, got:\n%s", out)
 	}
 }
+
+func TestTrustWantsLine_TruncatesEnvVars(t *testing.T) {
+	data := &BannerData{Trust: &TrustInfo{
+		Status: "untrusted",
+		Wants: TrustWants{
+			EnvVars: []string{"A", "B", "C", "D", "E"},
+		},
+	}}
+	got := trustWantsLine(data)
+	if !strings.Contains(got, "+2 more") {
+		t.Errorf("trustWantsLine with 5 vars should truncate: got %q", got)
+	}
+}

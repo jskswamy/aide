@@ -57,8 +57,8 @@ func TestResolveEnvDisplay(t *testing.T) {
 
 	t.Run("with secret key", func(t *testing.T) {
 		got := ResolveEnvDisplay("{{ .secrets.api_key }}", "", "api_key", secrets)
-		if got != "sk-ant-v***" {
-			t.Errorf("got %q, want %q", got, "sk-ant-v***")
+		if got != "sk-a••••••••" {
+			t.Errorf("got %q, want %q", got, "sk-a••••••••")
 		}
 	})
 
@@ -89,11 +89,15 @@ func TestRedactValue(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"short", "short***"},
-		{"12345678", "12345678***"},
-		{"123456789", "12345678***"},
-		{"sk-ant-api03-very-long-key", "sk-ant-a***"},
-		{"", "***"},
+		// Short secrets: fixed mask only (no chars exposed)
+		{"abc", "••••••••"},
+		{"12345678", "••••••••"},     // exactly 8 chars
+		{"1234567890123456", "••••••••"}, // exactly 16 chars
+		// Long secrets: 4-char prefix + mask
+		{"sk-ant-api03-very-long-key", "sk-a••••••••"},
+		{"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ", "ghp_••••••••"},
+		// Empty string
+		{"", "••••••••"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

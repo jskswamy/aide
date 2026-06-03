@@ -2,6 +2,44 @@
 
 ### ✨ Features
 
+- **Banner redesign: icons, classified env display, and trust block.**
+  The startup banner is rebuilt around three render styles — `compact`
+  (default), `clean`, and `boxed` — selectable via `--info-style` or
+  `AIDE_INFO_STYLE`. Non-TTY output (CI, pipes) automatically forces
+  `compact` regardless of configured preference.
+
+  Key additions:
+
+  - **Context and agent icons.** `.aide.yaml` contexts and agent blocks
+    now accept an `icon:` field. Up to four Unicode runes are shown
+    before the context/agent name in the banner. Icons are sanitised at
+    render time (see security notes below).
+
+  - **Classified env display.** Environment variables are shown with a
+    source badge instead of a generic marker:
+    - `🔐` — value comes from a named secret
+    - `📌` — value is pinned (declared verbatim in config)
+    - `🔧` — value is derived at runtime (e.g. from host environment)
+    - `⊘` — variable is blocked by a never-allow rule
+    Inline credential warnings (`⚠ credential`) appear on the same line
+    when a value looks like a secret material. Values are aligned with
+    `=` using dynamic key-width padding so they form a consistent column
+    regardless of key length.
+
+  - **Trust block.** When `aide` detects an untrusted `.aide.yaml` in the
+    current directory the banner shows a prominent warning with the file
+    path, the requested capabilities (`wants: …`), and the remediation
+    commands (`aide trust · aide deny · aide --ignore-project-config`).
+    Denied project configs render a different, calmer notice.
+
+  - **`aide prompt` subcommand** for Starship (and similar) prompt
+    integrations. `aide prompt` emits a compact status line — context
+    icon and name, agent, sandbox network label — suitable for embedding
+    in `$PROMPT_COMMAND` or a Starship `custom` block. The output
+    switches to an empty string when aide is not active, so the segment
+    disappears cleanly in ordinary shells. See `docs/cli-reference.md`
+    for the Starship snippet and `--starship-config` flag.
+
 - **Declarative hook management for five coding agents.** A new `hooks:`
   config block and `aide hook` CLI let you declare agent lifecycle hooks in
   `config.yaml` and reconcile them into each agent's config via `aide sync`
@@ -51,8 +89,40 @@
   aide sync   # writes to agent config
   ```
 
-
 ### 🔒 Security
+
+- **Banner security hardening (five mitigations).**
+
+  - **Fixed-length redaction mask.** `RedactValue` previously returned a
+    mask whose length matched the secret — leaking the byte-length of
+    secrets visible in the banner. The mask is now a fixed eight-character
+    string (`••••••••`) regardless of input length.
+
+  - **Icon injection prevention.** `SanitizeIcon` strips Unicode control
+    characters (category C, which includes ANSI escape sequences, newlines,
+    and null bytes) from user-controlled `icon:` fields before any render
+    site touches them. Icons are also capped at four runes, preventing
+    run-on strings from overflowing banner columns. Applied at all three
+    render sites: compact, clean, and boxed templates.
+
+  - **Never-allow env vars filtered before exec.** `filterNeverAllowEnv`
+    runs immediately before `syscall.Exec` so variables matched by a
+    `never-allow` rule are unconditionally removed from the inheritable
+    environment even if they were present in `os.Environ()`. Prior to this
+    change the banner noted them as blocked but the vars still reached the
+    agent subprocess.
+
+  - **`trustWantsLine` output truncated.** The `wants:` summary in the
+    trust warning block now caps each list at three items (with `(+N more)`
+    overflow) and each item at a safe display length. Previously the line
+    was built directly from untrusted `.aide.yaml` content without any
+    bound, making excessively long capability lists a terminal-overflow
+    vector.
+
+  - **`applyTrustGate` fails closed.** If the trust gate cannot read its
+    configuration file it now returns an error rather than silently
+    allowing the session to proceed as trusted. A file that cannot be read
+    is treated the same as a file that does not grant trust.
 
 - **Bump `github.com/go-git/go-git/v5` from 5.19.0 to 5.19.1.**
   Closes two upstream advisories surfaced by Dependabot against the

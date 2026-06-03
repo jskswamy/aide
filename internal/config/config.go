@@ -115,6 +115,8 @@ func normalizeMinimal(cfg *Config) *Config {
 				Yolo:           cfg.Yolo,
 			},
 		},
+		NeverAllow:     cfg.NeverAllow,
+		NeverAllowEnv:  cfg.NeverAllowEnv,
 		MCPServers:     cfg.MCPServers,
 		DefaultContext: "default",
 		Preferences:    cfg.Preferences,

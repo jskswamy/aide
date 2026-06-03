@@ -54,6 +54,26 @@ func isStdoutTTY() bool {
 	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
+// filterNeverAllowEnv removes any entry from env whose key is in the blocked set.
+// This prevents never-allow variables from reaching the agent process.
+func filterNeverAllowEnv(env []string, blocked []string) []string {
+	if len(blocked) == 0 {
+		return env
+	}
+	blockedSet := make(map[string]bool, len(blocked))
+	for _, k := range blocked {
+		blockedSet[k] = true
+	}
+	result := env[:0:0] // avoid aliasing
+	for _, e := range env {
+		k, _, _ := strings.Cut(e, "=")
+		if !blockedSet[k] {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
 // agentYoloFlags maps agent names to their "skip all permissions" flags.
 var agentYoloFlags = map[string]string{
 	"claude":  "--dangerously-skip-permissions",
@@ -334,6 +354,19 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		sandboxCfg.Network.Mode = "unrestricted"
 		sandboxCfg.Network.AllowPorts = nil
 		sandboxCfg.Network.DenyPorts = nil
+	}
+
+	// Filter never-allow env vars from the agent's environment.
+	// Combine top-level config and capability-resolved never-allow vars.
+	var blockedVars []string
+	if len(cfg.NeverAllowEnv) > 0 {
+		blockedVars = append(blockedVars, cfg.NeverAllowEnv...)
+	}
+	if resolvedCapSet != nil && len(resolvedCapSet.NeverAllowEnv) > 0 {
+		blockedVars = append(blockedVars, resolvedCapSet.NeverAllowEnv...)
+	}
+	if len(blockedVars) > 0 {
+		env = filterNeverAllowEnv(env, blockedVars)
 	}
 
 	var pathWarnings []string
@@ -825,10 +858,13 @@ func (l *Launcher) applyTrustGate(cfg *config.Config) *ui.TrustInfo {
 	}
 	absPath, err := filepath.Abs(cfg.ProjectConfigPath)
 	if err != nil {
+		cfg.ProjectOverride = nil
 		return nil
 	}
 	contents, err := os.ReadFile(absPath)
 	if err != nil {
+		cfg.ProjectOverride = nil
+		fmt.Fprintf(l.stderr(), "warning: could not read %s for trust check: %v — project config not applied\n", absPath, err)
 		return nil
 	}
 

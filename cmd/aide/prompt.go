@@ -9,6 +9,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/trust"
+	"github.com/jskswamy/aide/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -75,12 +76,12 @@ func promptCmd() *cobra.Command {
 func formatPromptLine(ctx, ctxIcon, agentIcon string, sbDisabled bool, trustStatus string) string {
 	parts := []string{ctx}
 
-	if ctxIcon != "" {
-		parts = append(parts, ctxIcon)
+	if s := ui.SanitizeIcon(ctxIcon); s != "" {
+		parts = append(parts, s)
 	}
 
-	if agentIcon != "" {
-		parts = append(parts, agentIcon)
+	if s := ui.SanitizeIcon(agentIcon); s != "" {
+		parts = append(parts, s)
 	}
 
 	// Append trust/sandbox icons based on trust status

@@ -172,3 +172,48 @@ func TestRemoveFromSlice(t *testing.T) {
 	}
 }
 
+func TestBadgeForSource(t *testing.T) {
+	tests := []struct {
+		source string
+		want   string
+	}{
+		{"from secrets.api_key", "🔐"},
+		{"from secrets.token", "🔐"},
+		{"from project_root", "📁"},
+		{"from runtime_dir", "⚙"},
+		{"template", "📐"},
+		{"literal", "📌"},
+		{"unknown", "📌"}, // fallback
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			got := BadgeForSource(tt.source)
+			if got != tt.want {
+				t.Errorf("BadgeForSource(%q) = %q, want %q", tt.source, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultAgentIcons(t *testing.T) {
+	tests := []struct {
+		agent string
+		want  string
+	}{
+		{"claude", "🤖"},
+		{"gemini", "✨"},
+		{"codex", "📝"},
+		{"copilot", "✈️"},
+		{"cursor", "🖱"},
+		{"unknown", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.agent, func(t *testing.T) {
+			got := DefaultAgentIcons[tt.agent]
+			if got != tt.want {
+				t.Errorf("DefaultAgentIcons[%q] = %q, want %q", tt.agent, got, tt.want)
+			}
+		})
+	}
+}
+

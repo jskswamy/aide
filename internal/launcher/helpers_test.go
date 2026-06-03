@@ -1,7 +1,6 @@
 package launcher
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -150,10 +149,13 @@ func TestApplyTrustGate(t *testing.T) {
 			ProjectOverride:   po,
 		}
 		l := &Launcher{TrustStore: store}
-		l.applyTrustGate(cfg)
+		trustInfo := l.applyTrustGate(cfg)
 
 		if cfg.ProjectOverride == nil {
 			t.Error("trusted file should keep ProjectOverride")
+		}
+		if trustInfo != nil {
+			t.Error("trusted file should return nil TrustInfo")
 		}
 	})
 
@@ -169,10 +171,16 @@ func TestApplyTrustGate(t *testing.T) {
 			ProjectOverride:   po,
 		}
 		l := &Launcher{TrustStore: store}
-		l.applyTrustGate(cfg)
+		trustInfo := l.applyTrustGate(cfg)
 
 		if cfg.ProjectOverride != nil {
 			t.Error("denied file should nil out ProjectOverride")
+		}
+		if trustInfo == nil {
+			t.Error("denied file should return TrustInfo")
+		}
+		if trustInfo != nil && trustInfo.Status != "denied" {
+			t.Errorf("expected status 'denied', got: %q", trustInfo.Status)
 		}
 	})
 
@@ -180,57 +188,101 @@ func TestApplyTrustGate(t *testing.T) {
 		store := trust.NewStore(filepath.Join(t.TempDir(), "trust"))
 		// Don't trust or deny — file is untrusted by default
 
-		var stderrBuf bytes.Buffer
 		po := &config.ProjectOverride{Agent: "claude"}
 		cfg := &config.Config{
 			ProjectConfigPath: aidePath,
 			ProjectOverride:   po,
 		}
-		l := &Launcher{TrustStore: store, Stderr: &stderrBuf}
-		l.applyTrustGate(cfg)
+		l := &Launcher{TrustStore: store}
+		trustInfo := l.applyTrustGate(cfg)
 
 		if cfg.ProjectOverride != nil {
 			t.Error("untrusted file should nil out ProjectOverride")
 		}
-		if !strings.Contains(stderrBuf.String(), "not trusted") {
-			t.Errorf("expected 'not trusted' warning, got: %q", stderrBuf.String())
+		if trustInfo == nil {
+			t.Error("untrusted file should return TrustInfo")
+		}
+		if trustInfo != nil && trustInfo.Status != "untrusted" {
+			t.Errorf("expected status 'untrusted', got: %q", trustInfo.Status)
+		}
+		if trustInfo != nil && trustInfo.Wants.Agent != "claude" {
+			t.Errorf("expected agent 'claude' in TrustInfo, got: %q", trustInfo.Wants.Agent)
 		}
 	})
 }
 
-func TestPrintUntrustedWarning(t *testing.T) {
-	t.Run("with agent only", func(t *testing.T) {
-		var buf bytes.Buffer
-		po := &config.ProjectOverride{Agent: "claude"}
-		printUntrustedWarning(&buf, "/path/to/.aide.yaml", po)
+func TestBuildTrustInfo(t *testing.T) {
+	homeDir := "/home/user"
 
-		output := buf.String()
-		if !strings.Contains(output, "not trusted") {
-			t.Errorf("expected 'not trusted' in output, got %q", output)
+	t.Run("with agent only", func(t *testing.T) {
+		po := &config.ProjectOverride{Agent: "claude"}
+		info := buildTrustInfo("/path/to/.aide.yaml", homeDir, po)
+
+		if info == nil {
+			t.Fatalf("expected TrustInfo, got nil")
 		}
-		if !strings.Contains(output, "claude") {
-			t.Errorf("expected agent name 'claude' in output, got %q", output)
+		if info.Status != "untrusted" {
+			t.Errorf("expected status 'untrusted', got %q", info.Status)
 		}
-		if !strings.Contains(output, "aide trust") {
-			t.Errorf("expected 'aide trust' hint in output, got %q", output)
+		if info.Wants.Agent != "claude" {
+			t.Errorf("expected agent 'claude', got %q", info.Wants.Agent)
 		}
 	})
 
 	t.Run("with capabilities and env", func(t *testing.T) {
-		var buf bytes.Buffer
 		po := &config.ProjectOverride{
 			Agent:        "claude",
 			Capabilities: []string{"network", "filesystem"},
 			Env:          map[string]string{"FOO": "bar", "BAZ": "qux"},
 		}
-		printUntrustedWarning(&buf, "/tmp/.aide.yaml", po)
+		info := buildTrustInfo("/tmp/.aide.yaml", homeDir, po)
 
-		output := buf.String()
-		if !strings.Contains(output, "network") {
-			t.Errorf("expected capabilities in output, got %q", output)
+		if info == nil {
+			t.Fatalf("expected TrustInfo, got nil")
 		}
-		if !strings.Contains(output, "2 configured") {
-			t.Errorf("expected env count in output, got %q", output)
+		if info.Status != "untrusted" {
+			t.Errorf("expected status 'untrusted', got %q", info.Status)
+		}
+		if len(info.Wants.Capabilities) != 2 {
+			t.Errorf("expected 2 capabilities, got %d", len(info.Wants.Capabilities))
+		}
+		if len(info.Wants.EnvVars) != 2 {
+			t.Errorf("expected 2 env vars, got %d: %v", len(info.Wants.EnvVars), info.Wants.EnvVars)
+		}
+		// Check that env vars are sorted
+		if info.Wants.EnvVars[0] != "BAZ" || info.Wants.EnvVars[1] != "FOO" {
+			t.Errorf("expected env vars sorted [BAZ, FOO], got %v", info.Wants.EnvVars)
+		}
+	})
+
+	t.Run("with sandbox overrides", func(t *testing.T) {
+		po := &config.ProjectOverride{
+			Agent: "claude",
+			Sandbox: &config.SandboxPolicy{
+				WritableExtra: []string{"/tmp", "/var/tmp"},
+			},
+		}
+		info := buildTrustInfo("/path/.aide.yaml", homeDir, po)
+
+		if info == nil {
+			t.Fatalf("expected TrustInfo, got nil")
+		}
+		if len(info.Wants.Writable) != 2 {
+			t.Errorf("expected 2 writable paths, got %d", len(info.Wants.Writable))
+		}
+	})
+
+	t.Run("with nil ProjectOverride", func(t *testing.T) {
+		info := buildTrustInfo("/path/.aide.yaml", homeDir, nil)
+
+		if info == nil {
+			t.Fatalf("expected TrustInfo, got nil")
+		}
+		if info.Status != "untrusted" {
+			t.Errorf("expected status 'untrusted', got %q", info.Status)
+		}
+		if info.Wants.Agent != "" {
+			t.Errorf("expected empty agent, got %q", info.Wants.Agent)
 		}
 	})
 }

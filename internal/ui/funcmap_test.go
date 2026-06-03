@@ -16,8 +16,9 @@ func TestColorFuncMap_HasAllKeys(t *testing.T) {
 	fm := colorFuncMap()
 	required := []string{
 		"bold", "green", "boldGreen", "yellow", "dim", "red", "cyan",
-		"agentDisplay", "secretDisplay", "envLines", "networkLabel",
-		"truncate", "join", "hasItems", "slice",
+		"agentDisplay", "secretDisplay", "envItemLines", "hasTrust",
+		"trustStatusLine", "trustWantsLine", "contextIconDisplay", "agentIconPrefix",
+		"networkLabel", "truncate", "capPaths", "join", "hasItems", "slice",
 		"sandboxDisabled", "sandboxPorts", "hasCapOrExtra",
 	}
 	for _, key := range required {
@@ -25,6 +26,36 @@ func TestColorFuncMap_HasAllKeys(t *testing.T) {
 			t.Errorf("colorFuncMap missing key %q", key)
 		}
 	}
+	if _, ok := fm["envLines"]; ok {
+		t.Error("colorFuncMap should not contain legacy envLines")
+	}
+}
+
+func TestCapPaths(t *testing.T) {
+	fm := colorFuncMap()
+	capPathsFn := mustGet[func(CapabilityDisplay) string](t, fm, "capPaths")
+
+	t.Run("writable only", func(t *testing.T) {
+		cd := CapabilityDisplay{WritablePaths: []string{"~/work"}}
+		got := capPathsFn(cd)
+		if got != "~/work" {
+			t.Errorf("got %q, want ~/work", got)
+		}
+	})
+	t.Run("readable truncated", func(t *testing.T) {
+		cd := CapabilityDisplay{ReadablePaths: []string{"a", "b", "c", "d"}}
+		got := capPathsFn(cd)
+		if !strings.Contains(got, "+1 more") {
+			t.Errorf("got %q, want (+1 more)", got)
+		}
+	})
+	t.Run("writable + readable", func(t *testing.T) {
+		cd := CapabilityDisplay{WritablePaths: []string{"~/w"}, ReadablePaths: []string{"~/r"}}
+		got := capPathsFn(cd)
+		if got != "~/w, ~/r" {
+			t.Errorf("got %q, want ~/w, ~/r", got)
+		}
+	})
 }
 
 // mustGet is a test helper that extracts and type-asserts a FuncMap entry.

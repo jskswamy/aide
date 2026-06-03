@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"text/template"
 	"time"
@@ -23,11 +24,27 @@ func colorFuncMap() template.FuncMap {
 		"cyan":      func(s string) string { return color.New(color.FgCyan).Sprint(s) },
 
 		// Data helpers (wrapping existing functions)
-		"agentDisplay":  agentDisplay,
-		"secretDisplay": secretDisplay,
-		"envLines":      envLines,
-		"networkLabel":  sandboxNetworkLabel,
-		"truncate":      truncateList,
+		"agentDisplay":      agentDisplay,
+		"secretDisplay":     secretDisplay,
+		"envItemLines":      envItemLines,
+		"hasTrust":          hasTrust,
+		"trustStatusLine":   trustStatusLine,
+		"trustWantsLine":    trustWantsLine,
+		"contextIconDisplay": contextIconDisplay,
+		"agentIconPrefix":   agentIconPrefix,
+		"networkLabel":      sandboxNetworkLabel,
+		"truncate":          truncateList,
+		"capPaths": func(cd CapabilityDisplay) string {
+			var parts []string
+			parts = append(parts, cd.WritablePaths...)
+			if len(cd.ReadablePaths) > 3 {
+				shown := strings.Join(cd.ReadablePaths[:3], ", ")
+				parts = append(parts, shown+fmt.Sprintf(" (+%d more)", len(cd.ReadablePaths)-3))
+			} else {
+				parts = append(parts, cd.ReadablePaths...)
+			}
+			return strings.Join(parts, ", ")
+		},
 
 		// Variant + provenance helpers (Tier 1 + Tier 2)
 		"variantSuffix":     variantSuffix,

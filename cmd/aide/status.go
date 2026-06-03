@@ -231,13 +231,12 @@ func whichCmd() *cobra.Command {
 				SecretName:  resolved.Context.Secret,
 			}
 
-			// Build env annotations
-			if len(resolved.Context.Env) > 0 {
-				data.Env = make(map[string]string, len(resolved.Context.Env))
-				for k, v := range resolved.Context.Env {
-					source, _ := display.ClassifyEnvSource(v)
-					data.Env[k] = "← " + source
-				}
+			// Add context and agent icons
+			data.ContextIcon = resolved.Context.Icon
+			if agentDef, ok := cfg.Agents[resolved.Context.Agent]; ok {
+				data.AgentIcon = launcher.ResolveAgentIcon(resolved.Context.Agent, &agentDef)
+			} else {
+				data.AgentIcon = launcher.ResolveAgentIcon(resolved.Context.Agent, nil)
 			}
 
 			// In resolve mode, populate detailed fields
@@ -259,17 +258,18 @@ func whichCmd() *cobra.Command {
 						}
 					}
 				}
+			}
 
-				// Resolve env values
-				if len(resolved.Context.Env) > 0 {
-					data.EnvResolved = make(map[string]string, len(resolved.Context.Env))
-					for k, v := range resolved.Context.Env {
-						_, secretKey := display.ClassifyEnvSource(v)
-						displayVal := display.ResolveEnvDisplay(v, "", secretKey, secretMap)
-						data.EnvResolved[k] = display.RedactValue(displayVal)
-					}
+			// Build unified env items (no capabilities in aide which — context env only)
+			var resolvedValues map[string]string
+			if resolve && len(resolved.Context.Env) > 0 {
+				resolvedValues = make(map[string]string, len(resolved.Context.Env))
+				for k, v := range resolved.Context.Env {
+					_, secretKey := display.ClassifyEnvSource(v)
+					resolvedValues[k] = display.ResolveEnvDisplay(v, "", secretKey, secretMap)
 				}
 			}
+			data.EnvItems = launcher.BuildEnvItems(resolved.Context.Env, nil, nil, resolvedValues)
 
 			// Build sandbox info
 			resolvedSandbox, sbDisabled, _ := sandbox.ResolveSandboxRef(resolved.Context.Sandbox, cfg.Sandboxes)

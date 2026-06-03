@@ -93,6 +93,10 @@ type Provisioner interface {
 	// agent/shape compatibility.
 	SupportedSourceShapes() []SourceShape
 
+	// SupportsHooks reports whether this agent supports hook injection
+	// via the HookInstaller interface.
+	SupportsHooks() bool
+
 	// InstalledMarketplaces returns the marketplaces currently
 	// registered in the agent's profile. For drivers that don't
 	// support marketplaces, returns nil, nil.
@@ -162,6 +166,44 @@ type MCPHandler interface {
 	Write(path string, desired map[string]MCPServer) error
 }
 
+// Hook is aide's internal, agent-neutral hook representation.
+// Drivers receive a []Hook and translate to their native format.
+type Hook struct {
+	Event   string // normalized event name, e.g. "pre_tool"
+	Matcher string // normalized matcher, e.g. "shell"; empty = all tools
+	Command string // after {agent} substitution
+	Timeout int    // seconds; 0 = driver default
+}
+
+// TemplateVar describes one substitution variable in hook commands.
+type TemplateVar struct {
+	Name        string
+	Description string
+}
+
+// HookTemplateVars is the registry of hook command template variables.
+// Drives CLI help and interactive prompts.
+var HookTemplateVars = []TemplateVar{
+	{Name: "agent", Description: "replaced with the agent name for each context"},
+}
+
+// HookInstaller is the file-edit interface for hook management. Drivers
+// implement it when the agent has no CLI surface for hook management.
+// Ownership is tracked in managed.json (not via in-file markers).
+type HookInstaller interface {
+	// ReadHooks returns all hooks from the agent's config — both aide-managed
+	// and user-added. Used for adoption detection and drift comparison.
+	// For file-based formats (Gemini, Copilot, Hermes) that use naming
+	// prefixes (aide_*) as ownership, only aide-prefixed entries are returned;
+	// scanning arbitrary user scripts is not supported for those formats.
+	ReadHooks(ctx Context) ([]Hook, error)
+	// WriteHooks atomically reconciles hooks in the agent's config.
+	// prevManaged is the set aide previously managed (entries to remove);
+	// desired is the new set aide should manage (entries to add).
+	// User-added hooks not in prevManaged are left untouched.
+	WriteHooks(ctx Context, prevManaged []Hook, desired []Hook) error
+}
+
 // OpKind enumerates the operations a sync plan can contain.
 type OpKind int
 
@@ -200,6 +242,7 @@ const (
 	KindPlugin Kind = iota
 	KindMCP
 	KindMarketplace
+	KindHook
 )
 
 func (k Kind) String() string {
@@ -210,6 +253,8 @@ func (k Kind) String() string {
 		return "mcp"
 	case KindMarketplace:
 		return "marketplace"
+	case KindHook:
+		return "hook"
 	default:
 		return "unknown"
 	}
@@ -262,12 +307,15 @@ type Op struct {
 	MCP         *MCPServer   // populated for KindMCP install/update/adopt
 	OldMCP      *MCPServer   // populated for KindMCP update (for rollback)
 	Marketplace *Marketplace // populated for KindMarketplace install
+	Hook        *Hook        // populated for KindHook install/uninstall
 }
 
 // Plan is the ordered list of operations to apply for one context.
 type Plan struct {
-	Context Context
-	Ops     []Op
+	Context     Context
+	Ops         []Op
+	HookManaged []ManagedHook // hooks managed before this plan (for WriteHooks removal)
+	HookDesired []Hook        // full desired hook set (for WriteHooks addition)
 }
 
 // HasMutations reports whether the plan would change anything when

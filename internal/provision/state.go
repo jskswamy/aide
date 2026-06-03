@@ -25,16 +25,25 @@ type ManagedItem struct {
 	Source      string    `json:"source,omitempty"`
 }
 
+// ManagedHook records the identity of one aide-managed hook entry.
+type ManagedHook struct {
+	Event   string `json:"event"`
+	Matcher string `json:"matcher,omitempty"`
+	Command string `json:"command"`
+}
+
 // ContextState is per-context managed item tracking. ConfigHash and
 // SyncedAt are per-context so each context's drift signal is
 // independent — a successful sync in one context does not silence
 // the drift banner for another.
 type ContextState struct {
-	ConfigHash   string                 `json:"config_hash,omitempty"`
-	SyncedAt     time.Time              `json:"synced_at,omitempty"`
-	Plugins      map[string]ManagedItem `json:"plugins,omitempty"`
-	MCPServers   map[string]ManagedItem `json:"mcp_servers,omitempty"`
-	Marketplaces map[string]ManagedItem `json:"marketplaces,omitempty"`
+	ConfigHash     string                 `json:"config_hash,omitempty"`
+	HookConfigHash string                 `json:"hook_config_hash,omitempty"`
+	SyncedAt       time.Time              `json:"synced_at,omitempty"`
+	Plugins        map[string]ManagedItem `json:"plugins,omitempty"`
+	MCPServers     map[string]ManagedItem `json:"mcp_servers,omitempty"`
+	Marketplaces   map[string]ManagedItem `json:"marketplaces,omitempty"`
+	Hooks          []ManagedHook          `json:"hooks,omitempty"`
 }
 
 // ManagedState is the on-disk shape of ~/.local/state/aide/managed.json.

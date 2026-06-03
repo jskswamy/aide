@@ -10,6 +10,7 @@ type Desired struct {
 	Plugins      map[string]Plugin
 	MCPServers   map[string]MCPServer
 	Marketplaces map[string]Marketplace
+	Hooks        []Hook
 }
 
 // Installed is what the agent currently reports.
@@ -21,6 +22,9 @@ type Installed struct {
 	MCPServers map[string]MCPServer
 	// Marketplaces maps key → marketplace as registered in the agent.
 	Marketplaces map[string]Marketplace
+	// Hooks is the full list of hooks present in the agent's config,
+	// including user-added entries. Used for adoption detection.
+	Hooks []Hook
 }
 
 // ComputePlan diffs desired/installed/managed and returns the ordered
@@ -157,6 +161,60 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 		})
 	}
 
+	// --- Hooks (3-way diff: desired vs installed vs managed) ---
+	managedHookSet := map[string]bool{}
+	for _, mh := range managed.Hooks {
+		managedHookSet[HookKey(mh.Event, mh.Matcher, mh.Command)] = true
+	}
+	desiredHookSet := map[string]bool{}
+	for _, h := range desired.Hooks {
+		desiredHookSet[HookKey(h.Event, h.Matcher, h.Command)] = true
+	}
+	installedHookSet := map[string]bool{}
+	for _, h := range installed.Hooks {
+		installedHookSet[HookKey(h.Event, h.Matcher, h.Command)] = true
+	}
+	// desired + not installed → install (also covers managed+desired+missing in agent)
+	for _, h := range desired.Hooks {
+		key := HookKey(h.Event, h.Matcher, h.Command)
+		if installedHookSet[key] {
+			continue
+		}
+		hh := h
+		installs = append(installs, Op{
+			Kind:   KindHook,
+			OpKind: OpInstall,
+			Name:   h.Event + ":" + h.Command,
+			Hook:   &hh,
+		})
+	}
+	// managed + not desired → uninstall
+	for _, mh := range managed.Hooks {
+		if !desiredHookSet[HookKey(mh.Event, mh.Matcher, mh.Command)] {
+			h := Hook{Event: mh.Event, Matcher: mh.Matcher, Command: mh.Command}
+			uninstalls = append(uninstalls, Op{
+				Kind:   KindHook,
+				OpKind: OpUninstall,
+				Name:   mh.Event + ":" + mh.Command,
+				Hook:   &h,
+			})
+		}
+	}
+	// installed + not managed + not desired → OpIgnore (adoption candidate)
+	for _, h := range installed.Hooks {
+		key := HookKey(h.Event, h.Matcher, h.Command)
+		if desiredHookSet[key] || managedHookSet[key] {
+			continue
+		}
+		hh := h
+		ignores = append(ignores, Op{
+			Kind:   KindHook,
+			OpKind: OpIgnore,
+			Name:   h.Event + ":" + h.Command,
+			Hook:   &hh,
+		})
+	}
+
 	sortOps := func(o []Op) { sort.Slice(o, func(i, j int) bool { return o[i].Name < o[j].Name }) }
 	sortOps(marketplaceInstalls)
 	sortOps(marketplaceUninstalls)
@@ -175,7 +233,12 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 	all = append(all, uninstalls...)
 	all = append(all, marketplaceUninstalls...)
 	all = append(all, ignores...)
-	return Plan{Context: ctx, Ops: all}
+	return Plan{
+		Context:     ctx,
+		Ops:         all,
+		HookManaged: managed.Hooks,
+		HookDesired: desired.Hooks,
+	}
 }
 
 // extractVersion returns the substring after "@" in name, or "" if absent.
@@ -209,3 +272,4 @@ func mcpEqual(a, b MCPServer) bool {
 	}
 	return true
 }
+

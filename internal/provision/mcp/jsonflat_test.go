@@ -58,7 +58,7 @@ func TestJSONFlatWritePreservesUnmanaged(t *testing.T) {
 
 	raw, _ := os.ReadFile(path)
 	var doc struct {
-		AideManaged []string                       `json:"_aide_managed"`
+		AideManaged []string                  `json:"_aide_managed"`
 		Servers     map[string]map[string]any `json:"mcpServers"`
 	}
 	_ = json.Unmarshal(raw, &doc)
@@ -90,7 +90,7 @@ func TestJSONFlatWriteRemovesPreviouslyManaged(t *testing.T) {
 
 	raw, _ := os.ReadFile(path)
 	var doc struct {
-		AideManaged []string                       `json:"_aide_managed"`
+		AideManaged []string                  `json:"_aide_managed"`
 		Servers     map[string]map[string]any `json:"mcpServers"`
 	}
 	_ = json.Unmarshal(raw, &doc)

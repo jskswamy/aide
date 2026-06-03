@@ -177,6 +177,43 @@ func Apply(prov Provisioner, plan Plan, opts ApplyOptions) (ApplyResult, error) 
 				return res, fmt.Errorf("%s MCP %q: %w", op.OpKind, op.Name, err)
 			}
 			res.Performed++
+
+		case KindHook:
+			// handled in post-loop hook reconcile
+			continue
+		}
+	}
+
+	// Hook ops: batch all installs/uninstalls into a single WriteHooks call.
+	// managed.json (plan.HookManaged) is the ownership record; WriteHooks
+	// removes prevManaged entries and adds the new desired set in one shot.
+	hasHookOps := false
+	for _, op := range plan.Ops {
+		if op.Kind == KindHook && (op.OpKind == OpInstall || op.OpKind == OpUninstall) {
+			hasHookOps = true
+			break
+		}
+	}
+	if hasHookOps {
+		hi, ok := prov.(HookInstaller)
+		if ok {
+			prevManaged := make([]Hook, len(plan.HookManaged))
+			for i, mh := range plan.HookManaged {
+				prevManaged[i] = Hook{Event: mh.Event, Matcher: mh.Matcher, Command: mh.Command}
+			}
+			desired := plan.HookDesired
+			prev := prevManaged
+			// Rollback reverses the operation: remove desired, restore prevManaged.
+			j.Record(func() error { return hi.WriteHooks(plan.Context, desired, prev) })
+			if err := hi.WriteHooks(plan.Context, prev, desired); err != nil {
+				_ = j.Rollback()
+				return res, fmt.Errorf("write hooks: %w", err)
+			}
+			for _, op := range plan.Ops {
+				if op.Kind == KindHook && (op.OpKind == OpInstall || op.OpKind == OpUninstall) {
+					res.Performed++
+				}
+			}
 		}
 	}
 

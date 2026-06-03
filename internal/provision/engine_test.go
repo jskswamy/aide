@@ -168,3 +168,51 @@ func TestSyncCapabilityMismatchErrors(t *testing.T) {
 		t.Errorf("expected capability error, got %v", err)
 	}
 }
+
+func TestEngineInstallsHook(t *testing.T) {
+	h := provision.Hook{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"}
+	fp := &provisiontest.FakeProvisionerWithHookInstaller{
+		FakeProvisioner: &provisiontest.FakeProvisioner{
+			AgentName:        "claude",
+			SupportsHooksCfg: true,
+		},
+	}
+	desired := provision.Desired{Hooks: []provision.Hook{h}}
+	plan := provision.ComputePlan(provision.Context{Name: "work", Agent: "claude"}, desired, provision.Installed{}, provision.ContextState{})
+	res, err := provision.Apply(fp, plan, provision.ApplyOptions{})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if res.Performed != 1 {
+		t.Errorf("performed = %d, want 1", res.Performed)
+	}
+	if len(fp.StoredHooks) != 1 || fp.StoredHooks[0].Command != "rtk hook claude" {
+		t.Errorf("stored hooks = %+v", fp.StoredHooks)
+	}
+}
+
+func TestEngineUninstallsHook(t *testing.T) {
+	h := provision.Hook{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"}
+	fp := &provisiontest.FakeProvisionerWithHookInstaller{
+		FakeProvisioner: &provisiontest.FakeProvisioner{
+			AgentName:        "claude",
+			SupportsHooksCfg: true,
+		},
+		StoredHooks: []provision.Hook{h},
+	}
+	desired := provision.Desired{}
+	managed := provision.ContextState{
+		Hooks: []provision.ManagedHook{{Event: h.Event, Matcher: h.Matcher, Command: h.Command}},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "work", Agent: "claude"}, desired, provision.Installed{}, managed)
+	res, err := provision.Apply(fp, plan, provision.ApplyOptions{})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if res.Performed != 1 {
+		t.Errorf("performed = %d, want 1", res.Performed)
+	}
+	if len(fp.StoredHooks) != 0 {
+		t.Errorf("StoredHooks should be empty after uninstall, got %+v", fp.StoredHooks)
+	}
+}

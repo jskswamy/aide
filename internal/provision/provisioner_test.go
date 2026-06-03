@@ -46,3 +46,9 @@ func TestOpKindStrings(t *testing.T) {
 		}
 	}
 }
+
+func TestKindHookString(t *testing.T) {
+	if provision.KindHook.String() != "hook" {
+		t.Errorf("KindHook.String() = %q, want %q", provision.KindHook.String(), "hook")
+	}
+}

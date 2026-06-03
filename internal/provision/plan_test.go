@@ -119,3 +119,98 @@ func TestComputePlanInstallsMarketplaceFirst(t *testing.T) {
 		t.Errorf("second op kind = %v, want plugin", plan.Ops[1].Kind)
 	}
 }
+
+func TestComputePlanHookInstall(t *testing.T) {
+	h := provision.Hook{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"}
+	desired := provision.Desired{Hooks: []provision.Hook{h}}
+	plan := provision.ComputePlan(provision.Context{Name: "work"}, desired, provision.Installed{}, provision.ContextState{})
+
+	var hookOps []provision.Op
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindHook {
+			hookOps = append(hookOps, op)
+		}
+	}
+	if len(hookOps) != 1 || hookOps[0].OpKind != provision.OpInstall {
+		t.Fatalf("hook ops = %+v, want 1 install", hookOps)
+	}
+	if hookOps[0].Hook == nil || hookOps[0].Hook.Command != "rtk hook claude" {
+		t.Errorf("op.Hook = %+v", hookOps[0].Hook)
+	}
+}
+
+func TestComputePlanHookUninstallWhenManagedButNotDesired(t *testing.T) {
+	managed := provision.ContextState{
+		Hooks: []provision.ManagedHook{
+			{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"},
+		},
+	}
+	desired := provision.Desired{} // hook removed from config
+	plan := provision.ComputePlan(provision.Context{Name: "work"}, desired, provision.Installed{}, managed)
+
+	var hookOps []provision.Op
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindHook {
+			hookOps = append(hookOps, op)
+		}
+	}
+	if len(hookOps) != 1 || hookOps[0].OpKind != provision.OpUninstall {
+		t.Fatalf("hook ops = %+v, want 1 uninstall", hookOps)
+	}
+}
+
+func TestComputePlanHookNoOpWhenAlreadyManagedAndInstalled(t *testing.T) {
+	h := provision.ManagedHook{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"}
+	managed := provision.ContextState{Hooks: []provision.ManagedHook{h}}
+	desired := provision.Desired{
+		Hooks: []provision.Hook{{Event: h.Event, Matcher: h.Matcher, Command: h.Command}},
+	}
+	// Hook is present in agent config (installed) AND in managed.json → no-op.
+	installed := provision.Installed{
+		Hooks: []provision.Hook{{Event: h.Event, Matcher: h.Matcher, Command: h.Command}},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "work"}, desired, installed, managed)
+
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindHook {
+			t.Errorf("expected no hook ops, got %+v", op)
+		}
+	}
+}
+
+func TestComputePlanHookReinstallWhenManagedButMissingFromAgent(t *testing.T) {
+	h := provision.ManagedHook{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"}
+	managed := provision.ContextState{Hooks: []provision.ManagedHook{h}}
+	desired := provision.Desired{
+		Hooks: []provision.Hook{{Event: h.Event, Matcher: h.Matcher, Command: h.Command}},
+	}
+	// Hook is managed in managed.json but NOT present in agent config (e.g., deleted externally).
+	plan := provision.ComputePlan(provision.Context{Name: "work"}, desired, provision.Installed{}, managed)
+
+	var hookOps []provision.Op
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindHook {
+			hookOps = append(hookOps, op)
+		}
+	}
+	if len(hookOps) != 1 || hookOps[0].OpKind != provision.OpInstall {
+		t.Fatalf("expected reinstall op when hook missing from agent config, got %+v", hookOps)
+	}
+}
+
+func TestComputePlanHookAdoptionCandidate(t *testing.T) {
+	installed := provision.Installed{
+		Hooks: []provision.Hook{{Event: "pre_tool", Matcher: "shell", Command: "user-hook"}},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "work"}, provision.Desired{}, installed, provision.ContextState{})
+
+	var hookOps []provision.Op
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindHook {
+			hookOps = append(hookOps, op)
+		}
+	}
+	if len(hookOps) != 1 || hookOps[0].OpKind != provision.OpIgnore {
+		t.Fatalf("expected OpIgnore adoption candidate, got %+v", hookOps)
+	}
+}

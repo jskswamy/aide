@@ -4,12 +4,12 @@ import "testing"
 
 func TestParseSourceRef(t *testing.T) {
 	tests := []struct {
-		name    string
-		in      string
-		want    SourceRef
-		aide    string
-		bare    string
-		clazz   string
+		name  string
+		in    string
+		want  SourceRef
+		aide  string
+		bare  string
+		clazz string
 	}{
 		{"bare owner/repo", "owner/repo", SourceRef{Transport: "", Repo: "owner/repo"}, "github:owner/repo", "owner/repo", "marketplace"},
 		{"github prefix", "github:owner/repo", SourceRef{Transport: "github", Repo: "owner/repo"}, "github:owner/repo", "owner/repo", "marketplace"},

@@ -26,9 +26,9 @@ func TestResolveSecretsInMCPEnv_ReplacesTemplateValues(t *testing.T) {
 				Key:     "github",
 				Command: "github-mcp-server",
 				Env: map[string]string{
-					"GITHUB_TOKEN":  "{{ .secrets.github_token }}",
-					"PROJECT_ROOT":  "{{ .project_root }}",
-					"PLAIN_VAR":     "verbatim-no-template",
+					"GITHUB_TOKEN": "{{ .secrets.github_token }}",
+					"PROJECT_ROOT": "{{ .project_root }}",
+					"PLAIN_VAR":    "verbatim-no-template",
 				},
 			},
 		},

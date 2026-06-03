@@ -82,6 +82,16 @@ func hasShortfall(desired Desired, cs *ContextState) bool {
 			return true
 		}
 	}
+	// Hooks shortfall: any desired hook not yet recorded in managed state.
+	managedHookSet := map[string]bool{}
+	for _, mh := range cs.Hooks {
+		managedHookSet[HookKey(mh.Event, mh.Matcher, mh.Command)] = true
+	}
+	for _, h := range desired.Hooks {
+		if !managedHookSet[HookKey(h.Event, h.Matcher, h.Command)] {
+			return true
+		}
+	}
 	return false
 }
 

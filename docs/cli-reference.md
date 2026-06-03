@@ -922,6 +922,56 @@ Same shape as `aide plugin list`.
 
 ---
 
+## aide hook
+
+### aide hook list
+
+```
+aide hook list [--context <name>]
+```
+
+Shows hooks declared in `config.yaml` for the context, with a MANAGED column
+indicating whether the hook is currently written to the agent's config. The
+list is sourced from the config file, not from the agent's live state, so it
+reflects what aide knows about rather than what the agent actually runs.
+
+Flags:
+- `--context <name>` — operate on a specific context (default: match by CWD).
+
+---
+
+### aide hook add
+
+```
+aide hook add --event <event> --command <cmd> [--matcher <matcher>] [--timeout <seconds>] [--context <name>]
+```
+
+Appends a hook entry to `config.yaml` under the context's `hooks.extra`
+block. Does not write anything to the agent — run `aide sync` to apply.
+
+Flags:
+- `--event <event>` — hook event (required): `pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`.
+- `--command <cmd>` — shell command to run (required). Shell metacharacters (`;|&\`$(){}` etc.) are rejected to prevent injection.
+- `--matcher <matcher>` — narrow the hook to a tool class (optional). `shell` targets the Bash/shell tool only (mapped to the agent's native name, e.g. `Bash` for Claude).
+- `--timeout <seconds>` — override the agent default timeout (optional, 0 = driver default).
+- `--context <name>` — defaults to CWD match.
+
+---
+
+### aide hook remove
+
+```
+aide hook remove --event <event> --command <cmd> [--matcher <matcher>] [--context <name>]
+```
+
+Removes the matching hook entry from `config.yaml`. Does not touch the agent
+until you run `aide sync`.
+
+Flags mirror `hook add`. The hook is identified by the `(event, matcher,
+command)` triple — all three must match the entry to remove.
+
+---
+
 ## aide config
 
 ### aide config show

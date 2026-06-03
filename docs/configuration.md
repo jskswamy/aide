@@ -113,6 +113,18 @@ capabilities:
 
 - `never_allow:` (list) — Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
 - `never_allow_env:` (list) — Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
+- `hooks:` (map) — Declarative hook set. Keys are normalized event names (`pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`); values are lists of hook entries:
+
+```yaml
+hooks:
+  pre_tool:
+    - command: "rtk hook {agent}"
+      matcher: shell   # optional: "shell" → agent-native name (e.g. Bash)
+      timeout: 30      # optional: seconds; 0 = driver default
+```
+
+The `{agent}` template variable is replaced with the resolved agent name for each context. Reconciled by `aide sync`. See [Hooks](#hooks) below.
+
 - `plugins:` (map) — Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
 - `mcp_servers:` (map) — Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
 - `sandboxes:` (map) — Named sandbox profiles referenced from contexts (`sandbox: <name>`).
@@ -129,6 +141,17 @@ capabilities:
 - `profile:` (string, optional): per-context agent profile name. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Contexts](contexts.md).
 - `profile_dir:` (string, optional): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path. Requires `profile:` to also be set.
 - `plugins:` / `mcp_servers:` (per-context overrides, optional): mapping with `extra:` / `exclude:` / `only:` deltas applied on top of the top-level set. See [Provisioning](provisioning.md).
+- `hooks:` (per-context override, optional): delta applied on top of the top-level `hooks:` map.
+
+```yaml
+contexts:
+  work:
+    hooks:
+      exclude: [session_start]   # drop a top-level event entirely
+      extra:
+        pre_tool:
+          - command: "notify work-hook {agent}"
+```
 - `capabilities:` (list) — Capability names to activate for this context (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
 - `yolo:` (bool, optional): skip agent permission checks for this context. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
 - `sandbox:`: accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
@@ -180,6 +203,66 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 - `env:` values referencing `.secrets.*` have a `secret:` configured on that context.
 
 Warnings print separately from hard errors. The command exits non-zero on any error.
+
+---
+
+## Hooks
+
+Hooks inject commands into agent lifecycle events. aide writes them to the
+agent's config file during `aide sync`; the agent runs them, not aide.
+
+### Supported events
+
+| Event | Claude | Gemini | Cursor | Copilot | Hermes |
+|-------|--------|--------|--------|---------|--------|
+| `pre_tool` | `PreToolUse` | `BeforeTool` (script) | `preToolUse` | `PreToolUse` (file) | `pre_tool_call` (plugin) |
+| `post_tool` | `PostToolUse` | — | — | — | — |
+| `session_start` | `SessionStart` | — | — | — | — |
+| `session_end` | `SessionEnd` | — | — | — | — |
+| `notification` | `Notification` | — | — | — | — |
+| `stop` | `Stop` | — | — | — | — |
+
+Events not supported by an agent are silently skipped during sync.
+
+### Supported matchers
+
+| Matcher | Claude | Cursor |
+|---------|--------|--------|
+| `shell` | `Bash` | `Shell` |
+
+Matchers not supported by an agent are ignored.
+
+### Storage formats per agent
+
+- **Claude** — merged into `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) under the `hooks` key. Ownership is tracked in `managed.json`; user-added entries are never touched.
+- **Gemini** — individual `aide_<hash>.sh` scripts written to `~/.gemini/hooks/`. Only `pre_tool` is supported.
+- **Cursor** — merged into `~/.cursor/hooks.json`. Ownership is tracked in `managed.json`; user-added entries are never touched.
+- **Copilot** — individual `aide-<hash>.json` files written to `~/.config/copilot/hooks/`. Only `pre_tool` is supported.
+- **Hermes** — Python plugin directories written to `~/.hermes/plugins/aide_<hash>/` (an `__init__.py` + `plugin.yaml` per hook). Only `pre_tool` is supported.
+- **Codex** — no hook support.
+
+### The `{agent}` template variable
+
+The command field supports `{agent}`, replaced with the context's resolved
+agent name at sync time:
+
+```yaml
+hooks:
+  pre_tool:
+    - command: "rtk hook {agent}"
+```
+
+This lets a single top-level hook declaration work across all your contexts
+without per-context duplication.
+
+### Management
+
+```bash
+aide hook list                                          # show declared hooks
+aide hook add --event pre_tool --command "rtk hook {agent}"  # add a hook
+aide hook remove --event pre_tool --command "rtk hook {agent}"  # remove a hook
+aide sync                                               # write to agent config
+```
 
 ---
 

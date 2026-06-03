@@ -35,6 +35,7 @@ Use the full format for multiple projects with different agents or credentials.
 agents:
   claude:
     binary: claude
+    icon: "🤖"
   aider:
     binary: aider
 
@@ -43,6 +44,7 @@ contexts:
     match:
       - remote: "github.com/acme/*"
       - path: "~/work/*"
+    icon: "💼"
     agent: claude
     secret: work
     env:
@@ -55,6 +57,7 @@ contexts:
   personal:
     match:
       - remote: "github.com/myuser/*"
+    icon: "🏠"
     agent: claude
     secret: personal
     env:
@@ -93,6 +96,17 @@ preferences:
 The `agents:` block maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only. Credentials and environment variables belong on contexts.
 
 Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aider`, `goose`, `amp`, `gemini`.
+
+```yaml
+agents:
+  claude:
+    binary: claude
+    icon: "🤖"        # optional; shown in banner and prompt
+  aider:
+    binary: aider
+```
+
+The `icon` field (optional) sets a Unicode symbol displayed alongside the agent name in the banner and `aide prompt` output.
 
 ---
 
@@ -138,6 +152,7 @@ The `{agent}` template variable is replaced with the resolved agent name for eac
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
+- `icon:` (string, optional): Unicode symbol displayed alongside the context name in the banner and `aide prompt` output.
 - `profile:` (string, optional): per-context agent profile name. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Contexts](contexts.md).
 - `profile_dir:` (string, optional): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path. Requires `profile:` to also be set.
 - `plugins:` / `mcp_servers:` (per-context overrides, optional): mapping with `extra:` / `exclude:` / `only:` deltas applied on top of the top-level set. See [Provisioning](provisioning.md).

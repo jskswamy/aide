@@ -6,19 +6,20 @@ import (
 
 type stubProv struct{ name string }
 
-func (s stubProv) Name() string                                   { return s.name }
-func (stubProv) SupportsPlugins() bool                            { return false }
-func (stubProv) SupportsMCP() bool                                { return false }
-func (stubProv) RequiresTTY() bool                                { return false }
-func (stubProv) MCPConfigPath(_ Context) string                   { return "" }
-func (stubProv) InstalledPlugins(_ Context) ([]Plugin, error)     { return nil, nil }
-func (stubProv) InstallPlugin(_ Context, _ Plugin) error          { return nil }
-func (stubProv) UninstallPlugin(_ Context, _ string) error        { return nil }
-func (stubProv) MCPHandler(_ Context) MCPHandler                  { return nil }
-func (stubProv) SupportedSourceShapes() []SourceShape             { return nil }
+func (s stubProv) Name() string                                         { return s.name }
+func (stubProv) SupportsPlugins() bool                                  { return false }
+func (stubProv) SupportsMCP() bool                                      { return false }
+func (stubProv) RequiresTTY() bool                                      { return false }
+func (stubProv) MCPConfigPath(_ Context) string                         { return "" }
+func (stubProv) InstalledPlugins(_ Context) ([]Plugin, error)           { return nil, nil }
+func (stubProv) InstallPlugin(_ Context, _ Plugin) error                { return nil }
+func (stubProv) UninstallPlugin(_ Context, _ string) error              { return nil }
+func (stubProv) MCPHandler(_ Context) MCPHandler                        { return nil }
+func (stubProv) SupportedSourceShapes() []SourceShape                   { return nil }
+func (stubProv) SupportsHooks() bool                                    { return false }
 func (stubProv) InstalledMarketplaces(_ Context) ([]Marketplace, error) { return nil, nil }
-func (stubProv) AddMarketplace(_ Context, _ Marketplace) error    { return nil }
-func (stubProv) RemoveMarketplace(_ Context, _ string) error      { return nil }
+func (stubProv) AddMarketplace(_ Context, _ Marketplace) error          { return nil }
+func (stubProv) RemoveMarketplace(_ Context, _ string) error            { return nil }
 
 // snapshotRegistry returns a copy of the current registry contents
 // so a test can restore them in a t.Cleanup. Used by registry tests

@@ -19,13 +19,14 @@ import "github.com/jskswamy/aide/internal/provision"
 // method between tests.
 type FakeProvisioner struct {
 	// Identity / capability advertising.
-	AgentName       string
-	SupportsPlug    bool
-	SupportsMCPCfg  bool
-	RequireTTY      bool
-	Shapes          []provision.SourceShape
-	MCPPath         string
-	MCPHandlerValue provision.MCPHandler
+	AgentName        string
+	SupportsPlug     bool
+	SupportsMCPCfg   bool
+	RequireTTY       bool
+	Shapes           []provision.SourceShape
+	SupportsHooksCfg bool
+	MCPPath          string
+	MCPHandlerValue  provision.MCPHandler
 
 	// State the driver reports back.
 	InstalledPluginList []provision.Plugin
@@ -83,10 +84,15 @@ func (f *FakeProvisioner) RequiresTTY() bool { return f.RequireTTY }
 func (f *FakeProvisioner) MCPConfigPath(_ provision.Context) string { return f.MCPPath }
 
 // MCPHandler implements provision.Provisioner.
-func (f *FakeProvisioner) MCPHandler(_ provision.Context) provision.MCPHandler { return f.MCPHandlerValue }
+func (f *FakeProvisioner) MCPHandler(_ provision.Context) provision.MCPHandler {
+	return f.MCPHandlerValue
+}
 
 // SupportedSourceShapes implements provision.Provisioner.
 func (f *FakeProvisioner) SupportedSourceShapes() []provision.SourceShape { return f.Shapes }
+
+// SupportsHooks implements provision.Provisioner.
+func (f *FakeProvisioner) SupportsHooks() bool { return f.SupportsHooksCfg }
 
 // InstalledPlugins implements provision.Provisioner.
 func (f *FakeProvisioner) InstalledPlugins(_ provision.Context) ([]provision.Plugin, error) {
@@ -179,4 +185,41 @@ func (f *FakeProvisionerWithMCPCLI) UninstallMCPServer(_ provision.Context, name
 	f.UninstallMCPCalls = append(f.UninstallMCPCalls, name)
 	f.Called = append(f.Called, "uninstall-mcp:"+name)
 	return f.UninstallMCPErr
+}
+
+// FakeProvisionerWithHookInstaller extends FakeProvisioner with HookInstaller.
+type FakeProvisionerWithHookInstaller struct {
+	*FakeProvisioner
+	StoredHooks     []provision.Hook
+	ReadHooksErr    error
+	WriteHooksErr   error
+	WriteHooksCalls [][]provision.Hook // each call's desired slice
+}
+
+// ReadHooks implements provision.HookInstaller.
+func (f *FakeProvisionerWithHookInstaller) ReadHooks(_ provision.Context) ([]provision.Hook, error) {
+	return append([]provision.Hook{}, f.StoredHooks...), f.ReadHooksErr
+}
+
+// WriteHooks implements provision.HookInstaller.
+func (f *FakeProvisionerWithHookInstaller) WriteHooks(_ provision.Context, prevManaged []provision.Hook, desired []provision.Hook) error {
+	if f.WriteHooksErr != nil {
+		return f.WriteHooksErr
+	}
+	// Remove prevManaged from StoredHooks, then add desired.
+	removeSet := map[string]bool{}
+	for _, h := range prevManaged {
+		removeSet[provision.HookKey(h.Event, h.Matcher, h.Command)] = true
+	}
+	var kept []provision.Hook
+	for _, h := range f.StoredHooks {
+		if !removeSet[provision.HookKey(h.Event, h.Matcher, h.Command)] {
+			kept = append(kept, h)
+		}
+	}
+	f.StoredHooks = kept
+	f.StoredHooks = append(f.StoredHooks, desired...)
+	cp := append([]provision.Hook{}, desired...)
+	f.WriteHooksCalls = append(f.WriteHooksCalls, cp)
+	return nil
 }

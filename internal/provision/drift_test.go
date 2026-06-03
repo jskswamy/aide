@@ -132,6 +132,36 @@ func TestDriftShortfallWhenManagedSetIncomplete(t *testing.T) {
 	}
 }
 
+func TestDriftShortfallWhenHookNotSynced(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	body := "agents:\n  claude:\n    binary: claude\ncontexts:\n  alpha:\n    agent: claude\nhooks:\n  pre_tool:\n    - command: rtk hook claude\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(dir, "managed.json")
+	h, _ := provision.ConfigHash(cfgPath)
+	// Hash matches (looks current) but no hooks in managed state.
+	_ = provision.SaveState(statePath, &provision.ManagedState{
+		Version: 1,
+		Contexts: map[string]*provision.ContextState{
+			"alpha": {ConfigHash: h, SyncedAt: time.Now()},
+		},
+	})
+
+	got, err := provision.DriftStatus(cfg, cfgPath, statePath, "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != provision.DriftConfigChanged {
+		t.Errorf("expected DriftConfigChanged for hook shortfall, got %v", got)
+	}
+}
+
 func TestDriftMissingStateMeansNeverSynced(t *testing.T) {
 	dir := t.TempDir()
 	cfg, cfgPath := driftTestConfig(t, dir, "alpha", nil)

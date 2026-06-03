@@ -2,6 +2,7 @@ package provision
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
 )
@@ -9,9 +10,9 @@ import (
 // ResolveDesired flattens the polymorphic v2 schema into a per-context
 // Desired struct containing marketplaces, plugins, and mcp_servers.
 // Composition order:
-//   1. Apply ContextOverride to top-level Plugins map.
-//   2. Walk resolved entries, classifying by shape.
-//   3. Same for MCPServers.
+//  1. Apply ContextOverride to top-level Plugins map.
+//  2. Walk resolved entries, classifying by shape.
+//  3. Same for MCPServers.
 func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 	if cfg == nil {
 		return Desired{}, fmt.Errorf("provision: nil config")
@@ -84,7 +85,41 @@ func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 		}
 		desired.MCPServers = filtered
 	}
+
+	// Hooks: apply HooksOverride then substitute {agent}.
+	agentName := ctx.Agent
+	resolvedEvents := map[string][]config.HookEntry{}
+	for event, entries := range cfg.Hooks {
+		cp := make([]config.HookEntry, len(entries))
+		copy(cp, entries)
+		resolvedEvents[event] = cp
+	}
+	if ctx.Hooks != nil {
+		for _, event := range ctx.Hooks.Exclude {
+			delete(resolvedEvents, event)
+		}
+		for event, entries := range ctx.Hooks.Extra {
+			resolvedEvents[event] = append(resolvedEvents[event], entries...)
+		}
+	}
+	for event, entries := range resolvedEvents {
+		for _, e := range entries {
+			desired.Hooks = append(desired.Hooks, Hook{
+				Event:   event,
+				Matcher: e.Matcher,
+				Command: substituteHookVars(e.Command, agentName),
+				Timeout: e.Timeout,
+			})
+		}
+	}
+
 	return desired, nil
+}
+
+// substituteHookVars replaces known template variables in cmd.
+// Currently only {agent} is supported; unknown {var} patterns pass through unchanged.
+func substituteHookVars(cmd, agentName string) string {
+	return strings.ReplaceAll(cmd, "{agent}", agentName)
 }
 
 // keyAsSource / classifySource were inlined here historically; see

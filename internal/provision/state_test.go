@@ -64,3 +64,31 @@ func TestSaveStatePermissions(t *testing.T) {
 		t.Errorf("perm = %o, want 0o600", perm)
 	}
 }
+
+func TestStateRoundTripWithHooks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "managed.json")
+	st := &provision.ManagedState{
+		Contexts: map[string]*provision.ContextState{
+			"work": {
+				Hooks: []provision.ManagedHook{
+					{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"},
+					{Event: "session_start", Command: "bd prime"},
+				},
+			},
+		},
+	}
+	if err := provision.SaveState(path, st); err != nil {
+		t.Fatal(err)
+	}
+	got, err := provision.LoadState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks := got.Contexts["work"].Hooks
+	if len(hooks) != 2 {
+		t.Fatalf("Hooks = %v, want 2 entries", hooks)
+	}
+	if hooks[0].Event != "pre_tool" || hooks[0].Matcher != "shell" || hooks[0].Command != "rtk hook claude" {
+		t.Errorf("hooks[0] = %+v", hooks[0])
+	}
+}

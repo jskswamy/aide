@@ -104,3 +104,92 @@ contexts:
 		t.Errorf("craft should still be present: %+v", desired.Plugins)
 	}
 }
+
+func TestResolveDesiredHooksBasic(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - matcher: shell
+      command: rtk hook {agent}
+  session_start:
+    - command: bd prime
+contexts:
+  work:
+    agent: claude
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desired.Hooks) != 2 {
+		t.Fatalf("Hooks = %d, want 2: %+v", len(desired.Hooks), desired.Hooks)
+	}
+	var preTool provision.Hook
+	for _, h := range desired.Hooks {
+		if h.Event == "pre_tool" {
+			preTool = h
+		}
+	}
+	if preTool.Command != "rtk hook claude" {
+		t.Errorf("command after {agent} substitution = %q, want %q", preTool.Command, "rtk hook claude")
+	}
+	if preTool.Matcher != "shell" {
+		t.Errorf("matcher = %q, want %q", preTool.Matcher, "shell")
+	}
+}
+
+func TestResolveDesiredHooksContextOverride(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - matcher: shell
+      command: rtk hook {agent}
+  session_start:
+    - command: bd prime
+contexts:
+  personal:
+    agent: gemini
+    hooks:
+      exclude: [session_start]
+      extra:
+        pre_tool:
+          - command: personal-hook
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// session_start excluded, pre_tool has 2 entries (inherited + extra)
+	var sessionStart, preTool []provision.Hook
+	for _, h := range desired.Hooks {
+		switch h.Event {
+		case "session_start":
+			sessionStart = append(sessionStart, h)
+		case "pre_tool":
+			preTool = append(preTool, h)
+		}
+	}
+	if len(sessionStart) != 0 {
+		t.Errorf("session_start should be excluded, got %v", sessionStart)
+	}
+	if len(preTool) != 2 {
+		t.Errorf("pre_tool should have 2 entries (inherited + extra), got %d", len(preTool))
+	}
+	found := false
+	for _, h := range preTool {
+		if h.Command == "rtk hook gemini" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected rtk hook gemini in pre_tool hooks: %+v", preTool)
+	}
+}

@@ -39,6 +39,9 @@ func TestClaudeCapabilities(t *testing.T) {
 	if len(shapes) != 1 || shapes[0] != provision.ShapeMarketplace {
 		t.Errorf("Claude shapes = %v, want [marketplace]", shapes)
 	}
+	if !d.SupportsHooks() {
+		t.Error("Claude should support hooks")
+	}
 }
 
 func TestClaudeInstallPluginCommand(t *testing.T) {

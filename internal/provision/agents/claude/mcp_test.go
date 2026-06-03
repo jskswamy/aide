@@ -46,9 +46,9 @@ func (r *scriptedRunner) Run(_ context.Context, _ map[string]string, name string
 // doesn't own.
 func TestClaudeInstalledMCPServersUserScopeOnly(t *testing.T) {
 	r := &scriptedRunner{responses: map[string]scriptedResponse{
-		"claude mcp get user-http": {stdout: "user-http:\n  Scope: User config (available in all your projects)\n  Type: http\n  URL: http://127.0.0.1:9000\n", code: 0},
+		"claude mcp get user-http":  {stdout: "user-http:\n  Scope: User config (available in all your projects)\n  Type: http\n  URL: http://127.0.0.1:9000\n", code: 0},
 		"claude mcp get local-only": {stdout: "local-only:\n  Scope: Local config (private to you in this project)\n  Type: stdio\n  Command: foo\n", code: 0},
-		"claude mcp get missing":   {stderr: `No MCP server found with name: "missing"`, code: 1},
+		"claude mcp get missing":    {stderr: `No MCP server found with name: "missing"`, code: 1},
 	}}
 	d := claude.New(r)
 	got, err := d.InstalledMCPServers(provision.Context{}, []string{"user-http", "local-only", "missing"})

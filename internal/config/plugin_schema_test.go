@@ -203,3 +203,104 @@ contexts:
 		t.Errorf("only = %v", override.Only)
 	}
 }
+
+func TestValidateHooksUnknownNameReturnsError(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: global-guard
+      name: guard
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude_hooks:
+        pre_tool: [typo-name]
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	err := cfg.ValidateHooks()
+	if err == nil {
+		t.Fatal("expected error for unknown hook name, got nil")
+	}
+	if !strings.Contains(err.Error(), "typo-name") {
+		t.Errorf("error should mention the bad name, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "personal") {
+		t.Errorf("error should mention the context name, got: %v", err)
+	}
+}
+
+func TestValidateHooksKnownNamePasses(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: global-guard
+      name: guard
+    - command: audit-log
+      name: audit
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude_hooks:
+        pre_tool: [guard]
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.ValidateHooks(); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateHooksExtraNamePasses(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: global-guard
+      name: guard
+contexts:
+  work:
+    agent: claude
+    hooks:
+      extra:
+        pre_tool:
+          - command: work-hook
+            name: work-audit
+      exclude_hooks:
+        pre_tool: [work-audit]
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.ValidateHooks(); err != nil {
+		t.Errorf("unexpected error for extra-declared name: %v", err)
+	}
+}
+
+func TestValidateHooksUnnamedHooksIgnored(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: unnamed-hook
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude_hooks:
+        pre_tool: [guard]
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	err := cfg.ValidateHooks()
+	if err == nil || !strings.Contains(err.Error(), "guard") {
+		t.Errorf("expected error for 'guard' not found among named hooks, got: %v", err)
+	}
+}

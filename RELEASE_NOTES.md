@@ -45,6 +45,32 @@
   are now included in the explain output so the full configuration
   picture is visible at a glance.
 
+- **Named hooks with per-context exclusion.**
+  Hook entries now support an optional `name:` field. Per-context
+  overrides can use `exclude_hooks:` (event-scoped map of hook names)
+  to suppress specific hooks without dropping the entire event type.
+  Unnamed hooks are never affected by `exclude_hooks`.
+
+  ```yaml
+  hooks:
+    pre_tool:
+      - command: global-guard
+        name: guard
+        matcher: shell
+      - command: audit-log
+        name: audit
+
+  contexts:
+    personal:
+      hooks:
+        exclude_hooks:
+          pre_tool: [guard]   # audit-log still runs; guard does not
+  ```
+
+  `ValidateHooks` catches unknown names at config-load time with a
+  descriptive error naming the context and event. See
+  `aide explain configure-hooks` for the full syntax reference.
+
 ### Security
 
 - **Secrets store is read-only during `configure` and `doctor` sandbox

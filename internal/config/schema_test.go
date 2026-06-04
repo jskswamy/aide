@@ -1213,6 +1213,83 @@ contexts:
 	}
 }
 
+func TestHookEntryNameRoundTrip(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: global-guard
+      name: guard
+      matcher: shell
+    - command: audit-log
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	entries := cfg.Hooks["pre_tool"]
+	if len(entries) != 2 {
+		t.Fatalf("want 2 pre_tool entries, got %d", len(entries))
+	}
+	if entries[0].Name != "guard" {
+		t.Errorf("entries[0].Name = %q, want %q", entries[0].Name, "guard")
+	}
+	if entries[1].Name != "" {
+		t.Errorf("entries[1].Name = %q, want empty", entries[1].Name)
+	}
+	// Marshal and re-decode to verify round-trip.
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var cfg2 config.Config
+	if err := yaml.Unmarshal(out, &cfg2); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
+	}
+	if cfg2.Hooks["pre_tool"][0].Name != "guard" {
+		t.Errorf("round-trip name = %q, want %q", cfg2.Hooks["pre_tool"][0].Name, "guard")
+	}
+}
+
+func TestHooksOverrideExcludeHooksRoundTrip(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: global-guard
+      name: guard
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude_hooks:
+        pre_tool: [guard]
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(y), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	ctx := cfg.Contexts["personal"]
+	if ctx.Hooks == nil {
+		t.Fatal("ctx.Hooks should be non-nil")
+	}
+	names := ctx.Hooks.ExcludeHooks["pre_tool"]
+	if len(names) != 1 || names[0] != "guard" {
+		t.Errorf("ExcludeHooks[pre_tool] = %v, want [guard]", names)
+	}
+	// Marshal and re-decode to verify round-trip.
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var cfg2 config.Config
+	if err := yaml.Unmarshal(out, &cfg2); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
+	}
+	if cfg2.Contexts["personal"].Hooks.ExcludeHooks["pre_tool"][0] != "guard" {
+		t.Errorf("round-trip ExcludeHooks[pre_tool] = %v, want [guard]",
+			cfg2.Contexts["personal"].Hooks.ExcludeHooks["pre_tool"])
+	}
+}
+
 func TestAgentDefIcon(t *testing.T) {
 	input := `
 agents:

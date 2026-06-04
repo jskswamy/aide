@@ -55,13 +55,18 @@ func (d *DiagnoseExecer) Run(binary string, args []string, env []string) (*RunRe
 
 	stopSignals := forwardSignals(cmd.Process)
 
+	// Drain stderr before cmd.Wait(): StderrPipe registers the read end in
+	// closeAfterWait, which races with the capture goroutine still reading.
+	stderrTail := <-tail
+	stderrTruncated := <-truncated
+
 	err = cmd.Wait()
 	close(stopSignals)
 
 	res := &RunResult{
 		Runtime:              time.Since(start),
-		StderrTail:           <-tail,
-		StderrTruncatedBytes: <-truncated,
+		StderrTail:           stderrTail,
+		StderrTruncatedBytes: stderrTruncated,
 		Pid:                  childPid,
 	}
 	if err == nil {

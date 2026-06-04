@@ -193,3 +193,105 @@ contexts:
 		t.Errorf("expected rtk hook gemini in pre_tool hooks: %+v", preTool)
 	}
 }
+
+func TestResolveDesiredHooksExcludeByName(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: global-guard
+      name: guard
+      matcher: shell
+    - command: audit-log
+      name: audit
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude_hooks:
+        pre_tool: [guard]
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var preTool []provision.Hook
+	for _, h := range desired.Hooks {
+		if h.Event == "pre_tool" {
+			preTool = append(preTool, h)
+		}
+	}
+	if len(preTool) != 1 {
+		t.Fatalf("want 1 pre_tool hook (audit survives), got %d: %+v", len(preTool), preTool)
+	}
+	if preTool[0].Command != "audit-log" {
+		t.Errorf("surviving hook = %q, want %q", preTool[0].Command, "audit-log")
+	}
+}
+
+func TestResolveDesiredHooksExcludeByNameUnnamedSurvives(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: unnamed-hook
+    - command: named-hook
+      name: named
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude_hooks:
+        pre_tool: [named]
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var preTool []provision.Hook
+	for _, h := range desired.Hooks {
+		if h.Event == "pre_tool" {
+			preTool = append(preTool, h)
+		}
+	}
+	if len(preTool) != 1 {
+		t.Fatalf("want 1 pre_tool hook (unnamed survives), got %d: %+v", len(preTool), preTool)
+	}
+	if preTool[0].Command != "unnamed-hook" {
+		t.Errorf("surviving hook = %q, want %q", preTool[0].Command, "unnamed-hook")
+	}
+}
+
+func TestResolveDesiredHooksExcludeAllNamedEventDropped(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: only-hook
+      name: only
+contexts:
+  personal:
+    agent: claude
+    hooks:
+      exclude_hooks:
+        pre_tool: [only]
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range desired.Hooks {
+		if h.Event == "pre_tool" {
+			t.Errorf("expected no pre_tool hooks, got %+v", h)
+		}
+	}
+}

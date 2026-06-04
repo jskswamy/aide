@@ -53,6 +53,9 @@ func Load(configDir, projectDir string) (*Config, error) {
 	if err := cfg.ValidatePlugins(); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	if err := cfg.ValidateHooks(); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 
 	return cfg, nil
 }

@@ -101,6 +101,24 @@ func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 		for event, entries := range ctx.Hooks.Extra {
 			resolvedEvents[event] = append(resolvedEvents[event], entries...)
 		}
+		for event, names := range ctx.Hooks.ExcludeHooks {
+			entries := resolvedEvents[event]
+			excluded := make(map[string]bool, len(names))
+			for _, n := range names {
+				excluded[n] = true
+			}
+			kept := entries[:0]
+			for _, e := range entries {
+				if e.Name == "" || !excluded[e.Name] {
+					kept = append(kept, e)
+				}
+			}
+			if len(kept) == 0 {
+				delete(resolvedEvents, event)
+			} else {
+				resolvedEvents[event] = kept
+			}
+		}
 	}
 	for event, entries := range resolvedEvents {
 		for _, e := range entries {

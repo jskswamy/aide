@@ -409,6 +409,7 @@ type PluginMap map[string]PluginEntry
 
 // HookEntry is one entry in the normalized hooks map.
 type HookEntry struct {
+	Name    string `yaml:"name,omitempty"`
 	Matcher string `yaml:"matcher,omitempty"`
 	Command string `yaml:"command"`
 	Timeout int    `yaml:"timeout,omitempty"` // seconds; 0 means use the driver's default
@@ -420,8 +421,9 @@ type HooksMap map[string][]HookEntry
 // HooksOverride holds per-context additions and removals over the top-level
 // hooks block. Exclude lists event names to suppress; Extra adds entries.
 type HooksOverride struct {
-	Exclude []string `yaml:"exclude,omitempty"`
-	Extra   HooksMap `yaml:"extra,omitempty"`
+	Exclude      []string            `yaml:"exclude,omitempty"`
+	ExcludeHooks map[string][]string `yaml:"exclude_hooks,omitempty"`
+	Extra        HooksMap            `yaml:"extra,omitempty"`
 }
 
 // UnmarshalYAML decodes a mapping node into the polymorphic plugin map.
@@ -512,6 +514,44 @@ func (c *Config) ValidatePlugins() error {
 		}
 	}
 	return nil
+}
+
+// ValidateHooks checks that every name listed in a context's
+// exclude_hooks resolves to a declared hook name in the merged set
+// (top-level hooks + that context's extra hooks) for the given event.
+func (c *Config) ValidateHooks() error {
+	for ctxName, ctx := range c.Contexts {
+		if ctx.Hooks == nil || len(ctx.Hooks.ExcludeHooks) == 0 {
+			continue
+		}
+		for event, names := range ctx.Hooks.ExcludeHooks {
+			declared := collectHookNames(c.Hooks[event], ctx.Hooks.Extra[event])
+			for _, name := range names {
+				if !declared[name] {
+					return fmt.Errorf("context %q exclude_hooks[%q]: unknown hook name %q",
+						ctxName, event, name)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// collectHookNames returns the set of non-empty names across two
+// slices of HookEntry (top-level entries and per-context extras).
+func collectHookNames(top, extra []HookEntry) map[string]bool {
+	out := map[string]bool{}
+	for _, e := range top {
+		if e.Name != "" {
+			out[e.Name] = true
+		}
+	}
+	for _, e := range extra {
+		if e.Name != "" {
+			out[e.Name] = true
+		}
+	}
+	return out
 }
 
 func looksLikeRepo(key string) bool {

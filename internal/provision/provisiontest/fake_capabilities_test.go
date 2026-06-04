@@ -38,6 +38,16 @@ func TestFakeProvisionerCapabilityGetters(t *testing.T) {
 	if got := f.MCPHandler(provision.Context{}); got != nil {
 		t.Errorf("MCPHandler default = %v, want nil", got)
 	}
+	if f.SupportsHooks() {
+		t.Error("SupportsHooks must be false when SupportsHooksCfg is not set")
+	}
+}
+
+func TestFakeProvisionerSupportsHooks(t *testing.T) {
+	f := &FakeProvisioner{SupportsHooksCfg: true}
+	if !f.SupportsHooks() {
+		t.Error("SupportsHooks must be true when SupportsHooksCfg is true")
+	}
 }
 
 func TestFakeProvisionerInstalledPluginsAndMarketplaces(t *testing.T) {

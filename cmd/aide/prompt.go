@@ -24,6 +24,7 @@ timeout = 100
 
 func promptCmd() *cobra.Command {
 	var printStarshipConfig bool
+	var compact bool
 
 	cmd := &cobra.Command{
 		Use:           "prompt",
@@ -60,24 +61,27 @@ func promptCmd() *cobra.Command {
 			}
 			agentIcon := launcher.ResolveAgentIcon(resolved.Context.Agent, agentDef)
 
-			line := formatPromptLine(resolved.Name, ctxIcon, agentIcon, sbDisabled, trustStatus)
+			line := formatPromptLine(resolved.Name, ctxIcon, agentIcon, sbDisabled, trustStatus, compact)
 			fmt.Fprintln(cmd.OutOrStdout(), line)
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&printStarshipConfig, "starship-config", false, "Print Starship configuration snippet")
+	cmd.Flags().BoolVar(&compact, "compact", false, "Remove spaces between prompt segments")
 
 	return cmd
 }
 
-// formatPromptLine builds a space-separated prompt line from context, icons, and trust status.
-// Structure: ctx [ctxIcon] [agentIcon] [trustIcon] [sandboxIcon]
-func formatPromptLine(ctx, ctxIcon, agentIcon string, sbDisabled bool, trustStatus string) string {
-	parts := []string{ctx}
+// formatPromptLine builds a prompt line from context, icons, and trust status.
+// When ctxIcon is set it replaces the name; otherwise the name is shown.
+func formatPromptLine(ctx, ctxIcon, agentIcon string, sbDisabled bool, trustStatus string, compact bool) string {
+	var parts []string
 
 	if s := ui.SanitizeIcon(ctxIcon); s != "" {
 		parts = append(parts, s)
+	} else {
+		parts = append(parts, ctx)
 	}
 
 	if s := ui.SanitizeIcon(agentIcon); s != "" {
@@ -97,7 +101,11 @@ func formatPromptLine(ctx, ctxIcon, agentIcon string, sbDisabled bool, trustStat
 		}
 	}
 
-	return strings.Join(parts, " ")
+	sep := " "
+	if compact {
+		sep = ""
+	}
+	return strings.Join(parts, sep)
 }
 
 // promptTrustStatus returns the trust status of the current project configuration.

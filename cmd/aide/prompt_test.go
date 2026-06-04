@@ -10,23 +10,30 @@ func TestFormatPromptLine(t *testing.T) {
 		ctx, ctxIcon, agentIcon string
 		sbDisabled              bool
 		trust                   string
+		compact                 bool
 		want                    string
 	}{
-		{"work", "💼", "🤖", false, "trusted", "work 💼 🤖 🛡"},
-		{"work", "💼", "", false, "trusted", "work 💼 🛡"},
-		{"work", "", "🤖", false, "trusted", "work 🤖 🛡"},
-		{"work", "", "", false, "trusted", "work 🛡"},
-		{"work", "💼", "🤖", true, "trusted", "work 💼 🤖"},
-		{"work", "💼", "🤖", false, "untrusted", "work 💼 🤖 ⚠"},
-		{"work", "💼", "🤖", false, "denied", "work 💼 🤖 🚫"},
-		// ESC-only icon sanitizes to "" and is skipped
-		{"work", "\x1b", "", false, "trusted", "work 🛡"},
+		// icon replaces name when ctxIcon is set
+		{"work", "💼", "🤖", false, "trusted", false, "💼 🤖 🛡"},
+		{"work", "💼", "", false, "trusted", false, "💼 🛡"},
+		// no ctxIcon: name is kept
+		{"work", "", "🤖", false, "trusted", false, "work 🤖 🛡"},
+		{"work", "", "", false, "trusted", false, "work 🛡"},
+		{"work", "💼", "🤖", true, "trusted", false, "💼 🤖"},
+		{"work", "💼", "🤖", false, "untrusted", false, "💼 🤖 ⚠"},
+		{"work", "💼", "🤖", false, "denied", false, "💼 🤖 🚫"},
+		// ESC-only icon sanitizes to "" — falls back to name
+		{"work", "\x1b", "", false, "trusted", false, "work 🛡"},
 		// ANSI sequence: ESC stripped, remaining "[2J" is safe printable text
-		{"work", "", "\x1b[2J", false, "trusted", "work [2J 🛡"},
+		{"work", "", "\x1b[2J", false, "trusted", false, "work [2J 🛡"},
+		// compact mode: no spaces between segments
+		{"work", "💼", "🤖", false, "trusted", true, "💼🤖🛡"},
+		{"work", "", "🤖", false, "trusted", true, "work🤖🛡"},
+		{"work", "💼", "🤖", false, "untrusted", true, "💼🤖⚠"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			got := formatPromptLine(tt.ctx, tt.ctxIcon, tt.agentIcon, tt.sbDisabled, tt.trust)
+			got := formatPromptLine(tt.ctx, tt.ctxIcon, tt.agentIcon, tt.sbDisabled, tt.trust, tt.compact)
 			if got != tt.want {
 				t.Errorf("formatPromptLine = %q, want %q", got, tt.want)
 			}

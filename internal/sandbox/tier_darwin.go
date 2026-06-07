@@ -2,7 +2,8 @@
 
 package sandbox
 
-// macOS always uses Seatbelt, so the tier is unconditionally primary.
+// PlatformIsolationTier returns the macOS isolation tier. Seatbelt is
+// always available on macOS, so the tier is unconditionally primary.
 func PlatformIsolationTier(_ Policy) IsolationTier {
 	return IsolationTier{
 		Tier:          TierPrimary,

@@ -1113,6 +1113,38 @@ tampering.
 (annoying), git-signature-based trust (too complex, not all repos are
 signed).
 
+### DD-33: Linux Sandbox Architecture — Landlock + seccomp + bwrap fallback
+**Decision:** The Linux backend layers three kernel-side mechanisms,
+selected per launch by `internal/sandbox/tier_linux.go::ComputeIsolationTier`:
+- **Landlock LSM** (ABI v5+) as primary filesystem access control —
+  deny-default, inode-tree, per-subtree writable/readable rules with
+  `FS_REFER` for safe cross-directory renames (cargo, npm pack, atomic-
+  write-via-rename).
+- **seccomp BPF + PID namespace** for subprocess containment when
+  `AllowSubprocess=false`. Filter denies `clone`/`fork`/`vfork` and
+  returns `ENOSYS` for `clone3` so glibc fallback paths cannot sneak
+  through.
+- **bwrap path-mount namespaces** as fallback for kernels without
+  Landlock ABI v5. Banner reports `sandbox: degraded` so the user
+  knows; aide does not launch without isolation just because the
+  kernel is old.
+- **memfd-inherited policy** via `memfd_create` + fd inheritance:
+  policy bytes (including decrypted SOPS-secret env values) never
+  reach the filesystem, so a SIGKILL before cleanup cannot strand
+  plaintext on disk. Memfds are pinned in a package-level slice to
+  block the `os.NewFile` finalizer from closing them mid-handoff.
+**Why:** Reaches parity with DD-14 / DD-28's macOS Seatbelt + guards
+model without requiring root or a custom kernel module. The discovery
+→ serialise → re-exec → apply pipeline mirrors the macOS pattern (guards
+discover, Seatbelt emits); on Linux, guards discover, Landlock or bwrap
+emits.
+**Alternatives considered:** bwrap-only (no inode-tree granularity);
+seccomp-only (syscall-level only, no FS allow-list); file-based policy
+passing (rejected — leaks SOPS secret bytes on SIGKILL); fail-open when
+Landlock unavailable (rejected — silently runs unsandboxed).
+**Threat model:** `docs/superpowers/specs/2026-06-07-linux-sandbox-threat-model.md`
+**Implements:** `docs/superpowers/specs/2026-03-24-linux-sandbox-parity-epic.md`
+
 ### UX & CLI Decisions
 
 ### DD-1: CLI Framework — Cobra

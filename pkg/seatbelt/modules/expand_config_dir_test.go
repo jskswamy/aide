@@ -11,9 +11,18 @@ import (
 // fakeHome returns a temp dir that mimics $HOME for tests in this file. It
 // must be a real path because expandConfigDirWritable uses EvalSymlinks and
 // the safety filter checks fsutil.IsUnderDir.
+//
+// On macOS, t.TempDir() returns "/var/folders/..." but /var is a symlink to
+// /private/var. EvalSymlinks inside expandConfigDirWritable resolves to the
+// /private/var prefix; without pre-resolving here, the test's symlink-target
+// paths share the /var prefix and IsUnderDir comparisons miss.
 func fakeHome(t *testing.T) string {
 	t.Helper()
-	return t.TempDir()
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks(t.TempDir()): %v", err)
+	}
+	return resolved
 }
 
 func TestExpandConfigDirWritable_DirAlwaysIncluded(t *testing.T) {

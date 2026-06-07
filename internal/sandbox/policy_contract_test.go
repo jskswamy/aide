@@ -16,7 +16,11 @@ import (
 
 func renderProfileFromConfig(t *testing.T, cfg *config.SandboxPolicy) string {
 	t.Helper()
-	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/project", RuntimeDir: "/runtime", HomeDir: "/Users/testuser", TempDir: "/tmp"})
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	policy, _, err := PolicyFromConfig(cfg, Paths{ProjectRoot: "/project", RuntimeDir: "/runtime", HomeDir: home, TempDir: "/tmp"})
 	if err != nil {
 		t.Fatalf("PolicyFromConfig failed: %v", err)
 	}

@@ -435,7 +435,11 @@ func TestProfile_IntentOrdering(t *testing.T) {
 }
 
 func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
-	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp"}, nil)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", HomeDir: home, TempDir: "/tmp"}, nil)
 	profile, err := generateSeatbeltProfile(policy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -452,8 +456,7 @@ func TestGenerateSeatbeltProfile_ScopedHomeReads(t *testing.T) {
 	// Should NOT contain a bare (subpath "$HOME") in file-read* or file-read-data
 	// rules. file-read-metadata on $HOME subpath is intentional (POSIX tools need
 	// lstat on parent directories).
-	homeDir, _ := os.UserHomeDir()
-	bareHomeSubpath := `(subpath "` + homeDir + `")`
+	bareHomeSubpath := `(subpath "` + home + `")`
 	lines := strings.Split(profile, "\n")
 	scanBlockContext(lines, func(_ int, line, blockType string, blockStart int) {
 		if strings.Contains(line, bareHomeSubpath) && blockType == "allow" {

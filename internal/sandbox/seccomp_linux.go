@@ -52,14 +52,6 @@ const (
 	seccompRetErrnoENOSYS uint32 = 0x00050026
 )
 
-// sockFprog mirrors the Linux struct sock_fprog used by prctl(PR_SET_SECCOMP,
-// SECCOMP_MODE_FILTER, &fprog).
-type sockFprog struct {
-	Len    uint16
-	pad    [6]byte // align to 8 bytes for 64-bit pointer alignment
-	Filter *bpf.RawInstruction
-}
-
 // buildNoSubprocessFilter returns a seccomp BPF program that blocks process
 // creation on both x86_64 and arm64. The filter dispatches on the audit arch
 // field first so syscall-number comparisons are always against the correct ABI.
@@ -171,12 +163,20 @@ func installNoSubprocessSeccomp() error {
 	if err != nil {
 		return err
 	}
+	// unix.SockFprog/SockFilter are generated per-GOARCH so the pointer
+	// alignment matches the kernel's struct sock_fprog on 32- and 64-bit
+	// Linux. A hand-rolled struct would mis-align on 32-bit and prctl
+	// would silently return EINVAL.
+	filter := make([]unix.SockFilter, len(raw))
+	for i, r := range raw {
+		filter[i] = unix.SockFilter{Code: r.Op, Jt: r.Jt, Jf: r.Jf, K: r.K}
+	}
 	// #nosec G115 -- sock_fprog.len is uint16; Linux's BPF_MAXINSNS caps a
 	// BPF program at 4096 instructions long before len(raw) could overflow
 	// uint16, and our filter is 11 instructions. The cast is safe.
-	fprog := sockFprog{
-		Len:    uint16(len(raw)),
-		Filter: &raw[0],
+	fprog := unix.SockFprog{
+		Len:    uint16(len(filter)),
+		Filter: &filter[0],
 	}
 	// #nosec G103 -- prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fprog) is
 	// the documented Linux ABI for installing a seccomp filter; the kernel

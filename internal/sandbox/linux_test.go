@@ -295,18 +295,51 @@ func TestApplyLandlock_NoSubprocess_NoCLONE_NEWPID(t *testing.T) {
 // cleanly when given a non-existent agent binary rather than panicking or
 // silently succeeding.
 func TestRunSandboxExec_MissingAgent_ReturnsError(t *testing.T) {
-	err := RunSandboxExec([]string{"/nonexistent/agent-binary"})
+	err := RunSandboxExec("/nonexistent/agent-binary", []string{"agent-binary"})
 	if err == nil {
 		t.Fatal("RunSandboxExec with nonexistent binary should return error")
 	}
 }
 
-// TestRunSandboxExec_EmptyArgs_ReturnsError confirms the guard for empty arg
-// slice.
 func TestRunSandboxExec_EmptyArgs_ReturnsError(t *testing.T) {
-	err := RunSandboxExec(nil)
+	err := RunSandboxExec("/some/path", nil)
 	if err == nil {
-		t.Fatal("RunSandboxExec with nil args should return error")
+		t.Fatal("RunSandboxExec with empty argv should return error")
+	}
+}
+
+func TestRunSandboxExec_EmptyPath_ReturnsError(t *testing.T) {
+	err := RunSandboxExec("", []string{"agent"})
+	if err == nil {
+		t.Fatal("RunSandboxExec with empty agentPath should return error")
+	}
+}
+
+// TestBuildPhase2ExecArgs_PreservesOriginalArgv0 pins the Greptile P2 fix:
+// the resolved absolute agentPath must occupy slot 3 (so syscall.Exec inside
+// RunSandboxExec loads the right binary), but the agent's original argv[0]
+// (the name as the user invoked it) must be preserved at slot 4 so the
+// exec'd agent sees the same argv[0] under AllowSubprocess=false as it
+// does under AllowSubprocess=true. Previously the slice was
+// ["aide", "__sandbox-apply", "--", agentPath, agentCmd[1:]...] — the
+// original argv[0] was dropped and the resolved path leaked into argv[0].
+func TestBuildPhase2ExecArgs_PreservesOriginalArgv0(t *testing.T) {
+	agentPath := "/usr/local/bin/claude"
+	agentCmd := []string{"claude", "--print", "hello"}
+
+	got := buildPhase2ExecArgs(agentPath, agentCmd)
+
+	want := []string{"aide", "__sandbox-apply", "--", "/usr/local/bin/claude", "claude", "--print", "hello"}
+	if len(got) != len(want) {
+		t.Fatalf("buildPhase2ExecArgs len = %d, want %d; got %v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("buildPhase2ExecArgs[%d] = %q, want %q (full: %v)", i, got[i], w, got)
+		}
+	}
+	if got[3] == got[4] && agentPath != agentCmd[0] {
+		t.Errorf("resolved path leaked into argv[0]: slot 3 = slot 4 = %q (must differ when name != path)", got[3])
 	}
 }
 

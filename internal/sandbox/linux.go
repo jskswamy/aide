@@ -587,9 +587,11 @@ func forkExecInPIDNamespace(agentPath string, agentCmd []string) error {
 	}
 
 	// Phase 2 of __sandbox-apply: args[0] == "--" signals the seccomp+exec
-	// path. The resolved agent path is passed directly so the child doesn't
-	// need LookPath (which may fail under Landlock restriction).
-	execArgs := append([]string{"aide", "__sandbox-apply", "--", agentPath}, agentCmd[1:]...)
+	// path. The resolved agent path is passed separately so the child doesn't
+	// need LookPath (which may fail under Landlock restriction), and the
+	// original agentCmd is preserved intact so argv[0] in the exec'd agent
+	// matches what the AllowSubprocess=true branch produces.
+	execArgs := buildPhase2ExecArgs(agentPath, agentCmd)
 
 	pid, err := syscall.ForkExec(aideBin, execArgs, &syscall.ProcAttr{
 		Env:   os.Environ(),
@@ -671,21 +673,52 @@ func forkExecInPIDNamespace(agentPath string, agentCmd []string) error {
 	return nil // unreachable; satisfies the error return signature
 }
 
+// buildPhase2ExecArgs constructs the args slice for the second re-exec of
+// aide __sandbox-apply (Phase 2: seccomp install + exec inside the PID
+// namespace). The slot layout is:
+//
+//	[0] "aide"                  — argv[0] of the aide re-exec
+//	[1] "__sandbox-apply"
+//	[2] "--"                    — Phase 2 sentinel
+//	[3] agentPath               — absolute binary path for syscall.Exec
+//	[4:] agentCmd               — the agent's full argv, including the
+//	                              original argv[0] (the name as the user
+//	                              invoked it) so the agent sees the same
+//	                              argv[0] as it does under
+//	                              AllowSubprocess=true.
+//
+// Passing agentPath and agentCmd[0] independently avoids the previous bug
+// where the resolved absolute path overwrote the agent's argv[0], silently
+// diverging the two AllowSubprocess paths for any tool that gates on argv[0]
+// (busybox multi-call binaries, Node.js process.argv[0], etc.).
+func buildPhase2ExecArgs(agentPath string, agentCmd []string) []string {
+	out := make([]string, 0, 4+len(agentCmd))
+	out = append(out, "aide", "__sandbox-apply", "--", agentPath)
+	out = append(out, agentCmd...)
+	return out
+}
+
 // RunSandboxExec is the __sandbox-exec re-exec handler. It runs inside the
 // PID namespace created by forkExecInPIDNamespace, installs the no-subprocess
 // seccomp filter, and then execs the agent. The filter must be installed here
 // (inside the fork) rather than in the parent so the parent's fork() call is
 // not itself blocked by seccomp.
 //
-// The agent path is validated before seccomp is installed so that a missing
-// binary returns a clean error rather than leaving the process in a seccomp-
-// restricted state that cannot exec anything else.
-func RunSandboxExec(agentCmd []string) error {
+// agentPath is the absolute binary to exec; agentCmd is the agent's full
+// argv (agentCmd[0] is the name to show in argv[0]). They are independent so
+// the kernel loads the right ELF while the program sees its original name.
+//
+// agentPath is stat'd before seccomp installs so a missing binary returns a
+// clean error instead of leaving the process in a seccomp-restricted state
+// that cannot exec anything else.
+func RunSandboxExec(agentPath string, agentCmd []string) error {
+	if agentPath == "" {
+		return fmt.Errorf("no agent path")
+	}
 	if len(agentCmd) == 0 {
 		return fmt.Errorf("no agent command")
 	}
 
-	agentPath := agentCmd[0]
 	if _, err := os.Stat(agentPath); err != nil {
 		return fmt.Errorf("agent not found: %w", err)
 	}

@@ -213,9 +213,23 @@ func noSubprocessSeccompMemfd() (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memfd_create: %w", err)
 	}
-	if _, err := unix.Write(memfd, buf); err != nil {
-		_ = unix.Close(memfd)
-		return nil, fmt.Errorf("write memfd: %w", err)
+	// unix.Write is a raw write(2) wrapper that can return a short write
+	// without an error. The BPF filter is small (~176 bytes) and the memfd
+	// is RAM-backed, so a partial write is extremely unlikely — but the
+	// write(2) contract requires looping until done, and a truncated BPF
+	// program reaches bwrap and is rejected by the kernel with no clear
+	// indication of where the truncation happened.
+	for off := 0; off < len(buf); {
+		n, err := unix.Write(memfd, buf[off:])
+		if err != nil {
+			_ = unix.Close(memfd)
+			return nil, fmt.Errorf("write memfd: %w", err)
+		}
+		if n <= 0 {
+			_ = unix.Close(memfd)
+			return nil, fmt.Errorf("write memfd: non-positive write of %d bytes at offset %d", n, off)
+		}
+		off += n
 	}
 	if _, err := unix.Seek(memfd, 0, 0); err != nil {
 		_ = unix.Close(memfd)

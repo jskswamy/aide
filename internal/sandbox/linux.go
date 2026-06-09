@@ -72,9 +72,15 @@ func (l *LinuxSandbox) Apply(cmd *exec.Cmd, policy Policy, runtimeDir string) er
 			fmt.Fprintf(os.Stderr, "aide: warning: sandbox degraded: %s\n", tier.Reason)
 		}
 		return l.applyBwrap(cmd, policy, bwrapPath)
+	default:
+		// Reaching this means ComputeIsolationTier returned a Backend value
+		// other than BackendLandlock or BackendBwrap with Tier != Unavailable
+		// — a bug in the tier resolver, an uninitialised IsolationTier, or a
+		// new Backend constant that was added without a matching case here.
+		// Fail closed: refuse to run the agent rather than silently launching
+		// it unsandboxed with a misleading "no Landlock and no bwrap" message.
+		return fmt.Errorf("sandbox: unsupported backend %q for tier %q", tier.Backend, tier.Tier)
 	}
-	fmt.Fprintf(os.Stderr, "aide: warning: OS-level sandboxing unavailable: no Landlock and no bwrap\n")
-	return nil
 }
 
 // linuxSystemReadable is the minimal Landlock allow-list needed for any

@@ -274,6 +274,8 @@ func policyToJSON(p Policy) (landlockPolicyJSON, error) {
 func policyFromJSON(j landlockPolicyJSON) Policy {
 	extraWritable := append([]string{}, j.ExtraWritable...)
 	extraWritable = append(extraWritable, j.AgentWritable...)
+	extraReadable := append([]string{}, j.ExtraReadable...)
+	extraReadable = append(extraReadable, j.AgentReadable...)
 	return Policy{
 		Guards:          j.Guards,
 		HomeDir:         j.HomeDir,
@@ -287,7 +289,7 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 		SSHPorts:        j.SSHPorts,
 		ExtraDenied:     j.ExtraDenied,
 		ExtraWritable:   extraWritable,
-		ExtraReadable:   append(j.ExtraReadable, j.AgentReadable...),
+		ExtraReadable:   extraReadable,
 		ExtraAllow:      j.ExtraAllow,
 		AllowSubprocess: j.AllowSubprocess,
 		CleanEnv:        j.CleanEnv,

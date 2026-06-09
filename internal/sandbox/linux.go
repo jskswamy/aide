@@ -154,9 +154,6 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 			// letting a Landlock RODirs("/bin") rule grant access to the denied
 			// /usr subtree at enforcement time (kernel follows the symlink).
 			resolved := resolveSymlink(p)
-			if resolved == "" {
-				resolved = filepath.Clean(p)
-			}
 			// Honour deny-wins: a guard or config that explicitly denied this
 			// path (or any ancestor directory it lives under) must not be
 			// overridden by the system-path bootstrap list.
@@ -173,9 +170,6 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 	for _, p := range linuxSystemWritable {
 		if _, err := os.Stat(p); err == nil {
 			resolved := resolveSymlink(p)
-			if resolved == "" {
-				resolved = filepath.Clean(p)
-			}
 			if isUnderDeniedTree(resolved, deniedSet) {
 				continue
 			}

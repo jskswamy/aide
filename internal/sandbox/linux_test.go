@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -152,6 +153,52 @@ func TestLinuxSandbox_ApplyBwrap_MirrorsLinuxSystemReadable(t *testing.T) {
 		if !strings.Contains(args, want) {
 			t.Errorf("bwrap fallback omits writable system mount %q (mirrors linuxSystemWritable); args: %s", want, args)
 		}
+	}
+}
+
+// TestLinuxSandbox_ApplyBwrap_MasksDeniedFileWithDevNull pins the Greptile
+// P2 fix: a denied file (not directory) must be shadowed with /dev/null so
+// the parent directory's --ro-bind-try mount cannot expose the file. The
+// previous code only emitted --tmpfs for denied directories and the misleading
+// comment claimed "for files, the parent dir restriction handles it" — which
+// is only true when the parent is also denied, which extra_denied entries
+// pointing at single files typically are not.
+func TestLinuxSandbox_ApplyBwrap_MasksDeniedFileWithDevNull(t *testing.T) {
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo")
+
+	tmp := t.TempDir()
+	secretFile := filepath.Join(tmp, "secret")
+	if err := os.WriteFile(secretFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("setup secret file: %v", err)
+	}
+	secretDir := filepath.Join(tmp, "secret-dir")
+	if err := os.Mkdir(secretDir, 0o700); err != nil {
+		t.Fatalf("setup secret dir: %v", err)
+	}
+
+	policy := Policy{
+		Network:         NetworkOutbound,
+		AllowSubprocess: true,
+		ExtraDenied:     []string{secretFile, secretDir},
+	}
+
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		t.Skip("bwrap not on PATH")
+	}
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap error: %v", err)
+	}
+
+	args := strings.Join(cmd.Args, " ")
+	wantFile := "--ro-bind /dev/null " + secretFile
+	if !strings.Contains(args, wantFile) {
+		t.Errorf("denied file must be masked with /dev/null overlay; missing %q in: %s", wantFile, args)
+	}
+	wantDir := "--tmpfs " + secretDir
+	if !strings.Contains(args, wantDir) {
+		t.Errorf("denied directory must be masked with --tmpfs; missing %q in: %s", wantDir, args)
 	}
 }
 

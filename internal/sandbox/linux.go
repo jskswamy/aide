@@ -865,12 +865,30 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		"--tmpfs", "/tmp",
 	)
 
-	// Denied paths: mask with empty tmpfs
+	// Denied paths: directories get a fresh empty tmpfs; files get a
+	// /dev/null overlay. The earlier "parent dir restriction handles it"
+	// comment was wrong — when only a specific file is denied (e.g.
+	// extra_denied: /etc/secret.conf), its parent directory is typically
+	// in the readable bind set, so the file would otherwise remain visible
+	// through that parent's --ro-bind-try. Overlaying /dev/null on the
+	// exact path shadows the parent bind for that one inode. /dev/null
+	// is the host's /dev/null (bwrap resolves --ro-bind sources against
+	// the host fs), available regardless of the sandbox's fresh --dev /dev.
+	//
+	// Asymmetry note: Landlock cannot enforce file-level deny inside an
+	// allowed subtree because its API has no point-deny — denied files
+	// whose parent dir is in the writable/readable allow-list remain
+	// accessible under Landlock. bwrap can close this gap; Landlock can't.
 	for _, p := range expandGlobs(denied) {
-		if info, err := os.Stat(p); err == nil && info.IsDir() {
-			bwrapArgs = append(bwrapArgs, "--tmpfs", p)
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
 		}
-		// For files, the parent dir restriction handles it
+		if info.IsDir() {
+			bwrapArgs = append(bwrapArgs, "--tmpfs", p)
+		} else {
+			bwrapArgs = append(bwrapArgs, "--ro-bind", "/dev/null", p)
+		}
 	}
 
 	// Network isolation

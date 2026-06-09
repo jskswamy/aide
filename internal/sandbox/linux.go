@@ -342,10 +342,13 @@ func (l *LinuxSandbox) applyLandlock(cmd *exec.Cmd, policy Policy, _ string) err
 }
 
 // shouldGateNetwork decides whether to enable Landlock network gating.
-// landlock.V5.Restrict denies all TCP traffic without explicit rules, so we
-// only enable it when the user actually asked for restriction (network=none,
-// or outbound with an explicit port allow-set). "outbound, no port rules" and
-// "unrestricted" use RestrictPaths so the kernel's normal network is intact.
+// landlock.V5.Restrict denies all TCP traffic without explicit rules, so the
+// gate is on whenever the user expressed restriction intent — network=none,
+// or outbound with any non-unrestricted port policy. Gating on
+// portPolicy.Mode (not len(AllowSet)) is intentional: when DenyPorts covers
+// every port, DerivePortPolicy returns Mode="deny_complement" with an empty
+// AllowSet, and the user's deny-all-ports intent must still produce
+// "no outbound TCP" rather than silently passing all traffic through.
 //
 // Limitation: in "outbound, no port rules" we cannot mirror macOS's
 // inbound-bind block — Landlock has no wildcard form for ConnectTCP/BindTCP.
@@ -356,7 +359,7 @@ func shouldGateNetwork(mode NetworkMode, portPolicy PortPolicyEffective) bool {
 	if mode == NetworkUnrestricted {
 		return false
 	}
-	return len(portPolicy.AllowSet) > 0
+	return portPolicy.Mode != "unrestricted"
 }
 
 // writePolicyToMemfd writes policyBytes to an anonymous in-memory file

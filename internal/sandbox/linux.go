@@ -931,6 +931,12 @@ func collectAgentExecPaths(agentPath string) []string {
 	return candidates
 }
 
+// appendMissingPaths returns readable with every candidate that is not
+// already covered by writable or readable appended onto it. The returned
+// slice owns its own backing array — appending to it will never extend or
+// mutate the caller's `readable`. Today every caller passes a cap==len
+// slice from sortedKeys, so the alias would never be observed, but a future
+// caller with spare capacity would otherwise corrupt the original.
 func appendMissingPaths(readable, writable, candidates []string) []string {
 	covered := func(p string) bool {
 		for _, w := range writable {
@@ -945,7 +951,7 @@ func appendMissingPaths(readable, writable, candidates []string) []string {
 		}
 		return false
 	}
-	result := readable
+	result := append([]string(nil), readable...)
 	for _, c := range candidates {
 		if c != "" && !covered(c) {
 			result = append(result, c)

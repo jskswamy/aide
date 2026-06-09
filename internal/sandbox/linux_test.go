@@ -104,6 +104,57 @@ func TestLinuxSandbox_ApplyBwrap_BasicArgs(t *testing.T) {
 	}
 }
 
+// TestLinuxSandbox_ApplyBwrap_MirrorsLinuxSystemReadable pins the fix for the
+// fallback divergence: the Landlock backend grants every path in
+// linuxSystemReadable, and the bwrap fallback must mirror them, otherwise
+// TLS/NSS/passwd lookups would fail under bwrap with no equivalent failure
+// under Landlock. /proc is excluded because bwrap mounts a fresh procfs via
+// --proc, not --ro-bind.
+func TestLinuxSandbox_ApplyBwrap_MirrorsLinuxSystemReadable(t *testing.T) {
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo")
+	policy := Policy{
+		Network:         NetworkOutbound,
+		AllowSubprocess: true,
+	}
+
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		t.Skip("bwrap not on PATH")
+	}
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap error: %v", err)
+	}
+
+	args := strings.Join(cmd.Args, " ")
+	for _, p := range linuxSystemReadable {
+		if p == "/proc" {
+			continue
+		}
+		want := "--ro-bind-try " + p + " " + p
+		if !strings.Contains(args, want) {
+			t.Errorf("bwrap fallback omits %q from system readables; missing %q in: %s", p, want, args)
+		}
+	}
+	for _, want := range []string{"--proc /proc", "--dev /dev", "--tmpfs /tmp"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("bwrap mount-point flag %q missing in: %s", want, args)
+		}
+	}
+	// linuxSystemWritable contains /dev/shm and /run, both critical to
+	// runtime parity with Landlock:
+	//   - /dev/shm tmpfs: V8 heap-snapshot sharing (shm_open) crashes
+	//     Electron/Node agents with ENOENT under bwrap when absent.
+	//   - /run bind: D-Bus session bus socket, XDG_RUNTIME_DIR, socket
+	//     activation. Silent failure under bwrap with no equivalent under
+	//     Landlock.
+	for _, want := range []string{"--tmpfs /dev/shm", "--bind-try /run /run"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("bwrap fallback omits writable system mount %q (mirrors linuxSystemWritable); args: %s", want, args)
+		}
+	}
+}
+
 func TestLinuxSandbox_ApplyBwrap_NetworkNone(t *testing.T) {
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo")

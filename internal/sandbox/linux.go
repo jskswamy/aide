@@ -794,22 +794,37 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		bwrapArgs = append(bwrapArgs, "--ro-bind-try", p, p)
 	}
 
-	// System essentials
+	// System essentials. Mirror linuxSystemReadable so the bwrap fallback
+	// grants the same baseline the Landlock backend grants — TLS bundle,
+	// NSS resolution, passwd/group lookup, ld.so cache, /nix/store and
+	// Linuxbrew on those hosts. Without this, Go/Node TLS lookups and
+	// getpwuid resolution fail under bwrap with no equivalent failure
+	// under Landlock. --ro-bind-try silently skips paths absent on this
+	// host (e.g. /lib32 on pure-64-bit distros).
+	for _, p := range linuxSystemReadable {
+		if p == "/proc" {
+			continue // bwrap mounts a fresh procfs via --proc below
+		}
+		bwrapArgs = append(bwrapArgs, "--ro-bind-try", p, p)
+	}
+	// Mirror linuxSystemWritable. bwrap mount-point flags are heterogeneous
+	// per path so this can't be a uniform loop: --dev creates a fresh
+	// minimal devtmpfs with the standard nodes (covers /dev and bwrap's
+	// auto-handled /dev/pts entries), --tmpfs /dev/shm provides the shared-
+	// memory tmpfs that Node V8 heap-snapshot sharing needs (without it
+	// shm_open returns ENOENT and Electron-based agents like Claude Code
+	// CLI crash on startup), and /run is bind-mounted from the host so the
+	// XDG runtime dir, D-Bus session bus socket, and socket-activation
+	// sockets stay reachable. --perms 01777 matches the host /dev/shm
+	// sticky-bit semantics so anything that probes the mode does not see a
+	// surprising value.
 	bwrapArgs = append(bwrapArgs,
-		"--ro-bind", "/usr", "/usr",
-		"--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
 		"--proc", "/proc",
 		"--dev", "/dev",
+		"--perms", "01777", "--tmpfs", "/dev/shm",
+		"--bind-try", "/run", "/run",
 		"--tmpfs", "/tmp",
 	)
-
-	// /nix/store and Linuxbrew prefix hold the real binaries /usr/bin
-	// symlinks resolve to on Nix(OS) and Linuxbrew hosts.
-	for _, p := range []string{"/lib", "/lib64", "/nix/store", "/home/linuxbrew/.linuxbrew"} {
-		if _, err := os.Stat(p); err == nil {
-			bwrapArgs = append(bwrapArgs, "--ro-bind", p, p)
-		}
-	}
 
 	// Denied paths: mask with empty tmpfs
 	for _, p := range expandGlobs(denied) {

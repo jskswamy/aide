@@ -25,10 +25,13 @@ import (
 //
 // Phase 2 — seccomp+exec (second re-exec, inside the PID namespace):
 //
-//	aide __sandbox-apply -- <agent> [args...]
+//	aide __sandbox-apply -- <agent-path> <agent-argv0> [args...]
 //
-// Installs the no-subprocess seccomp filter and syscall.Execs the agent.
-// Detected when args[0] == "--" (no --policy-fd prefix).
+// Installs the no-subprocess seccomp filter and syscall.Execs <agent-path>
+// with argv = [<agent-argv0>, args...]. Splitting the binary path from the
+// agent's argv preserves the original argv[0] across the re-exec so the
+// agent sees the same name it sees under AllowSubprocess=true. Detected
+// when args[0] == "--" (no --policy-fd prefix).
 func sandboxApplyCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:                "__sandbox-apply [--policy-fd=<N>] -- <agent> [args...]",
@@ -41,13 +44,17 @@ func sandboxApplyCmd() *cobra.Command {
 			}
 
 			// Phase 2: args[0] == "--" means we are inside the PID namespace.
-			// Install seccomp and exec the agent.
+			// Layout: ["--", <agent-path>, <agent-argv0>, <agent-args>...].
+			// agent-path is the binary to exec; agent-argv0 is the name the
+			// agent sees as argv[0]. Splitting them preserves argv[0] across
+			// the re-exec (Greptile P2: argv[0] divergence).
 			if args[0] == "--" {
-				agentCmd := args[1:]
-				if len(agentCmd) == 0 {
-					return fmt.Errorf("no agent command after '--'")
+				if len(args) < 3 {
+					return fmt.Errorf("usage: __sandbox-apply -- <agent-path> <agent-argv0> [args...]")
 				}
-				if err := sandbox.RunSandboxExec(agentCmd); err != nil {
+				agentPath := args[1]
+				agentCmd := args[2:]
+				if err := sandbox.RunSandboxExec(agentPath, agentCmd); err != nil {
 					fmt.Fprintf(os.Stderr, "aide: sandbox-exec: %v\n", err)
 					os.Exit(1)
 				}

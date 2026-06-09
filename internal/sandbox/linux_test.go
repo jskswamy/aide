@@ -605,10 +605,20 @@ func TestShouldGateNetwork(t *testing.T) {
 			want:       true,
 		},
 		{
-			name:       "outbound with empty allow set after deny intersection does not gate",
+			name:       "outbound with allow_intersect_deny empty set gates (no ports allowed)",
 			mode:       NetworkOutbound,
 			portPolicy: PortPolicyEffective{Mode: "allow_intersect_deny"},
-			want:       false,
+			want:       true,
+		},
+		{
+			// Regression: DenyPorts covering 1-65535 → Mode=deny_complement,
+			// AllowSet empty. Previous len(AllowSet) gate let everything
+			// through; the user-expressed "block all ports" intent must
+			// produce "no outbound TCP" instead.
+			name:       "outbound with deny-all-ports gates (deny_complement, empty AllowSet)",
+			mode:       NetworkOutbound,
+			portPolicy: PortPolicyEffective{Mode: "deny_complement"},
+			want:       true,
 		},
 	}
 

@@ -315,6 +315,35 @@ func TestRunSandboxExec_EmptyPath_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestAppendMissingPaths_DoesNotAliasReadable pins the defensive-copy
+// contract: callers must be able to keep using the slice they passed as
+// `readable` without worrying that appendMissingPaths might extend or
+// mutate it through a shared backing array. Today every caller passes a
+// cap==len slice (from sortedKeys), so the bug would never trigger; the
+// regression target is a caller that grows their slice past current len.
+func TestAppendMissingPaths_DoesNotAliasReadable(t *testing.T) {
+	// Build a readable slice with spare capacity so any aliasing would be
+	// observable: appending into result would silently overwrite slot 1.
+	readable := make([]string, 1, 4)
+	readable[0] = "/usr"
+	beforeCap := cap(readable)
+
+	got := appendMissingPaths(readable, nil, []string{"/etc", "/var"})
+
+	if got[0] != "/usr" || len(got) != 3 || got[1] != "/etc" || got[2] != "/var" {
+		t.Fatalf("appendMissingPaths returned unexpected slice: %v", got)
+	}
+	if len(readable) != 1 || readable[0] != "/usr" || cap(readable) != beforeCap {
+		t.Errorf("appendMissingPaths mutated the original readable slice: %v (cap=%d, want cap=%d)",
+			readable, cap(readable), beforeCap)
+	}
+	// Mutating got must not leak into readable.
+	got[0] = "/mutated"
+	if readable[0] != "/usr" {
+		t.Errorf("got and readable share backing array: readable[0] = %q after got[0] mutation", readable[0])
+	}
+}
+
 // TestBuildPhase2ExecArgs_PreservesOriginalArgv0 pins the Greptile P2 fix:
 // the resolved absolute agentPath must occupy slot 3 (so syscall.Exec inside
 // RunSandboxExec loads the right binary), but the agent's original argv[0]

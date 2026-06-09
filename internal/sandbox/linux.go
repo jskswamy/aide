@@ -538,9 +538,7 @@ func RunSandboxApply(policyFDStr string, agentCmd []string) error {
 	if shouldGateNetwork(policy.Network, portPolicy) {
 		var portRules []landlock.Rule
 		for _, port := range portPolicy.AllowSet {
-			if port >= 0 && port <= 65535 {
-				portRules = append(portRules, landlock.ConnectTCP(uint16(port)))
-			}
+			portRules = append(portRules, landlock.ConnectTCP(port))
 		}
 		if err := cfg.RestrictNet(portRules...); err != nil {
 			return fmt.Errorf("landlock restrict-net: %w", err)

@@ -262,7 +262,9 @@ func policyToJSON(p Policy) (landlockPolicyJSON, error) {
 			return landlockPolicyJSON{}, fmt.Errorf("resolve $HOME for agent module %q: HomeDir not set on policy", p.AgentModule.Name())
 		}
 		moduleResult := p.AgentModule.Rules(p.ToSeatbeltContext())
-		j.AgentReadable = moduleResult.Allowed
+		// Both the deny-exception (Allowed) and first-class read-only
+		// (Readable) channels become readable grants under Landlock.
+		j.AgentReadable = append(append([]string{}, moduleResult.Allowed...), moduleResult.Readable...)
 		j.AgentWritable = moduleResult.Writable
 	}
 	return j, nil

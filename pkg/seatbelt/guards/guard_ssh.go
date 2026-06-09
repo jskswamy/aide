@@ -49,6 +49,10 @@ func (g *sshGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		seatbelt.AllowRule(fmt.Sprintf("(allow file-read*\n    %s\n)",
 			seatbelt.HomeSubpath(home, ".ssh"))),
 	)
+	// Linux Landlock equivalent of the read-only grant above. If another guard
+	// (e.g. dev-credentials) denies ~/.ssh, deny-wins in DeriveGrantedPathSet
+	// strips it again — so this never widens beyond intent.
+	result.Readable = append(result.Readable, filepath.Join(home, ".ssh"))
 
 	// SSH agent socket
 	if sock, ok := ctx.EnvLookup("SSH_AUTH_SOCK"); ok && sock != "" {

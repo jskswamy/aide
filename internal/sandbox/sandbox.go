@@ -221,7 +221,8 @@ type GrantedPathSet struct {
 //   - Guard Writable paths (incl. the agent module's Linux grants routed
 //     through EvaluateGuards) → Writable.
 //   - policy.ExtraReadable → Readable.
-//   - Guard Readable paths → Readable.
+//   - Guard Readable paths (first-class read-only grants) and guard Allowed
+//     paths (deny-exceptions) → Readable.
 //   - All paths are resolved via filepath.EvalSymlinks before use.
 func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 	origin := make(map[string]string)
@@ -252,10 +253,22 @@ func DeriveGrantedPathSet(policy Policy) GrantedPathSet {
 		}
 	}
 
-	// Collect readable paths from guard Allowed lists (e.g. a capability
-	// unlocking ~/.config/gh, or a credential path the agent may read).
+	// Collect readable paths from guards. Two structured sources feed the
+	// read-only set:
+	//   - Readable: first-class read-only grants (e.g. git-integration's
+	//     ~/.gitconfig). These are dropped on Linux unless surfaced here,
+	//     because the Seatbelt `file-read*` Rules they also emit are macOS-only.
+	//   - Allowed: deny-exceptions (a path a guard would otherwise Protect but
+	//     the user opted back in) — also readable under Landlock.
 	readableExtra := make(map[string]bool)
 	for _, gr := range guardResults {
+		for _, p := range gr.Readable {
+			resolved := resolveSymlink(p)
+			readableExtra[resolved] = true
+			if origin[resolved] == "" {
+				origin[resolved] = gr.Name + ":readable"
+			}
+		}
 		for _, p := range gr.Allowed {
 			resolved := resolveSymlink(p)
 			readableExtra[resolved] = true

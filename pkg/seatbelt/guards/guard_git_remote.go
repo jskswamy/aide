@@ -43,6 +43,8 @@ func (g *gitRemoteGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 			seatbelt.AllowRule(fmt.Sprintf("(allow file-read* %s)",
 				seatbelt.HomeSubpath(home, ".config/git-credential-manager"))),
 		)
+		// Linux Landlock equivalent of the read-only grant above.
+		result.Readable = append(result.Readable, gcmDir)
 	}
 
 	// Network outbound on HTTPS

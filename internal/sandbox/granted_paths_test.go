@@ -137,6 +137,37 @@ func TestDeriveGrantedPathSet_HomeSSHNotInReadable(t *testing.T) {
 	}
 }
 
+// TestDeriveGrantedPathSet_GuardReadablePathsReachReadable verifies that a
+// guard's first-class read-only grants (GuardResult.Readable) flow into
+// GrantedPathSet.Readable for Landlock enforcement. This is the regression pin
+// for the git-config gap: the git-integration guard expressed its grants only
+// as Seatbelt file-read* Rules (which the Linux backend does not parse), so
+// ~/.gitconfig was denied under Landlock even though "git is enabled".
+func TestDeriveGrantedPathSet_GuardReadablePathsReachReadable(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[user]\n\tname = Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	policy := Policy{
+		HomeDir: home,
+		Guards:  []string{"git-integration"},
+	}
+	gps := DeriveGrantedPathSet(policy)
+
+	want := resolveSymlink(filepath.Join(home, ".gitconfig"))
+	if !containsPath(gps.Readable, want) {
+		t.Errorf("git-integration's ~/.gitconfig must reach GrantedPathSet.Readable for Landlock; got %v", gps.Readable)
+	}
+	if containsPath(gps.Writable, want) {
+		t.Errorf("git config is read-only and must not appear in Writable: %v", gps.Writable)
+	}
+}
+
 // TestDeriveGrantedPathSet_AideSecretsNotSubtreeCovered locks down the fix
 // for a real vulnerability: an earlier version added ~/.config/aide,
 // ~/.local/share/aide and ~/.cache/aide unconditionally to the readable set.

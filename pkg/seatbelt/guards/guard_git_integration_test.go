@@ -3,6 +3,7 @@ package guards_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -64,6 +65,35 @@ func TestGuard_GitIntegration_WellKnownPaths(t *testing.T) {
 	}
 	if strings.Contains(output, "file-write*") {
 		t.Error("git config paths should be read-only")
+	}
+}
+
+// TestGuard_GitIntegration_PopulatesReadableForLandlock pins the cross-platform
+// grant: the git config files must appear in result.Readable, not only in the
+// Seatbelt Rules s-expression. The Linux Landlock backend reads the structured
+// Readable field; if the guard populated only Rules, git inside the sandbox
+// would fail to read ~/.gitconfig with EACCES.
+func TestGuard_GitIntegration_PopulatesReadableForLandlock(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[user]\n\tname = Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	g := guards.GitIntegrationGuard()
+	ctx := &seatbelt.Context{HomeDir: home, ProjectRoot: "/project"}
+	result := g.Rules(ctx)
+
+	want := resolveSymlinkOrSelf(filepath.Join(home, ".gitconfig"))
+	if !slices.Contains(result.Readable, want) {
+		t.Errorf("expected %q in result.Readable (Landlock read grant); got %v", want, result.Readable)
+	}
+	// Read-only grant must not leak into Writable.
+	if slices.Contains(result.Writable, want) {
+		t.Errorf("git config must be read-only, not in Writable: %v", result.Writable)
 	}
 }
 

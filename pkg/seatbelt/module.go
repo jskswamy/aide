@@ -56,12 +56,23 @@ type EnvKeyProvider interface {
 }
 
 // GuardResult holds rules and diagnostics from a guard evaluation.
+//
+// The Linux Landlock backend enforces from the structured path fields below
+// (the macOS Seatbelt backend renders from Rules instead). Readable and
+// Writable are first-class grants for paths the agent must read (e.g.
+// ~/.gitconfig) or read+write. Readable is NOT the same as Allowed: Allowed
+// merely exempts a path from this guard's own deny, whereas Readable
+// positively grants read access. A guard that grants read-only access via a
+// Seatbelt file-read* rule MUST also list those paths in Readable, or they
+// are silently dropped under Landlock (Seatbelt s-expressions are not parsed
+// by the Linux backend).
 type GuardResult struct {
 	Name      string     // guard name, set by the profile builder from Module.Name()
 	Rules     []Rule
 	Protected []string   // paths being denied
-	Allowed   []string   // paths explicitly allowed (exceptions)
+	Allowed   []string   // paths exempted from this guard's deny (opt-outs)
 	Writable  []string   // paths the agent may read and write
+	Readable  []string   // paths the agent may read (but not write)
 	Skipped   []string   // "~/.config/op not found" etc.
 	Overrides []Override // env var overrides detected
 	Hints     []string   // user-facing suggestions (e.g. "enable 'ssh' capability for SSH push")

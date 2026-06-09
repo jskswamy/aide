@@ -58,6 +58,11 @@ func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult 
 		seatbelt.SectionAllow("Git configuration (read-only)"),
 		seatbelt.AllowRule(fmt.Sprintf("(allow file-read*\n%s)", strings.Join(pathExprs, "\n"))),
 	)
+	// Mirror the read-only grant into the structured field so the Linux
+	// Landlock backend (which does not parse the Seatbelt s-expression above)
+	// grants the same git config files. Without this, git inside the sandbox
+	// fails to read ~/.gitconfig and ~/.config/git/* with EACCES.
+	result.Readable = append(result.Readable, allPaths...)
 
 	// GPG signing support: if commit.gpgsign is enabled in any config,
 	// allow access to ~/.gnupg for signing commits. GPG needs read+write
@@ -72,6 +77,7 @@ func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult 
 			seatbelt.AllowRule(fmt.Sprintf("(allow file-read* file-write*\n    %s)",
 				seatbelt.HomeSubpath(home, ".gnupg"))),
 		)
+		result.Writable = append(result.Writable, gnupgHome)
 		// GPG agent unix socket for passphrase caching
 		result.Rules = append(result.Rules,
 			seatbelt.SectionAllow("GPG agent socket"),
@@ -107,6 +113,7 @@ func addSSHSigningRules(result *seatbelt.GuardResult, home, signingKey string) {
 		seatbelt.AllowRule(fmt.Sprintf(`(allow file-read* file-write*
     (literal "%s"))`, knownHosts)),
 	)
+	result.Writable = append(result.Writable, knownHosts)
 
 	signingKey = strings.TrimSpace(signingKey)
 	if signingKey == "" {
@@ -149,6 +156,7 @@ func addSSHSigningRules(result *seatbelt.GuardResult, home, signingKey string) {
     (literal "%s")
     (literal "%s"))`, priv, pub)),
 	)
+	result.Readable = append(result.Readable, priv, pub)
 }
 
 // splitSigningKeyPaths returns (privateKeyPath, publicKeyPath). git accepts

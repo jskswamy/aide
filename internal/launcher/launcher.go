@@ -815,6 +815,7 @@ func (l *Launcher) buildBannerData(
 						Name:      g.Name,
 						Protected: g.Protected,
 						Allowed:   g.Allowed,
+						Readable:  g.Readable,
 					}
 					for _, o := range g.Overrides {
 						display.Overrides = append(display.Overrides, ui.GuardOverride{

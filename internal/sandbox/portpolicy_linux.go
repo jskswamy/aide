@@ -11,7 +11,7 @@ import "fmt"
 // "allow_intersect_deny". Enforceable is false when the backend cannot honour
 // AllowSet — IsolationTier must be degraded in that case.
 type PortPolicyEffective struct {
-	AllowSet    []int
+	AllowSet    []uint16 // all values guaranteed to be in [1, 65535]
 	Mode        string
 	Enforceable bool
 }
@@ -54,13 +54,12 @@ func DerivePortPolicy(policy Policy, landlockABI4 bool) PortPolicyEffective {
 		}
 	}
 
-	var allowSet []int
+	var allowSet []uint16
 
 	switch {
 	case len(allow) > 0 && len(deny) == 0:
-		allowSet = validatePorts(allow)
 		return PortPolicyEffective{
-			AllowSet:    allowSet,
+			AllowSet:    validatePorts(allow),
 			Mode:        "allow_only",
 			Enforceable: landlockABI4,
 		}
@@ -70,7 +69,8 @@ func DerivePortPolicy(policy Policy, landlockABI4 bool) PortPolicyEffective {
 		// Using only CommonPorts as the complement seed would silently block
 		// legitimate ports (e.g. 5173, 8888) that are absent from that list.
 		denySet := portSet(validatePorts(deny))
-		for p := 1; p <= 65535; p++ {
+		for i := 1; i <= 65535; i++ {
+			p := uint16(i) //nolint:gosec // i ∈ [1,65535] by loop bounds
 			if !denySet[p] {
 				allowSet = append(allowSet, p)
 			}
@@ -96,31 +96,38 @@ func DerivePortPolicy(policy Policy, landlockABI4 bool) PortPolicyEffective {
 	}
 }
 
-// validatePorts drops out-of-range values. Callers needing a hard error use
+// validatePorts drops out-of-range values and returns a []uint16 whose values
+// are guaranteed to be in [1, 65535]. Port 0 is excluded: it is not a valid
+// TCP connect/bind destination, and Landlock treats ConnectTCP(0) as a
+// wildcard that allows every port — silently broadening "allow_only" while
+// the deny_complement loop (1–65535) silently excludes it. Rejecting it at
+// entry keeps both modes symmetric. Callers needing a hard error use
 // ValidatePortRange separately.
-func validatePorts(ports []int) []int {
-	out := make([]int, 0, len(ports))
+func validatePorts(ports []int) []uint16 {
+	out := make([]uint16, 0, len(ports))
 	for _, p := range ports {
-		if p >= 0 && p <= 65535 {
-			out = append(out, p)
+		if p >= 1 && p <= 65535 {
+			out = append(out, uint16(p)) //nolint:gosec // bounds checked above
 		}
 	}
 	return out
 }
 
-func portSet(ports []int) map[int]bool {
-	m := make(map[int]bool, len(ports))
+func portSet(ports []uint16) map[uint16]bool {
+	m := make(map[uint16]bool, len(ports))
 	for _, p := range ports {
 		m[p] = true
 	}
 	return m
 }
 
-// ValidatePortRange returns an error if any port is outside the valid 0–65535 range.
+// ValidatePortRange returns an error if any port is outside the valid 1–65535
+// range. Port 0 is rejected: see validatePorts for the Landlock-wildcard
+// rationale.
 func ValidatePortRange(ports []int) error {
 	for _, p := range ports {
-		if p < 0 || p > 65535 {
-			return fmt.Errorf("invalid port %d: must be 0–65535", p)
+		if p < 1 || p > 65535 {
+			return fmt.Errorf("invalid port %d: must be 1–65535", p)
 		}
 	}
 	return nil

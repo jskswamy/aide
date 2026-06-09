@@ -583,7 +583,7 @@ func TestShouldGateNetwork(t *testing.T) {
 		{
 			name:       "unrestricted mode never gates even with stale port rules",
 			mode:       NetworkUnrestricted,
-			portPolicy: PortPolicyEffective{Mode: "allow_only", AllowSet: []int{443}},
+			portPolicy: PortPolicyEffective{Mode: "allow_only", AllowSet: []uint16{443}},
 			want:       false,
 		},
 		{
@@ -595,13 +595,13 @@ func TestShouldGateNetwork(t *testing.T) {
 		{
 			name:       "outbound with allow ports gates and applies allow-set",
 			mode:       NetworkOutbound,
-			portPolicy: PortPolicyEffective{Mode: "allow_only", AllowSet: []int{443, 53}},
+			portPolicy: PortPolicyEffective{Mode: "allow_only", AllowSet: []uint16{443, 53}},
 			want:       true,
 		},
 		{
 			name:       "outbound with deny-derived allow set still gates",
 			mode:       NetworkOutbound,
-			portPolicy: PortPolicyEffective{Mode: "deny_complement", AllowSet: []int{80, 443}},
+			portPolicy: PortPolicyEffective{Mode: "deny_complement", AllowSet: []uint16{80, 443}},
 			want:       true,
 		},
 		{

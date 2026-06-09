@@ -27,7 +27,7 @@ func TestDerivePortPolicy_AllowOnly(t *testing.T) {
 	if pp.Mode != "allow_only" {
 		t.Errorf("Mode = %q, want allow_only", pp.Mode)
 	}
-	if !containsInt(pp.AllowSet, 443) || !containsInt(pp.AllowSet, 80) {
+	if !containsPort(pp.AllowSet, 443) || !containsPort(pp.AllowSet, 80) {
 		t.Errorf("AllowSet = %v, want [80 443]", pp.AllowSet)
 	}
 	if !pp.Enforceable {
@@ -52,15 +52,15 @@ func TestDerivePortPolicy_DenyComplement(t *testing.T) {
 		t.Errorf("Mode = %q, want deny_complement", pp.Mode)
 	}
 	// Denied ports must be absent.
-	if containsInt(pp.AllowSet, 22) {
+	if containsPort(pp.AllowSet, 22) {
 		t.Error("port 22 should be excluded from AllowSet (denied)")
 	}
-	if containsInt(pp.AllowSet, 80) {
+	if containsPort(pp.AllowSet, 80) {
 		t.Error("port 80 should be excluded from AllowSet (denied)")
 	}
 	// Well-known ports NOT in CommonPorts must be present (previously missing).
 	for _, port := range []int{443, 5173, 8888, 9090, 1234, 65535} {
-		if !containsInt(pp.AllowSet, port) {
+		if !containsPort(pp.AllowSet, port) {
 			t.Errorf("port %d should be in AllowSet (not denied)", port)
 		}
 	}
@@ -78,16 +78,16 @@ func TestDerivePortPolicy_AllowIntersectDeny(t *testing.T) {
 	if pp.Mode != "allow_intersect_deny" {
 		t.Errorf("Mode = %q, want allow_intersect_deny", pp.Mode)
 	}
-	if containsInt(pp.AllowSet, 22) {
+	if containsPort(pp.AllowSet, 22) {
 		t.Error("port 22 should be excluded (in DenyPorts)")
 	}
-	if !containsInt(pp.AllowSet, 443) || !containsInt(pp.AllowSet, 80) {
+	if !containsPort(pp.AllowSet, 443) || !containsPort(pp.AllowSet, 80) {
 		t.Errorf("AllowSet = %v, should contain 443 and 80", pp.AllowSet)
 	}
 }
 
 func TestValidatePortRange_ValidPorts(t *testing.T) {
-	if err := ValidatePortRange([]int{0, 1, 443, 65535}); err != nil {
+	if err := ValidatePortRange([]int{1, 443, 65535}); err != nil {
 		t.Errorf("valid ports returned error: %v", err)
 	}
 }
@@ -99,8 +99,25 @@ func TestValidatePortRange_InvalidPort(t *testing.T) {
 	if err := ValidatePortRange([]int{-1}); err == nil {
 		t.Error("expected error for port -1")
 	}
+	// Port 0 is rejected to avoid Landlock's ConnectTCP(0) wildcard
+	// behaviour leaking through allow_only mode.
+	if err := ValidatePortRange([]int{0}); err == nil {
+		t.Error("expected error for port 0 (Landlock wildcard)")
+	}
 }
 
-func containsInt(list []int, val int) bool {
-	return slices.Contains(list, val)
+func TestDerivePortPolicy_DropsPortZero(t *testing.T) {
+	// Port 0 in either list must not survive: in allow_only it would
+	// otherwise become ConnectTCP(0), a wildcard that allows every port.
+	pp := DerivePortPolicy(Policy{AllowPorts: []int{0, 443}}, true)
+	if slices.Contains(pp.AllowSet, 0) {
+		t.Errorf("AllowSet leaked port 0: %v", pp.AllowSet)
+	}
+	if !slices.Contains(pp.AllowSet, 443) {
+		t.Errorf("AllowSet should still contain 443; got %v", pp.AllowSet)
+	}
+}
+
+func containsPort(list []uint16, val int) bool {
+	return slices.Contains(list, uint16(val)) //nolint:gosec // test values are valid ports
 }

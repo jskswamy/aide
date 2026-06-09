@@ -6,7 +6,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"path/filepath"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type nodeToolchainGuard struct{}
 
@@ -25,7 +29,9 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	}
 	home := ctx.HomeDir
 
-	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
+	var result seatbelt.GuardResult
+
+	result.Rules = []seatbelt.Rule{
 		// Node version managers
 		seatbelt.SectionAllow("Node version managers"),
 		seatbelt.AllowRule(`(allow file-read* file-write*
@@ -103,5 +109,44 @@ func (g *nodeToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     ` + seatbelt.HomeSubpath(home, "Library/Caches/turbo") + `
     ` + seatbelt.HomeSubpath(home, "Library/Application Support/turborepo") + `
 )`),
-	}}
+	}
+
+	// Linux Landlock equivalents: XDG/dotfile paths only — Library/... paths
+	// are macOS-specific and belong only in Rules above.
+	result.Writable = []string{
+		// version managers
+		filepath.Join(home, ".nvm"),
+		filepath.Join(home, ".fnm"),
+		// npm
+		filepath.Join(home, ".npm"),
+		filepath.Join(home, ".config", "npm"),
+		filepath.Join(home, ".cache", "npm"),
+		filepath.Join(home, ".cache", "node"),
+		filepath.Join(home, ".npmrc"),
+		filepath.Join(home, ".config", "configstore"),
+		filepath.Join(home, ".node-gyp"),
+		filepath.Join(home, ".cache", "node-gyp"),
+		// pnpm
+		filepath.Join(home, ".config", "pnpm"),
+		filepath.Join(home, ".pnpm-state"),
+		filepath.Join(home, ".pnpm-store"),
+		filepath.Join(home, ".local", "share", "pnpm"),
+		filepath.Join(home, ".local", "state", "pnpm"),
+		// yarn
+		filepath.Join(home, ".yarn"),
+		filepath.Join(home, ".yarnrc"),
+		filepath.Join(home, ".yarnrc.yml"),
+		filepath.Join(home, ".config", "yarn"),
+		filepath.Join(home, ".cache", "yarn"),
+		// corepack
+		filepath.Join(home, ".cache", "node", "corepack"),
+		// browser testing
+		filepath.Join(home, ".cache", "puppeteer"),
+		// Prisma
+		filepath.Join(home, ".cache", "prisma"),
+		// Turborepo
+		filepath.Join(home, ".cache", "turbo"),
+	}
+
+	return result
 }

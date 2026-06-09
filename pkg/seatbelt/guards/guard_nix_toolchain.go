@@ -6,9 +6,13 @@ package guards
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
+
+// nixStoreDir is the expected location of the Nix store. Overridable in tests.
+var nixStoreDir = "/nix/store"
 
 type nixToolchainGuard struct{}
 
@@ -23,15 +27,17 @@ func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	if ctx == nil || ctx.HomeDir == "" {
 		return seatbelt.GuardResult{}
 	}
-	if !dirExists("/nix/store") {
+	if !dirExists(nixStoreDir) {
 		return seatbelt.GuardResult{
-			Skipped: []string{"/nix/store not found — nix not installed"},
+			Skipped: []string{nixStoreDir + " not found — nix not installed"},
 		}
 	}
 
 	home := ctx.HomeDir
 
-	return seatbelt.GuardResult{Rules: []seatbelt.Rule{
+	var result seatbelt.GuardResult
+
+	result.Rules = []seatbelt.Rule{
 		// Nix daemon socket
 		seatbelt.SectionAllow("Nix daemon socket"),
 		seatbelt.AllowRule(`(allow network-outbound
@@ -55,5 +61,19 @@ func (g *nixToolchainGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
     %s
 )`, seatbelt.HomeSubpath(home, ".nix-defexpr"),
 			seatbelt.HomeSubpath(home, ".config/nix"))),
-	}}
+	}
+
+	// Linux Landlock equivalents: mirror the read+write and read-only grants
+	// into the structured fields so DeriveGrantedPathSet picks them up.
+	result.Writable = []string{
+		filepath.Join(home, ".nix-profile"),
+		filepath.Join(home, ".local", "state", "nix"),
+		filepath.Join(home, ".cache", "nix"),
+	}
+	result.Readable = []string{
+		filepath.Join(home, ".nix-defexpr"),
+		filepath.Join(home, ".config", "nix"),
+	}
+
+	return result
 }

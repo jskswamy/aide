@@ -17,8 +17,8 @@ fail() { echo "aide-installer: ERROR: $*" >&2; exit 1; }
 # Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$OS" in
-    darwin) ;;
-    *) fail "unsupported OS: $OS (only macOS is supported)" ;;
+    darwin|linux) ;;
+    *) fail "unsupported OS: $OS (supported: macOS, Linux)" ;;
 esac
 
 # Detect architecture
@@ -57,7 +57,12 @@ EXPECTED=$(grep "$ARCHIVE" "${TMPDIR}/sha256sums.txt" | awk '{print $1}')
 if [ -z "$EXPECTED" ]; then
     fail "archive not found in sha256sums.txt"
 fi
-ACTUAL=$(shasum -a 256 "${TMPDIR}/${ARCHIVE}" | awk '{print $1}')
+# Linux ships sha256sum; macOS ships shasum
+if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL=$(sha256sum "${TMPDIR}/${ARCHIVE}" | awk '{print $1}')
+else
+    ACTUAL=$(shasum -a 256 "${TMPDIR}/${ARCHIVE}" | awk '{print $1}')
+fi
 if [ "$EXPECTED" != "$ACTUAL" ]; then
     fail "checksum mismatch: expected $EXPECTED, got $ACTUAL"
 fi

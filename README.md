@@ -498,10 +498,6 @@ make lint                   # Run golangci-lint
 
 ## Planned
 
-### Linux support
-
-Landlock + seccomp-bpf sandbox for Linux hosts (with bubblewrap fallback for older kernels). Currently aide sandboxes via macOS Seatbelt — Linux users run without OS-level isolation. Landlock handles filesystem access control, seccomp-bpf restricts system calls, and together they bring the same deny-default, guard-based architecture to Linux with equivalent coverage.
-
 ### Network filtering
 
 Allow or deny network access by domain, port, and MIME type. Today the sandbox controls network at the transport level (outbound yes/no, port filtering). Planned: domain-level rules so an agent can reach `github.com` but not arbitrary hosts, and MIME-type filtering to block binary downloads while allowing API calls.
@@ -514,6 +510,14 @@ Block dangerous commands by name — `rm`, `sudo`, `chmod`, `kill`, etc. Instead
 sandbox:
   deny_commands: [rm, sudo, chmod, kill, reboot]
 ```
+
+## Contributors
+
+Thanks to the people who've contributed to aide:
+
+- Selvakumar Natesan ([@selvakn](https://github.com/selvakn)) — Linux Landlock/seccomp sandbox
+
+See the full list on the [contributors graph](https://github.com/jskswamy/aide/graphs/contributors).
 
 ## License
 

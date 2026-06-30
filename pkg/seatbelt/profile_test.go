@@ -25,7 +25,7 @@ func TestProfile_Render_SingleModule(t *testing.T) {
 	mockMod := mocks.NewMockModule(ctrl)
 	mockMod.EXPECT().Name().Return("test").AnyTimes()
 	mockMod.EXPECT().Rules(gomock.Any()).Return(seatbelt.GuardResult{
-		Rules: []seatbelt.Rule{seatbelt.AllowOp("process-exec")},
+		Rules: []seatbelt.Rule{seatbelt.AllowRule("(allow process-exec)")},
 	}).AnyTimes()
 
 	p := seatbelt.New("/home/user").Use(mockMod)
@@ -46,13 +46,13 @@ func TestProfile_Render_ModuleOrder(t *testing.T) {
 	mockFirst := mocks.NewMockModule(ctrl)
 	mockFirst.EXPECT().Name().Return("first").AnyTimes()
 	mockFirst.EXPECT().Rules(gomock.Any()).Return(seatbelt.GuardResult{
-		Rules: []seatbelt.Rule{seatbelt.AllowOp("process-exec")},
+		Rules: []seatbelt.Rule{seatbelt.AllowRule("(allow process-exec)")},
 	}).AnyTimes()
 
 	mockSecond := mocks.NewMockModule(ctrl)
 	mockSecond.EXPECT().Name().Return("second").AnyTimes()
 	mockSecond.EXPECT().Rules(gomock.Any()).Return(seatbelt.GuardResult{
-		Rules: []seatbelt.Rule{seatbelt.AllowOp("process-fork")},
+		Rules: []seatbelt.Rule{seatbelt.AllowRule("(allow process-fork)")},
 	}).AnyTimes()
 
 	p := seatbelt.New("/home/user").Use(mockFirst, mockSecond)

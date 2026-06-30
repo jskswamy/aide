@@ -191,28 +191,3 @@ func TestAnyMarkerMatches_NoneMatch(t *testing.T) {
 		t.Errorf("AnyMarkerMatches returned true when none matched")
 	}
 }
-
-func TestAllMarkersMatch_Empty(t *testing.T) {
-	if AllMarkersMatch(os.DirFS(t.TempDir()), nil) {
-		t.Errorf("AllMarkersMatch on empty list returned true; want false")
-	}
-}
-
-func TestAllMarkersMatch_AllMatch(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "a", "")
-	writeFile(t, dir, "b", "")
-	ms := []Marker{{File: "a"}, {File: "b"}}
-	if !AllMarkersMatch(os.DirFS(dir), ms) {
-		t.Errorf("AllMarkersMatch did not return true when all matched")
-	}
-}
-
-func TestAllMarkersMatch_OneFails(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "a", "")
-	ms := []Marker{{File: "a"}, {File: "b"}}
-	if AllMarkersMatch(os.DirFS(dir), ms) {
-		t.Errorf("AllMarkersMatch returned true with one marker failing")
-	}
-}

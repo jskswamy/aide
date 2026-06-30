@@ -8,8 +8,6 @@ import (
 	"strings"
 	"text/template"
 	"unicode"
-
-	"github.com/fatih/color"
 )
 
 //go:embed templates/*.tmpl
@@ -195,61 +193,4 @@ func sandboxNetworkLabel(data *BannerData) string {
 		return data.Sandbox.Network
 	}
 	return "outbound"
-}
-
-// renderGuardSection is available for aide sandbox commands but no longer
-// used in the banner. Guard details are internal — the banner shows
-// capabilities only. Keeping the types (SandboxInfo, GuardDisplay) for
-// the aide sandbox guards CLI command.
-func renderGuardSection(w io.Writer, info *SandboxInfo, prefix string) {
-	boldGreenC := color.New(color.FgGreen, color.Bold)
-	yellowC := color.New(color.FgYellow)
-	dimC := color.New(color.Faint)
-
-	for _, g := range info.Active {
-		boldGreenC.Fprintf(w, "%s✓ %s\n", prefix, g.Name)
-		if len(g.Protected) > 0 {
-			fmt.Fprintf(w, "%s    denied:  %s\n", prefix, truncateList(g.Protected, 3))
-		}
-		if len(g.Allowed) > 0 {
-			fmt.Fprintf(w, "%s    allowed: %s\n", prefix, truncateList(g.Allowed, 3))
-		}
-		if len(g.Readable) > 0 {
-			fmt.Fprintf(w, "%s    readable: %s\n", prefix, truncateList(g.Readable, 3))
-		}
-		for _, o := range g.Overrides {
-			fmt.Fprintf(w, "%s    override: %s → %s (default: %s)\n",
-				prefix, o.EnvVar, o.Value, o.DefaultPath)
-		}
-	}
-	if len(info.Active) > 0 && (len(info.Skipped) > 0 || len(info.Available) > 0) {
-		fmt.Fprintln(w)
-	}
-	for _, g := range info.Skipped {
-		yellowC.Fprintf(w, "%s⊘ %s", prefix, g.Name)
-		fmt.Fprintf(w, " — %s\n", g.Reason)
-	}
-	if len(info.Skipped) > 0 && len(info.Available) > 0 {
-		fmt.Fprintln(w)
-	}
-	if len(info.Available) > 0 {
-		dimC.Fprintf(w, "%s○ %s — available (opt-in)\n",
-			prefix, strings.Join(info.Available, ", "))
-	}
-	if len(info.Hints) > 0 {
-		fmt.Fprintln(w)
-		for _, h := range info.Hints {
-			yellowC.Fprintf(w, "%s💡 %s\n", prefix, h)
-		}
-	}
-	needsHint := len(info.Skipped) > 0 || len(info.Available) > 0
-	for _, g := range info.Active {
-		if len(g.Protected) > 3 || len(g.Allowed) > 3 || len(g.Readable) > 3 {
-			needsHint = true
-		}
-	}
-	if needsHint {
-		fmt.Fprintln(w)
-		dimC.Fprintf(w, "%srun `aide sandbox` for full details\n", prefix)
-	}
 }

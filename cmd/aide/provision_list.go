@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -172,12 +173,7 @@ func runPluginList(out io.Writer, contextName string) error {
 // supportsMarketplaces reports whether the provisioner advertises
 // ShapeMarketplace in SupportedSourceShapes.
 func supportsMarketplaces(p provision.Provisioner) bool {
-	for _, s := range p.SupportedSourceShapes() {
-		if s == provision.ShapeMarketplace {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.SupportedSourceShapes(), provision.ShapeMarketplace)
 }
 
 // managedMarketplaceNames returns the set of marketplace keys aide

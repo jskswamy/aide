@@ -169,18 +169,3 @@ func AnyMarkerMatches(fsys fs.FS, ms []Marker) bool {
 	}
 	return false
 }
-
-// AllMarkersMatch reports whether every marker in ms matches under
-// fsys. Empty list → false. Use for Variant.Markers (specificity-of-
-// evidence / AND semantics).
-func AllMarkersMatch(fsys fs.FS, ms []Marker) bool {
-	if len(ms) == 0 {
-		return false
-	}
-	for _, m := range ms {
-		if !m.Match(fsys) {
-			return false
-		}
-	}
-	return true
-}

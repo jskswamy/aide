@@ -7,6 +7,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/redact"
 )
 
 // StateFromConfig builds a redacted snapshot. It is pure and read-only and
@@ -102,7 +103,7 @@ func redactEnv(env map[string]string) []EnvRef {
 			// suggest a credential (TOKEN, SECRET, PASSWORD, etc.) are
 			// redacted; everything else (e.g. ANTHROPIC_MODEL) is safe to
 			// show verbatim.
-			if isCredentialKey(k) {
+			if redact.LooksSensitive(k) {
 				ref.Redacted = true
 			} else {
 				ref.Template = val
@@ -111,22 +112,6 @@ func redactEnv(env map[string]string) []EnvRef {
 		refs = append(refs, ref)
 	}
 	return refs
-}
-
-// credentialIndicators are substrings that, when present in an env-var key
-// name (case-insensitive), indicate the value is likely a credential.
-var credentialIndicators = []string{
-	"KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "CERT", "PRIVATE",
-}
-
-func isCredentialKey(key string) bool {
-	up := strings.ToUpper(key)
-	for _, ind := range credentialIndicators {
-		if strings.Contains(up, ind) {
-			return true
-		}
-	}
-	return false
 }
 
 // mcpServerNames summarizes a context's MCP selection. It prefers the v1

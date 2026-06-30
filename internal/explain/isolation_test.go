@@ -12,6 +12,7 @@ import (
 // TestNoSecretResolutionImport asserts the explain package never imports the
 // secrets package (which exposes DecryptSecretsFile / DiscoverAgeKey). This is
 // the structural enforcement of T1: explain cannot resolve or decrypt secrets.
+// redact is allowed (shared name-matching utility with no decryption surface).
 func TestNoSecretResolutionImport(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {

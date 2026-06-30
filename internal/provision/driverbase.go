@@ -1,5 +1,7 @@
 package provision
 
+import "fmt"
+
 // Capabilities is the static capability/identity block every
 // Provisioner driver carries. Drivers populate it once in their
 // constructor; DriverBase promotes it to the six trivial methods
@@ -47,3 +49,42 @@ func (d DriverBase) SupportedSourceShapes() []SourceShape { return d.Caps.Source
 
 // SupportsHooks implements Provisioner.
 func (d DriverBase) SupportsHooks() bool { return d.Caps.SupportsHooks }
+
+// MCPConfigPath is not supported for stub-only drivers; returns empty string.
+func (d DriverBase) MCPConfigPath(_ Context) string { return "" }
+
+// MCPHandler is not supported for stub-only drivers; returns nil.
+func (d DriverBase) MCPHandler(_ Context) MCPHandler { return nil }
+
+// InstalledPlugins is not supported for stub-only drivers; returns nil.
+func (d DriverBase) InstalledPlugins(_ Context) ([]Plugin, error) { return nil, nil }
+
+// InstallPlugin is not supported for stub-only drivers.
+func (d DriverBase) InstallPlugin(_ Context, _ Plugin) error {
+	return d.unsupported("plugins")
+}
+
+// UninstallPlugin is not supported for stub-only drivers.
+func (d DriverBase) UninstallPlugin(_ Context, _ string) error {
+	return d.unsupported("plugins")
+}
+
+// InstalledMarketplaces is not supported for stub-only drivers; returns nil.
+func (d DriverBase) InstalledMarketplaces(_ Context) ([]Marketplace, error) {
+	return nil, nil
+}
+
+// AddMarketplace is not supported for stub-only drivers.
+func (d DriverBase) AddMarketplace(_ Context, _ Marketplace) error {
+	return d.unsupported("marketplaces")
+}
+
+// RemoveMarketplace is not supported for stub-only drivers.
+func (d DriverBase) RemoveMarketplace(_ Context, _ string) error {
+	return d.unsupported("marketplaces")
+}
+
+// unsupported returns an error for unsupported features, using the driver's agent name.
+func (d DriverBase) unsupported(feature string) error {
+	return fmt.Errorf("%s: %s not supported", d.Caps.AgentName, feature)
+}

@@ -58,22 +58,19 @@ func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map
 // --transport http` writes, 2026-05-21), so there's no `-- arg`
 // separator parsing or `--scope` positional ambiguity.
 func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) error {
-	body, err := claudeMCPAddJSONBody(s)
-	if err != nil {
-		return fmt.Errorf("claude mcp install %q: %w", s.Key, err)
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("claude mcp install %q: marshal: %w", s.Key, err)
-	}
-	// Idempotency: claude's `mcp add-json` rejects names that already
-	// exist. We pre-remove (tolerating "not found") so re-syncs and
-	// rollback replays succeed. The pair runs atomically from claude's
-	// POV — there's no `mcp upsert` to use here.
-	_, _, _, _ = d.runner.Run(context.Background(), ctx.Env, "claude", "mcp", "remove", s.Key, "-s", "user")
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
-		"claude mcp add-json "+s.Key,
-		"claude", []string{"mcp", "add-json", "--scope", "user", s.Key, string(raw)})
+	return provision.InstallMCP(context.Background(), d.runner, ctx.Env, "claude", s,
+		func(s provision.MCPServer) ([]string, error) {
+			body, err := claudeMCPAddJSONBody(s)
+			if err != nil {
+				return nil, fmt.Errorf("claude mcp install %q: %w", s.Key, err)
+			}
+			raw, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("claude mcp install %q: marshal: %w", s.Key, err)
+			}
+			return []string{"mcp", "add-json", "--scope", "user", s.Key, string(raw)}, nil
+		},
+		[]string{"mcp", "remove", s.Key, "-s", "user"})
 }
 
 // UninstallMCPServer runs `claude mcp remove <name> -s user`. The
@@ -83,12 +80,9 @@ func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) 
 // (it says "No ... found"), so the claude-specific phrase is
 // appended explicitly.
 func (d *Driver) UninstallMCPServer(ctx provision.Context, name string) error {
-	tolerate := append([]string{}, provision.DefaultTolerateStderr...)
-	tolerate = append(tolerate, "No user-scoped MCP server found", "No MCP server found")
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
-		"claude mcp remove "+name,
-		"claude", []string{"mcp", "remove", name, "-s", "user"},
-		tolerate...)
+	return provision.UninstallMCP(context.Background(), d.runner, ctx.Env, "claude", name,
+		[]string{"mcp", "remove", name, "-s", "user"},
+		"No user-scoped MCP server found", "No MCP server found")
 }
 
 // claudeMCPAddJSONBody constructs the JSON payload `claude mcp

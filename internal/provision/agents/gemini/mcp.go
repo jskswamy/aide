@@ -50,41 +50,35 @@ func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map
 // to make re-install idempotent (gemini errors when a name in the same
 // scope already exists).
 func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) error {
-	if s.URL == "" && s.Command == "" {
-		return fmt.Errorf("server %q has neither URL nor Command", s.Key)
-	}
-	// Idempotency: tolerate the "no server found" stderr.
-	_, _, _, _ = d.runner.Run(context.Background(), ctx.Env, "gemini", "mcp", "remove", s.Key, "-s", "user")
-
-	args := []string{"mcp", "add", "--scope", "user"}
-	if s.URL != "" && s.Command == "" {
-		// Aide doesn't carry a transport field, so HTTP is the safe
-		// default for URL servers. Users who need SSE today should
-		// add via `gemini mcp add --transport sse` directly until
-		// MCPServer.Type is added.
-		args = append(args, "--transport", "http", s.Key, s.URL)
-	} else {
-		// stdio: -e flags before the positional command so gemini's
-		// argv parser doesn't grab them as command args.
-		for k, v := range s.Env {
-			args = append(args, "-e", k+"="+v)
-		}
-		args = append(args, "--transport", "stdio", s.Key, s.Command)
-		args = append(args, s.Args...)
-	}
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
-		"gemini mcp add "+s.Key,
-		"gemini", args)
+	return provision.InstallMCP(context.Background(), d.runner, ctx.Env, "gemini", s,
+		func(s provision.MCPServer) ([]string, error) {
+			args := []string{"mcp", "add", "--scope", "user"}
+			if s.URL != "" && s.Command == "" {
+				// Aide doesn't carry a transport field, so HTTP is the safe
+				// default for URL servers. Users who need SSE today should
+				// add via `gemini mcp add --transport sse` directly until
+				// MCPServer.Type is added.
+				args = append(args, "--transport", "http", s.Key, s.URL)
+			} else {
+				// stdio: -e flags before the positional command so gemini's
+				// argv parser doesn't grab them as command args.
+				for k, v := range s.Env {
+					args = append(args, "-e", k+"="+v)
+				}
+				args = append(args, "--transport", "stdio", s.Key, s.Command)
+				args = append(args, s.Args...)
+			}
+			return args, nil
+		},
+		[]string{"mcp", "remove", s.Key, "-s", "user"})
 }
 
 // UninstallMCPServer runs `gemini mcp remove <name> -s user`. Gemini
 // uses the phrase "not found" in its stderr for missing entries,
 // which DefaultTolerateStderr already covers.
 func (d *Driver) UninstallMCPServer(ctx provision.Context, name string) error {
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
-		"gemini mcp remove "+name,
-		"gemini", []string{"mcp", "remove", name, "-s", "user"},
-		provision.DefaultTolerateStderr...)
+	return provision.UninstallMCP(context.Background(), d.runner, ctx.Env, "gemini", name,
+		[]string{"mcp", "remove", name, "-s", "user"})
 }
 
 // geminiListLine matches one configured-server line from `gemini mcp

@@ -3,7 +3,6 @@ package codex
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/provision"
@@ -58,25 +57,22 @@ func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map
 // the config. We pre-remove (tolerating not-found) so re-syncs and
 // rollback replays succeed.
 func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) error {
-	if s.URL == "" && s.Command == "" {
-		return fmt.Errorf("server %q has neither URL nor Command", s.Key)
-	}
-	_, _, _, _ = d.runner.Run(context.Background(), ctx.Env, "codex", "mcp", "remove", s.Key)
-
-	args := []string{"mcp", "add", s.Key}
-	if s.URL != "" && s.Command == "" {
-		args = append(args, "--url", s.URL)
-	} else {
-		for k, v := range s.Env {
-			args = append(args, "--env", k+"="+v)
-		}
-		args = append(args, "--")
-		args = append(args, s.Command)
-		args = append(args, s.Args...)
-	}
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
-		"codex mcp add "+s.Key,
-		"codex", args)
+	return provision.InstallMCP(context.Background(), d.runner, ctx.Env, "codex", s,
+		func(s provision.MCPServer) ([]string, error) {
+			args := []string{"mcp", "add", s.Key}
+			if s.URL != "" && s.Command == "" {
+				args = append(args, "--url", s.URL)
+			} else {
+				for k, v := range s.Env {
+					args = append(args, "--env", k+"="+v)
+				}
+				args = append(args, "--")
+				args = append(args, s.Command)
+				args = append(args, s.Args...)
+			}
+			return args, nil
+		},
+		[]string{"mcp", "remove", s.Key})
 }
 
 // UninstallMCPServer runs `codex mcp remove <name>`. Codex's missing-
@@ -84,12 +80,9 @@ func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) 
 // "not found" / "not installed" / "not configured" substrings plus a
 // codex-specific "no MCP server" pattern as a defensive guess.
 func (d *Driver) UninstallMCPServer(ctx provision.Context, name string) error {
-	tolerate := append([]string{}, provision.DefaultTolerateStderr...)
-	tolerate = append(tolerate, "no MCP server", "No MCP server")
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
-		"codex mcp remove "+name,
-		"codex", []string{"mcp", "remove", name},
-		tolerate...)
+	return provision.UninstallMCP(context.Background(), d.runner, ctx.Env, "codex", name,
+		[]string{"mcp", "remove", name},
+		"no MCP server", "No MCP server")
 }
 
 // parseCodexMCPGetJSON decodes `codex mcp get <name> --json` output

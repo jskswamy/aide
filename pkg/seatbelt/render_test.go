@@ -6,26 +6,18 @@ import (
 )
 
 func TestRenderRules_Comment(t *testing.T) {
-	rules := []Rule{Comment("test section")}
+	rules := []Rule{SectionAllow("test section")}
 	out := renderRules(rules)
-	if !strings.Contains(out, ";; test section") {
+	if !strings.Contains(out, ";; ") || !strings.Contains(out, "test section") {
 		t.Errorf("expected comment, got %q", out)
 	}
 }
 
-func TestRenderRules_AllowOp(t *testing.T) {
-	rules := []Rule{AllowOp("process-exec")}
-	out := renderRules(rules)
-	if !strings.Contains(out, "(allow process-exec)") {
-		t.Errorf("expected allow rule, got %q", out)
-	}
-}
-
-func TestRenderRules_Raw(t *testing.T) {
+func TestRenderRules_Lines(t *testing.T) {
 	block := "(deny file-write*\n    (require-not\n        (require-any\n            (subpath \"/tmp\"))))"
-	rules := []Rule{Raw(block)}
+	rules := []Rule{AllowRule(block)}
 	out := renderRules(rules)
 	if !strings.Contains(out, block) {
-		t.Errorf("expected raw block, got %q", out)
+		t.Errorf("expected rule block, got %q", out)
 	}
 }

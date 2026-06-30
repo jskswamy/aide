@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -366,11 +367,5 @@ func promptHookCommand(out io.Writer, reader *bufio.Reader) (string, error) {
 }
 
 func isValidEvent(event string) bool {
-	valid := []string{"pre_tool", "post_tool", "session_start", "session_end", "notification", "stop"}
-	for _, v := range valid {
-		if event == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains([]string{"pre_tool", "post_tool", "session_start", "session_end", "notification", "stop"}, event)
 }

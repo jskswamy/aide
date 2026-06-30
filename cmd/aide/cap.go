@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -526,14 +527,7 @@ func capEnableCmd() *cobra.Command {
 					}
 				}
 				for _, capName := range capNames {
-					already := false
-					for _, c := range ctx.Capabilities {
-						if c == capName {
-							already = true
-							break
-						}
-					}
-					if already {
+					if slices.Contains(ctx.Capabilities, capName) {
 						fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled for context %q\n", capName, ctxName)
 						continue
 					}
@@ -560,14 +554,7 @@ func capEnableCmd() *cobra.Command {
 				// Remove from disabled if present
 				po.DisabledCapabilities = display.RemoveFromSlice(po.DisabledCapabilities, capName)
 				// Add if not already present
-				already := false
-				for _, c := range po.Capabilities {
-					if c == capName {
-						already = true
-						break
-					}
-				}
-				if already {
+				if slices.Contains(po.Capabilities, capName) {
 					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already enabled in project\n", capName)
 					continue
 				}
@@ -604,14 +591,7 @@ func capDisableCmd() *cobra.Command {
 					return err
 				}
 				for _, capName := range capNames {
-					found := false
-					for _, c := range ctx.Capabilities {
-						if c == capName {
-							found = true
-							break
-						}
-					}
-					if !found {
+					if !slices.Contains(ctx.Capabilities, capName) {
 						fmt.Fprintf(cmd.ErrOrStderr(), "warning: capability %q is not enabled for context %q\n", capName, ctxName)
 						continue
 					}
@@ -628,26 +608,12 @@ func capDisableCmd() *cobra.Command {
 				return err
 			}
 			for _, capName := range capNames {
-				removed := false
-				for _, c := range po.Capabilities {
-					if c == capName {
-						removed = true
-						break
-					}
-				}
-				if removed {
+				if slices.Contains(po.Capabilities, capName) {
 					po.Capabilities = display.RemoveFromSlice(po.Capabilities, capName)
 					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q removed from project (%s)\n", capName, poPath)
 				} else {
 					// Not in project caps — add to disabled to negate global
-					already := false
-					for _, c := range po.DisabledCapabilities {
-						if c == capName {
-							already = true
-							break
-						}
-					}
-					if already {
+					if slices.Contains(po.DisabledCapabilities, capName) {
 						fmt.Fprintf(cmd.OutOrStdout(), "Capability %q is already disabled in project\n", capName)
 						continue
 					}
@@ -747,17 +713,13 @@ Examples:
 
 			// Add mode (default)
 			if envMode {
-				for _, e := range cfg.NeverAllowEnv {
-					if e == entry {
-						return fmt.Errorf("env var %q is already in never_allow_env", entry)
-					}
+				if slices.Contains(cfg.NeverAllowEnv, entry) {
+					return fmt.Errorf("env var %q is already in never_allow_env", entry)
 				}
 				cfg.NeverAllowEnv = append(cfg.NeverAllowEnv, entry)
 			} else {
-				for _, p := range cfg.NeverAllow {
-					if p == entry {
-						return fmt.Errorf("path %q is already in never_allow", entry)
-					}
+				if slices.Contains(cfg.NeverAllow, entry) {
+					return fmt.Errorf("path %q is already in never_allow", entry)
 				}
 				cfg.NeverAllow = append(cfg.NeverAllow, entry)
 			}

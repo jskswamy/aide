@@ -158,28 +158,6 @@ type Rule struct {
 	lines   string
 }
 
-// AllowOp creates an (allow <operation>) rule.
-func AllowOp(operation string) Rule {
-	return Rule{intent: Allow, lines: "(allow " + operation + ")"}
-}
-
-// DenyOp creates a (deny <operation>) rule.
-// DenyOp has Allow intent because deny-ops in the Setup layer (e.g. deny default)
-// are infrastructure rules, not credential guards.
-func DenyOp(operation string) Rule {
-	return Rule{intent: Allow, lines: "(deny " + operation + ")"}
-}
-
-// Comment creates a ;; comment line.
-func Comment(text string) Rule {
-	return Rule{intent: Allow, comment: text}
-}
-
-// Raw creates a rule from raw Seatbelt text (may be multi-line).
-func Raw(text string) Rule {
-	return Rule{intent: Allow, lines: text}
-}
-
 // AllowRule creates a rule with Allow intent.
 func AllowRule(text string) Rule { return Rule{intent: Allow, lines: text} }
 

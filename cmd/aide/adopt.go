@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -228,7 +229,7 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 			Args:    src.Args,
 			Env:     src.Env,
 		}
-		if !containsString(ctx.MCPServers, k) {
+		if !slices.Contains(ctx.MCPServers, k) {
 			ctx.MCPServers = append(ctx.MCPServers, k)
 		}
 	}
@@ -282,15 +283,6 @@ func promptAdopt(out io.Writer, reader *bufio.Reader, label string) bool {
 	return ans == "a" || ans == "adopt"
 }
 
-func containsString(xs []string, target string) bool {
-	for _, x := range xs {
-		if x == target {
-			return true
-		}
-	}
-	return false
-}
-
 // splitPluginRef splits a `<plugin>@<marketplace-name>` ref into its
 // components. Returns ok=false when the ref doesn't contain an "@" or
 // either side is empty.
@@ -312,10 +304,8 @@ func appendPluginToMarketplace(existing config.PluginEntry, plugin string) confi
 	if existing.Shape() == config.PluginShapeMarketplace {
 		plugins = append(plugins, existing.Plugins...)
 	}
-	for _, p := range plugins {
-		if p == plugin {
-			return existing
-		}
+	if slices.Contains(plugins, plugin) {
+		return existing
 	}
 	plugins = append(plugins, plugin)
 	sort.Strings(plugins)

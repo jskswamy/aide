@@ -42,34 +42,13 @@ func TestRuleIntent_SectionDeny(t *testing.T) {
 	}
 }
 
-func TestRuleIntent_AllowOp(t *testing.T) {
-	r := AllowOp("network*")
-	if r.Intent() != Allow {
-		t.Errorf("expected Allow (%d), got %d", Allow, r.Intent())
-	}
-	if r.String() != "(allow network*)" {
-		t.Errorf("unexpected content: %q", r.String())
-	}
-}
-
-func TestRuleIntent_DenyOp(t *testing.T) {
-	r := DenyOp("default")
-	if r.Intent() != Allow {
-		t.Errorf("expected Allow (%d) for infrastructure deny-op, got %d", Allow, r.Intent())
-	}
-	if r.String() != "(deny default)" {
-		t.Errorf("unexpected content: %q", r.String())
-	}
-}
-
 func TestRuleIntent_UtilityConstructors(t *testing.T) {
 	tests := []struct {
 		name string
 		rule Rule
 	}{
-		{"Raw", Raw("test")},
+		{"AllowRule", AllowRule("test")},
 		{"SectionAllow", SectionAllow("test")},
-		{"Comment", Comment("test")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

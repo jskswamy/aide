@@ -19,31 +19,79 @@ func hermesPluginsDir(ctx provision.Context) string {
 	return filepath.Join(ctx.HomeDir, ".hermes", "plugins")
 }
 
+// hermesHookCodec implements provision.HookCodec for hermes' aide_<hash>/ directory artifacts.
+type hermesHookCodec struct{}
+
+func (c *hermesHookCodec) Match(name string) bool {
+	return provision.HermesHookArtifact.Owns(name)
+}
+
+func (c *hermesHookCodec) Decode(path string) (provision.Hook, error) {
+	cmd, err := readCommandFromInitPy(path)
+	if err != nil {
+		return provision.Hook{}, err
+	}
+	return provision.Hook{Event: "pre_tool", Command: cmd}, nil
+}
+
+func (c *hermesHookCodec) Encode(dir string, h provision.Hook) error {
+	nativeEvent := hermesEventMap[h.Event]
+	if nativeEvent == "" {
+		return nil // unsupported event — skip silently
+	}
+	if err := provision.ValidateHookCommand(h.Command); err != nil {
+		return fmt.Errorf("hermes hooks: %w", err)
+	}
+
+	hookDir := filepath.Join(dir, provision.HermesHookArtifact.Name(h.Command))
+	if err := os.MkdirAll(hookDir, 0o750); err != nil {
+		return fmt.Errorf("hermes hooks: mkdir: %w", err)
+	}
+
+	// Write __init__.py
+	if err := writeInitPy(hookDir, h.Command); err != nil {
+		return err
+	}
+
+	// Write plugin.yaml
+	if err := writePluginYaml(hookDir, provision.HermesHookArtifact.Name(h.Command), nativeEvent); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *hermesHookCodec) Remove(path string) error {
+	return os.RemoveAll(path)
+}
+
 // ReadHooks returns aide-managed hooks from ~/.hermes/plugins/aide_*/ directories.
 func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
-	pluginsDir := hermesPluginsDir(ctx)
-	entries, err := os.ReadDir(pluginsDir)
+	return readHermesHooks(hermesPluginsDir(ctx))
+}
+
+// readHermesHooks is a custom read path for hermes because its artifacts are directories,
+// which ReadHooks doesn't enumerate by default (ReadDir returns all entries).
+// This wrapper filters for directories before delegating to the codec.
+func readHermesHooks(dir string) ([]provision.Hook, error) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("hermes hooks: readdir %s: %w", pluginsDir, err)
+		return nil, fmt.Errorf("readdir: %w", err)
 	}
 	var out []provision.Hook
+	codec := &hermesHookCodec{}
 	for _, e := range entries {
-		if !e.IsDir() || !provision.HermesHookArtifact.Owns(e.Name()) {
+		if !e.IsDir() || !codec.Match(e.Name()) {
 			continue
 		}
-		hookDir := filepath.Join(pluginsDir, e.Name())
-		cmd, err := readCommandFromInitPy(hookDir)
+		hook, err := codec.Decode(filepath.Join(dir, e.Name()))
 		if err != nil {
-			continue
+			continue // skip malformed artifacts
 		}
-		out = append(out, provision.Hook{
-			Event:   "pre_tool",
-			Matcher: "",
-			Command: cmd,
-		})
+		out = append(out, hook)
 	}
 	return out, nil
 }
@@ -51,58 +99,36 @@ func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 // WriteHooks reconciles desired hooks into ~/.hermes/plugins/aide_*/ directories.
 // prevManaged is unused for file-based formats; aide_ naming is the ownership signal.
 func (d *Driver) WriteHooks(ctx provision.Context, _ []provision.Hook, desired []provision.Hook) error {
-	pluginsDir := hermesPluginsDir(ctx)
-
-	// Remove all aide_* directories.
-	if err := removeAidePlugins(pluginsDir); err != nil {
-		return err
-	}
-
-	// Create new directories for each desired hook that maps to a supported event.
-	for _, h := range desired {
-		nativeEvent := hermesEventMap[h.Event]
-		if nativeEvent == "" {
-			continue // unsupported event — skip silently
-		}
-		if err := provision.ValidateHookCommand(h.Command); err != nil {
-			return fmt.Errorf("hermes hooks: %w", err)
-		}
-
-		hookDir := filepath.Join(pluginsDir, provision.HermesHookArtifact.Name(h.Command))
-		if err := os.MkdirAll(hookDir, 0o750); err != nil {
-			return fmt.Errorf("hermes hooks: mkdir: %w", err)
-		}
-
-		// Write __init__.py
-		if err := writeInitPy(hookDir, h.Command); err != nil {
-			return err
-		}
-
-		// Write plugin.yaml
-		if err := writePluginYaml(hookDir, provision.HermesHookArtifact.Name(h.Command), nativeEvent); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return writeHermesHooks(hermesPluginsDir(ctx), desired)
 }
 
-// removeAidePlugins removes all aide_* plugin directories from pluginsDir.
-func removeAidePlugins(pluginsDir string) error {
-	entries, err := os.ReadDir(pluginsDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("hermes hooks: readdir: %w", err)
+// writeHermesHooks is a custom write path for hermes because its artifacts are directories.
+// Standard WriteHooks works, but this custom version is clearer for hermes-specific behavior.
+func writeHermesHooks(dir string, desired []provision.Hook) error {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("mkdir: %w", err)
 	}
-	for _, e := range entries {
-		if e.IsDir() && provision.HermesHookArtifact.Owns(e.Name()) {
-			if err := os.RemoveAll(filepath.Join(pluginsDir, e.Name())); err != nil {
-				return fmt.Errorf("hermes hooks: remove: %w", err)
+
+	// Remove all aide_* directories.
+	if existing, err := os.ReadDir(dir); err == nil {
+		codec := &hermesHookCodec{}
+		for _, e := range existing {
+			if e.IsDir() && codec.Match(e.Name()) {
+				if err := codec.Remove(filepath.Join(dir, e.Name())); err != nil {
+					return fmt.Errorf("remove: %w", err)
+				}
 			}
 		}
 	}
+
+	// Write new directories for each desired hook.
+	codec := &hermesHookCodec{}
+	for _, h := range desired {
+		if err := codec.Encode(dir, h); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

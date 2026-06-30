@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/redact"
 )
 
 // PreInput is the data the launcher hands the collector before the child
@@ -70,15 +71,6 @@ func collectEnvKeys(env []string) []EnvKey {
 	return out
 }
 
-// sensitiveFlagSubstrings names flag-name fragments that imply a secret
-// value follows. Match is case-insensitive.
-var sensitiveFlagSubstrings = []string{
-	"api-key", "apikey", "token", "secret",
-	"password", "passwd", "auth-token",
-	"authorization", "credential", "passphrase",
-	"private-key",
-}
-
 // redactArgv replaces "--key=value" with "--key=<redacted:N>" when the
 // flag name matches a sensitive substring. Also handles the
 // space-separated form "--key value" by redacting the next argv element
@@ -104,7 +96,7 @@ func redactArgv(argv []string) []string {
 		if eq > 0 {
 			flag := strings.ReplaceAll(strings.ToLower(a[:eq]), "_", "-")
 			val := a[eq+1:]
-			if val != "" && flagIsSensitive(flag) {
+			if val != "" && redact.LooksSensitive(flag) {
 				out[i] = a[:eq+1] + "<redacted:" + strconv.Itoa(len(val)) + ">"
 			} else {
 				out[i] = a
@@ -113,7 +105,7 @@ func redactArgv(argv []string) []string {
 		}
 		// No "=" in this arg. Look ahead for a space-separated value.
 		flag := strings.ReplaceAll(strings.ToLower(a), "_", "-")
-		if flagIsSensitive(flag) && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "-") {
+		if redact.LooksSensitive(flag) && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "-") {
 			out[i] = a
 			out[i+1] = "<redacted:" + strconv.Itoa(len(argv[i+1])) + ">"
 			skipNext = true
@@ -122,15 +114,6 @@ func redactArgv(argv []string) []string {
 		out[i] = a
 	}
 	return out
-}
-
-func flagIsSensitive(flag string) bool {
-	for _, s := range sensitiveFlagSubstrings {
-		if strings.Contains(flag, s) {
-			return true
-		}
-	}
-	return false
 }
 
 // PostInput is the data the launcher hands the collector after the child
@@ -156,4 +139,3 @@ func Post(r Report, in PostInput) Report {
 	r.StderrTruncated = int(in.StderrTruncated)
 	return r
 }
-

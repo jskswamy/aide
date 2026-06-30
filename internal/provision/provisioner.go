@@ -357,3 +357,15 @@ func ResolveContext(name string, ctx config.Context, homeDir, projectRoot string
 	out.Env = merged
 	return out, nil
 }
+
+// Provider-specific HookArtifact signatures for name generation and ownership.
+var (
+	// CopilotHookArtifact defines copilot's hook artifact shape: aide-<hash>.json files.
+	CopilotHookArtifact = HookArtifact{Prefix: "aide-", Ext: ".json"}
+
+	// GeminiHookArtifact defines gemini's hook artifact shape: aide_<hash>.sh scripts.
+	GeminiHookArtifact = HookArtifact{Prefix: "aide_", Ext: ".sh"}
+
+	// HermesHookArtifact defines hermes' hook artifact shape: aide_<hash> directories (no extension).
+	HermesHookArtifact = HookArtifact{Prefix: "aide_", Ext: ""}
+)

@@ -1,13 +1,11 @@
 package copilot
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/provision"
@@ -19,11 +17,6 @@ var copilotEventMap = map[string]string{
 
 func copilotHooksDir(ctx provision.Context) string {
 	return filepath.Join(ctx.HomeDir, ".config", "copilot", "hooks")
-}
-
-func copilotHookFileName(command string) string {
-	sum := sha256.Sum256([]byte(command))
-	return fmt.Sprintf("aide-%x.json", sum[:8])
 }
 
 type copilotHookFile struct {
@@ -47,7 +40,7 @@ func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 	}
 	var out []provision.Hook
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "aide-") || !strings.HasSuffix(e.Name(), ".json") {
+		if !provision.CopilotHookArtifact.Owns(e.Name()) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
@@ -77,7 +70,7 @@ func (d *Driver) WriteHooks(ctx provision.Context, _ []provision.Hook, desired [
 	}
 	if existing, err := os.ReadDir(dir); err == nil {
 		for _, e := range existing {
-			if strings.HasPrefix(e.Name(), "aide-") && strings.HasSuffix(e.Name(), ".json") {
+			if provision.CopilotHookArtifact.Owns(e.Name()) {
 				_ = os.Remove(filepath.Join(dir, e.Name()))
 			}
 		}
@@ -96,7 +89,7 @@ func (d *Driver) WriteHooks(ctx provision.Context, _ []provision.Hook, desired [
 		if err != nil {
 			return fmt.Errorf("copilot hooks: marshal: %w", err)
 		}
-		name := copilotHookFileName(h.Command)
+		name := provision.CopilotHookArtifact.Name(h.Command)
 		if err := fsutil.AtomicWrite(filepath.Join(dir, name), data); err != nil {
 			return fmt.Errorf("copilot hooks: write: %w", err)
 		}

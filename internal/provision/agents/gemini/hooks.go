@@ -1,7 +1,6 @@
 package gemini
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -20,11 +19,6 @@ func geminiHooksDir(ctx provision.Context) string {
 	return filepath.Join(ctx.HomeDir, ".gemini", "hooks")
 }
 
-func hookScriptName(command string) string {
-	sum := sha256.Sum256([]byte(command))
-	return fmt.Sprintf("aide_%x.sh", sum[:8])
-}
-
 // ReadHooks returns aide-managed hooks by listing aide_*.sh scripts.
 func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 	dir := geminiHooksDir(ctx)
@@ -37,7 +31,7 @@ func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 	}
 	var out []provision.Hook
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "aide_") || !strings.HasSuffix(e.Name(), ".sh") {
+		if !provision.GeminiHookArtifact.Owns(e.Name()) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
@@ -61,7 +55,7 @@ func (d *Driver) WriteHooks(ctx provision.Context, _ []provision.Hook, desired [
 	// Remove existing aide scripts.
 	if existing, err := os.ReadDir(dir); err == nil {
 		for _, e := range existing {
-			if strings.HasPrefix(e.Name(), "aide_") && strings.HasSuffix(e.Name(), ".sh") {
+			if provision.GeminiHookArtifact.Owns(e.Name()) {
 				_ = os.Remove(filepath.Join(dir, e.Name()))
 			}
 		}
@@ -75,7 +69,7 @@ func (d *Driver) WriteHooks(ctx provision.Context, _ []provision.Hook, desired [
 		if err := provision.ValidateHookCommand(h.Command); err != nil {
 			return fmt.Errorf("gemini hooks: %w", err)
 		}
-		name := hookScriptName(h.Command)
+		name := provision.GeminiHookArtifact.Name(h.Command)
 		script := "#!/bin/bash\nexec " + h.Command + "\n"
 		if err := fsutil.AtomicWrite(filepath.Join(dir, name), []byte(script)); err != nil {
 			return fmt.Errorf("gemini hooks: write script: %w", err)

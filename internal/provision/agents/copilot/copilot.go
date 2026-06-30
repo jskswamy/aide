@@ -63,27 +63,7 @@ func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, e
 	if code != 0 {
 		return nil, fmt.Errorf("copilot plugin list: exit %d: %s", code, stderr)
 	}
-	return parsePluginList(stdout), nil
-}
-
-func parsePluginList(out string) []provision.Plugin {
-	var plugins []provision.Plugin
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "NAME") || strings.HasPrefix(line, "No plugins") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		name := fields[0]
-		plugins = append(plugins, provision.Plugin{Key: name, Name: name})
-	}
-	return plugins
+	return provision.ParsePluginList(stdout, "NAME", "No plugins"), nil
 }
 
 // InstallPlugin invokes `copilot plugin install <ref>`. For

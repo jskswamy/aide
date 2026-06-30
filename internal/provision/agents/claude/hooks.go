@@ -42,12 +42,13 @@ func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 	hooksRaw, _ := raw["hooks"].(map[string]interface{})
 	var out []provision.Hook
 	for nativeEvent, entries := range hooksRaw {
-		norm := reverseClaudeEvent(nativeEvent)
+		norm := provision.ReverseLookup(claudeEventMap, nativeEvent, nativeEvent)
 		entryList, _ := entries.([]interface{})
 		for _, e := range entryList {
 			entry, _ := e.(map[string]interface{})
 			hookList, _ := entry["hooks"].([]interface{})
-			normMatcher := reverseClaudeMatcher(strVal(entry, "matcher"))
+			nativeMatcher := strVal(entry, "matcher")
+			normMatcher := provision.ReverseLookup(claudeMatcherMap, nativeMatcher, nativeMatcher)
 			for _, hi := range hookList {
 				item, _ := hi.(map[string]interface{})
 				cmd := strVal(item, "command")
@@ -178,24 +179,6 @@ func readSettings(ctx provision.Context) (map[string]interface{}, error) {
 		m = map[string]interface{}{}
 	}
 	return m, nil
-}
-
-func reverseClaudeEvent(native string) string {
-	for k, v := range claudeEventMap {
-		if v == native {
-			return k
-		}
-	}
-	return native
-}
-
-func reverseClaudeMatcher(native string) string {
-	for k, v := range claudeMatcherMap {
-		if v == native {
-			return k
-		}
-	}
-	return native
 }
 
 func strVal(m map[string]interface{}, key string) string {

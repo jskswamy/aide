@@ -59,7 +59,7 @@ func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 			continue
 		}
 		for nativeEvent, items := range hf.Hooks {
-			normEvent := reverseCopilotEvent(nativeEvent)
+			normEvent := provision.ReverseLookup(copilotEventMap, nativeEvent, nativeEvent)
 			for _, item := range items {
 				out = append(out, provision.Hook{Event: normEvent, Command: item.Command})
 			}
@@ -102,13 +102,4 @@ func (d *Driver) WriteHooks(ctx provision.Context, _ []provision.Hook, desired [
 		}
 	}
 	return nil
-}
-
-func reverseCopilotEvent(native string) string {
-	for k, v := range copilotEventMap {
-		if v == native {
-			return k
-		}
-	}
-	return native
 }

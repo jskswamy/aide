@@ -18,18 +18,6 @@ var cursorMatcherMap = map[string]string{
 	"shell": "Shell",
 }
 
-var reverseEventMap = map[string]string{}
-var reverseMatcherMap = map[string]string{}
-
-func init() {
-	for k, v := range cursorEventMap {
-		reverseEventMap[v] = k
-	}
-	for k, v := range cursorMatcherMap {
-		reverseMatcherMap[v] = k
-	}
-}
-
 type cursorHooksFile struct {
 	Version int                         `json:"version"`
 	Hooks   map[string][]cursorHookItem `json:"hooks"`
@@ -52,11 +40,11 @@ func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 	}
 	var out []provision.Hook
 	for nativeEvent, items := range cf.Hooks {
-		normEvent := reverseMap(reverseEventMap, nativeEvent)
+		normEvent := provision.ReverseLookup(cursorEventMap, nativeEvent, nativeEvent)
 		for _, item := range items {
 			out = append(out, provision.Hook{
 				Event:   normEvent,
-				Matcher: reverseMap(reverseMatcherMap, item.Matcher),
+				Matcher: provision.ReverseLookup(cursorMatcherMap, item.Matcher, item.Matcher),
 				Command: item.Command,
 			})
 		}
@@ -143,11 +131,4 @@ func readCursorHooks(ctx provision.Context) (*cursorHooksFile, error) {
 		cf.Hooks = map[string][]cursorHookItem{}
 	}
 	return &cf, nil
-}
-
-func reverseMap(m map[string]string, v string) string {
-	if k, ok := m[v]; ok {
-		return k
-	}
-	return v
 }

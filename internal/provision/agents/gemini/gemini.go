@@ -7,7 +7,6 @@ package gemini
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/jskswamy/aide/internal/provision"
 )
@@ -65,28 +64,7 @@ func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, e
 	if code != 0 {
 		return nil, fmt.Errorf("gemini extensions list: exit %d: %s", code, stderr)
 	}
-	return parseExtensionsList(stdout), nil
-}
-
-func parseExtensionsList(out string) []provision.Plugin {
-	var plugins []provision.Plugin
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// Skip lines that look like headers ("NAME ...") or messages.
-		if strings.HasPrefix(line, "NAME") || strings.HasPrefix(line, "No extensions") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		name := fields[0]
-		plugins = append(plugins, provision.Plugin{Key: name, Name: name})
-	}
-	return plugins
+	return provision.ParsePluginList(stdout, "NAME", "No extensions"), nil
 }
 
 // InstallPlugin invokes `gemini extensions install <ref>`. The ref is

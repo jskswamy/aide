@@ -3,7 +3,11 @@
 // docs/specs/2026-05-15-declarative-agent-provisioning-design.md.
 package provision
 
-import "github.com/jskswamy/aide/internal/config"
+import (
+	"strings"
+
+	"github.com/jskswamy/aide/internal/config"
+)
 
 // Plugin is a resolved plugin declaration ready for installation.
 // Source matches one of config.ValidPluginSources.
@@ -12,6 +16,38 @@ type Plugin struct {
 	Key    string
 	Source string
 	Name   string
+}
+
+// ParsePluginList parses agent CLI list output (one plugin per line) and
+// returns the extracted plugins. It skips empty lines, lines that start
+// with any of the provided skipPrefixes (e.g., "NAME" for headers,
+// "No plugins"/"No extensions" for empty-state messages), and takes the
+// first whitespace-delimited token from remaining lines as the plugin name.
+func ParsePluginList(out string, skipPrefixes ...string) []Plugin {
+	var plugins []Plugin
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		skip := false
+		for _, prefix := range skipPrefixes {
+			if strings.HasPrefix(line, prefix) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		name := fields[0]
+		plugins = append(plugins, Plugin{Key: name, Name: name})
+	}
+	return plugins
 }
 
 // MCPServer is a resolved MCP server declaration. Shape mirrors

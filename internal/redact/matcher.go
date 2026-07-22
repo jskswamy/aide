@@ -1,3 +1,4 @@
+// Package redact identifies and masks sensitive values in command-line arguments.
 package redact
 
 import "strings"

@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 )
 
-// AtomicWrite writes data to path atomically.
+// AtomicWrite writes data to path atomically at mode 0o600.
 //
 // Steps:
 //  1. Parent directories of path are created with mode 0o750 if missing.
 //  2. A unique temporary file is created in the same directory.
-//  3. The temporary file is chmodded to 0o600 and data is written.
+//  3. The temporary file is chmodded to the given mode and data is written.
 //  4. The temporary file is renamed over path. On failure at any step
 //     after creation, the temporary file is best-effort removed.
 //
@@ -29,6 +29,16 @@ import (
 // users who manage ~/.config/aide via dotfiles tools (home-manager, stow,
 // chezmoi) that point the config path at a file inside a git repo.
 func AtomicWrite(path string, data []byte) error {
+	return atomicWrite(path, data, 0o600)
+}
+
+// AtomicWriteExecutable writes data to path atomically at mode 0o700 (owner-execute).
+// Use for generated scripts that must be directly executable by the owner.
+func AtomicWriteExecutable(path string, data []byte) error {
+	return atomicWrite(path, data, 0o700)
+}
+
+func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	path = ResolveOrSelf(path)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -39,7 +49,7 @@ func AtomicWrite(path string, data []byte) error {
 		return fmt.Errorf("fsutil: creating temp file: %w", err)
 	}
 	tmp := f.Name()
-	if err := f.Chmod(0o600); err != nil {
+	if err := f.Chmod(mode); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return fmt.Errorf("fsutil: chmod temp file: %w", err)

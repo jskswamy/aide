@@ -187,12 +187,8 @@ func writeInitPy(hookDir, command string) error {
 
 	script := fmt.Sprintf("#!/usr/bin/env python3\nimport subprocess\nsubprocess.run([%s], check=True)\n", argsStr.String())
 	path := filepath.Join(hookDir, "__init__.py")
-	if err := fsutil.AtomicWrite(path, []byte(script)); err != nil {
+	if err := fsutil.AtomicWriteExecutable(path, []byte(script)); err != nil {
 		return fmt.Errorf("hermes hooks: write __init__.py: %w", err)
-	}
-	// Make it executable
-	if err := os.Chmod(path, 0o755); err != nil {
-		return fmt.Errorf("hermes hooks: chmod __init__.py: %w", err)
 	}
 	return nil
 }

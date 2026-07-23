@@ -43,11 +43,8 @@ func (c *geminiHookCodec) Encode(dir string, h provision.Hook) error {
 	}
 	name := provision.GeminiHookArtifact.Name(h.Command)
 	script := "#!/bin/bash\nexec " + h.Command + "\n"
-	if err := fsutil.AtomicWrite(filepath.Join(dir, name), []byte(script)); err != nil {
+	if err := fsutil.AtomicWriteExecutable(filepath.Join(dir, name), []byte(script)); err != nil {
 		return fmt.Errorf("gemini hooks: write script: %w", err)
-	}
-	if err := os.Chmod(filepath.Join(dir, name), 0o755); err != nil {
-		return fmt.Errorf("gemini hooks: chmod script: %w", err)
 	}
 	return nil
 }

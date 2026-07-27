@@ -118,5 +118,46 @@ func TestContextBind_PathAndRemote_MutualExclusive(t *testing.T) {
 	}
 }
 
+func TestContextBind_SameFolder_DifferentContext_NonTTY_Errors(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	// "work" already covers this folder; try to bind the same path to "personal".
+	var b strings.Builder
+	b.WriteString("contexts:\n")
+	b.WriteString("  work:\n")
+	b.WriteString("    agent: claude\n")
+	b.WriteString("    match:\n")
+	b.WriteString("      - path: " + dir + "\n")
+	b.WriteString("  personal:\n")
+	b.WriteString("    agent: claude\n")
+	b.WriteString("    match: []\n")
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runContextBind(t, "personal", "--path")
+	if err == nil || !strings.Contains(err.Error(), "already bound") {
+		t.Errorf("expected already-bound error, got: %v", err)
+	}
+}
+
+func TestContextBind_SameFolder_SameContext_IsNoop(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	var b strings.Builder
+	b.WriteString("contexts:\n")
+	b.WriteString("  work:\n")
+	b.WriteString("    agent: claude\n")
+	b.WriteString("    match:\n")
+	b.WriteString("      - path: " + dir + "\n")
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runContextBind(t, "work", "--path")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "already bound") {
+		t.Errorf("expected already-bound message, got: %s", out)
+	}
+}
+
 // Unused-import shield (cobra import survives even if some tests collapse).
 var _ = cobra.Command{}

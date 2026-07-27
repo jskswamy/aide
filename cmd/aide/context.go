@@ -168,6 +168,29 @@ Examples:
 				rule, desc = autoDetectMatchRule(cwd)
 			}
 
+			// Dedup: same context already covers this repo.
+			for _, r := range ctx.Match {
+				if rulesCollide(r, rule) {
+					fmt.Fprintf(out, "This folder is already bound to context %q.\n", name)
+					return nil
+				}
+			}
+
+			// Cross-context collision: same repo bound to a different context.
+			if existing := findExistingBind(cfg, name, rule); existing != nil {
+				if !isStdinTTY() {
+					return fmt.Errorf("folder already bound to context %q; re-run interactively to move it", existing.ctxName)
+				}
+				fmt.Fprintf(out, "This folder is already bound to context %q.\n[a]bort or [m]ove to %q? [a]: ", existing.ctxName, name)
+				ans, _ := reader.ReadString('\n')
+				if strings.ToLower(strings.TrimSpace(ans)) != "m" {
+					return fmt.Errorf("aborted")
+				}
+				old := cfg.Contexts[existing.ctxName]
+				old.Match = removeMatchRule(old.Match, existing.rule)
+				cfg.Contexts[existing.ctxName] = old
+			}
+
 			ctx.Match = append(ctx.Match, rule)
 			cfg.Contexts[name] = ctx
 			if err := config.WriteConfig(cfg); err != nil {

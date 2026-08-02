@@ -1,20 +1,15 @@
-## v2.0.2 — 2026-07-27
+## v2.0.3 — 2026-08-02
 
-This is a bug fix release. No new features or breaking changes.
+This is a security patch release. No new features or breaking changes.
 
-### Bug Fixes
+### Security
 
-#### Detect duplicate context binds across URL schemes
+#### Bump google.golang.org/grpc from v1.79.3 to v1.82.1
 
-`aide context bind` would silently duplicate a match rule if the same
-repository was already bound to a different context, including when the
-remote URL differed only in scheme (https vs ssh vs git shorthand).
+Addresses vulnerability `GO-2026-6061` in `google.golang.org/grpc`. The
+vulnerability is reachable via `internal/launcher/runtime.go` through the
+gRPC transport layer.
 
-- Same-context rebind exits early with an "already bound" message (no-op)
-- Cross-context collision in TTY mode prompts the user to abort or move
-  the binding to the new context
-- Cross-context collision in non-TTY mode returns a clear error with
-  instructions to re-run interactively
-- URL normalization reuses the existing `ParseRemoteHost` function so
-  `https://github.com/org/repo` and `git@github.com:org/repo.git` are
-  correctly identified as the same repository
+- Upgrades `google.golang.org/grpc` to `v1.82.1` which stops reading from
+  connections flooded by HTTP/2 frames and fixes an xDS RBAC authorization
+  bypass

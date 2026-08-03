@@ -123,6 +123,37 @@ cd ~/scratch && aide         # auto-detects agent on PATH, zero config
 
 Same command everywhere. aide resolves the right agent, credentials, and sandbox from your project directory.
 
+### Session visibility — what's active, always visible
+
+When aide hands off to the agent, the terminal switches to the agent's full-screen TUI. Any info aide printed before the handoff disappears. One command pins it back:
+
+```bash
+aide statusline claude --install
+```
+
+From that point, a compact status bar appears at the bottom of Claude Code on every update:
+
+```
+🔒 | 🌐 | ⚡ k8s,docker
+```
+
+Each indicator reflects live session state — sandbox mode, network mode, active capabilities, trust status, matched context — injected via env vars before the handoff, inherited through the exec chain, no file-based IPC needed.
+
+**What it shows by default:**
+
+| Module | State |
+|--------|-------|
+| `🔒` / `🔓` | Sandbox on / off |
+| `🌐` / `🌍` | Network outbound / unrestricted |
+| `⚡ k8s,docker` | Active capabilities (hidden when none) |
+| `⚠️` | Untrusted `.aide.yaml` (hidden when trusted) |
+| `📁 work` | Matched context name (hidden when none) |
+| `🚨` | Auto-approve active (always shown when set) |
+
+**If you already have a statusline configured**, `--install` wraps it instead of replacing it — your existing tool keeps running and aide's output appears alongside it.
+
+**Configurable:** reorder modules, swap icons, or silence individual states in `~/.config/aide/config.yaml` or `.aide.yaml`. See [CLI Reference](docs/cli-reference.md#aide-statusline) and [Configuration](docs/configuration.md).
+
 ### Reproducibility — secrets that don't leak
 
 Without aide:
@@ -495,6 +526,7 @@ make lint                   # Run golangci-lint
 - [Configuration Reference](docs/configuration.md)
 - [CLI Reference](docs/cli-reference.md)
 - [Deployment](docs/deployment.md)
+- [Statusline](docs/cli-reference.md#aide-statusline)
 
 ## Planned
 

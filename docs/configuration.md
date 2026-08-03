@@ -141,6 +141,29 @@ The `{agent}` template variable is replaced with the resolved agent name for eac
 
 - `plugins:` (map) — Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
 - `mcp_servers:` (map) — Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
+- `statusline:` (map) — Configures the `aide statusline claude` renderer. Controls module order, per-module icons, state strings, and disabled state. Field-by-field merge with the project override; `order` is replaced wholesale when set in the project.
+
+```yaml
+statusline:
+  order: [sandbox, network, caps, trust, context]
+  sandbox:
+    on: "🔒"
+    off: "🔓"
+  network:
+    outbound: "🌐"
+    unrestricted: "🌍"
+  caps:
+    icon: "⚡"        # prefix; value is comma-joined capability list
+  trust:
+    untrusted: "⚠️"  # only shown when .aide.yaml is untrusted
+  context:
+    icon: "📁"
+  auto_approve:
+    value: "🚨"       # always shown when active; disabled: true has no effect
+```
+
+Setting any state value to `""` hides that state silently (e.g. `sandbox.off: ""` hides the module when sandbox is disabled). Each module also accepts `disabled: true` to remove it from output. The `agent` key is accepted but ignored by the renderer (reserved for a future module).
+
 - `sandboxes:` (map) — Named sandbox profiles referenced from contexts (`sandbox: <name>`).
 - `custom_guards:` and `guard_types:` (advanced) — Define custom seatbelt guard modules. Most users should not need these.
 
@@ -196,7 +219,7 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
 ## Per-Project Override
 
-`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`, `capabilities`, `disabled_capabilities`. aide merges it on top of the matched global context.
+`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`, `capabilities`, `disabled_capabilities`, `statusline`. aide merges it on top of the matched global context.
 
 - `env:` merges additively; project values win on key conflicts.
 - All other fields replace the matched context value entirely.

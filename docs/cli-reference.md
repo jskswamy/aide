@@ -1031,6 +1031,55 @@ aide config edit
 
 ---
 
+## aide statusline
+
+### aide statusline claude
+
+```
+aide statusline claude [flags]
+```
+
+Renders the current aide session state as a compact statusline string for use
+with Claude Code's `statusLine` feature. Reads session state from `AIDE_*`
+environment variables injected by aide before exec.
+
+**Render mode** (when stdin is a pipe — Claude Code's invocation path):
+
+1. Drains stdin (JSON from Claude Code is discarded; available for future modules).
+2. Reads `AIDE_*` env vars for session state.
+3. Loads merged config (`~/.config/aide/config.yaml` → `.aide.yaml`).
+4. Walks the configured module order, renders each active module to a string.
+5. Joins with ` | ` and writes to stdout.
+
+**TTY mode** (when stdin is a terminal): prints usage help instead of rendering.
+
+| Flag | Description |
+|------|-------------|
+| `--install` | Patch `~/.claude/settings.json` to set `statusLine.command` |
+| `--remove` | Clear the `statusLine` key from `~/.claude/settings.json` |
+
+**Install behaviour:**
+
+| Existing `statusLine.command` | Action |
+|-------------------------------|--------|
+| Not set | Set to `"aide statusline claude"` |
+| `"aide statusline claude"` | No-op; prints confirmation |
+| Anything else | Generate `~/.config/aide/statusline-wrapper.sh` that pipes stdin to both the existing command and aide; update settings to point to wrapper |
+
+**Sample output:**
+```
+🔒 | 🌐 | ⚡ k8s,docker          # sandbox on, outbound, caps active
+🔒 | 🌐 | ⚡ none | ⚠️           # untrusted .aide.yaml
+🚨 | 🔓 | 🌍 | ⚡ none           # auto-approve on, sandbox off, unrestricted
+```
+
+```bash
+aide statusline claude --install   # one-time setup
+aide statusline claude --remove    # undo
+```
+
+---
+
 ## aide completion
 
 Generates shell completion scripts. Supported shells: bash, zsh, fish, powershell.

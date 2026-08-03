@@ -40,6 +40,7 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(adoptCmd())
 	rootCmd.AddCommand(promptCmd())
 	rootCmd.AddCommand(explainCmd())
+	rootCmd.AddCommand(statuslineCmd())
 	rootCmd.AddCommand(sandboxApplyCmd())
 }
 

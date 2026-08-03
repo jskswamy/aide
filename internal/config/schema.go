@@ -885,7 +885,7 @@ func ResolveStatusline(global, project *StatuslineConfig) StatuslineConfig {
 }
 
 func applyStatuslineOverride(dst *StatuslineConfig, src *StatuslineConfig) {
-	if len(src.Order) > 0 {
+	if src.Order != nil { // nil = unset; []string{} = explicitly empty
 		dst.Order = make([]string, len(src.Order))
 		copy(dst.Order, src.Order)
 	}

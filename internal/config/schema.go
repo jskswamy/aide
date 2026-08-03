@@ -28,8 +28,9 @@ type Config struct {
 	// values so normalizeMinimal can still propagate them as a
 	// MCPServersList on the synthesised default context.
 	MCPServers  MCPServerMap `yaml:"mcp_servers,omitempty"`
-	Hooks       HooksMap     `yaml:"hooks,omitempty"`
-	Preferences *Preferences `yaml:"preferences,omitempty"`
+	Hooks       HooksMap        `yaml:"hooks,omitempty"`
+	Preferences *Preferences    `yaml:"preferences,omitempty"`
+	Statusline  *StatuslineConfig `yaml:"statusline,omitempty"`
 
 	// --- Minimal (flat) format fields ---
 	// These are promoted to a synthetic "default" context during loading.
@@ -757,6 +758,7 @@ type ProjectOverride struct {
 	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
 	Preferences  *Preferences      `yaml:"preferences,omitempty"`
+	Statusline   *StatuslineConfig `yaml:"statusline,omitempty"`
 	Yolo         *bool             `yaml:"yolo,omitempty"`
 	Capabilities []string          `yaml:"capabilities,omitempty"`
 	DisabledCapabilities []string  `yaml:"disabled_capabilities,omitempty"`
@@ -824,4 +826,107 @@ func ResolveYolo(preferences, context, project *bool) bool {
 		result = *project
 	}
 	return result
+}
+
+// StatuslineConfig holds statusline display configuration.
+// Lives under the top-level "statusline:" key in both global aide config
+// and .aide.yaml. Merge: order replaced wholesale; module fields merged
+// field-by-field (project wins over global, global wins over built-in default).
+type StatuslineConfig struct {
+	Order       []string      `yaml:"order,omitempty"`
+	Sandbox     *ModuleConfig `yaml:"sandbox,omitempty"`
+	Network     *ModuleConfig `yaml:"network,omitempty"`
+	Caps        *ModuleConfig `yaml:"caps,omitempty"`
+	Trust       *ModuleConfig `yaml:"trust,omitempty"`
+	Context     *ModuleConfig `yaml:"context,omitempty"`
+	AutoApprove *ModuleConfig `yaml:"auto_approve,omitempty"`
+	Agent       *ModuleConfig `yaml:"agent,omitempty"`
+}
+
+// ModuleConfig holds per-module statusline display configuration.
+// State fields (On, Off, etc.) are the full rendered string for that state.
+// Empty string suppresses the state. Icon is a prefix for list-type modules.
+// Disabled uses *bool so project config can re-enable a globally disabled
+// module by setting disabled: false.
+type ModuleConfig struct {
+	Disabled     *bool  `yaml:"disabled,omitempty"`
+	Icon         string `yaml:"icon,omitempty"`
+	On           string `yaml:"on,omitempty"`
+	Off          string `yaml:"off,omitempty"`
+	Outbound     string `yaml:"outbound,omitempty"`
+	Unrestricted string `yaml:"unrestricted,omitempty"`
+	Untrusted    string `yaml:"untrusted,omitempty"`
+	Value        string `yaml:"value,omitempty"`
+}
+
+func defaultStatuslineConfig() StatuslineConfig {
+	return StatuslineConfig{
+		Order:       []string{"sandbox", "network", "caps", "trust", "context"},
+		Sandbox:     &ModuleConfig{On: "🔒", Off: "🔓"},
+		Network:     &ModuleConfig{Outbound: "🌐", Unrestricted: "🌍"},
+		Caps:        &ModuleConfig{Icon: "⚡"},
+		Trust:       &ModuleConfig{Untrusted: "⚠️"},
+		Context:     &ModuleConfig{Icon: "📁"},
+		AutoApprove: &ModuleConfig{Value: "🚨"},
+	}
+}
+
+// ResolveStatusline merges global and project statusline configs over
+// built-in defaults.
+func ResolveStatusline(global, project *StatuslineConfig) StatuslineConfig {
+	result := defaultStatuslineConfig()
+	if global != nil {
+		applyStatuslineOverride(&result, global)
+	}
+	if project != nil {
+		applyStatuslineOverride(&result, project)
+	}
+	return result
+}
+
+func applyStatuslineOverride(dst *StatuslineConfig, src *StatuslineConfig) {
+	if len(src.Order) > 0 {
+		dst.Order = make([]string, len(src.Order))
+		copy(dst.Order, src.Order)
+	}
+	applyModuleOverride(&dst.Sandbox, src.Sandbox)
+	applyModuleOverride(&dst.Network, src.Network)
+	applyModuleOverride(&dst.Caps, src.Caps)
+	applyModuleOverride(&dst.Trust, src.Trust)
+	applyModuleOverride(&dst.Context, src.Context)
+	applyModuleOverride(&dst.AutoApprove, src.AutoApprove)
+}
+
+func applyModuleOverride(dst **ModuleConfig, src *ModuleConfig) {
+	if src == nil {
+		return
+	}
+	if *dst == nil {
+		*dst = &ModuleConfig{}
+	}
+	d := *dst
+	if src.Disabled != nil {
+		d.Disabled = src.Disabled
+	}
+	if src.Icon != "" {
+		d.Icon = src.Icon
+	}
+	if src.On != "" {
+		d.On = src.On
+	}
+	if src.Off != "" {
+		d.Off = src.Off
+	}
+	if src.Outbound != "" {
+		d.Outbound = src.Outbound
+	}
+	if src.Unrestricted != "" {
+		d.Unrestricted = src.Unrestricted
+	}
+	if src.Untrusted != "" {
+		d.Untrusted = src.Untrusted
+	}
+	if src.Value != "" {
+		d.Value = src.Value
+	}
 }

@@ -185,3 +185,76 @@ func strVal(m map[string]interface{}, key string) string {
 	v, _ := m[key].(string)
 	return v
 }
+
+// ReadStatusLine returns the current statusLine.command from settings.json,
+// or "" if not set or file does not exist.
+func ReadStatusLine(ctx provision.Context) (string, error) {
+	raw, err := readSettings(ctx)
+	if err != nil {
+		return "", err
+	}
+	sl, _ := raw["statusLine"].(map[string]interface{})
+	return strVal(sl, "command"), nil
+}
+
+// WriteStatusLine sets statusLine.command in settings.json, preserving all
+// other keys. Uses AtomicWrite for crash safety.
+func WriteStatusLine(ctx provision.Context, command string) error {
+	path := settingsPath(ctx)
+	raw, err := readSettings(ctx)
+	if err != nil {
+		return err
+	}
+	raw["statusLine"] = map[string]interface{}{
+		"type":    "command",
+		"command": command,
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("claude statusline: marshal: %w", err)
+	}
+	return fsutil.AtomicWrite(path, data)
+}
+
+// RemoveStatusLine deletes the statusLine key from settings.json.
+// Returns the previous command (empty string if not set) so the caller
+// can inform the user about wrapper cleanup.
+func RemoveStatusLine(ctx provision.Context) (string, error) {
+	path := settingsPath(ctx)
+	raw, err := readSettings(ctx)
+	if err != nil {
+		return "", err
+	}
+	sl, _ := raw["statusLine"].(map[string]interface{})
+	prev := strVal(sl, "command")
+	delete(raw, "statusLine")
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("claude statusline: marshal: %w", err)
+	}
+	return prev, fsutil.AtomicWrite(path, data)
+}
+
+// WrapperScriptPath returns the path to the aide-generated statusline wrapper.
+func WrapperScriptPath(homeDir string) string {
+	return filepath.Join(homeDir, ".config", "aide", "statusline-wrapper.sh")
+}
+
+// WriteWrapper generates a wrapper script that pipes stdin to both the existing
+// statusline command and aide statusline claude. Returns the script path.
+// Uses AtomicWriteExecutable so the file is immediately runnable.
+func WriteWrapper(homeDir, existingCmd string) (string, error) {
+	path := WrapperScriptPath(homeDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return "", fmt.Errorf("claude statusline: mkdir: %w", err)
+	}
+	content := "#!/bin/bash\n" +
+		"# Managed by aide statusline --install. Do not edit manually.\n" +
+		"input=$(cat)\n" +
+		"echo \"$input\" | " + existingCmd + "\n" +
+		"echo \"$input\" | aide statusline claude\n"
+	if err := fsutil.AtomicWriteExecutable(path, []byte(content)); err != nil {
+		return "", fmt.Errorf("claude statusline: write wrapper: %w", err)
+	}
+	return path, nil
+}

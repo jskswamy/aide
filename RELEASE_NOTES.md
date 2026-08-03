@@ -1,15 +1,23 @@
-## v2.0.3 — 2026-08-02
+## vNEXT
 
-This is a security patch release. No new features or breaking changes.
+### Feature
 
-### Security
+#### aide statusline — live session state in your terminal
 
-#### Bump google.golang.org/grpc from v1.79.3 to v1.82.1
+A new `aide statusline <agent>` subcommand renders the current aide session
+state as a compact, emoji-based statusline string. Claude Code (and compatible
+agents) can invoke it via the `statusLine.command` setting to display sandbox,
+network, capability, trust, and context state directly in the terminal.
 
-Addresses vulnerability `GO-2026-6061` in `google.golang.org/grpc`. The
-vulnerability is reachable via `internal/launcher/runtime.go` through the
-gRPC transport layer.
-
-- Upgrades `google.golang.org/grpc` to `v1.82.1` which stops reading from
-  connections flooded by HTTP/2 frames and fixes an xDS RBAC authorization
-  bypass
+- `aide statusline claude` renders the statusline when stdin is a pipe (Claude
+  Code invocation path); prints help when stdin is a TTY
+- `aide statusline claude --install` patches `~/.claude/settings.json` to set
+  `statusLine.command`; generates a wrapper script if another command is already
+  configured
+- `aide statusline claude --remove` clears the `statusLine` key from settings
+- Render order, per-module icons, and disabled state are all configurable via
+  `statusline:` in `aide.yaml` or `.aide.yaml`
+- `auto_approve` module is always prepended (before the order list) when
+  `AIDE_AUTO_APPROVE=1` is set
+- Modules with no content (`caps`, `context`) are silently hidden
+- `trust` module only appears when `AIDE_TRUST=untrusted`

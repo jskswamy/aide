@@ -75,6 +75,64 @@ func filterNeverAllowEnv(env []string, blocked []string) []string {
 	return result
 }
 
+// injectAideSessionEnv appends AIDE_* environment variables reflecting the
+// active aide session state. Inherited by the agent and all child processes
+// (including aide statusline claude invoked by the agent's TUI).
+func injectAideSessionEnv(
+	env []string,
+	sbDisabled bool,
+	sandboxCfg *config.SandboxPolicy,
+	autoApprove bool,
+	caps *capability.Set,
+	contextName string,
+	agentName string,
+	trustInfo *ui.TrustInfo,
+) []string {
+	add := make(map[string]string, 8)
+
+	if sbDisabled {
+		add["AIDE_SANDBOX"] = "off"
+	} else {
+		add["AIDE_SANDBOX"] = "on"
+	}
+
+	networkMode := "outbound"
+	if sandboxCfg != nil && sandboxCfg.Network != nil && sandboxCfg.Network.Mode == "unrestricted" {
+		networkMode = "unrestricted"
+	}
+	add["AIDE_NETWORK_MODE"] = networkMode
+
+	capList := ""
+	if caps != nil {
+		names := make([]string, 0, len(caps.Capabilities))
+		for _, c := range caps.Capabilities {
+			names = append(names, c.Name)
+		}
+		capList = strings.Join(names, ",")
+	}
+	add["AIDE_CAPS"] = capList
+
+	if trustInfo == nil || trustInfo.Status == "" {
+		add["AIDE_TRUST"] = "trusted"
+	} else {
+		add["AIDE_TRUST"] = "untrusted"
+	}
+
+	if autoApprove {
+		add["AIDE_AUTO_APPROVE"] = "1"
+	}
+
+	if contextName != "" {
+		add["AIDE_CONTEXT"] = contextName
+	}
+
+	if agentName != "" {
+		add["AIDE_AGENT"] = agentName
+	}
+
+	return mergeEnv(env, add)
+}
+
 // agentYoloFlags maps agent names to their "skip all permissions" flags.
 var agentYoloFlags = map[string]string{
 	"claude":  "--dangerously-skip-permissions",
@@ -471,6 +529,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		}
 		fmt.Fprintln(l.stderr())
 	}
+
+	// Inject AIDE_* session vars for statusline and subprocesses.
+	env = injectAideSessionEnv(env, sbDisabled, sandboxCfg, effectiveYolo, resolvedCapSet, rc.Name, agentName, trustInfo)
 
 	// 14. Exec the agent binary
 	args := append([]string{binary}, extraArgs...)

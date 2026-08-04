@@ -26,16 +26,16 @@ jobs:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v3.37.5
         with:
           languages: go
 
       - run: make build
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v3.37.5

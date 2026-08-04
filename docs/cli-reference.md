@@ -77,7 +77,7 @@ aide prompt [--starship-config]
 Output a compact context line for shell prompt integration.
 
 **Flags:**
-- `--starship-config` — Print a ready-to-use `starship.toml` snippet to stdout
+- `--starship-config`: Print a ready-to-use `starship.toml` snippet to stdout
 
 **Output format:**
 ```
@@ -85,9 +85,9 @@ context [context-icon] [agent-icon] [status]
 ```
 
 Status indicators:
-- `🛡` — sandbox is active
-- `⚠` — `.aide.yaml` is present but untrusted (run `aide trust`)
-- `🚫` — `.aide.yaml` has been denied
+- `🛡`: sandbox is active
+- `⚠`: `.aide.yaml` is present but untrusted (run `aide trust`)
+- `🚫`: `.aide.yaml` has been denied
 
 **Exits 1** with no output when no context matches the current directory. Starship hides the module automatically on non-zero exit.
 
@@ -897,9 +897,9 @@ context against what is installed in the agent. See
 [Provisioning](provisioning.md) for the full model.
 
 Flags:
-- `--context <name>` — operate on a specific context (default: match by CWD).
-- `--plan` — print the plan, exit without mutating state.
-- `--yes` — non-interactive (skip confirmation).
+- `--context <name>`: operate on a specific context (default: match by CWD).
+- `--plan`: print the plan, exit without mutating state.
+- `--yes`: non-interactive (skip confirmation).
 
 State is persisted to `~/.local/state/aide/managed.json` atomically and
 only on full success. On any failure, the engine rolls back via an
@@ -919,8 +919,8 @@ them as managed in state. Use this to bring a hand-installed setup
 under aide management.
 
 Flags:
-- `--context <name>` — defaults to current-CWD match.
-- `--yes` — accept everything without prompting.
+- `--context <name>`: defaults to current-CWD match.
+- `--yes`: accept everything without prompting.
 
 ---
 
@@ -966,7 +966,7 @@ list is sourced from the config file, not from the agent's live state, so it
 reflects what aide knows about rather than what the agent actually runs.
 
 Flags:
-- `--context <name>` — operate on a specific context (default: match by CWD).
+- `--context <name>`: operate on a specific context (default: match by CWD).
 
 ---
 
@@ -977,14 +977,14 @@ aide hook add --event <event> --command <cmd> [--matcher <matcher>] [--timeout <
 ```
 
 Appends a hook entry to `config.yaml` under the context's `hooks.extra`
-block. Does not write anything to the agent — run `aide sync` to apply.
+block. Does not write anything to the agent: run `aide sync` to apply.
 
 Flags:
-- `--event <event>` — hook event (required): `pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`.
-- `--command <cmd>` — shell command to run (required). Shell metacharacters (`;|&\`$(){}` etc.) are rejected to prevent injection.
-- `--matcher <matcher>` — narrow the hook to a tool class (optional). `shell` targets the Bash/shell tool only (mapped to the agent's native name, e.g. `Bash` for Claude).
-- `--timeout <seconds>` — override the agent default timeout (optional, 0 = driver default).
-- `--context <name>` — defaults to CWD match.
+- `--event <event>`: hook event (required): `pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`.
+- `--command <cmd>`: shell command to run (required). Shell metacharacters (`;|&\`$(){}` etc.) are rejected to prevent injection.
+- `--matcher <matcher>`: narrow the hook to a tool class (optional). `shell` targets the Bash/shell tool only (mapped to the agent's native name, e.g. `Bash` for Claude).
+- `--timeout <seconds>`: override the agent default timeout (optional, 0 = driver default).
+- `--context <name>`: defaults to CWD match.
 
 ---
 
@@ -998,7 +998,7 @@ Removes the matching hook entry from `config.yaml`. Does not touch the agent
 until you run `aide sync`.
 
 Flags mirror `hook add`. The hook is identified by the `(event, matcher,
-command)` triple — all three must match the entry to remove.
+command)` triple: all three must match the entry to remove.
 
 ---
 
@@ -1043,7 +1043,7 @@ Renders the current aide session state as a compact statusline string for use
 with Claude Code's `statusLine` feature. Reads session state from `AIDE_*`
 environment variables injected by aide before exec.
 
-**Render mode** (when stdin is a pipe — Claude Code's invocation path):
+**Render mode** (when stdin is a pipe: Claude Code's invocation path):
 
 1. Drains stdin (JSON from Claude Code is discarded; available for future modules).
 2. Reads `AIDE_*` env vars for session state.
@@ -1055,8 +1055,9 @@ environment variables injected by aide before exec.
 
 | Flag | Description |
 |------|-------------|
-| `--install` | Patch `~/.claude/settings.json` to set `statusLine.command` |
-| `--remove` | Clear the `statusLine` key from `~/.claude/settings.json` |
+| `--install` | Patch the target context's `settings.json` to set `statusLine.command` |
+| `--remove` | Clear the `statusLine` key from the target context's `settings.json` |
+| `--context <name>` | Target a specific aide context (default: matched by CWD). Resolves the correct `CLAUDE_CONFIG_DIR` for profile-based contexts automatically. |
 
 **Install behaviour:**
 
@@ -1074,8 +1075,10 @@ environment variables injected by aide before exec.
 ```
 
 ```bash
-aide statusline claude --install   # one-time setup
-aide statusline claude --remove    # undo
+aide statusline claude --install                    # one-time setup (CWD-matched context)
+aide statusline claude --install --context work     # install for a specific context
+aide statusline claude --remove                     # undo
+aide statusline claude --remove --context work      # undo for a specific context
 ```
 
 ---

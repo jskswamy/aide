@@ -24,6 +24,7 @@ func statuslineCmd() *cobra.Command {
 
 func statuslineAgentCmd(agent string) *cobra.Command {
 	var install, remove bool
+	var contextName string
 	cmd := &cobra.Command{
 		Use:          agent,
 		Short:        fmt.Sprintf("Render or install aide statusline for %s", agent),
@@ -33,15 +34,22 @@ func statuslineAgentCmd(agent string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("home dir: %w", err)
 			}
-			ctx := provision.Context{
-				HomeDir: homeDir,
-				Env:     envSliceToMap(os.Environ()),
-			}
 			switch {
-			case install:
-				return installStatusline(cmd, ctx, homeDir, agent)
-			case remove:
-				return removeStatusline(cmd, ctx, homeDir)
+			case install, remove:
+				cfg, name, cfgCtx, err := resolveContextForMutation(contextName)
+				_ = cfg
+				if err != nil {
+					return err
+				}
+				cwd, _ := os.Getwd()
+				pCtx, err := provision.ResolveContext(name, cfgCtx, homeDir, cwd, resolveContextEnv(cfgCtx, homeDir))
+				if err != nil {
+					return err
+				}
+				if install {
+					return installStatusline(cmd, pCtx, homeDir, agent)
+				}
+				return removeStatusline(cmd, pCtx, homeDir)
 			}
 
 			// Render mode: only when stdin is a pipe (invoked by Claude Code).
@@ -53,7 +61,7 @@ func statuslineAgentCmd(agent string) *cobra.Command {
 				return nil
 			}
 
-			io.Copy(io.Discard, os.Stdin) //nolint:errcheck
+			io.Copy(io.Discard, os.Stdin) //nolint:errcheck // draining stdin before render; read errors don't affect output
 
 			cwd, _ := os.Getwd()
 			cfg, _ := config.Load(config.Dir(), cwd)
@@ -74,6 +82,7 @@ func statuslineAgentCmd(agent string) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&install, "install", false, fmt.Sprintf("Install aide statusline for %s", agent))
 	cmd.Flags().BoolVar(&remove, "remove", false, "Remove aide statusline")
+	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
 	return cmd
 }
 
@@ -216,15 +225,4 @@ func envForRender() map[string]string {
 		"AIDE_AUTO_APPROVE": os.Getenv("AIDE_AUTO_APPROVE"),
 		"AIDE_CONTEXT":      os.Getenv("AIDE_CONTEXT"),
 	}
-}
-
-// envSliceToMap converts []string{"K=V", ...} to map[string]string{"K":"V", ...}.
-func envSliceToMap(env []string) map[string]string {
-	m := make(map[string]string, len(env))
-	for _, kv := range env {
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			m[kv[:i]] = kv[i+1:]
-		}
-	}
-	return m
 }

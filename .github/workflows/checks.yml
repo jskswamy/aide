@@ -1,0 +1,78 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('.golangci.yml', 'go.sum') }}
+
+      - uses: pre-commit/action@v3.0.1
+
+  test:
+    name: Test (Linux)
+    uses: ./.github/workflows/_test.yml
+    with:
+      runner: ubuntu-latest
+      coverage: true
+
+  test-macos:
+    name: Test (macOS)
+    uses: ./.github/workflows/_test.yml
+    with:
+      runner: macos-15
+      coverage: false
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: make build
+
+  sandbox-integration:
+    name: Sandbox Integration (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            runner: ubuntu-24.04
+          - os: ubuntu-22.04
+            runner: ubuntu-22.04
+    uses: ./.github/workflows/_test.yml
+    with:
+      runner: ${{ matrix.runner }}
+      integration: true
+
+  gosec:
+    name: Security Scan (gosec)
+    uses: ./.github/workflows/_gosec.yml

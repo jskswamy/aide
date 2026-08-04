@@ -1,0 +1,68 @@
+name: Run Tests (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        type: string
+        default: ubuntu-latest
+      coverage:
+        type: boolean
+        default: false
+      integration:
+        type: boolean
+        default: false
+      timeout-minutes:
+        type: number
+        default: 10
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install bubblewrap
+        if: startsWith(inputs.runner, 'ubuntu')
+        run: sudo apt-get update -q && sudo apt-get install -y bubblewrap
+
+      - name: Run tests
+        if: ${{ !inputs.integration && !inputs.coverage }}
+        run: make test/unit
+
+      - name: Run tests with coverage
+        if: ${{ !inputs.integration && inputs.coverage }}
+        run: make test/coverage
+
+      - name: Check generated mocks are up to date
+        if: ${{ !inputs.integration && inputs.coverage }}
+        run: |
+          go install go.uber.org/mock/mockgen@latest
+          make generate
+          if ! git diff --quiet -- '*/mocks/'; then
+            echo "::error::Generated mocks are out of date. Run 'make generate' and commit."
+            git diff -- '*/mocks/'
+            exit 1
+          fi
+
+      - name: Upload coverage
+        if: ${{ !inputs.integration && inputs.coverage }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+      - name: Run sandbox unit tests
+        if: ${{ inputs.integration }}
+        run: make test/sandbox
+
+      - name: Run integration tests
+        if: ${{ inputs.integration }}
+        run: make test/integration

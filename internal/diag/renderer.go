@@ -12,7 +12,7 @@ func Markdown(r Report) string {
 
 	fmt.Fprintf(&b, "# aide diagnose report\n\n")
 	fmt.Fprintf(&b, "> ⚠️  Review this file before sharing. It may contain paths, hostnames, or argv values that you consider sensitive. Secret values are redacted (only env-var names and lengths are recorded), but please skim every section before posting.\n\n")
-	fmt.Fprintf(&b, "## TL;DR\n\nexit=%d runtime=%s — %s\n\n", r.ExitCode, r.Runtime, r.Classification())
+	fmt.Fprintf(&b, "## TL;DR\n\nexit=%d runtime=%s - %s\n\n", r.ExitCode, r.Runtime, r.Classification())
 
 	fmt.Fprintf(&b, "## Environment\n\n")
 	fmt.Fprintf(&b, "- aide: %s (commit %s, built %s)\n", r.AideVersion, r.AideCommit, r.AideBuildDate)
@@ -72,7 +72,7 @@ func Markdown(r Report) string {
 func Summary(r Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "── aide diagnose ──\n")
-	fmt.Fprintf(&b, "exit=%d runtime=%s — %s\n", r.ExitCode, r.Runtime, r.Classification())
+	fmt.Fprintf(&b, "exit=%d runtime=%s - %s\n", r.ExitCode, r.Runtime, r.Classification())
 	if r.StderrTail != "" {
 		fmt.Fprintf(&b, "child stderr (last lines):\n%s", r.StderrTail)
 	}

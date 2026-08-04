@@ -1,4 +1,17 @@
-## v2.1.0 (2026-08-03)
+## v2.1.0 (2026-08-04)
+
+### Fix
+
+#### Claude Code image paste (Ctrl+V) now works inside aide sandbox
+
+The macOS sandbox blocked `com.apple.pasteboard.1`, the per-user mach
+service that `osascript` uses to read clipboard data. Claude Code uses
+osascript to detect and read PNG image data on Ctrl+V, so pasting
+screenshots silently failed with "clipboard empty" when running via `aide`.
+
+The fix adds a mach-lookup allow for `com.apple.pasteboard.1` to the
+Claude module rules. The entry is scoped to the Claude agent only; no
+other sandboxed processes gain clipboard access.
 
 ### Feature
 

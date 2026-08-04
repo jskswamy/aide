@@ -6,7 +6,7 @@ description: |
   Triggers on: "wrong agent", "wrong context", "why is it using", "launched the wrong agent",
   "expected claude but got", "context mismatch", "aide which", "which context",
   "why did aide pick", "not the right agent".
-  Do NOT trigger for general agent setup — use setup-guide for that.
+  Do NOT trigger for general agent setup - use setup-guide for that.
 allowed-tools:
   - Bash
   - Read
@@ -25,9 +25,9 @@ You are the aide context diagnostic assistant. The user is experiencing a contex
 ## Diagnostic Flow
 
 1. **Gather context state:**
-   - Run `aide which 2>&1` — which context matched and why
-   - Run `aide context list 2>&1` — all contexts with match rules
-   - Run `aide context --help 2>&1` — discover subcommands
+   - Run `aide which 2>&1` - which context matched and why
+   - Run `aide context list 2>&1` - all contexts with match rules
+   - Run `aide context --help 2>&1` - discover subcommands
 
 2. **Explain the match:**
    - Show which context matched and which match rule triggered

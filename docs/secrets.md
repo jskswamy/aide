@@ -17,8 +17,8 @@ aide appends `.enc.yaml` automatically and resolves the full path under the secr
 ## Setting Up Age
 
 Without an age identity aide cannot decrypt anything, so this is the first
-step on a new machine. A YubiKey-bound identity works too — see [Age Key
-Discovery](#age-key-discovery) — but a software identity is the simplest
+step on a new machine. A YubiKey-bound identity works too - see [Age Key
+Discovery](#age-key-discovery) - but a software identity is the simplest
 path to a working setup.
 
 **1. Install age.**
@@ -52,7 +52,7 @@ chmod 600 "$KEYS_FILE"
 ```
 
 A keys file may hold any number of identities (software keys and YubiKey
-plugin entries) — appending is safe.
+plugin entries) - appending is safe.
 
 **3. Read back your public key.** This is the recipient you encrypt to:
 
@@ -61,7 +61,7 @@ grep '^# public key:' "$KEYS_FILE" | tail -n1
 # → # public key: age1abc...
 ```
 
-Copy the `age1...` value — you will pass it to `aide secrets create`.
+Copy the `age1...` value - you will pass it to `aide secrets create`.
 
 **4. Verify aide can find the key.**
 
@@ -108,11 +108,11 @@ aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --global
 
 What each command does:
 
-- `aide use claude --secret personal` — binds the current working
+- `aide use claude --secret personal` - binds the current working
   directory to a context that runs `claude` and decrypts
   `personal.enc.yaml` at launch.
 - `aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --global`
-  — adds an env variable on the active context whose value comes from
+  - adds an env variable on the active context whose value comes from
   the `anthropic_api_key` field inside the bound secret. `--global`
   writes the entry to user-level config (`~/.config/aide/config.yaml`)
   so it applies wherever this context matches; drop `--global` to keep
@@ -150,7 +150,7 @@ The plaintext API key never lands on disk: aide decrypts in-memory and
 exposes it only to the agent process's environment for the lifetime of
 that launch.
 
-> **Tip — multiple accounts.** To keep separate Claude Code states for
+> **Tip - multiple accounts.** To keep separate Claude Code states for
 > personal and work API keys (separate auth, MCP servers, history),
 > pair this Quick Start with a per-context `CLAUDE_CONFIG_DIR`. See
 > [Multi-Account Setups](contexts.md#multi-account-setups) in the

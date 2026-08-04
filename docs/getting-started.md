@@ -118,7 +118,7 @@ What do you want to do?
 Choose [1]:
 ```
 
-Pick `[2]` to create a new context — aide walks you through naming it, picking
+Pick `[2]` to create a new context - aide walks you through naming it, picking
 an agent (auto-detected if you have only one supported agent on PATH), optionally
 binding a secret store, and attaching the current folder.
 
@@ -130,7 +130,7 @@ aide context bind work
 ```
 
 By default `bind` matches by git remote URL when the folder is a git repo with
-an `origin` remote — so the same context resolves correctly for any worktree
+an `origin` remote - so the same context resolves correctly for any worktree
 or fresh checkout of the same repo.
 
 In non-interactive mode (CI, scripts) aide prints concrete next-command hints:
@@ -154,10 +154,10 @@ fully scripted flags (non-TTY):
 # Interactive wizard
 $ aide context create
 
-# Non-interactive — name, agent, and cwd binding all specified
+# Non-interactive - name, agent, and cwd binding all specified
 $ aide context create work --agent claude --here
 
-# Non-interactive — skip binding the current folder
+# Non-interactive - skip binding the current folder
 $ aide context create work --agent claude --no-here
 ```
 

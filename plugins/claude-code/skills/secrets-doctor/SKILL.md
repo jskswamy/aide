@@ -26,9 +26,9 @@ You are the aide secrets diagnostic assistant. The user is experiencing an authe
 ## Diagnostic Flow
 
 1. **Gather state:**
-   - Run `aide which 2>&1` — current context, agent, secret
-   - Run `aide env list 2>&1` — env vars for current context
-   - Run `aide secrets list 2>&1` — available secret files
+   - Run `aide which 2>&1` - current context, agent, secret
+   - Run `aide env list 2>&1` - env vars for current context
+   - Run `aide secrets list 2>&1` - available secret files
    - If a secret is configured: `aide secrets keys <name> 2>&1`
 
 2. **Trace the issue:**

@@ -140,7 +140,7 @@ aide use --context work               # add CWD as a match rule to existing cont
 ## Multi-Account Setups
 
 A common need is keeping a personal and a work Claude account side by
-side — different API keys, different MCP servers, separate
+side - different API keys, different MCP servers, separate
 conversation history, no cross-contamination. aide composes two
 primitives to make this clean:
 
@@ -153,9 +153,9 @@ primitives to make this clean:
    MCP servers, conversation history) stays isolated. `CLAUDE_CONFIG_DIR`
    is a Claude Code env var; aide just sets it per context.
 
-**Walkthrough — personal + work.**
+**Walkthrough - personal + work.**
 
-Create one encrypted secret per account (see [Secrets — Quick
+Create one encrypted secret per account (see [Secrets - Quick
 Start](secrets.md#quick-start-wiring-an-anthropic-api-key) for the
 editor flow):
 
@@ -167,12 +167,12 @@ aide secrets create work     --age-key age1xyz...
 Bind directories and wire env per context:
 
 ```sh
-# Personal — everything under ~/personal/*
+# Personal - everything under ~/personal/*
 aide use claude --match "~/personal/*" --secret personal
 aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --context personal --global
 aide env set CLAUDE_CONFIG_DIR "$HOME/.claude-personal"       --context personal --global
 
-# Work — everything under ~/work/*
+# Work - everything under ~/work/*
 aide use claude --match "~/work/*" --secret work
 aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --context work --global
 aide env set CLAUDE_CONFIG_DIR "$HOME/.claude-work"           --context work --global
@@ -207,7 +207,7 @@ Resulting layout:
 ~/.claude-work/       ← Claude Code state for work account
 ```
 
-The same pattern extends to N accounts (client-x, oss, ...) — just
+The same pattern extends to N accounts (client-x, oss, ...) - just
 add more context blocks. Codex and other agents have analogous config
 directory env vars (`CODEX_HOME`, etc.); set those the same way.
 

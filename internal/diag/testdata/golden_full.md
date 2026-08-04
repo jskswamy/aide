@@ -4,7 +4,7 @@
 
 ## TL;DR
 
-exit=1 runtime=250ms — fast-fail (<500ms)
+exit=1 runtime=250ms - fast-fail (<500ms)
 
 ## Environment
 

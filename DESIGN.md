@@ -1,8 +1,8 @@
-# aide — Universal Coding Agent Context Manager
+# aide - Universal Coding Agent Context Manager
 
 A Go CLI tool that automatically resolves and launches the right coding
 agent (Claude, Gemini, Codex, etc.) with the correct context based on
-project configuration. No manual switching — just run `aide` in any
+project configuration. No manual switching - just run `aide` in any
 project directory.
 
 ## Product Pitch
@@ -12,17 +12,17 @@ everywhere.
 
 Working across personal, work, and open-source projects with different AI
 agents and API keys? aide figures out which agent, credentials, and MCP
-servers to use based on where you are — automatically.
+servers to use based on where you are - automatically.
 
-- **Zero config to start** — just run `aide`, it finds your agent and launches it
-- **Automatic context switching** — different projects get different credentials,
+- **Zero config to start** - just run `aide`, it finds your agent and launches it
+- **Automatic context switching** - different projects get different credentials,
   MCP servers, and settings without you thinking about it
-- **Secrets stay encrypted** — API keys protected with age/YubiKey, never
+- **Secrets stay encrypted** - API keys protected with age/YubiKey, never
   plaintext on disk
-- **Git-track your setup** — one `git clone` reproduces your entire config on
+- **Git-track your setup** - one `git clone` reproduces your entire config on
   any machine, Docker, or CI
-- **Any agent** — Claude, Gemini, Codex, or whatever comes next
-- **Sandboxed by default** — agents run in a filesystem/network sandbox so you
+- **Any agent** - Claude, Gemini, Codex, or whatever comes next
+- **Sandboxed by default** - agents run in a filesystem/network sandbox so you
   can let them work autonomously without approval fatigue
 
 ## Competitive Landscape
@@ -48,8 +48,8 @@ MCP management. The landscape as of March 2026:
 2. Encrypted secrets with sops/age (YubiKey support)
 3. Unified context = agent + credentials + MCP servers + env
 4. Transparent wrapper (replaces typing `claude` or `gemini`)
-5. Config-as-code — git-trackable, reproducible across machines/Docker/CI
-6. Sandboxed agent execution — pre-defined security boundary eliminates approval fatigue
+5. Config-as-code - git-trackable, reproducible across machines/Docker/CI
+6. Sandboxed agent execution - pre-defined security boundary eliminates approval fatigue
 
 OpenShell is server-side sandbox infrastructure for teams running agents
 in controlled environments. aide is a client-side launcher for developers
@@ -78,15 +78,15 @@ switching between personal and work credentials is error-prone.
 `aide` resolves context automatically based on git remote URL and
 directory path patterns. Three pillars:
 
-**Pillar 1: Sandbox** — Define the security boundary upfront; the agent
+**Pillar 1: Sandbox** - Define the security boundary upfront; the agent
 runs freely within it. OS-native sandboxing is on by default. No
 per-action permission prompts. Launch and walk away.
 
-**Pillar 2: Secrets & Portability** — API keys encrypted with age/YubiKey,
+**Pillar 2: Secrets & Portability** - API keys encrypted with age/YubiKey,
 decrypted in-process, never plaintext on disk. One config directory,
 git-trackable. One `git clone` reproduces your setup on any machine.
 
-**Pillar 3: Context Resolution & Any Agent** — Automatic switching between
+**Pillar 3: Context Resolution & Any Agent** - Automatic switching between
 work, personal, and open-source contexts based on git remote and directory.
 Works with Claude, Gemini, Codex, or whatever comes next.
 
@@ -289,7 +289,7 @@ Key design decisions:
 
 API keys encrypted with age/YubiKey, decrypted in-process, never
 plaintext on disk. Ephemeral runtime files cleaned on exit. One config
-directory, git-trackable — one git clone reproduces your setup on any
+directory, git-trackable - one git clone reproduces your setup on any
 machine.
 
 ### Encrypted Secrets
@@ -311,7 +311,7 @@ to `$XDG_CONFIG_HOME/aide/secrets/`. Absolute paths are also supported.
 
 #### Secrets Lifecycle
 
-aide manages the full secrets lifecycle — no need to use `sops` CLI directly:
+aide manages the full secrets lifecycle - no need to use `sops` CLI directly:
 
 ```bash
 aide secrets create personal          # Create new encrypted secrets file
@@ -352,7 +352,7 @@ ALL decrypted material must die with the process. Nothing persists.
 
 **Cleanup guarantees:**
 
-- Signal handlers registered for SIGTERM, SIGINT, SIGQUIT, SIGHUP — all trigger
+- Signal handlers registered for SIGTERM, SIGINT, SIGQUIT, SIGHUP - all trigger
   cleanup of the runtime directory before exit.
 - `defer` cleanup in the main launch path for normal exit.
 - SIGKILL edge case: tmpfs (`$XDG_RUNTIME_DIR`) cleans on reboot. Next aide
@@ -366,7 +366,7 @@ ALL decrypted material must die with the process. Nothing persists.
 3. Decrypt secrets in memory (sops library call returns Go map)
 4. Create `$XDG_RUNTIME_DIR/aide-<pid>/` (tmpfs, mode 0700)
 5. Generate MCP/aggregator config with resolved secrets into temp dir
-6. Build env vars (resolve templates against secrets map) — in memory only
+6. Build env vars (resolve templates against secrets map) - in memory only
 7. Apply sandbox policy (generate platform-specific policy from context config)
 8. Exec agent inside sandbox with env vars + MCP config path pointing to temp dir
 9. On exit (normal or signal): `rm -rf` temp dir
@@ -375,10 +375,10 @@ ALL decrypted material must die with the process. Nothing persists.
 
 Tried in order:
 
-1. **YubiKey** (via `age-plugin-yubikey`) — hardware-bound, key never on disk
-2. **`$SOPS_AGE_KEY` env var** — for CI/Docker (key in memory, not on disk)
-3. **`$SOPS_AGE_KEY_FILE`** — custom key file location
-4. **`$XDG_CONFIG_HOME/sops/age/keys.txt`** — default age key location
+1. **YubiKey** (via `age-plugin-yubikey`) - hardware-bound, key never on disk
+2. **`$SOPS_AGE_KEY` env var** - for CI/Docker (key in memory, not on disk)
+3. **`$SOPS_AGE_KEY_FILE`** - custom key file location
+4. **`$XDG_CONFIG_HOME/sops/age/keys.txt`** - default age key location
 
 ### Access Control
 
@@ -398,7 +398,7 @@ Track your entire aide setup in version control:
 cd ~/.config/aide && git init && git add -A && git commit -m "aide config"
 ```
 
-Encrypted secrets are safe to commit — only age key holders can decrypt.
+Encrypted secrets are safe to commit - only age key holders can decrypt.
 
 #### Pattern 2: Team Shared Config
 
@@ -421,7 +421,7 @@ writing a key file to the image.
 
 ## Pillar 3: Context Resolution & Any Agent
 
-aide works with any coding agent — Claude, Gemini, Codex, or whatever
+aide works with any coding agent - Claude, Gemini, Codex, or whatever
 comes next. Agents are just binaries. aide resolves which agent,
 credentials, and sandbox policy to use based on where you are.
 
@@ -431,7 +431,7 @@ When no config file exists, aide does not require setup:
 
 1. Scan PATH for known agent binaries (`claude`, `gemini`, `codex`)
 2. If exactly one found and it already has its API key in the environment,
-   just exec it (pure passthrough — aide adds zero overhead)
+   just exec it (pure passthrough - aide adds zero overhead)
 3. If multiple found, show a helpful message:
    `"Multiple agents found: claude, codex. Use --agent to pick one, or run aide setup."`
 4. If none found: `"No known agent binaries found on PATH. Install claude, gemini, or codex."`
@@ -465,7 +465,7 @@ single-context users with env vars already set, aide is invisible.
 ## Config Layout
 
 Everything lives under `$XDG_CONFIG_HOME/aide/` (defaults to `~/.config/aide/`).
-No XDG_DATA_HOME split — this keeps config and secrets together so the entire
+No XDG_DATA_HOME split - this keeps config and secrets together so the entire
 aide setup can be git-tracked as a single repository.
 
 ```
@@ -496,11 +496,11 @@ Single-context users do not need the full agents/contexts structure. When aide
 detects a flat config (no `agents` or `contexts` keys), it treats the file as
 a single default context.
 
-Agent name is enough — aide assumes binary name matches agent name unless
+Agent name is enough - aide assumes binary name matches agent name unless
 overridden.
 
 ```yaml
-# $XDG_CONFIG_HOME/aide/config.yaml — minimal
+# $XDG_CONFIG_HOME/aide/config.yaml - minimal
 agent: claude
 env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
@@ -513,7 +513,7 @@ mcp_servers: [git, context7]
 ```yaml
 # $XDG_CONFIG_HOME/aide/config.yaml
 
-# Agent definitions — just binary mappings. No env or secrets here.
+# Agent definitions - just binary mappings. No env or secrets here.
 agents:
   claude:
     binary: claude
@@ -542,7 +542,7 @@ mcp:
     things:
       command: things-mcp
 
-# Context definitions — matched by git remote or directory
+# Context definitions - matched by git remote or directory
 contexts:
   work:
     match:
@@ -601,7 +601,7 @@ capabilities:
 
 Agents are just binary definitions (name to binary path). All env vars,
 secret, and MCP server selection live on the context. This avoids
-confusion where agent-level env templates would be misleading — for example,
+confusion where agent-level env templates would be misleading - for example,
 a work context uses Bedrock (CLAUDE_CODE_USE_BEDROCK), not ANTHROPIC_API_KEY,
 even though both use the same `claude` binary.
 
@@ -613,7 +613,7 @@ values without `{{ }}` template syntax pass through as literals. This supports
 zero-config and gradual adoption.
 
 ```yaml
-# No secret needed — CLAUDE_CODE_USE_BEDROCK is a literal
+# No secret needed - CLAUDE_CODE_USE_BEDROCK is a literal
 contexts:
   work:
     agent: claude
@@ -668,7 +668,7 @@ each agent's own `mcp` subcommand: `claude mcp add-json --scope user`,
 `gemini mcp add --scope user`, `codex mcp add`, and so on. The CLI route
 keeps aide insulated from each agent's on-disk format (Claude's `type: http`
 discriminator, Gemini's `~/.gemini/settings.json` schema, Codex's TOML
-layout) — schema drift in any one agent doesn't break aide. Drivers expose
+layout) - schema drift in any one agent doesn't break aide. Drivers expose
 this via the `MCPInstaller` interface; agents without a non-interactive
 `mcp` CLI fall back to the file-based `MCPHandler` path.
 
@@ -774,7 +774,7 @@ aide secrets edit <name>               # Edit existing secrets file
 aide secrets list                      # List available secrets files
 aide secrets rotate <name> [flags]     # Add/remove age key recipients
 
-# Args forwarded to agent — everything aide doesn't recognize passes through
+# Args forwarded to agent - everything aide doesn't recognize passes through
 aide --context work --model opus -p "fix the bug"
 # → resolves work context, launches: claude --model opus -p "fix the bug"
 
@@ -902,7 +902,7 @@ future reference.
 
 ### Sandbox Decisions
 
-### DD-14: Sandboxing — OS-Native, On by Default
+### DD-14: Sandboxing - OS-Native, On by Default
 **Decision:** Sandbox agents using OS-native mechanisms (sandbox-exec on macOS,
 Landlock on Linux, bwrap as fallback). Sandboxing is ON by default with sensible
 defaults. Users customize or opt out, not opt in.
@@ -918,7 +918,7 @@ external binary, self-sandboxing). sandbox-exec on macOS (deprecated but
 functional, used by Anthropic and agent-safehouse). bwrap as Linux fallback
 for older kernels without Landlock support.
 
-### DD-15: Default Sandbox Policy — Guards-Based
+### DD-15: Default Sandbox Policy - Guards-Based
 **Decision:** Default policy activates 7 always guards (base, system-runtime,
 network, filesystem, keychain, node-toolchain, nix-toolchain) plus 3 default
 guards (project-secrets, dev-credentials, aide-secrets). Network defaults to
@@ -930,12 +930,12 @@ and extend.
 **Replaces:** Original DD-15 which listed explicit path defaults.
 
 ### DD-22: Agent Config Dir Resolver
-**Decision:** Each agent has a config dir resolver — a function that reads agent-specific env vars (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, etc.) and adds the appropriate directories to the sandbox writable list. New agents only need a resolver function and a registry entry.
+**Decision:** Each agent has a config dir resolver - a function that reads agent-specific env vars (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, etc.) and adds the appropriate directories to the sandbox writable list. New agents only need a resolver function and a registry entry.
 **Why:** Hardcoding agent config paths in the sandbox policy doesn't scale as new agents are added and breaks when users customize agent config locations via env vars. The resolver makes the sandbox self-configuring based on the actual runtime environment.
 
 ### DD-23: Path Validation at Launch
 **Decision:** User-specified sandbox paths (`writable_extra`, `denied_extra`, etc.) are validated at launch time. Non-existent literal paths are skipped with a warning shown in the startup banner. Glob patterns pass through without validation.
-**Why:** Silently including non-existent paths wastes sandbox policy space and confuses users debugging sandbox issues. Skipping with a warning is better than a hard failure — the rest of the config is still valid and the agent can still launch.
+**Why:** Silently including non-existent paths wastes sandbox policy space and confuses users debugging sandbox issues. Skipping with a warning is better than a hard failure - the rest of the config is still valid and the agent can still launch.
 
 ### DD-26: Deny-Wins Semantics
 **Decision:** All guard design uses allow-broad + deny-narrow pattern.
@@ -959,7 +959,7 @@ agent-safehouse works reliably across all agent modes.
 
 ### DD-28: Everything Is a Guard
 **Decision:** Guards are the single system for all sandbox access decisions.
-Each guard produces the complete set of rules — both deny and allow — for
+Each guard produces the complete set of rules - both deny and allow - for
 the resources it manages. Three types (always/default/opt-in) determine
 configurability.
 **Why:** Replaced a split system where some rules came from seatbelt modules
@@ -974,7 +974,7 @@ readable, denied, env_allow) that existed before. They are an abstraction
 on top of guards, not a replacement.
 **Why:** Users should not need to understand guards, seatbelt rules, or
 sandbox internals. Capabilities translate task intent into security policy.
-All new config fields use `omitempty` — existing configs parse identically,
+All new config fields use `omitempty` - existing configs parse identically,
 no migration needed.
 **Alternatives considered:** Replacing guards entirely (breaks power users
 who need fine-grained control), capability-only system (insufficient
@@ -997,7 +997,7 @@ immutable Seatbelt profile. The agent cannot request additional permissions
 mid-session.
 **Why:** Prevents prompt injection attacks from escalating sandbox
 permissions. To change capabilities, start a new session. This is a hard
-security constraint — the Seatbelt profile is written to disk and loaded
+security constraint - the Seatbelt profile is written to disk and loaded
 by sandbox-exec at process start; there is no mechanism to modify it after.
 **Alternatives considered:** Dynamic permission grants (breaks Seatbelt's
 static profile model), agent-requested capability prompts (social
@@ -1013,7 +1013,7 @@ import it (FluxCD, Terragrunt, etc.). The `decrypt.File()` API is clean.
 **Alternatives considered:** Shelling out to `sops exec-env` (adds runtime dep).
 
 ### DD-6: Single XDG Directory (No Config/Data Split)
-**Decision:** Keep everything under `$XDG_CONFIG_HOME/aide/` — config.yaml AND
+**Decision:** Keep everything under `$XDG_CONFIG_HOME/aide/` - config.yaml AND
 secrets/*.enc.yaml in the same directory.
 **Why:** Splitting config and secrets across XDG_CONFIG_HOME and XDG_DATA_HOME
 breaks reproducibility. Users need to manage two directories to git-track their
@@ -1036,16 +1036,16 @@ covers SIGKILL edge case.
 pass through as literals.
 **Why:** Not everyone needs sops. Users with API keys already in their shell
 env (direnv, .envrc, exports) should be able to use aide without setting up
-age keys. This supports zero-config and gradual adoption — start with passthrough,
+age keys. This supports zero-config and gradual adoption - start with passthrough,
 add encryption later.
 
-### DD-13: Age Key — Support Both YubiKey and Key File
+### DD-13: Age Key - Support Both YubiKey and Key File
 **Decision:** Try YubiKey first, then env var, then key file.
 **Why:** Planning to open-source. YubiKey is most secure (hardware-bound) but
 not everyone has one. Key files work for CI/Docker. `SOPS_AGE_KEY` env var
 works for ephemeral environments. Supporting all three maximizes adoption.
 
-### DD-17: Environment Inheritance — Inherit All + Clean Env Flag
+### DD-17: Environment Inheritance - Inherit All + Clean Env Flag
 **Decision:** Default: agent inherits ALL current shell env vars, aide adds/overrides
 specific vars. `--clean-env` flag or `sandbox.clean_env: true` in config starts
 the agent with only aide-injected env vars.
@@ -1059,7 +1059,7 @@ Config sets per-context default, flag overrides at runtime.
 **Decision:** Agents are just binary definitions. All env vars, secrets, and
 MCP selection live on the context.
 **Why:** Same `claude` binary can be used with personal API key OR work Bedrock
-credentials. Agent-level env templates were misleading — they looked like they
+credentials. Agent-level env templates were misleading - they looked like they
 hardcoded one key but actually varied by context's secret. Moving env to
 context makes the data flow explicit.
 **UX issue surfaced:** Work context uses `CLAUDE_CODE_USE_BEDROCK`, not
@@ -1085,7 +1085,7 @@ single vs multi-service.
 **Decision:** Everything after aide's own flags is forwarded to the agent binary.
 e.g., `aide --context work --model opus -p "fix bug"` becomes `claude --model opus -p "fix bug"`.
 **Why:** aide is a transparent wrapper. Users should interact with agents normally
-and aide just ensures the right env/context. No `--` separator required — aide
+and aide just ensures the right env/context. No `--` separator required - aide
 consumes its known flags and passes the rest.
 
 ### DD-18: Project Root = Git Root
@@ -1113,10 +1113,10 @@ tampering.
 (annoying), git-signature-based trust (too complex, not all repos are
 signed).
 
-### DD-33: Linux Sandbox Architecture — Landlock + seccomp + bwrap fallback
+### DD-33: Linux Sandbox Architecture - Landlock + seccomp + bwrap fallback
 **Decision:** The Linux backend layers three kernel-side mechanisms,
 selected per launch by `internal/sandbox/tier_linux.go::ComputeIsolationTier`:
-- **Landlock LSM** (ABI v5+) as primary filesystem access control —
+- **Landlock LSM** (ABI v5+) as primary filesystem access control -
   deny-default, inode-tree, per-subtree writable/readable rules with
   `FS_REFER` for safe cross-directory renames (cargo, npm pack, atomic-
   write-via-rename).
@@ -1140,31 +1140,31 @@ discover, Seatbelt emits); on Linux, guards discover, Landlock or bwrap
 emits.
 **Alternatives considered:** bwrap-only (no inode-tree granularity);
 seccomp-only (syscall-level only, no FS allow-list); file-based policy
-passing (rejected — leaks SOPS secret bytes on SIGKILL); fail-open when
-Landlock unavailable (rejected — silently runs unsandboxed).
+passing (rejected - leaks SOPS secret bytes on SIGKILL); fail-open when
+Landlock unavailable (rejected - silently runs unsandboxed).
 **Threat model:** `docs/superpowers/specs/2026-06-07-linux-sandbox-threat-model.md`
 **Implements:** `docs/superpowers/specs/2026-03-24-linux-sandbox-parity-epic.md`
 
 ### UX & CLI Decisions
 
-### DD-1: CLI Framework — Cobra
+### DD-1: CLI Framework - Cobra
 **Decision:** Use `github.com/spf13/cobra` for CLI.
 **Why:** Subcommands (which, init, setup, secrets, contexts, agents) map naturally.
 Built-in help generation. Most popular Go CLI framework.
 **Alternatives considered:** urfave/cli (lighter but less ecosystem), stdlib flag
 (too manual for this many subcommands).
 
-### DD-2: Template Engine — Go text/template
+### DD-2: Template Engine - Go text/template
 **Decision:** Use Go's `text/template` for `{{ .secrets.xxx }}` resolution.
 **Why:** Native to Go, zero dependency. Config values are template strings
 resolved against a secrets map at launch time.
 **Alternatives considered:** Simple string replace (less flexible), envsubst-style
 `$VAR` syntax (different from established config patterns).
 
-### DD-3: XDG Resolution — adrg/xdg Library
+### DD-3: XDG Resolution - adrg/xdg Library
 **Decision:** Use `github.com/adrg/xdg` for XDG directory resolution.
 **Why:** Planning to open-source; library handles cross-platform edge cases.
-Only ~5 lines to do manually, but the library is more robust.
+Only ~5 lines to do manually, but the library handles more edge cases.
 **Alternatives considered:** Manual `os.Getenv("XDG_CONFIG_HOME")` with fallback.
 
 ### DD-8: MCP Aggregator Support

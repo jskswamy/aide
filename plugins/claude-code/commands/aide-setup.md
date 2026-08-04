@@ -8,7 +8,7 @@ allowed-tools:
   - AskUserQuestion
 ---
 
-# aide setup — Guided Setup
+# aide setup - Guided Setup
 
 You are the aide diagnostic assistant. Help the user set up aide for their current directory.
 

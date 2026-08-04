@@ -114,7 +114,7 @@ The `icon` field (optional) sets a Unicode symbol displayed alongside the agent 
 
 In addition to `agents:`, `contexts:`, `default_context:`, and `preferences:`, the following top-level fields are available:
 
-- `capabilities:` (map) — User-defined capability definitions. Each key is a capability name mapping to a `CapabilityDef`. Example:
+- `capabilities:` (map) - User-defined capability definitions. Each key is a capability name mapping to a `CapabilityDef`. Example:
 
 ```yaml
 capabilities:
@@ -125,9 +125,9 @@ capabilities:
     env_allow: [KUBECONFIG]
 ```
 
-- `never_allow:` (list) — Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
-- `never_allow_env:` (list) — Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
-- `hooks:` (map) — Declarative hook set. Keys are normalized event names (`pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`); values are lists of hook entries:
+- `never_allow:` (list) - Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
+- `never_allow_env:` (list) - Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
+- `hooks:` (map) - Declarative hook set. Keys are normalized event names (`pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`); values are lists of hook entries:
 
 ```yaml
 hooks:
@@ -139,9 +139,9 @@ hooks:
 
 The `{agent}` template variable is replaced with the resolved agent name for each context. Reconciled by `aide sync`. See [Hooks](#hooks) below.
 
-- `plugins:` (map) — Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
-- `mcp_servers:` (map) — Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
-- `statusline:` (map) — Configures the `aide statusline claude` renderer. Controls module order, per-module icons, state strings, and disabled state. Field-by-field merge with the project override; `order` is replaced wholesale when set in the project.
+- `plugins:` (map) - Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
+- `mcp_servers:` (map) - Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
+- `statusline:` (map) - Configures the `aide statusline claude` renderer. Controls module order, per-module icons, state strings, and disabled state. Field-by-field merge with the project override; `order` is replaced wholesale when set in the project.
 
 ```yaml
 statusline:
@@ -164,8 +164,8 @@ statusline:
 
 Setting any state value to `""` hides that state silently (e.g. `sandbox.off: ""` hides the module when sandbox is disabled). Each module also accepts `disabled: true` to remove it from output. The `agent` key is accepted but ignored by the renderer (reserved for a future module).
 
-- `sandboxes:` (map) — Named sandbox profiles referenced from contexts (`sandbox: <name>`).
-- `custom_guards:` and `guard_types:` (advanced) — Define custom seatbelt guard modules. Most users should not need these.
+- `sandboxes:` (map) - Named sandbox profiles referenced from contexts (`sandbox: <name>`).
+- `custom_guards:` and `guard_types:` (advanced) - Define custom seatbelt guard modules. Most users should not need these.
 
 ---
 
@@ -190,7 +190,7 @@ contexts:
         pre_tool:
           - command: "notify work-hook {agent}"
 ```
-- `capabilities:` (list) — Capability names to activate for this context (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
+- `capabilities:` (list) - Capability names to activate for this context (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
 - `yolo:` (bool, optional): skip agent permission checks for this context. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
 - `sandbox:`: accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
 
@@ -254,11 +254,11 @@ agent's config file during `aide sync`; the agent runs them, not aide.
 | Event | Claude | Gemini | Cursor | Copilot | Hermes |
 |-------|--------|--------|--------|---------|--------|
 | `pre_tool` | `PreToolUse` | `BeforeTool` (script) | `preToolUse` | `PreToolUse` (file) | `pre_tool_call` (plugin) |
-| `post_tool` | `PostToolUse` | — | — | — | — |
-| `session_start` | `SessionStart` | — | — | — | — |
-| `session_end` | `SessionEnd` | — | — | — | — |
-| `notification` | `Notification` | — | — | — | — |
-| `stop` | `Stop` | — | — | — | — |
+| `post_tool` | `PostToolUse` | - | - | - | - |
+| `session_start` | `SessionStart` | - | - | - | - |
+| `session_end` | `SessionEnd` | - | - | - | - |
+| `notification` | `Notification` | - | - | - | - |
+| `stop` | `Stop` | - | - | - | - |
 
 Events not supported by an agent are silently skipped during sync.
 
@@ -272,12 +272,12 @@ Matchers not supported by an agent are ignored.
 
 ### Storage formats per agent
 
-- **Claude** — merged into `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) under the `hooks` key. Ownership is tracked in `managed.json`; user-added entries are never touched.
-- **Gemini** — individual `aide_<hash>.sh` scripts written to `~/.gemini/hooks/`. Only `pre_tool` is supported.
-- **Cursor** — merged into `~/.cursor/hooks.json`. Ownership is tracked in `managed.json`; user-added entries are never touched.
-- **Copilot** — individual `aide-<hash>.json` files written to `~/.config/copilot/hooks/`. Only `pre_tool` is supported.
-- **Hermes** — Python plugin directories written to `~/.hermes/plugins/aide_<hash>/` (an `__init__.py` + `plugin.yaml` per hook). Only `pre_tool` is supported.
-- **Codex** — no hook support.
+- **Claude** - merged into `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) under the `hooks` key. Ownership is tracked in `managed.json`; user-added entries are never touched.
+- **Gemini** - individual `aide_<hash>.sh` scripts written to `~/.gemini/hooks/`. Only `pre_tool` is supported.
+- **Cursor** - merged into `~/.cursor/hooks.json`. Ownership is tracked in `managed.json`; user-added entries are never touched.
+- **Copilot** - individual `aide-<hash>.json` files written to `~/.config/copilot/hooks/`. Only `pre_tool` is supported.
+- **Hermes** - Python plugin directories written to `~/.hermes/plugins/aide_<hash>/` (an `__init__.py` + `plugin.yaml` per hook). Only `pre_tool` is supported.
+- **Codex** - no hook support.
 
 ### The `{agent}` template variable
 

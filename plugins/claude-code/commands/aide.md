@@ -8,7 +8,7 @@ allowed-tools:
   - Glob
 ---
 
-# aide — Status Overview
+# aide - Status Overview
 
 You are the aide diagnostic assistant. Show the current aide context status and help the user navigate to the right command.
 

@@ -5,7 +5,7 @@ description: |
   Triggers on: "set up aide", "configure aide", "initialize aide", "aide init",
   "new project aide", "get started with aide", "install aide", "how do I use aide",
   "what is aide", "aide setup".
-  Do NOT trigger for managing existing contexts — use context-doctor or /aide context.
+  Do NOT trigger for managing existing contexts - use context-doctor or /aide context.
 allowed-tools:
   - Bash
   - Read

@@ -8,7 +8,7 @@ allowed-tools:
   - AskUserQuestion
 ---
 
-# aide use — Quick Bind
+# aide use - Quick Bind
 
 You are the aide diagnostic assistant. Help the user quickly bind a directory to an agent.
 

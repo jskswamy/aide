@@ -2,7 +2,7 @@
 
 ## AI is Welcome Here
 
-aide is built with AI assistance. Maintainers use AI tools daily — for writing code, generating tests, drafting documentation, and exploring ideas. This policy is not anti-AI.
+aide is built with AI assistance. Maintainers use AI tools daily - for writing code, generating tests, drafting documentation, and exploring ideas. This policy is not anti-AI.
 
 It exists because low-effort, unreviewed AI output creates real burden for maintainers and reviewers. The problem is people using AI poorly, not the tools themselves. A well-crafted contribution that used AI throughout is welcome. A sloppy dump of raw model output is not.
 
@@ -20,13 +20,13 @@ A one-line note in the PR description is enough. No lengthy justifications neede
 
 ### 2. You must fully understand every line you submit
 
-Code, diagrams, documentation — all of it. If you cannot explain what a piece of code does and how it interacts with the rest of the system without asking an AI, do not submit it.
+Code, diagrams, documentation - all of it. If you cannot explain what a piece of code does and how it interacts with the rest of the system without asking an AI, do not submit it.
 
 This applies equally to a three-line bug fix and a five-hundred-line feature. Understanding is not optional.
 
 ### 3. AI-generated text must be reviewed and edited before submission
 
-This covers issues, discussions, PR descriptions, and comments — not just code.
+This covers issues, discussions, PR descriptions, and comments - not just code.
 
 AI produces verbose, hedge-filled prose. It qualifies everything, repeats itself, and buries the point. Trim it. Rewrite it in your voice. Make it yours. Reviewers can tell the difference.
 
@@ -36,7 +36,7 @@ This project uses a two-stage review pipeline. Automated AI review (e.g., Grepti
 
 If your contribution cannot pass automated review, it never reaches a human. Fix the feedback and resubmit.
 
-When it does reach a human, that human's time is scarce. Every PR a maintainer reviews is time not spent writing code, fixing bugs, or helping other contributors. Submitting unreviewed AI output — code you have not tested, prose you have not read, changes you do not understand — wastes that time.
+When it does reach a human, that human's time is scarce. Every PR a maintainer reviews is time not spent writing code, fixing bugs, or helping other contributors. Submitting unreviewed AI output - code you have not tested, prose you have not read, changes you do not understand - wastes that time.
 
 This is not about gatekeeping. It is about respect for the people who maintain this project. They volunteered their time. Honor that by doing your part before asking for theirs.
 

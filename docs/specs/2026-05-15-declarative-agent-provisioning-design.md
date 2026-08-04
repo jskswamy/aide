@@ -9,7 +9,7 @@ Author: Krishnaswamy Subramanian
 A new machine needs the same plugins and MCP servers across the same set
 of contexts every time. Today the configuration tells `aide` *which*
 plugins and MCP servers belong to each context only for the purpose of
-launching the agent — there is no mechanism to install, register, or
+launching the agent - there is no mechanism to install, register, or
 reconcile that state against what is actually present in the agent's own
 config. Bootstrap scripts cannot describe "context X has plugins A, B and
 MCP server C" and apply it to a fresh machine without per-agent manual
@@ -125,7 +125,7 @@ anything in the agent. It mutates `config.yaml` (atomic write via
 `internal/fsutil.AtomicWrite`) and the state file.
 
 `aide adopt --context work --yes` adopts every unmanaged item with no
-prompting — useful for one-shot migration from "I configured everything
+prompting - useful for one-shot migration from "I configured everything
 by hand" to "now it's declarative".
 
 ### Launch drift banner
@@ -137,17 +137,17 @@ against `config_hash` in the state file:
 - mismatch → one-line banner under the existing aide preamble:
 
 ```
-⚠ context "work": config changed since last sync — run `aide sync`
+⚠ context "work": config changed since last sync - run `aide sync`
 ```
 
 The banner never blocks the launch. The check is one `os.ReadFile` + one
 hash on a small YAML; no subprocess to the agent.
 
-## Schema (v2 — polymorphic plugins + delta semantics)
+## Schema (v2 - polymorphic plugins + delta semantics)
 
 > **v1 historical note.** An earlier iteration shipped a flat
 > `plugins: {name: {source, name}}` map. Smoke-testing against a real
-> Claude installation revealed three structural issues — marketplaces
+> Claude installation revealed three structural issues - marketplaces
 > are a distinct concept aide had to model, "plugin" meant materially
 > different things across agents, and contexts repeating the same plugin
 > list violated DRY badly enough that 18-plugin configs grew to 54
@@ -169,7 +169,7 @@ contexts:
     mcp_servers:   # same delta semantics
 ```
 
-### `plugins:` — polymorphic by YAML value shape
+### `plugins:` - polymorphic by YAML value shape
 
 The block is a single map. Each entry's *value type* tells aide what
 kind of source it represents:
@@ -186,7 +186,7 @@ glance.
 
 ```yaml
 plugins:
-  # Marketplace entries — list value, key is a repo
+  # Marketplace entries - list value, key is a repo
   steveyegge/beads:
     - beads
   jskswamy/claude-plugins:
@@ -198,18 +198,18 @@ plugins:
     - context7
     - plugin-dev
 
-  # URL-direct entries — string value, key is a plugin name
+  # URL-direct entries - string value, key is a plugin name
   gemini-cli-tool: "github:google/gemini-cli-tool"
   my-local-ext:    "~/src/some-extension"
 
-  # Declare-only — value is null; useful to register a marketplace
+  # Declare-only - value is null; useful to register a marketplace
   # without (yet) installing anything from it
   obra/superpowers-marketplace: ~
 ```
 
-### `mcp_servers:` — always inline
+### `mcp_servers:` - always inline
 
-MCP servers are not bundles you "install" — they're processes the agent
+MCP servers are not bundles you "install" - they're processes the agent
 spawns and talks to. Every agent that supports MCP uses the same
 conceptual fields: `command` + `args` + `env` (or `url` + `headers` for
 remote servers). File-format differences (JSON / TOML / YAML / dotted
@@ -248,14 +248,14 @@ verbatim. To customise, contexts use three keywords:
 **Composition order** (deterministic, no surprises):
 1. Start with the top-level master map. If `only:` is present, replace
    that start with the explicit list.
-2. Apply `exclude:` — remove entries by key or by `repo/plugin` path.
-3. Apply `extra:` — add or merge.
+2. Apply `exclude:` - remove entries by key or by `repo/plugin` path.
+3. Apply `extra:` - add or merge.
 
 `only` may coexist with `exclude` / `extra`; order makes it useful for
 "these specific plugins + one more, minus one I don't want."
 
 Same semantics apply to `mcp_servers:`. Path syntax for MCP excludes is
-just `key` — MCP servers don't nest.
+just `key` - MCP servers don't nest.
 
 ```yaml
 contexts:
@@ -320,7 +320,7 @@ type Provisioner interface {
 |---|---|---|
 | Claude / Copilot / Codex | `Marketplace` | yes |
 | Gemini | `URLDirect` | yes |
-| Goose | (none) | yes — Goose extensions ARE MCP servers; declared in `mcp_servers:`, no `plugins:` for Goose contexts |
+| Goose | (none) | yes - Goose extensions ARE MCP servers; declared in `mcp_servers:`, no `plugins:` for Goose contexts |
 | Amp | `URLDirect` (TS file URL/path) | yes |
 | Aider | (none) | no |
 
@@ -342,7 +342,7 @@ context "x" declares plugins, but agent "aider" does not support plugins.
 Either remove the plugins list or switch the agent.
 ```
 
-Validated at sync time, not config-load time — the capability matrix
+Validated at sync time, not config-load time - the capability matrix
 lives in agent driver code, not the YAML parser.
 
 ## Architecture
@@ -380,18 +380,18 @@ type Provisioner interface {
     // Aider) return nil.
     SupportedSourceShapes() []SourceShape
 
-    // MCP — shape is uniform; driver picks an MCPHandler matching its
+    // MCP - shape is uniform; driver picks an MCPHandler matching its
     // on-disk format (JSON flat / Claude nested / Codex TOML / etc.).
     MCPConfigPath(ctx Context) string
     MCPHandler(ctx Context) MCPHandler
 
-    // Plugins — agent-specific shell-out. Marketplace drivers' install
+    // Plugins - agent-specific shell-out. Marketplace drivers' install
     // path also handles marketplace-add as a prerequisite.
     InstalledPlugins(ctx Context) ([]Plugin, error)
     InstallPlugin(ctx Context, p Plugin) error
     UninstallPlugin(ctx Context, name string) error
 
-    // Marketplace drivers only — installed marketplaces in this
+    // Marketplace drivers only - installed marketplaces in this
     // profile, and add/remove operations. URLDirect / inline drivers
     // return nil for InstalledMarketplaces and silently no-op the
     // add/remove calls (engine should never invoke them).
@@ -422,7 +422,7 @@ templates. Subprocess stdout/stderr is captured for the rollback message.
 Non-zero exit aborts the sync.
 
 If a driver returns `SupportsPlugins() == false`, calling any plugin
-method panics — sync is expected to short-circuit before reaching there.
+method panics - sync is expected to short-circuit before reaching there.
 
 ## Reconciliation
 
@@ -480,7 +480,7 @@ config).
 ```
 
 Written via `internal/fsutil.AtomicWrite`. Only updated when sync
-succeeds end-to-end — partial state is never committed.
+succeeds end-to-end - partial state is never committed.
 
 ## Failure semantics
 
@@ -526,14 +526,14 @@ fact sheets in
 | ----------- | ------- | --- | ----------------------------- | ------------------------------------------------ | ---------- | --------------------------- |
 | Gemini CLI  | ✓       | ✓   | `gemini extensions ...`       | `~/.gemini/settings.json` (`mcpServers`)         | JSON       | YES (cleanest)              |
 | Copilot CLI | ✓       | ✓   | `copilot plugin ...`          | `~/.copilot/mcp-config.json` (`mcpServers`)      | JSON       | YES                         |
-| Claude Code | ✓       | ✓   | `claude plugin install` (non-interactive; `list --json` for discovery — verified 2026-05-17, supersedes 2026-05-16 research) | `~/.claude.json` (user) + `.mcp.json` (project)  | JSON\*     | YES — all of install/uninstall/list scriptable |
+| Claude Code | ✓       | ✓   | `claude plugin install` (non-interactive; `list --json` for discovery - verified 2026-05-17, supersedes 2026-05-16 research) | `~/.claude.json` (user) + `.mcp.json` (project)  | JSON\*     | YES - all of install/uninstall/list scriptable |
 | Codex       | ✓       | ✓   | TUI / `npx codex-marketplace` | `~/.codex/config.toml`                           | **TOML**   | MCP yes; plugins TUI-only   |
 | Goose       | ✓†      | ✓†  | file edit                     | `~/.config/goose/config.yaml`                    | **YAML**   | File-edit only              |
 | Amp         | ⚠️      | ✓   | file-drop `.ts`               | `~/.config/amp/settings.json` (`amp.mcpServers`) | JSON‡      | MCP yes; plugins are code   |
 | Aider       | ✗       | ✗   | N/A                           | N/A                                              | N/A        | Skip from feature           |
 
 \* Claude user-scope MCP is nested under `projects.<path>.mcpServers`,
-not a flat `mcpServers` top-level key — needs a path-aware reader.
+not a flat `mcpServers` top-level key - needs a path-aware reader.
 
 † Goose unifies plugins and MCP under a single `extensions:` map.
 
@@ -547,7 +547,7 @@ JSON), not `mcpServers` at the root.
 | 1    | Gemini, Copilot  | low    | Clean CLI for both plugins and MCP; shared JSON helper works directly.                |
 | 2    | Claude, Codex    | medium | Claude needs path-aware user-scope MCP reader. Codex needs TOML handler and plugin install requires TTY (no scriptable surface). Claude's plugin install/list/uninstall are all scriptable (`--json` flag verified). |
 | 3    | Goose, Amp       | medium | Format diversity: Goose YAML + unified plugins/MCP; Amp nested MCP key + TS file-drop plugins. |
-| —    | Aider            | skip   | No plugin or MCP support. Driver returns `false` for both capabilities.               |
+| -    | Aider            | skip   | No plugin or MCP support. Driver returns `false` for both capabilities.               |
 
 ### Interface tweaks suggested by research
 
@@ -570,7 +570,7 @@ warrants them.
 
 ## Open questions
 
-- Plugin version pinning semantics across agents — not all marketplaces
+- Plugin version pinning semantics across agents - not all marketplaces
   speak `@version`. Driver-by-driver decision during implementation.
 - Whether `aide sync` should sync *all* contexts when `--context` is
   omitted, or refuse without an explicit `--all`. Lean refuse-without-all
@@ -582,7 +582,7 @@ warrants them.
 ## Future work
 
 - Sync-on-config-change daemon (watches `config.yaml`, triggers `aide
-  sync` automatically). Deferred — see goal "no surprise mutations".
+  sync` automatically). Deferred - see goal "no surprise mutations".
 - Cross-machine sync of `managed.json` via Dolt/git for matched-machine
   bootstraps. Deferred.
 - Plan output as machine-readable JSON for CI integration.

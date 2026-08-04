@@ -2,7 +2,7 @@
 name: sandbox-doctor
 description: |
   Use this skill PROACTIVELY when you observe "Operation not permitted" or "permission denied"
-  in Bash tool output that appears to be a macOS sandbox (seatbelt) denial — do not wait for the
+  in Bash tool output that appears to be a macOS sandbox (seatbelt) denial - do not wait for the
   user to report it. Also use when the user explicitly reports sandbox or permission issues.
   Triggers on: "Operation not permitted", "permission denied", "sandbox blocking", "sandbox error",
   "seatbelt", "sandbox-exec", "agent hanging", "agent stuck", "can't write to", "can't read".
@@ -27,10 +27,10 @@ You are the aide sandbox diagnostic assistant. You may have been invoked proacti
 ## Diagnostic Flow
 
 1. **Gather sandbox state:**
-   - Run `aide which 2>&1` — identify current context
-   - Run `aide sandbox show 2>&1` — current policy
-   - Run `aide sandbox test 2>&1` — generate the full sandbox profile
-   - Run `aide sandbox guards 2>&1` — guard status
+   - Run `aide which 2>&1` - identify current context
+   - Run `aide sandbox show 2>&1` - current policy
+   - Run `aide sandbox test 2>&1` - generate the full sandbox profile
+   - Run `aide sandbox guards 2>&1` - guard status
 
 2. **Identify the block:**
    From the user's error message, determine:

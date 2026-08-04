@@ -1,8 +1,8 @@
-# First-class Agent Profile Support — Design
+# First-class Agent Profile Support - Design
 
 **Status:** Approved (brainstorming complete 2026-05-18)
 **Tracks:** AIDE-m6i
-**Out of scope deps:** AIDE-fxc (project-scope `.aide.yaml` merging — see "Scope" below)
+**Out of scope deps:** AIDE-fxc (project-scope `.aide.yaml` merging - see "Scope" below)
 
 ## Goal
 
@@ -18,7 +18,7 @@ agent's internal env-var name and the convention for naming the
 config directory. This leaks agent internals into user config and
 caused real bugs:
 
-- **AIDE-brx** — tilde-expansion silently broke sandbox subpath rules
+- **AIDE-brx** - tilde-expansion silently broke sandbox subpath rules
   when the env value was `~/.claude-firmus` (literal, not absolute).
 - Recent v2 work surfaced multi-profile failures because `aide`
   didn't pass env through correctly into sync/adopt/list paths.
@@ -70,7 +70,7 @@ it verbatim (tilde-expanded) instead of the derived path.
 
 The "not allowed in `.aide.yaml`" rule is intentional: `profile:` is
 fundamentally about *which directory under MY HOME does MY agent
-state live in* — that's a user-side decision, not a project-side
+state live in* - that's a user-side decision, not a project-side
 one. Other `.aide.yaml` fields make sense at project scope (sandbox,
 MCP, agent choice); `profile:` does not.
 
@@ -131,7 +131,7 @@ Aider TBD), they populate the field at the same spot.
 
 ### Where env is injected
 
-In `provision.ResolveContext` — the single chokepoint every
+In `provision.ResolveContext` - the single chokepoint every
 launcher/sync/adopt/list call already goes through. Pseudocode:
 
 ```go
@@ -156,7 +156,7 @@ func ResolveContext(name string, ctx config.Context, homeDir, projectRoot string
 ```
 
 The existing seatbelt module's `resolveConfigDirs` reads `ctx.Env`
-at sandbox-rule emission time — no change there, it just sees the
+at sandbox-rule emission time - no change there, it just sees the
 injected value.
 
 ## Validation helper
@@ -225,8 +225,8 @@ Existing configs unchanged. Three scenarios:
 
 | User config | Behavior |
 |---|---|
-| No `profile:` and no env override | Default agent dir (`~/.claude` etc.) — unchanged |
-| No `profile:`, explicit `env: { CLAUDE_CONFIG_DIR: … }` | Driver honors the explicit env — unchanged |
+| No `profile:` and no env override | Default agent dir (`~/.claude` etc.) - unchanged |
+| No `profile:`, explicit `env: { CLAUDE_CONFIG_DIR: … }` | Driver honors the explicit env - unchanged |
 | `profile: foo` | Driver computes `CLAUDE_CONFIG_DIR=~/.claude-foo`, injects into env |
 | Both `profile: foo` and `env: { CLAUDE_CONFIG_DIR: … }` | `ErrProfileConflict` at load |
 | `profile: foo` on cursor-agent | `ErrProfileNotSupported` at load |
@@ -244,15 +244,15 @@ No migration step required; new users get the cleaner abstraction.
 - Release notes entry
 
 **Out of scope:**
-- `profile:` in `.aide.yaml` (project override) — explicitly rejected
+- `profile:` in `.aide.yaml` (project override) - explicitly rejected
   via `ErrProfileNotProjectScoped`. Owner is the user, not the project.
-- Goose/Amp/Aider drivers — those agents don't have provision drivers
+- Goose/Amp/Aider drivers - those agents don't have provision drivers
   yet; when they do, populating `ProfileEnvKey` is a one-line addition.
-- `aide context create` wizard offering `profile:` as a default —
+- `aide context create` wizard offering `profile:` as a default -
   ergonomic improvement, separable.
 - Path-collision detection ("two contexts both resolve to the same
-  profile dir") — user-config issue, not engine issue, YAGNI.
-- Adopting a validation library — see AIDE-p5k.
+  profile dir") - user-config issue, not engine issue, YAGNI.
+- Adopting a validation library - see AIDE-p5k.
 
 ## Implementation order
 
@@ -265,7 +265,7 @@ No migration step required; new users get the cleaner abstraction.
 7. Wire `validateProfile` into `config.Load` (one call per context).
 8. Update `ResolveContext` to inject env when `Profile != ""`.
 9. End-to-end test: config with `profile: foo` → launcher banner shows `CLAUDE_CONFIG_DIR=/abs/path` and seatbelt rule on that absolute path.
-10. Update `docs/specs/2026-05-15-declarative-agent-provisioning-design.md` — remove the `profile:` follow-up from "Out of scope".
+10. Update `docs/specs/2026-05-15-declarative-agent-provisioning-design.md` - remove the `profile:` follow-up from "Out of scope".
 11. Release notes entry under `### ✨ New`.
 
 ## Release notes draft
@@ -279,7 +279,7 @@ No migration step required; new users get the cleaner abstraction.
   path; users don't need to know `CLAUDE_CONFIG_DIR` vs `GEMINI_HOME`
   vs `CODEX_HOME` vs `COPILOT_HOME`. Optional `profile_dir` overrides
   the derived `~/.<agent>-<name>` path. Cursor-agent is intentionally
-  not supported — its env var doesn't isolate MCP config; use a
+  not supported - its env var doesn't isolate MCP config; use a
   project-scope `.cursor/mcp.json` for per-project MCP instead.
   Existing configs with explicit env vars keep working unchanged.
 ```

@@ -12,9 +12,9 @@ This shows what capabilities are active, which sandbox guards are enforcing them
 
 aide separates **what** the agent can access from **how** that access is enforced:
 
-- **Capabilities** handle WHAT the agent can access — network, filesystem paths, cloud credentials, toolchains, and more. You configure capabilities in your context config and aide translates them into the right set of guards. See [docs/capabilities.md](capabilities.md) for the full capability reference.
+- **Capabilities** handle WHAT the agent can access - network, filesystem paths, cloud credentials, toolchains, and more. You configure capabilities in your context config and aide translates them into the right set of guards. See [docs/capabilities.md](capabilities.md) for the full capability reference.
 
-- **The sandbox** handles HOW it is enforced — on macOS, aide generates a Seatbelt profile at launch that locks the agent process to exactly the permissions its capabilities describe.
+- **The sandbox** handles HOW it is enforced - on macOS, aide generates a Seatbelt profile at launch that locks the agent process to exactly the permissions its capabilities describe.
 
 A practical example:
 
@@ -27,7 +27,7 @@ contexts:
       - aws
 ```
 
-aide reads those capabilities and produces a sandbox profile that grants Docker config access, kubeconfig reads, and AWS credential reads — nothing more.
+aide reads those capabilities and produces a sandbox profile that grants Docker config access, kubeconfig reads, and AWS credential reads - nothing more.
 
 ## On by Default
 
@@ -168,17 +168,17 @@ When aide itself modifies `.aide.yaml` (via `aide cap enable`, `aide sandbox all
 
 ## Under the Hood
 
-Capabilities are the user-facing concept, but under the hood aide translates them into **guards** — small, composable policy modules that each protect a specific resource. Guards are the low-level mechanism that generates the actual sandbox profile.
+Capabilities are the user-facing concept, but under the hood aide translates them into **guards** - small, composable policy modules that each protect a specific resource. Guards are the low-level mechanism that generates the actual sandbox profile.
 
 ### Guard inventory
 
 aide ships with 10 built-in guards across two tiers:
 
-**Always guards** (7) — cannot be disabled, form the baseline policy:
+**Always guards** (7) - cannot be disabled, form the baseline policy:
 
 `base`, `system-runtime`, `network`, `filesystem`, `keychain`, `node-toolchain`, `nix-toolchain`
 
-**Default guards** (3) — active out of the box, can be disabled with `unguard`:
+**Default guards** (3) - active out of the box, can be disabled with `unguard`:
 
 `project-secrets`, `dev-credentials`, `aide-secrets`
 
@@ -222,7 +222,7 @@ aide sandbox reset
 | Linux (kernel ≥ 6.7) | Landlock (ABI ≥ 4) | primary | Full filesystem + TCP port enforcement |
 | Linux (kernel 5.13–6.6) | Landlock (ABI 1–3) | primary / degraded | Filesystem isolation; TCP port filtering unavailable (degraded if port rules configured) |
 | Linux (no Landlock) | bubblewrap (`bwrap`) | degraded | Filesystem namespace isolation; no per-port TCP control |
-| Linux (no Landlock, no bwrap) | — | unavailable | Agent launches with a warning; no OS-level isolation |
+| Linux (no Landlock, no bwrap) | - | unavailable | Agent launches with a warning; no OS-level isolation |
 
 ### Supported Linux tier (minimum system requirements)
 
@@ -233,7 +233,7 @@ For **primary** isolation on Linux:
 
 For **degraded** isolation (filesystem only, no port filtering):
 
-- Kernel ≥ 5.13 (Landlock ABI 1) — or — `bwrap` on PATH
+- Kernel ≥ 5.13 (Landlock ABI 1) - or - `bwrap` on PATH
 
 When neither is available, aide logs `aide: warning: OS-level sandboxing unavailable` to stderr and launches the agent without restriction. Run `aide sandbox show` to confirm the active tier.
 
@@ -259,7 +259,7 @@ aide sandbox test --context myproject
 
 `aide sandbox show` prints the merged policy including the **Isolation tier** and **Backend** lines on Linux, so you can confirm whether you are running primary (Landlock), degraded (bwrap), or unavailable.
 
-`aide sandbox test` outputs the platform-specific profile — the raw Seatbelt `.sb` file on macOS, or the Landlock/bwrap path summary on Linux.
+`aide sandbox test` outputs the platform-specific profile - the raw Seatbelt `.sb` file on macOS, or the Landlock/bwrap path summary on Linux.
 
 ### Linux troubleshooting
 
@@ -279,7 +279,7 @@ dmesg | grep -i landlock
 which bwrap && bwrap --version
 ```
 
-If `dmesg | grep -i landlock` shows nothing but `/sys/kernel/security/lsm` lists `landlock`, the LSM is compiled in and active — the ABI version determines which features are available. Kernels before 6.7 support filesystem isolation (ABI 1–3) but not TCP port rules (ABI 4 required).
+If `dmesg | grep -i landlock` shows nothing but `/sys/kernel/security/lsm` lists `landlock`, the LSM is compiled in and active - the ABI version determines which features are available. Kernels before 6.7 support filesystem isolation (ABI 1–3) but not TCP port rules (ABI 4 required).
 
 ### Cursor agent troubleshooting
 
@@ -287,7 +287,7 @@ If `dmesg | grep -i landlock` shows nothing but `/sys/kernel/security/lsm` lists
 |---------|-------|-----|
 | `cursor-agent: permission denied` on `~/.cursor/` writes | Config dir not in writable set | Confirm `CURSOR_CONFIG_DIR` is unset or points to the correct dir; run `aide sandbox show --agent cursor-agent` to inspect granted paths. |
 | `agent update` fails inside aide | Auto-update writes to `~/.local/share/cursor-agent/versions/` which is not writable inside the sandbox | Run `cursor-agent update` outside of aide (this is by design). |
-| `aide` does not detect cursor-agent | `cursor-agent` not on PATH | Confirm `which cursor-agent` resolves; the shorter `agent` symlink is not registered — use `cursor-agent` explicitly. |
+| `aide` does not detect cursor-agent | `cursor-agent` not on PATH | Confirm `which cursor-agent` resolves; the shorter `agent` symlink is not registered - use `cursor-agent` explicitly. |
 
 ## Using the Seatbelt Library
 

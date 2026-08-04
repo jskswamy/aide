@@ -3,8 +3,8 @@
 ## Problem Statement
 
 Running `aide` with a default-on sandbox causes either:
-1. **SIGABRT** — Seatbelt profile too restrictive, process killed during startup
-2. **Silent hang** — Claude starts but TUI never renders, process unresponsive to Ctrl+C
+1. **SIGABRT** - Seatbelt profile too restrictive, process killed during startup
+2. **Silent hang** - Claude starts but TUI never renders, process unresponsive to Ctrl+C
 
 The previous fix (commit `fe3de2c`) reverted sandbox to opt-in only, leaving users unprotected by default.
 
@@ -34,16 +34,16 @@ Started with `(deny default)` and tried to enumerate every path claude needs.
 | `/System/Volumes/Preboot/Cryptexes/OS` | macOS cryptex filesystem (system libs) |
 | `/dev/dtracehelper` | dtrace helper device (read + write) |
 | `/Library/Preferences/Logging/...` | Logging preferences |
-| `/private/var/db/timezone/tz/...` | Timezone data — Node.js hangs without this |
+| `/private/var/db/timezone/tz/...` | Timezone data - Node.js hangs without this |
 | `/private/var/db/mds/messages/...` | Security messages database |
-| `/dev/ttys*`, `/dev/pty*` | Terminal devices — need both read and write |
+| `/dev/ttys*`, `/dev/pty*` | Terminal devices - need both read and write |
 | `~/Library/Keychains/` | Keychain database access |
 
-**Result:** After fixing all the above, `claude --version` and `claude --help` worked. But `claude -p "prompt"` and interactive mode still hung silently — no sandbox denial logs, meaning something deeper was blocked.
+**Result:** After fixing all the above, `claude --version` and `claude --help` worked. But `claude -p "prompt"` and interactive mode still hung silently - no sandbox denial logs, meaning something deeper was blocked.
 
 ### Attempt 2: Global Read + Restricted Write (allow-default reads)
 
-Switched to `(allow file-read-data (subpath "/"))` — allow reading everything globally, restrict only writes.
+Switched to `(allow file-read-data (subpath "/"))` - allow reading everything globally, restrict only writes.
 
 ```scheme
 (allow file-read-data (subpath "/"))  ;; read anything
@@ -51,19 +51,19 @@ Switched to `(allow file-read-data (subpath "/"))` — allow reading everything 
 (allow file-write* (subpath "~/.claude"))  ;; write only to allowed dirs
 ```
 
-**Result:** `claude -p "say hi"` returned "Hi!" — non-interactive mode worked. But the TUI (interactive mode) still didn't render. Claude process ran but produced no visible output.
+**Result:** `claude -p "say hi"` returned "Hi!" - non-interactive mode worked. But the TUI (interactive mode) still didn't render. Claude process ran but produced no visible output.
 
 ### Root Cause Analysis
 
 The fundamental issue: **`sandbox-exec` on macOS is deprecated** (since macOS 10.15) and **not designed for TUI applications**.
 
-1. **`(deny default)` is too aggressive** — macOS has hundreds of Seatbelt operations (mach ports, IOKit, XPC, audit, etc.) and there's no documentation of which ones a Node.js TUI app needs. Each macOS version can add new required operations.
+1. **`(deny default)` is too aggressive** - macOS has hundreds of Seatbelt operations (mach ports, IOKit, XPC, audit, etc.) and there's no documentation of which ones a Node.js TUI app needs. Each macOS version can add new required operations.
 
-2. **Whack-a-mole problem** — Every time we fix one denial, another surfaces. The denials cascade: fixing file reads reveals IPC blocks, fixing IPC reveals preference blocks, fixing preferences reveals XPC blocks, etc.
+2. **Whack-a-mole problem** - Every time we fix one denial, another surfaces. The denials cascade: fixing file reads reveals IPC blocks, fixing IPC reveals preference blocks, fixing preferences reveals XPC blocks, etc.
 
-3. **TUI rendering requires undocumented operations** — Claude Code uses ink (React for CLI) which needs terminal capabilities that go beyond simple read/write. The exact Seatbelt operations for full terminal control aren't documented.
+3. **TUI rendering requires undocumented operations** - Claude Code uses ink (React for CLI) which needs terminal capabilities that go beyond simple read/write. The exact Seatbelt operations for full terminal control aren't documented.
 
-4. **No sandbox denial logs for the final hang** — The most insidious failures produce no log entries, making debugging impossible without `dtrace` (which itself requires SIP disabled).
+4. **No sandbox denial logs for the final hang** - The most insidious failures produce no log entries, making debugging impossible without `dtrace` (which itself requires SIP disabled).
 
 ## Debugging Methodology
 
@@ -140,7 +140,7 @@ This profile lets `claude -p "prompt"` work but the interactive TUI still hangs.
 
 ## Proposed Approaches Going Forward
 
-### Option A: Invert the Model — `(allow default)` + Deny Writes
+### Option A: Invert the Model - `(allow default)` + Deny Writes
 
 Start from `(allow default)` and only restrict writes and sensitive reads:
 
@@ -167,13 +167,13 @@ Start from `(allow default)` and only restrict writes and sensitive reads:
 ```
 
 **Pros:** Won't break TUI or any OS operation. Simple. Maintainable.
-**Cons:** Broader than ideal — allows operations we might want to block.
+**Cons:** Broader than ideal - allows operations we might want to block.
 **Security:** Still prevents writing outside approved dirs and reading SSH keys/credentials.
 
 ### Option B: Skip Seatbelt on Darwin, Use Only on Linux
 
 macOS: No OS-level sandbox (rely on agent-level permissions like `--dangerously-skip-permissions`).
-Linux: Use Landlock (kernel 5.13+) or bwrap — both are modern, well-documented, and designed for application sandboxing.
+Linux: Use Landlock (kernel 5.13+) or bwrap - both are modern, well-documented, and designed for application sandboxing.
 
 **Pros:** No macOS Seatbelt fragility. Linux sandbox works well.
 **Cons:** No write protection on macOS.
@@ -201,7 +201,7 @@ A hybrid: use `(allow default)` but deny network (for `NetworkNone` mode) and re
 
 ## Update (2026-03-20): Agent-Safehouse Approach Works
 
-Further investigation found that **Option A is wrong** — `(allow default)` paradoxically hangs Claude for `-p` and TUI modes, even with zero restrictions.
+Further investigation found that **Option A is wrong** - `(allow default)` paradoxically hangs Claude for `-p` and TUI modes, even with zero restrictions.
 
 The working approach is `(deny default)` with agent-safehouse's granular rules:
 - Specific Mach service lookups (~15 services)
@@ -237,7 +237,7 @@ Linux sandboxing via bwrap works correctly. Key findings:
 
 | File | Changes |
 |------|---------|
-| `internal/sandbox/darwin.go` | Seatbelt profile generation — added OS essentials, tried deny-default then allow-default |
+| `internal/sandbox/darwin.go` | Seatbelt profile generation - added OS essentials, tried deny-default then allow-default |
 | `internal/sandbox/sandbox.go` | `extraWritablePaths()` for `~/.claude`, expanded `extraReadablePaths()` |
 | `internal/sandbox/policy.go` | `ResolveSandboxRef()`, `ValidateSandboxRef()` for named profiles |
 | `internal/config/schema.go` | `SandboxRef` type, `Sandboxes` map on Config |

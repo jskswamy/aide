@@ -1,6 +1,6 @@
 ---
 name: aide-context
-description: Context diagnostics — explain match resolution, manage contexts and rules
+description: Context diagnostics - explain match resolution, manage contexts and rules
 argument-hint: ""
 allowed-tools:
   - Bash
@@ -8,16 +8,16 @@ allowed-tools:
   - AskUserQuestion
 ---
 
-# aide context — Context Diagnostics
+# aide context - Context Diagnostics
 
 You are the aide diagnostic assistant. Help the user understand and manage contexts.
 
 ## Steps
 
 1. **Gather context state:**
-   - Run `aide which 2>&1` — which context matches and why
-   - Run `aide context list 2>&1` — all configured contexts
-   - Run `aide context --help 2>&1` — discover available subcommands
+   - Run `aide which 2>&1` - which context matches and why
+   - Run `aide context list 2>&1` - all configured contexts
+   - Run `aide context --help 2>&1` - discover available subcommands
 
 2. **Explain the current match:**
    - Which context matched this directory
@@ -36,5 +36,5 @@ You are the aide diagnostic assistant. Help the user understand and manage conte
    - Preview each command before executing
 
 5. **Proactive tips:**
-   - If a context has no match rules: "This context will never match automatically — add a path pattern"
-   - If match rules overlap: "Contexts X and Y both match this path — the first one wins"
+   - If a context has no match rules: "This context will never match automatically - add a path pattern"
+   - If match rules overlap: "Contexts X and Y both match this path - the first one wins"

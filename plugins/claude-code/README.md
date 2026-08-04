@@ -1,4 +1,4 @@
-## aide — Claude Code Plugin
+## aide - Claude Code Plugin
 
 A diagnostic assistant for the aide CLI. It diagnoses sandbox issues, context mismatches, and missing credentials by inspecting your local configuration and runtime state. When problems are found, it suggests the safest possible fix first and clearly explains security trade-offs for any broadening change, so you always know what you are allowing before you allow it.
 
@@ -36,16 +36,16 @@ For projects using aide, add to `.claude/settings.json`:
 
 | Command | Purpose |
 |---------|---------|
-| `/aide` | Quick status — shows current context, warnings, routes to other commands |
-| `/aide setup` | Guided setup — wraps `aide init` or `aide setup` |
-| `/aide doctor` | Full diagnostic — validates config, sandbox, context, secrets |
-| `/aide sandbox` | Sandbox diagnostics — policy review, guard management, path tuning |
-| `/aide context` | Context management — match resolution, add/modify/rename contexts |
-| `/aide secrets` | Secret management — list, create, edit, rotate encrypted secrets |
-| `/aide env` | Environment variables — list, set, wire from secrets |
-| `/aide config` | Config review — validation, hardening suggestions, optimization tips |
-| `/aide agents` | Agent management — list, add, remove, check binary availability |
-| `/aide use` | Quick bind — bind directory to agent/context with guided options |
+| `/aide` | Quick status - shows current context, warnings, routes to other commands |
+| `/aide setup` | Guided setup - wraps `aide init` or `aide setup` |
+| `/aide doctor` | Full diagnostic - validates config, sandbox, context, secrets |
+| `/aide sandbox` | Sandbox diagnostics - policy review, guard management, path tuning |
+| `/aide context` | Context management - match resolution, add/modify/rename contexts |
+| `/aide secrets` | Secret management - list, create, edit, rotate encrypted secrets |
+| `/aide env` | Environment variables - list, set, wire from secrets |
+| `/aide config` | Config review - validation, hardening suggestions, optimization tips |
+| `/aide agents` | Agent management - list, add, remove, check binary availability |
+| `/aide use` | Quick bind - bind directory to agent/context with guided options |
 
 ### Auto-Triggering Skills
 

@@ -1,6 +1,6 @@
 ---
 name: aide-sandbox
-description: Sandbox diagnostics — show policy, explain blocks, tune guards and paths
+description: Sandbox diagnostics - show policy, explain blocks, tune guards and paths
 argument-hint: ""
 allowed-tools:
   - Bash
@@ -8,16 +8,16 @@ allowed-tools:
   - AskUserQuestion
 ---
 
-# aide sandbox — Sandbox Diagnostics
+# aide sandbox - Sandbox Diagnostics
 
 You are the aide diagnostic assistant. Help the user understand and manage their sandbox policy.
 
 ## Steps
 
 1. **Gather sandbox state:**
-   - Run `aide sandbox show 2>&1` — current policy for this context
-   - Run `aide sandbox guards 2>&1` — all guards with status
-   - Run `aide sandbox --help 2>&1` — discover available subcommands
+   - Run `aide sandbox show 2>&1` - current policy for this context
+   - Run `aide sandbox guards 2>&1` - all guards with status
+   - Run `aide sandbox --help 2>&1` - discover available subcommands
 
 2. **Present the current policy clearly:**
    Explain in plain language:
@@ -41,5 +41,5 @@ You are the aide diagnostic assistant. Help the user understand and manage their
 
 5. **Proactive tips:**
    - If network is unrestricted: "Consider restricting to outbound-only or specific ports if your agent only needs HTTPS"
-   - If an opt-in guard could help: "The docker guard blocks access to Docker credentials — enable it with `aide sandbox guard docker` if you use containers"
+   - If an opt-in guard could help: "The docker guard blocks access to Docker credentials - enable it with `aide sandbox guard docker` if you use containers"
    - Discover these tips from `aide sandbox types 2>&1` output

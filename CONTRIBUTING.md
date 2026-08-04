@@ -1,6 +1,6 @@
 # Contributing to aide
 
-Welcome to aide. We appreciate contributions of all kinds — bug fixes, features, docs, and tests. Please read our [AI Policy](AI_POLICY.md) before contributing.
+Welcome to aide. We appreciate contributions of all kinds - bug fixes, features, docs, and tests. Please read our [AI Policy](AI_POLICY.md) before contributing.
 
 ## Development Setup
 
@@ -119,7 +119,7 @@ Keep commit messages clean. No AI co-author attributions, no task tracker IDs, n
 
 ### Cleaning up before requesting review
 
-Local TDD often produces granular ratcheting commits — introduce a function, fix a typo, adjust a test, expand the implementation. That's fine while you're working. Before opening the PR, fold the introduce-then-fix pairs into their target commits with `git commit --fixup=<hash>` and `git rebase -i --autosquash <base>`.
+Local TDD often produces granular ratcheting commits - introduce a function, fix a typo, adjust a test, expand the implementation. That's fine while you're working. Before opening the PR, fold the introduce-then-fix pairs into their target commits with `git commit --fixup=<hash>` and `git rebase -i --autosquash <base>`.
 
 Heuristic: if commit B starts with "Fix", "Update", or "Correct" and shares a key noun with an earlier commit A on the same branch, B is almost certainly a fixup of A.
 
@@ -129,7 +129,7 @@ Heuristic: if commit B starts with "Fix", "Update", or "Correct" and shares a ke
 - Branch from `main`.
 - Keep PRs focused on a single concern.
 - Unrelated dependency bumps, formatting passes, and refactors go in separate PRs.
-- No `fixup!` or `squash!` subjects in the pushed branch — autosquash before pushing.
+- No `fixup!` or `squash!` subjects in the pushed branch - autosquash before pushing.
 - Describe what changed and why in the PR description.
 - CI must pass before requesting review.
 - Two-stage review: automated AI review first, then human review.

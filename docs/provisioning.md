@@ -27,7 +27,7 @@ on your machine vs. mine" becomes archaeology.
 **Across contexts.** Working on a client project with its own
 sandbox of plugins (a private MCP server, an internal-tools
 marketplace) and a personal side project with a completely
-different set, all running on the same agent binary — today there's
+different set, all running on the same agent binary - today there's
 no per-project boundary. You're either uninstalling and reinstalling
 plugins as you switch projects, or polluting every context with
 every plugin you've ever needed.
@@ -35,8 +35,8 @@ every plugin you've ever needed.
 Declarative provisioning solves all three by treating plugins/MCP
 the same way Terraform treats infrastructure: declared in version-
 controlled config, reconciled with a planned diff, recorded as
-state on disk. One command brings any machine — yours, a teammate's,
-a fresh container — to the exact state your config says it should be
+state on disk. One command brings any machine - yours, a teammate's,
+a fresh container - to the exact state your config says it should be
 in.
 
 ## Why per-context profiles matter
@@ -101,8 +101,8 @@ happens to use this week.
 
 Two top-level config blocks:
 
-- **`plugins:`** — agent plugins or marketplaces (one shape per entry)
-- **`mcp_servers:`** — MCP server definitions
+- **`plugins:`** - agent plugins or marketplaces (one shape per entry)
+- **`mcp_servers:`** - MCP server definitions
 
 Both live alongside `agents:` and `contexts:` in your
 `~/.config/aide/config.yaml`. Contexts opt in to specific entries via
@@ -110,12 +110,12 @@ overrides.
 
 The reconciler walks four state sources:
 
-1. **Declared** — what your config says should exist
-2. **Installed** — what the agent reports installed (via the driver's
+1. **Declared** - what your config says should exist
+2. **Installed** - what the agent reports installed (via the driver's
    CLI surface)
-3. **Managed** — what aide previously installed (recorded in
+3. **Managed** - what aide previously installed (recorded in
    `~/.local/state/aide/managed.json`)
-4. **Adopted** — items installed by hand that you want aide to
+4. **Adopted** - items installed by hand that you want aide to
    manage going forward
 
 The diff between these produces the plan.
@@ -123,7 +123,7 @@ The diff between these produces the plan.
 ## Polymorphic plugin schema
 
 The `plugins:` block reads each entry's value shape to decide what the
-key means — no `type:` discriminator. Three shapes:
+key means - no `type:` discriminator. Three shapes:
 
 ```yaml
 plugins:
@@ -195,11 +195,11 @@ contexts:
 
 Three keywords:
 
-- **`exclude:`** — subtract from the inherited set. Path syntax
+- **`exclude:`** - subtract from the inherited set. Path syntax
   `repo/plugin` reaches inside a marketplace entry, removing one
   plugin without touching the rest.
-- **`extra:`** — add on top of inherited entries.
-- **`only:`** — replace the inherited set entirely with this list.
+- **`extra:`** - add on top of inherited entries.
+- **`only:`** - replace the inherited set entirely with this list.
 
 The same three keywords apply to `mcp_servers:` blocks per-context.
 Entries use the full inline-table form (just like the top-level schema),
@@ -231,7 +231,7 @@ contexts:
     agent: claude
     profile: oss
     mcp_servers:
-      # OSS work only needs GitHub — replace the inherited set
+      # OSS work only needs GitHub - replace the inherited set
       only: [github]
 ```
 
@@ -271,7 +271,7 @@ Plan for context work (agent: claude):
   - uninstall plugin refactor    (no longer declared)
 
   unmanaged plugin gopls-lsp     (installed in agent, not declared,
-                                  not previously managed — run `aide
+                                  not previously managed - run `aide
                                   adopt` to bring under management)
 ```
 
@@ -290,7 +290,7 @@ repo key in list-valued form (looked up via the driver's
 `InstalledMarketplaces`). For URL-direct agents (Gemini), adopted
 plugins get string-valued entries.
 
-`aide adopt` is the bridge between manual setup and managed state —
+`aide adopt` is the bridge between manual setup and managed state -
 if you previously installed plugins by hand, run adopt once and
 subsequent `aide sync` runs treat them as known.
 
@@ -339,7 +339,7 @@ Schema (abbreviated):
 }
 ```
 
-`config_hash` and `synced_at` are **per-context** — a successful
+`config_hash` and `synced_at` are **per-context** - a successful
 sync of one context never silences drift signals for another. The
 file is written atomically (rename-into-place) and only after a
 sync completes end-to-end.
@@ -355,9 +355,9 @@ the context is out of sync. Two cheap signals fire it:
    recorded as managed in `managed.json` (sync never ran, or new
    declarations were added).
 
-Both checks are in-process — no agent CLI poll, no network call. The
-banner just says "config changed since last sync — run `aide sync`"
-or "never synced — run `aide sync` to install declared plugins/MCP
+Both checks are in-process - no agent CLI poll, no network call. The
+banner just says "config changed since last sync - run `aide sync`"
+or "never synced - run `aide sync` to install declared plugins/MCP
 servers".
 
 ## Per-agent capability matrix
@@ -367,11 +367,11 @@ what it consumes via `SupportedSourceShapes`.
 
 | Agent | Plugin marketplaces | URL-direct plugins | MCP servers |
 |---|---|---|---|
-| `claude` | ✅ | — | ✅ (`~/.claude.json`) |
-| `copilot` | ✅ | — | ✅ (`~/.copilot/mcp-config.json`) |
-| `codex` | ✅ (via TOML edit) | — | ✅ (`~/.codex/config.toml`) |
-| `gemini` | — | ✅ (`extensions` block) | ✅ (`~/.gemini/settings.json`) |
-| `cursor-agent` | — (no plugin surface) | — | partial (see below) |
+| `claude` | ✅ | - | ✅ (`~/.claude.json`) |
+| `copilot` | ✅ | - | ✅ (`~/.copilot/mcp-config.json`) |
+| `codex` | ✅ (via TOML edit) | - | ✅ (`~/.codex/config.toml`) |
+| `gemini` | - | ✅ (`extensions` block) | ✅ (`~/.gemini/settings.json`) |
+| `cursor-agent` | - (no plugin surface) | - | partial (see below) |
 
 For `cursor-agent`, MCP lives at `~/.cursor/mcp.json` globally and
 `.cursor/mcp.json` per-project. The provisioner driver for cursor is
@@ -400,7 +400,7 @@ See [Contexts](contexts.md) for the `profile` field details.
 ## Trust boundary
 
 Provisioning operates on the global `~/.config/aide/config.yaml`. The
-project-scope `.aide.yaml` does **not** participate in sync today —
+project-scope `.aide.yaml` does **not** participate in sync today -
 its plugin/MCP declarations are ignored by `aide sync`. This is a
 deliberate trust boundary: a malicious `.aide.yaml` in a repo you
 just cloned cannot cause aide to install agent plugins or MCP servers
@@ -409,12 +409,12 @@ sync is tracked separately.
 
 ## Out of scope (today)
 
-- Goose, Amp, and Aider provisioning — drivers not implemented yet.
-- Project-scope `.aide.yaml` plugin/MCP merging into `aide sync` —
+- Goose, Amp, and Aider provisioning - drivers not implemented yet.
+- Project-scope `.aide.yaml` plugin/MCP merging into `aide sync` -
   separate work (trust gate).
-- Plugin pinning by version — sync currently installs whatever the
+- Plugin pinning by version - sync currently installs whatever the
   agent's marketplace returns for a given plugin name.
-- Cross-agent migration (Claude plugin → Gemini extension) — out of
+- Cross-agent migration (Claude plugin → Gemini extension) - out of
   scope; agents have different runtime models.
 
 ## Examples

@@ -1,7 +1,7 @@
 # Capabilities
 
 You're debugging a failing deployment. You need kubectl, Docker, and AWS access.
-Without capabilities, you'd configure sandbox guards individually — figure out
+Without capabilities, you'd configure sandbox guards individually - figure out
 which guards to unguard, which paths to make readable, which env vars to pass
 through. With capabilities:
 
@@ -119,7 +119,7 @@ If your context config includes `docker` but you don't need it right now,
 CLI `--with` appends to context capabilities. CLI `--without` removes from
 context capabilities. The result is resolved once at session start and baked
 into the immutable Seatbelt profile. The agent cannot escalate permissions
-mid-session — this is a hard security constraint. To change capabilities, start
+mid-session - this is a hard security constraint. To change capabilities, start
 a new session.
 
 ## Custom Capabilities
@@ -216,7 +216,7 @@ profile.
 
 You use `k8s` regularly for development. Your `~/.kube/` directory contains both
 dev and production configs. Without protection, `aide --with k8s` would make the
-entire directory readable — including production credentials.
+entire directory readable - including production credentials.
 
 ```yaml
 never_allow:
@@ -255,7 +255,7 @@ aide cap never-allow --remove "~/.kube/prod-config" # remove a path
 
 ## Credential Warnings
 
-Some capabilities expose environment variables that contain credentials —
+Some capabilities expose environment variables that contain credentials -
 `AWS_SECRET_ACCESS_KEY`, `VAULT_TOKEN`, `DIGITALOCEAN_ACCESS_TOKEN`. aide cannot
 block these variables without breaking the capability (the tool is useless
 without its credentials). Instead, aide warns at session start:
@@ -311,14 +311,14 @@ All capability management lives under `aide cap`.
 
 | Command | Purpose |
 |---------|---------|
-| `aide cap check <cap1> [cap2...]` | Preview composition — shows merged permissions before launching |
+| `aide cap check <cap1> [cap2...]` | Preview composition - shows merged permissions before launching |
 | `aide cap audit` | All active capabilities with full resolved permissions |
 | `aide cap suggest-for-path <path>` | Map a path to the capability that would grant access (used by sandbox error interception) |
 
 ## Banner
 
 When capabilities are active, the session banner shows what the agent can
-access. The banner is capability-centric — it shows what's granted, not what's
+access. The banner is capability-centric - it shows what's granted, not what's
 blocked.
 
 ### Symbols
@@ -328,8 +328,8 @@ blocked.
 | `✓` (green) | Capability active |
 | `✗` (red) | Path denied (never-allow) |
 | `○` (dim) | Capability disabled this session via `--without` |
-| `⚠` (yellow) | Warning — credentials exposed or composition risk |
-| `⚡` (red bold) | Auto-approve mode active — always the last line |
+| `⚠` (yellow) | Warning - credentials exposed or composition risk |
+| `⚡` (red bold) | Auto-approve mode active - always the last line |
 
 ### Example banner
 
@@ -359,7 +359,7 @@ aide · infra (claude)
 
       ⚠ credentials exposed: AWS_SECRET_ACCESS_KEY, VAULT_TOKEN
 
-   ⚡ AUTO-APPROVE — all agent actions execute without confirmation
+   ⚡ AUTO-APPROVE - all agent actions execute without confirmation
 ```
 
 The `← --with` and `← --without` annotations appear only for session-scoped

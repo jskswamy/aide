@@ -41,12 +41,16 @@
             export GOBIN="$PWD/.gobin"
             export PATH="$GOBIN:$PATH"
 
-            # Auto-install git hooks (one-time)
-            _sentinel=".git/hooks/.aide-dev-setup-done"
-            if [ ! -f "$_sentinel" ] && [ -d .git ] && [ -f .pre-commit-config.yaml ]; then
-              pre-commit install --allow-missing-config -q 2>/dev/null
-              pre-commit install --hook-type pre-push --allow-missing-config -q 2>/dev/null
-              touch "$_sentinel" 2>/dev/null
+            # Install pre-commit hooks when no custom hooksPath is active (e.g. beads).
+            # beads users invoke pre-commit via their own hook chain; everyone else
+            # gets it wired up here automatically.
+            if ! git config --local core.hooksPath >/dev/null 2>&1 && [ -f .pre-commit-config.yaml ]; then
+              _sentinel=".git/hooks/.pre-commit-installed"
+              if [ ! -f "$_sentinel" ]; then
+                pre-commit install -q 2>/dev/null && \
+                pre-commit install --hook-type pre-push -q 2>/dev/null && \
+                touch "$_sentinel" 2>/dev/null || true
+              fi
             fi
 
             echo "aide dev environment ready (Go $(go version | awk '{print $3}' | sed 's/go//'))"

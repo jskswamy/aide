@@ -12,6 +12,9 @@
 # Git worktrees
 .worktrees/
 
+# nix-direnv cache (https://github.com/nix-community/nix-direnv)
+.direnv/
+
 # Go build output and devshell tool binaries
 bin/
 .gobin/

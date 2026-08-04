@@ -23,7 +23,7 @@
       {
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            pkgs.go
+            pkgs.go_1_26
             pkgs.gnumake
             pkgs.golangci-lint
             pkgs.gosec
@@ -35,7 +35,7 @@
 
           shellHook = ''
             # Export GOROOT so Go works outside the devshell (e.g. Claude Code sandbox)
-            export GOROOT="${pkgs.go}/share/go"
+            export GOROOT="${pkgs.go_1_26}/share/go"
 
             # Use project-local GOBIN so Go-installed tools match the devshell Go version
             export GOBIN="$PWD/.gobin"

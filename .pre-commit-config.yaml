@@ -19,14 +19,10 @@ repos:
         types: [markdown]
         pass_filenames: false
 
-  # Go linting — language: system uses the nix-provided golangci-lint binary
-  # so the Go version always matches the project toolchain. CI installs
-  # golangci-lint via the golangci-lint-action (see .github/workflows/ci.yml).
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.12.2
     hooks:
       - id: golangci-lint
-        language: system
         args: [./...]
 
   # Go build verification

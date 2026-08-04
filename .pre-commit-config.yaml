@@ -30,6 +30,7 @@ repos:
     hooks:
       - id: golangci-lint
         args: [./...]
+        stages: [pre-push]
 
   # Go build verification
   - repo: https://github.com/dnephin/pre-commit-golang

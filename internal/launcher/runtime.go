@@ -76,7 +76,7 @@ func (r *RuntimeDir) Cleanup() error {
 // SIGQUIT, and SIGHUP that trigger Cleanup before exit.
 // Returns a cancel function to deregister the handlers.
 func (r *RuntimeDir) RegisterSignalHandlers() context.CancelFunc {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) // #nosec G118 -- cancel is returned to caller
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP)
 

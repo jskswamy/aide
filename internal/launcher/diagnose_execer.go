@@ -126,7 +126,7 @@ func remapArgvFDs(args []string, extraFiles []*os.File) []string {
 	}
 	out := append([]string(nil), args...)
 	for i, f := range extraFiles {
-		parent := strconv.Itoa(int(f.Fd()))
+		parent := strconv.Itoa(int(f.Fd())) // #nosec G115 -- file descriptors are small non-negative integers
 		child := strconv.Itoa(3 + i)
 		for j := range out {
 			if out[j] == "--policy-fd="+parent {

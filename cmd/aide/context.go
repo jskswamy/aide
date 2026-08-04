@@ -247,7 +247,7 @@ func pickExistingContext(out io.Writer, reader *bufio.Reader, cfg *config.Config
 // commands that need to choose between interactive prompting and a
 // non-TTY hard error.
 func isStdinTTY() bool {
-	return term.IsTerminal(int(os.Stdin.Fd()))
+	return term.IsTerminal(int(os.Stdin.Fd())) // #nosec G115 -- stdin fd is always 0/1/2, never overflows int
 }
 
 type createTristate int

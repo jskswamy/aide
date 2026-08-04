@@ -1060,7 +1060,7 @@ func (l *Launcher) handleEmptyStateLaunch(
 
 // isStdinTTY reports whether os.Stdin is connected to a terminal.
 func isStdinTTY() bool {
-	return term.IsTerminal(int(os.Stdin.Fd()))
+	return term.IsTerminal(int(os.Stdin.Fd())) // #nosec G115 -- stdin fd is always 0/1/2, never overflows int
 }
 
 // yamlVariantPins extracts capability_variants from a ProjectOverride

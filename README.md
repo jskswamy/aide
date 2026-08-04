@@ -1,6 +1,6 @@
 # aide
 
-[![CI](https://github.com/jskswamy/aide/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jskswamy/aide/actions/workflows/ci.yml)
+[![CI](https://github.com/jskswamy/aide/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/jskswamy/aide/actions/workflows/checks.yml)
 [![Security](https://github.com/jskswamy/aide/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/jskswamy/aide/actions/workflows/security.yml)
 [![Release](https://img.shields.io/github/v/release/jskswamy/aide)](https://github.com/jskswamy/aide/releases/latest)
 
@@ -10,11 +10,11 @@ One command. Any agent. Sandboxed, reproducible, zero decision fatigue.
 
 ---
 
-You planned the work. You know what needs to happen. But instead of letting your agent execute, you're stuck evaluating every file read, every shell command, every network call. That's not autonomy — that's babysitting with extra steps.
+You planned the work. You know what needs to happen. But instead of letting your agent execute, you're stuck evaluating every file read, every shell command, every network call. That's not autonomy - that's babysitting with extra steps.
 
 aide fixes three things:
 
-### Sandbox — stop choosing between scary and exhausting
+### Sandbox - stop choosing between scary and exhausting
 
 Without aide, you either skip all permissions and hope for the best:
 
@@ -24,7 +24,7 @@ claude --dangerously-skip-permissions  # what could go wrong?
 
 Or you click "allow" on every. single. action. File read? Allow. Shell command? Allow. Network call? Allow. Two hundred times a session.
 
-With aide, the agent runs inside OS-native guardrails — no config, no prompts:
+With aide, the agent runs inside OS-native guardrails - no config, no prompts:
 
 ```bash
 aide    # agent launches sandboxed automatically
@@ -36,7 +36,7 @@ aide    # agent launches sandboxed automatically
    🛡 sandbox: network outbound, code-only
 ```
 
-Code-only mode. Your agent can read your code, run tests, hit the network — but it physically cannot touch your SSH keys, cloud credentials, or browser data. 10 guards active by default, zero configuration.
+Code-only mode. Your agent can read your code, run tests, hit the network - but it physically cannot touch your SSH keys, cloud credentials, or browser data. 10 guards active by default, zero configuration.
 
 **Ready to deploy?** Tell aide what you're doing:
 
@@ -57,7 +57,7 @@ aide --with docker k8s gcp  # debug cloud infra too
       ⚠ credentials exposed: GOOGLE_APPLICATION_CREDENTIALS
 ```
 
-Each capability unlocks exactly what the agent needs — nothing more. Docker gets registry creds. Kubernetes gets kubeconfig. GCP gets gcloud auth. Everything else stays locked.
+Each capability unlocks exactly what the agent needs - nothing more. Docker gets registry creds. Kubernetes gets kubeconfig. GCP gets gcloud auth. Everything else stays locked.
 
 **Protect what matters:**
 
@@ -66,7 +66,7 @@ aide cap never-allow ~/.kube/prod-config
 aide cap never-allow --env PRODUCTION_DB_PASSWORD
 ```
 
-Now no capability — not even `k8s` — can ever read your production kubeconfig. The agent sees your dev and staging clusters but production is a hard wall:
+Now no capability - not even `k8s` - can ever read your production kubeconfig. The agent sees your dev and staging clusters but production is a hard wall:
 
 ```
 🔧 aide · work (claude)
@@ -82,7 +82,7 @@ Now no capability — not even `k8s` — can ever read your production kubeconfi
 capabilities: [docker, k8s, gcp]
 ```
 
-No flags needed next time — `aide` picks up the capabilities from your config.
+No flags needed next time - `aide` picks up the capabilities from your config.
 
 The first time aide encounters a `.aide.yaml`, it shows the contents and asks you to trust it:
 
@@ -100,7 +100,7 @@ aide --with k8s-dev docker    # dev clusters only, production blocked
 
 19 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, `go`, `rust`, `python`, `ruby`, `java`, `github`, `gpg`, and more. Or define your own.
 
-### Unified UX — one command, any agent
+### Unified UX - one command, any agent
 
 Without aide, every agent is its own world:
 
@@ -123,7 +123,7 @@ cd ~/scratch && aide         # auto-detects agent on PATH, zero config
 
 Same command everywhere. aide resolves the right agent, credentials, and sandbox from your project directory.
 
-### Session visibility — what's active, always visible
+### Session visibility - what's active, always visible
 
 When aide hands off to the agent, the terminal switches to the agent's full-screen TUI. Any info aide printed before the handoff disappears. One command pins it back:
 
@@ -137,7 +137,7 @@ From that point, a compact status bar appears at the bottom of Claude Code on ev
 🔒 | 🌐 | ⚡ k8s,docker
 ```
 
-Each indicator reflects live session state — sandbox mode, network mode, active capabilities, trust status, matched context — injected via env vars before the handoff, inherited through the exec chain, no file-based IPC needed.
+Each indicator reflects live session state - sandbox mode, network mode, active capabilities, trust status, matched context - injected via env vars before the handoff, inherited through the exec chain, no file-based IPC needed.
 
 **What it shows by default:**
 
@@ -150,11 +150,11 @@ Each indicator reflects live session state — sandbox mode, network mode, activ
 | `📁 work` | Matched context name (hidden when none) |
 | `🚨` | Auto-approve active (always shown when set) |
 
-**If you already have a statusline configured**, `--install` wraps it instead of replacing it — your existing tool keeps running and aide's output appears alongside it.
+**If you already have a statusline configured**, `--install` wraps it instead of replacing it - your existing tool keeps running and aide's output appears alongside it.
 
 **Configurable:** reorder modules, swap icons, or silence individual states in `~/.config/aide/config.yaml` or `.aide.yaml`. See [CLI Reference](docs/cli-reference.md#aide-statusline) and [Configuration](docs/configuration.md).
 
-### Reproducibility — secrets that don't leak
+### Reproducibility - secrets that don't leak
 
 Without aide:
 
@@ -203,7 +203,7 @@ aide --with k8s docker      # Enable capabilities for this session
 aide cap list               # See all available capabilities
 ```
 
-No config file required. If one agent exists on PATH with its API key in the environment, `aide` launches it sandboxed — zero setup.
+No config file required. If one agent exists on PATH with its API key in the environment, `aide` launches it sandboxed - zero setup.
 
 ### Passing args to your agent
 
@@ -226,7 +226,7 @@ aide -- --resume
 aide --with docker -- -p "build and push the image"
 ```
 
-This works with any agent — aide resolves context and sandbox, then execs the agent with your args appended.
+This works with any agent - aide resolves context and sandbox, then execs the agent with your args appended.
 
 ## How It Works
 
@@ -234,8 +234,8 @@ This works with any agent — aide resolves context and sandbox, then execs the 
 2. aide matches the git remote URL and directory path against your config.
 3. It resolves the context: agent, credentials, capabilities, and sandbox policy.
 4. Secrets decrypt in-process via the sops Go library. Nothing hits disk.
-5. Capabilities translate to sandbox rules — each `--with` flag unlocks specific tool access while keeping everything else locked.
-6. aide applies the sandbox via the platform-native enforcer — macOS Seatbelt or Linux Landlock (kernel ≥ 5.13, with full port enforcement on kernel ≥ 6.7) — and execs the agent inside it. When Landlock is unavailable, bubblewrap provides filesystem isolation. See [Supported Linux tier](docs/sandbox.md#supported-linux-tier-minimum-system-requirements) for details.
+5. Capabilities translate to sandbox rules - each `--with` flag unlocks specific tool access while keeping everything else locked.
+6. aide applies the sandbox via the platform-native enforcer - macOS Seatbelt or Linux Landlock (kernel ≥ 5.13, with full port enforcement on kernel ≥ 6.7) - and execs the agent inside it. When Landlock is unavailable, bubblewrap provides filesystem isolation. See [Supported Linux tier](docs/sandbox.md#supported-linux-tier-minimum-system-requirements) for details.
 
 No config file? aide detects your agent on PATH and launches it directly.
 
@@ -380,13 +380,13 @@ aide secrets edit personal                           # Decrypt, edit, re-encrypt
 
 Secrets decrypt in-process at launch and never exist as plaintext on disk. See [docs/secrets.md](docs/secrets.md).
 
-## Provisioning — stop reinstalling your plugins on every machine
+## Provisioning - stop reinstalling your plugins on every machine
 
 If you've ever set up a new laptop and spent an hour running
 `claude plugin install <foo>` ten times in a row, only to realise
 two weeks later that you forgot the `commit-tools` plugin on your
 work machine and that's why every commit message looks different
-from your personal machine — this section is for you.
+from your personal machine - this section is for you.
 
 The same problem shows up across teammates. Onboarding a new
 engineer to the project means writing a setup README that lists
@@ -424,7 +424,7 @@ ahead of what's installed, so the gap doesn't go unnoticed.
 The reason you can declare different plugin sets for different
 projects is that each agent context can carry a `profile:` name.
 Without it, every claude invocation reads from one shared
-`~/.claude/` directory — your work plugins and your personal plugins
+`~/.claude/` directory - your work plugins and your personal plugins
 fight for the same slot, your client A's session history shows up
 when you're working on client B's repo, and your "experimental"
 MCP servers leak into the project where you're supposed to be on
@@ -438,7 +438,7 @@ only. Your personal claude state in `~/.claude/` stays untouched.
 Switch context and it's a different dir entirely.
 
 The same idea works for gemini (`GEMINI_HOME`), codex
-(`CODEX_HOME`), copilot (`COPILOT_HOME`) — different env-var name,
+(`CODEX_HOME`), copilot (`COPILOT_HOME`) - different env-var name,
 same shape from your point of view. You write `profile: <name>`,
 aide handles the per-agent env quirks.
 
@@ -479,7 +479,7 @@ aide will:
 2. Capture the agent's stderr (last 200 lines / 64 KB by default).
 3. On exit, print a short summary and write a full markdown report to `~/.cache/aide/diagnose/<timestamp>-<id>.md` (or `$XDG_CACHE_HOME/aide/diagnose/...` if set).
 
-The report is **redacted** — no secret values, no hostnames — and is suitable to paste into a GitHub issue.
+The report is **redacted** - no secret values, no hostnames - and is suitable to paste into a GitHub issue.
 
 For sandbox-related failures on macOS, add `--diagnose-trace` to additionally capture sandbox-deny events from `log show`:
 
@@ -510,7 +510,7 @@ Aider, Amp, Claude, Codex, Copilot, Cursor, Gemini, Goose. Any binary on PATH wo
 ```bash
 nix develop                 # Full dev environment with all tools
 make build                  # Build to ./bin/aide
-make test                   # Run tests
+make test/unit              # Run tests
 make lint                   # Run golangci-lint
 ```
 
@@ -536,7 +536,7 @@ Allow or deny network access by domain, port, and MIME type. Today the sandbox c
 
 ### Command deny list
 
-Block dangerous commands by name — `rm`, `sudo`, `chmod`, `kill`, etc. Instead of requiring users to know the binary path, aide resolves each command name through `$PATH` at sandbox build time and denies `process-exec` on the resolved binaries. One line in config:
+Block dangerous commands by name - `rm`, `sudo`, `chmod`, `kill`, etc. Instead of requiring users to know the binary path, aide resolves each command name through `$PATH` at sandbox build time and denies `process-exec` on the resolved binaries. One line in config:
 
 ```yaml
 sandbox:
@@ -547,7 +547,7 @@ sandbox:
 
 Thanks to the people who've contributed to aide:
 
-- Selvakumar Natesan ([@selvakn](https://github.com/selvakn)) — Linux Landlock/seccomp sandbox
+- Selvakumar Natesan ([@selvakn](https://github.com/selvakn)) - Linux Landlock/seccomp sandbox
 
 See the full list on the [contributors graph](https://github.com/jskswamy/aide/graphs/contributors).
 

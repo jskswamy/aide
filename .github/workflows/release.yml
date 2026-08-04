@@ -6,12 +6,38 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+  security-events: write
 
 jobs:
-  release:
+  test:
+    name: Test (Linux)
+    uses: ./.github/workflows/_test.yml
+    with:
+      runner: ubuntu-latest
+      coverage: false
+
+  test-macos:
+    name: Test (macOS)
+    uses: ./.github/workflows/_test.yml
+    with:
+      runner: macos-15
+      coverage: false
+
+  gosec:
+    name: Security Scan (gosec)
+    uses: ./.github/workflows/_gosec.yml
+
+  govulncheck:
+    name: Vulnerability Check
+    uses: ./.github/workflows/_govulncheck.yml
+
+  goreleaser:
     name: Release
+    needs: [test, test-macos, gosec, govulncheck]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,13 +45,9 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
 
-      - name: Run tests
-        run: go test -race ./...
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
           args: release --clean

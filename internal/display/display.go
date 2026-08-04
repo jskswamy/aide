@@ -137,4 +137,3 @@ func BadgeForSource(source string) string {
 		return "📌" // literal and unknown
 	}
 }
-

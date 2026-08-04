@@ -220,4 +220,3 @@ func TestDefaultAgentIcons(t *testing.T) {
 		})
 	}
 }
-

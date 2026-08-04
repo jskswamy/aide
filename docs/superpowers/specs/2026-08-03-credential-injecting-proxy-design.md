@@ -1,7 +1,7 @@
 # Credential-Injecting Proxy Design
 
-**Status:** Approved  
-**Date:** 2026-08-03  
+**Status:** Approved
+**Date:** 2026-08-03
 **Inspired by:** [Tailscale blog — Hugging Face intrusion](https://tailscale.com/blog/hugging-face-intrusion) (credential-injecting proxy pattern)
 
 ---
@@ -98,13 +98,13 @@ One CA per aide installation, not per session.
 - User sees one trust prompt ever; subsequent sessions are silent
 - Rotation: `aide ca rotate` — generates new keypair, replaces keychain entry
 
-**Why permanent (not per-session):**  
+**Why permanent (not per-session):**
 Once the private key is gone, the CA cert in the keychain is harmless — it
 cannot sign new leaf certs. Per-session CAs create keychain clutter and a
 trust prompt on every `aide` invocation. The actual security property is key
 security, not CA rotation frequency.
 
-**mkcert trust store vendoring:**  
+**mkcert trust store vendoring:**
 mkcert (`filippo.io/mkcert`) is `package main` — not importable. Its
 platform-specific trust store files (`truststore_darwin.go`,
 `truststore_linux.go`, `truststore_nss.go`, `truststore_windows.go`) are

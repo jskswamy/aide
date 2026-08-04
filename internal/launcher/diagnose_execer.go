@@ -225,4 +225,3 @@ func signalName(s syscall.Signal) string {
 		return s.String()
 	}
 }
-

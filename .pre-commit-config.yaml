@@ -37,6 +37,17 @@ repos:
     hooks:
       - id: go-build
 
+  # Security scan (pre-push only — reads exclusions from .gosec.yaml)
+  - repo: local
+    hooks:
+      - id: gosec
+        name: gosec security scan
+        entry: make security/gosec
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]
+
   # Secret detection (pre-push only)
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.24.3

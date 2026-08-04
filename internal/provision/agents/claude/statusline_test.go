@@ -49,13 +49,17 @@ func TestWriteStatusLine_SetsCommand(t *testing.T) {
 
 func TestWriteStatusLine_PreservesExistingKeys(t *testing.T) {
 	ctx, dir := tempClaudeCtx(t)
-	os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"model":"claude-sonnet-4-6"}`), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"model":"claude-sonnet-4-6"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := claude.WriteStatusLine(ctx, "aide statusline claude"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
 	if raw["model"] != "claude-sonnet-4-6" {
 		t.Error("model key was lost")
 	}
@@ -63,7 +67,9 @@ func TestWriteStatusLine_PreservesExistingKeys(t *testing.T) {
 
 func TestReadStatusLine_RoundTrip(t *testing.T) {
 	ctx, _ := tempClaudeCtx(t)
-	claude.WriteStatusLine(ctx, "aide statusline claude")
+	if err := claude.WriteStatusLine(ctx, "aide statusline claude"); err != nil {
+		t.Fatal(err)
+	}
 	got, err := claude.ReadStatusLine(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +81,9 @@ func TestReadStatusLine_RoundTrip(t *testing.T) {
 
 func TestRemoveStatusLine_ReturnsPrevAndClearsKey(t *testing.T) {
 	ctx, dir := tempClaudeCtx(t)
-	claude.WriteStatusLine(ctx, "aide statusline claude")
+	if err := claude.WriteStatusLine(ctx, "aide statusline claude"); err != nil {
+		t.Fatal(err)
+	}
 	prev, err := claude.RemoveStatusLine(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +98,9 @@ func TestRemoveStatusLine_ReturnsPrevAndClearsKey(t *testing.T) {
 	// Verify key is gone from JSON
 	data, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := raw["statusLine"]; ok {
 		t.Error("statusLine key still present after remove")
 	}

@@ -28,4 +28,3 @@ func matchesAnyPath(path string, paths []string, home string) bool {
 	}
 	return false
 }
-

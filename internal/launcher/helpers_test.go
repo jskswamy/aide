@@ -303,4 +303,3 @@ func TestBuildTrustInfo(t *testing.T) {
 		}
 	})
 }
-

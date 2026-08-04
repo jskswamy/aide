@@ -272,4 +272,3 @@ func mcpEqual(a, b MCPServer) bool {
 	}
 	return true
 }
-

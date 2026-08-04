@@ -139,4 +139,3 @@ func DisableGuard(cfg *config.SandboxPolicy, name string) *seatbelt.ValidationRe
 	cfg.Unguard = append(cfg.Unguard, name)
 	return r
 }
-

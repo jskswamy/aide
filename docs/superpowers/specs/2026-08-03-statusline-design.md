@@ -1,6 +1,6 @@
 # Aide Statusline Design
 
-**Status:** Approved  
+**Status:** Approved
 **Date:** 2026-08-03
 
 ---

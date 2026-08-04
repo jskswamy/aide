@@ -103,4 +103,3 @@ func generateSeatbeltProfile(policy Policy) (string, error) {
 func PlatformGrantedPaths(policy Policy) GrantedPathSet {
 	return DeriveGrantedPathSet(policy)
 }
-

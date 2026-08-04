@@ -174,4 +174,3 @@ func resolveSSHPorts(ctx *seatbelt.Context) ([]int, []string) {
 	sort.Ints(out)
 	return out, notes
 }
-

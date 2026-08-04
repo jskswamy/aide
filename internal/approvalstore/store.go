@@ -121,4 +121,3 @@ func (s *Store) List() ([]Record, error) {
 	}
 	return out, nil
 }
-

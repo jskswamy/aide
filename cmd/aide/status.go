@@ -326,7 +326,13 @@ func whichCmd() *cobra.Command {
 			if homeDir != "" {
 				cfgPath := config.FilePath()
 				statePath := provision.DefaultStatePath(homeDir)
-				if d, err := provision.DriftStatus(cfg, cfgPath, statePath, resolved.Name); err == nil {
+				// Resolve agentDir for hook template expansion in DriftStatus.
+				driftAgentDir := ""
+				if prov, ok := provision.ProvisionerFor(resolved.Context.Agent); ok {
+					pCtx := provision.Context{HomeDir: homeDir, Env: resolved.Context.Env}
+					driftAgentDir = provision.ResolveAgentDir(prov, pCtx)
+				}
+				if d, err := provision.DriftStatus(cfg, cfgPath, statePath, resolved.Name, driftAgentDir, homeDir); err == nil {
 					if msg := provision.DriftMessage(d, resolved.Name); msg != "" {
 						data.Warnings = append(data.Warnings, msg)
 					}

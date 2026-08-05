@@ -170,9 +170,13 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 	}
 
 	// --- Hooks (3-way diff: desired vs installed vs managed) ---
+	// Managed state may store tilde-form paths from before ExpandPath was
+	// introduced. Expand on read so comparisons match the desired/installed
+	// absolute forms without requiring a migration sync run.
 	managedHookSet := map[string]bool{}
 	for _, mh := range managed.Hooks {
-		managedHookSet[HookKey(mh.Event, mh.Matcher, mh.Command)] = true
+		expandedCmd := ExpandPath(mh.Command, ctx.HomeDir)
+		managedHookSet[HookKey(mh.Event, mh.Matcher, expandedCmd)] = true
 	}
 	desiredHookSet := map[string]bool{}
 	for _, h := range desired.Hooks {
@@ -196,14 +200,15 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 			Hook:   &hh,
 		})
 	}
-	// managed + not desired → uninstall
+	// managed + not desired → uninstall (expand command for comparison)
 	for _, mh := range managed.Hooks {
-		if !desiredHookSet[HookKey(mh.Event, mh.Matcher, mh.Command)] {
-			h := Hook{Event: mh.Event, Matcher: mh.Matcher, Command: mh.Command}
+		expandedCmd := ExpandPath(mh.Command, ctx.HomeDir)
+		if !desiredHookSet[HookKey(mh.Event, mh.Matcher, expandedCmd)] {
+			h := Hook{Event: mh.Event, Matcher: mh.Matcher, Command: expandedCmd}
 			uninstalls = append(uninstalls, Op{
 				Kind:   KindHook,
 				OpKind: OpUninstall,
-				Name:   hookOpName(mh.Event, mh.Matcher, mh.Command),
+				Name:   hookOpName(mh.Event, mh.Matcher, expandedCmd),
 				Hook:   &h,
 			})
 		}

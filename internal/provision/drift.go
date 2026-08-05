@@ -60,13 +60,13 @@ func DriftStatus(cfg *config.Config, cfgPath, statePath, contextName, agentDir, 
 		// the rest of `aide which` will surface the real error.
 		return DriftNone, nil
 	}
-	if hasShortfall(desired, cs) {
+	if hasShortfall(desired, cs, homeDir) {
 		return DriftConfigChanged, nil
 	}
 	return DriftNone, nil
 }
 
-func hasShortfall(desired Desired, cs *ContextState) bool {
+func hasShortfall(desired Desired, cs *ContextState, homeDir string) bool {
 	for k := range desired.Marketplaces {
 		if _, ok := cs.Marketplaces[k]; !ok {
 			return true
@@ -83,9 +83,11 @@ func hasShortfall(desired Desired, cs *ContextState) bool {
 		}
 	}
 	// Hooks shortfall: any desired hook not yet recorded in managed state.
+	// Expand tilde paths so old managed entries (pre-ExpandPath) match
+	// the absolute-form desired commands.
 	managedHookSet := map[string]bool{}
 	for _, mh := range cs.Hooks {
-		managedHookSet[HookKey(mh.Event, mh.Matcher, mh.Command)] = true
+		managedHookSet[HookKey(mh.Event, mh.Matcher, ExpandPath(mh.Command, homeDir))] = true
 	}
 	for _, h := range desired.Hooks {
 		if !managedHookSet[HookKey(h.Event, h.Matcher, h.Command)] {

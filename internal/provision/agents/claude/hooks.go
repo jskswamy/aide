@@ -55,6 +55,7 @@ func (d *Driver) ReadHooks(ctx provision.Context) ([]provision.Hook, error) {
 				if cmd == "" {
 					continue
 				}
+				cmd = provision.ExpandPath(cmd, ctx.HomeDir)
 				out = append(out, provision.Hook{
 					Event:   norm,
 					Matcher: normMatcher,

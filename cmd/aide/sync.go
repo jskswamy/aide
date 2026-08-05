@@ -50,7 +50,7 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 	if err != nil {
 		return err
 	}
-	desired, err := provision.ResolveDesired(env.cfg, env.contextName)
+	desired, err := provision.ResolveDesired(env.cfg, env.contextName, "", "")
 	if err != nil {
 		return err
 	}

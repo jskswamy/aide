@@ -24,7 +24,7 @@ contexts:
 	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	desired, err := provision.ResolveDesired(&cfg, "default")
+	desired, err := provision.ResolveDesired(&cfg, "default", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ contexts:
 	cfg.ProjectOverride = &config.ProjectOverride{
 		MCPServers: []string{"leaked-mcp"},
 	}
-	desired, err := provision.ResolveDesired(&cfg, "prod")
+	desired, err := provision.ResolveDesired(&cfg, "prod", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ contexts:
 	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	desired, err := provision.ResolveDesired(&cfg, "prod")
+	desired, err := provision.ResolveDesired(&cfg, "prod", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ contexts:
 	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	desired, err := provision.ResolveDesired(&cfg, "work")
+	desired, err := provision.ResolveDesired(&cfg, "work", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ contexts:
 	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	desired, err := provision.ResolveDesired(&cfg, "personal")
+	desired, err := provision.ResolveDesired(&cfg, "personal", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ contexts:
 	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	desired, err := provision.ResolveDesired(&cfg, "personal")
+	desired, err := provision.ResolveDesired(&cfg, "personal", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ contexts:
 	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	desired, err := provision.ResolveDesired(&cfg, "personal")
+	desired, err := provision.ResolveDesired(&cfg, "personal", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ contexts:
 	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	desired, err := provision.ResolveDesired(&cfg, "personal")
+	desired, err := provision.ResolveDesired(&cfg, "personal", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,5 +293,75 @@ contexts:
 		if h.Event == "pre_tool" {
 			t.Errorf("expected no pre_tool hooks, got %+v", h)
 		}
+	}
+}
+
+func TestExpandPath(t *testing.T) {
+	home := "/Users/testuser"
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"~/foo/bar", "/Users/testuser/foo/bar"},
+		{"$HOME/foo/bar", "/Users/testuser/foo/bar"},
+		{"/absolute/path", "/absolute/path"},
+		{"relative/path", "relative/path"},
+		{"rtk hook claude", "rtk hook claude"},
+		{"~/", "/Users/testuser"},
+	}
+	for _, tc := range tests {
+		if got := provision.ExpandPath(tc.in, home); got != tc.want {
+			t.Errorf("ExpandPath(%q, %q) = %q, want %q", tc.in, home, got, tc.want)
+		}
+	}
+}
+
+func TestResolveDesiredAgentDir(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: "{agent_dir}/hooks/cbm-gate"
+contexts:
+  work:
+    agent: claude
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "work", "/Users/u/.claude-work", "/Users/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desired.Hooks) != 1 {
+		t.Fatalf("expected 1 hook, got %d: %+v", len(desired.Hooks), desired.Hooks)
+	}
+	if desired.Hooks[0].Command != "/Users/u/.claude-work/hooks/cbm-gate" {
+		t.Errorf("command = %q, want /Users/u/.claude-work/hooks/cbm-gate", desired.Hooks[0].Command)
+	}
+}
+
+func TestResolveDesiredExpandsTilde(t *testing.T) {
+	y := `
+hooks:
+  pre_tool:
+    - command: "~/.claude/hooks/cbm-gate"
+contexts:
+  default:
+    agent: claude
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "default", "", "/Users/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desired.Hooks) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(desired.Hooks))
+	}
+	if desired.Hooks[0].Command != "/Users/u/.claude/hooks/cbm-gate" {
+		t.Errorf("command = %q, want /Users/u/.claude/hooks/cbm-gate", desired.Hooks[0].Command)
 	}
 }

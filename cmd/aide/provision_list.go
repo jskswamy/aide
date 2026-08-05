@@ -139,7 +139,7 @@ func runPluginList(out io.Writer, contextName string) error {
 	if err != nil {
 		return err
 	}
-	desired, err := provision.ResolveDesired(env.cfg, env.contextName)
+	desired, err := provision.ResolveDesired(env.cfg, env.contextName, "", "")
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func runMCPList(out io.Writer, contextName string) error {
 	if err != nil {
 		return err
 	}
-	desired, err := provision.ResolveDesired(env.cfg, env.contextName)
+	desired, err := provision.ResolveDesired(env.cfg, env.contextName, "", "")
 	if err != nil {
 		return err
 	}

@@ -1,5 +1,19 @@
 ## Unreleased
 
+### Feature
+
+#### Hook commands now support {agent_dir} and ~/ path expansion
+
+`ResolveDesired` accepts two new parameters (`agentDir`, `homeDir`) that feed
+into hook command substitution. When non-empty, `agentDir` replaces
+`{agent_dir}` tokens in hook commands, and `homeDir` expands `~/` and
+`$HOME/` prefixes to absolute paths. All existing callers pass `"", ""`
+(no-op), preserving current behaviour until a later task wires in real values.
+
+- Adds exported `provision.ExpandPath(s, homeDir string) string`
+- Extends `provision.ResolveDesired` signature to accept `agentDir, homeDir string`
+- Updates all six call sites in `cmd/aide/` and `internal/provision/drift.go`
+
 ### Fix
 
 #### aide sync no longer reinstalls managed MCP servers every run

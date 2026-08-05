@@ -54,7 +54,7 @@ func DriftStatus(cfg *config.Config, cfgPath, statePath, contextName string) (Dr
 
 	// Shortfall: declared items not yet recorded as managed. Cheap
 	// in-process check — no agent poll.
-	desired, err := ResolveDesired(cfg, contextName)
+	desired, err := ResolveDesired(cfg, contextName, "", "")
 	if err != nil {
 		// Unknown context or malformed config — leave drift silent;
 		// the rest of `aide which` will surface the real error.

@@ -2,18 +2,33 @@ package provision
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
 )
 
+// ExpandPath converts ~/... and $HOME/... to absolute paths using homeDir.
+// All other paths are returned unchanged. homeDir="" is a no-op.
+func ExpandPath(s, homeDir string) string {
+	if homeDir == "" {
+		return s
+	}
+	switch {
+	case strings.HasPrefix(s, "~/"):
+		return filepath.Join(homeDir, s[2:])
+	case strings.HasPrefix(s, "$HOME/"):
+		return filepath.Join(homeDir, s[6:])
+	}
+	return s
+}
+
 // ResolveDesired flattens the polymorphic v2 schema into a per-context
-// Desired struct containing marketplaces, plugins, and mcp_servers.
-// Composition order:
-//  1. Apply ContextOverride to top-level Plugins map.
-//  2. Walk resolved entries, classifying by shape.
-//  3. Same for MCPServers.
-func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
+// Desired struct containing marketplaces, plugins, mcp_servers, and hooks.
+// agentDir and homeDir are used for hook command path normalization:
+// agentDir resolves {agent_dir}; homeDir expands ~/ and $HOME/ prefixes.
+// Pass "" for both when hook path normalization is not needed.
+func ResolveDesired(cfg *config.Config, contextName, agentDir, homeDir string) (Desired, error) {
 	if cfg == nil {
 		return Desired{}, fmt.Errorf("provision: nil config")
 	}
@@ -125,7 +140,7 @@ func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 			desired.Hooks = append(desired.Hooks, Hook{
 				Event:   event,
 				Matcher: e.Matcher,
-				Command: substituteHookVars(e.Command, agentName),
+				Command: substituteHookVars(e.Command, agentName, agentDir, homeDir),
 				Timeout: e.Timeout,
 			})
 		}
@@ -134,12 +149,14 @@ func ResolveDesired(cfg *config.Config, contextName string) (Desired, error) {
 	return desired, nil
 }
 
-// substituteHookVars replaces known template variables in cmd.
-// Currently only {agent} is supported; unknown {var} patterns pass through unchanged.
-func substituteHookVars(cmd, agentName string) string {
-	return strings.ReplaceAll(cmd, "{agent}", agentName)
+// substituteHookVars normalizes and substitutes template variables in cmd.
+// Order: expand ~/ and $HOME/, then replace {agent} and {agent_dir}.
+// Unknown {var} patterns pass through unchanged.
+func substituteHookVars(cmd, agentName, agentDir, homeDir string) string {
+	cmd = ExpandPath(cmd, homeDir)
+	cmd = strings.ReplaceAll(cmd, "{agent}", agentName)
+	if agentDir != "" {
+		cmd = strings.ReplaceAll(cmd, "{agent_dir}", agentDir)
+	}
+	return cmd
 }
-
-// keyAsSource / classifySource were inlined here historically; see
-// sourceref.go for the canonical SourceRef helper that owns the
-// transport-prefix vocabulary.

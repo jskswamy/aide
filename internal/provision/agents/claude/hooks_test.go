@@ -59,6 +59,30 @@ func TestClaudeWriteHooksTranslatesEventNames(t *testing.T) {
 	}
 }
 
+func TestClaudeReadHooksExpandsTilde(t *testing.T) {
+	dir := t.TempDir()
+	ctx := provision.Context{
+		HomeDir: "/Users/u",
+		Env:     map[string]string{"CLAUDE_CONFIG_DIR": dir},
+	}
+	d := claude.New(&fakeRunner{})
+
+	settings := `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"~/.claude/hooks/cbm-gate"}]}]}}`
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.ReadHooks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 hook, got %d: %+v", len(got), got)
+	}
+	if got[0].Command != "/Users/u/.claude/hooks/cbm-gate" {
+		t.Errorf("Command = %q, want /Users/u/.claude/hooks/cbm-gate", got[0].Command)
+	}
+}
+
 func TestClaudeWriteHooksPreservesUserHooks(t *testing.T) {
 	dir := t.TempDir()
 	// Pre-populate a user-added hook (no _aide marker).

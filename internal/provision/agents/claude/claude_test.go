@@ -207,3 +207,23 @@ func TestClaudeInstalledPluginsBinaryMissingTolerated(t *testing.T) {
 		t.Errorf("expected empty slice, got %v", got)
 	}
 }
+
+func TestClaudeAgentDirDefault(t *testing.T) {
+	d := claude.New(&fakeRunner{})
+	got := d.AgentDir(provision.Context{HomeDir: "/Users/u"})
+	if got != "/Users/u/.claude" {
+		t.Errorf("AgentDir (default) = %q, want /Users/u/.claude", got)
+	}
+}
+
+func TestClaudeAgentDirProfile(t *testing.T) {
+	d := claude.New(&fakeRunner{})
+	ctx := provision.Context{
+		HomeDir: "/Users/u",
+		Env:     map[string]string{"CLAUDE_CONFIG_DIR": "/Users/u/.claude-work"},
+	}
+	got := d.AgentDir(ctx)
+	if got != "/Users/u/.claude-work" {
+		t.Errorf("AgentDir (profile) = %q, want /Users/u/.claude-work", got)
+	}
+}

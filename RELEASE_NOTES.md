@@ -25,6 +25,17 @@ reference `{agent_dir}` as an absolute path to the agent's profile.
 - Adds `provision.ResolveAgentDir(prov Provisioner, ctx Context) string` helper
 - Registers `{agent_dir}` in `HookTemplateVars` for CLI help and interactive prompts
 
+#### Claude driver implements AgentDirProvider; ReadHooks expands tilde paths
+
+The Claude driver now satisfies `AgentDirProvider`: `AgentDir` returns
+`CLAUDE_CONFIG_DIR` when set (profile contexts) or `~/.claude` otherwise.
+`ReadHooks` now calls `ExpandPath` on every command it reads from
+`settings.json`, converting `~/` and `$HOME/` prefixes to absolute paths
+before returning them to the engine.
+
+- Adds `(*Driver).AgentDir(ctx provision.Context) string` to `claude.go`
+- Applies `provision.ExpandPath(cmd, ctx.HomeDir)` in `ReadHooks` inside `hooks.go`
+
 ### Fix
 
 #### aide sync no longer reinstalls managed MCP servers every run

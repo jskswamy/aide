@@ -169,6 +169,13 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 	// merge code below will upgrade the entry from declare-only to
 	// a list-valued marketplace entry.
 	for _, m := range adoptedMarkets {
+		// Skip local/name-only marketplaces: config keys must look like
+		// "owner/repo" or a URL; bare names like "rfctl-local" fail
+		// ValidatePlugins and would corrupt the config.
+		if !config.LooksLikeRepo(m.Key) {
+			fmt.Fprintf(out, "Note: marketplace %q has no repo path — skipped from config (declare manually if needed).\n", m.Key)
+			continue
+		}
 		if existing, ok := env.cfg.Plugins[m.Key]; ok {
 			// Keep whatever shape already exists; declare-only would
 			// otherwise overwrite a user-set entry.

@@ -184,7 +184,7 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 		installs = append(installs, Op{
 			Kind:   KindHook,
 			OpKind: OpInstall,
-			Name:   h.Event + ":" + h.Command,
+			Name:   hookOpName(h.Event, h.Matcher, h.Command),
 			Hook:   &hh,
 		})
 	}
@@ -195,7 +195,7 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 			uninstalls = append(uninstalls, Op{
 				Kind:   KindHook,
 				OpKind: OpUninstall,
-				Name:   mh.Event + ":" + mh.Command,
+				Name:   hookOpName(mh.Event, mh.Matcher, mh.Command),
 				Hook:   &h,
 			})
 		}
@@ -210,7 +210,7 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 		ignores = append(ignores, Op{
 			Kind:   KindHook,
 			OpKind: OpIgnore,
-			Name:   h.Event + ":" + h.Command,
+			Name:   hookOpName(h.Event, h.Matcher, h.Command),
 			Hook:   &hh,
 		})
 	}
@@ -271,4 +271,14 @@ func mcpEqual(a, b MCPServer) bool {
 		}
 	}
 	return true
+}
+
+// hookOpName returns the display name for a hook Op. The matcher is included
+// when set so that hooks with the same event+command but different matchers
+// (e.g. session_start startup vs session_start compact) are distinct in output.
+func hookOpName(event, matcher, command string) string {
+	if matcher == "" {
+		return event + ":" + command
+	}
+	return event + ":" + matcher + ":" + command
 }

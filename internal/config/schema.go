@@ -555,6 +555,13 @@ func collectHookNames(top, extra []HookEntry) map[string]bool {
 	return out
 }
 
+// LooksLikeRepo reports whether key is shaped like a repo path that can be
+// used as a plugins-map key (owner/repo, github:owner/repo, or a URL).
+// Name-only strings (e.g. "rfctl-local") return false.
+func LooksLikeRepo(key string) bool {
+	return looksLikeRepo(key)
+}
+
 func looksLikeRepo(key string) bool {
 	if strings.HasPrefix(key, "github:") || strings.HasPrefix(key, "git:") || strings.HasPrefix(key, "https://") || strings.HasPrefix(key, "http://") {
 		return true

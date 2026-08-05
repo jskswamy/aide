@@ -20,8 +20,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 21 {
-		t.Errorf("expected 21 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 22 {
+		t.Errorf("expected 22 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -315,5 +315,43 @@ func TestBuiltins_AllCapabilitiesDetectableByDetectProject_HaveMarkers(t *testin
 			t.Errorf("builtin %q has no Markers; DetectProject cannot detect it",
 				name)
 		}
+	}
+}
+
+func TestBuiltin_Clipboard_Exists(t *testing.T) {
+	clip, ok := Builtins()["clipboard"]
+	if !ok {
+		t.Fatal("missing built-in capability 'clipboard'")
+	}
+	if clip.Description == "" {
+		t.Error("expected non-empty description")
+	}
+}
+
+func TestBuiltin_Clipboard_AllowsAllThreeGlobalNames(t *testing.T) {
+	clip := Builtins()["clipboard"]
+	want := []string{
+		`mach-lookup (global-name "com.apple.pasteboard.1")`,
+		`mach-lookup (global-name "com.apple.lsd.mapdb")`,
+		`mach-lookup (global-name "com.apple.lsd.modifydb")`,
+	}
+	for _, w := range want {
+		found := false
+		for _, got := range clip.Allow {
+			if got == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected Allow to contain %q, got %v", w, clip.Allow)
+		}
+	}
+}
+
+func TestBuiltin_Clipboard_NoMarkers(t *testing.T) {
+	clip := Builtins()["clipboard"]
+	if len(clip.Markers) != 0 {
+		t.Errorf("clipboard must be opt-in only (no markers), got %v", clip.Markers)
 	}
 }

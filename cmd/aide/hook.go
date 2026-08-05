@@ -59,7 +59,7 @@ When flags are omitted, an interactive prompt guides you through the inputs.
 
 Valid events: pre_tool, post_tool, session_start, session_end, notification, stop
 Valid matchers: shell (or omit for all tools)
-Command template variables: {agent} (substituted with context's agent name)`,
+Command template variables: {agent} (agent name), {agent_dir} (agent config directory)`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runHookAdd(cmd.OutOrStdout(), cmd.InOrStdin(), event, matcher, command, contextName)
 		},
@@ -353,7 +353,8 @@ func promptHookMatcher(out io.Writer, reader *bufio.Reader) (string, error) {
 func promptHookCommand(out io.Writer, reader *bufio.Reader) (string, error) {
 	fmt.Fprintln(out, "Command?")
 	fmt.Fprintln(out, "  Template variables (substituted automatically at sync time):")
-	fmt.Fprintln(out, "    {agent}  replaced with the agent name for each context")
+	fmt.Fprintln(out, "    {agent}      replaced with the agent name for each context")
+	fmt.Fprintln(out, "    {agent_dir}  replaced with the agent's config directory for each context")
 	fmt.Fprint(out, "> ")
 	input, err := reader.ReadString('\n')
 	if err != nil {

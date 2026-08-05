@@ -1,6 +1,6 @@
-// `aide adopt` — promote agent-installed but undeclared plugins and
-// MCP servers into config.yaml so subsequent `aide sync` runs treat
-// them as managed.
+// `aide adopt` — promote agent-installed but undeclared plugins, MCP
+// servers, marketplaces, and hooks into config.yaml so subsequent
+// `aide sync` runs treat them as managed.
 package main
 
 import (
@@ -122,12 +122,42 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 			}
 		}
 	}
+	// Hooks: discover installed hooks not already in desired or managed.
+	var unmanagedHooks []provision.Hook
+	if hi, ok := env.prov.(provision.HookInstaller); ok {
+		installedHooks, err := hi.ReadHooks(env.provCtx)
+		if err != nil {
+			return fmt.Errorf("listing installed hooks: %w", err)
+		}
+		managedHookSet := map[string]bool{}
+		if cs, ok := env.state.Contexts[env.contextName]; ok && cs != nil {
+			for _, mh := range cs.Hooks {
+				managedHookSet[provision.HookKey(mh.Event, mh.Matcher, mh.Command)] = true
+			}
+		}
+		desiredHookSet := map[string]bool{}
+		for _, h := range desired.Hooks {
+			desiredHookSet[provision.HookKey(h.Event, h.Matcher, h.Command)] = true
+		}
+		for _, h := range installedHooks {
+			key := provision.HookKey(h.Event, h.Matcher, h.Command)
+			if desiredHookSet[key] || managedHookSet[key] {
+				continue
+			}
+			unmanagedHooks = append(unmanagedHooks, h)
+		}
+		sort.Slice(unmanagedHooks, func(i, j int) bool {
+			return provision.HookKey(unmanagedHooks[i].Event, unmanagedHooks[i].Matcher, unmanagedHooks[i].Command) <
+				provision.HookKey(unmanagedHooks[j].Event, unmanagedHooks[j].Matcher, unmanagedHooks[j].Command)
+		})
+	}
+
 	sort.Slice(unmanagedPlugins, func(i, j int) bool { return unmanagedPlugins[i].Key < unmanagedPlugins[j].Key })
 	sort.Strings(unmanagedMCP)
 	sort.Slice(unmanagedMarketplaces, func(i, j int) bool { return unmanagedMarketplaces[i].Key < unmanagedMarketplaces[j].Key })
 
-	if len(unmanagedPlugins) == 0 && len(unmanagedMCP) == 0 && len(unmanagedMarketplaces) == 0 {
-		fmt.Fprintln(out, "No unmanaged plugins, MCP servers, or marketplaces to adopt.")
+	if len(unmanagedPlugins) == 0 && len(unmanagedMCP) == 0 && len(unmanagedMarketplaces) == 0 && len(unmanagedHooks) == 0 {
+		fmt.Fprintln(out, "No unmanaged plugins, MCP servers, marketplaces, or hooks to adopt.")
 		return nil
 	}
 
@@ -150,8 +180,15 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 			adoptedMarkets = append(adoptedMarkets, m)
 		}
 	}
+	adoptedHooks := []provision.Hook{}
+	for _, h := range unmanagedHooks {
+		label := "hook " + hookOpName(h.Event, h.Matcher, h.Command)
+		if yes || promptAdopt(out, reader, label) {
+			adoptedHooks = append(adoptedHooks, h)
+		}
+	}
 
-	if len(adoptedPlugins) == 0 && len(adoptedMCP) == 0 && len(adoptedMarkets) == 0 {
+	if len(adoptedPlugins) == 0 && len(adoptedMCP) == 0 && len(adoptedMarkets) == 0 && len(adoptedHooks) == 0 {
 		fmt.Fprintln(out, "Nothing adopted.")
 		return nil
 	}
@@ -242,6 +279,31 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 	}
 	env.cfg.Contexts[env.contextName] = ctx
 
+	// Adopted hooks are written to the top-level hooks map so they apply
+	// across contexts (matching how top-level plugins work). Duplicate
+	// guard: skip entries already present (event+matcher+command match).
+	if len(adoptedHooks) > 0 && env.cfg.Hooks == nil {
+		env.cfg.Hooks = config.HooksMap{}
+	}
+	for _, h := range adoptedHooks {
+		existing := env.cfg.Hooks[h.Event]
+		alreadyPresent := false
+		for _, e := range existing {
+			if e.Matcher == h.Matcher && e.Command == h.Command {
+				alreadyPresent = true
+				break
+			}
+		}
+		if !alreadyPresent {
+			env.cfg.Hooks[h.Event] = append(existing, config.HookEntry{
+				Name:    hookCommandBasename(h.Command),
+				Matcher: h.Matcher,
+				Command: h.Command,
+				Timeout: h.Timeout,
+			})
+		}
+	}
+
 	if err := config.WriteConfig(env.cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
@@ -275,12 +337,39 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 	for _, m := range adoptedMarkets {
 		cs.Marketplaces[m.Key] = provision.ManagedItem{InstalledAt: now}
 	}
+	for _, h := range adoptedHooks {
+		cs.Hooks = append(cs.Hooks, provision.ManagedHook{
+			Event:   h.Event,
+			Matcher: h.Matcher,
+			Command: h.Command,
+		})
+	}
 	if err := provision.SaveState(env.statePath, env.state); err != nil {
 		return fmt.Errorf("saving state: %w", err)
 	}
 
-	fmt.Fprintf(out, "Adopted: %d plugin(s), %d mcp server(s), %d marketplace(s).\n", len(adoptedPlugins), len(adoptedMCP), len(adoptedMarkets))
+	fmt.Fprintf(out, "Adopted: %d plugin(s), %d mcp server(s), %d marketplace(s), %d hook(s).\n",
+		len(adoptedPlugins), len(adoptedMCP), len(adoptedMarkets), len(adoptedHooks))
 	return nil
+}
+
+// hookOpName builds the display label for a hook Op, including the matcher
+// when set so that hooks sharing event+command but with different matchers
+// appear distinct in adopt prompts.
+func hookOpName(event, matcher, command string) string {
+	if matcher == "" {
+		return event + ":" + command
+	}
+	return event + ":" + matcher + ":" + command
+}
+
+// hookCommandBasename returns the last path component of a hook command,
+// used as the Name field when adopting a hook into config.
+func hookCommandBasename(command string) string {
+	if i := strings.LastIndexByte(command, '/'); i >= 0 {
+		return command[i+1:]
+	}
+	return command
 }
 
 func promptAdopt(out io.Writer, reader *bufio.Reader, label string) bool {

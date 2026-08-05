@@ -1,5 +1,23 @@
 ## Unreleased
 
+### Fix
+
+#### Plugin sync is now self-healing for project-scope and stale-index errors
+
+Two error patterns previously blocked `aide sync` from cleaning up managed
+state, causing the same errors to reappear on every run:
+
+- A plugin managed at user scope but installed at project scope caused
+  `claude plugin uninstall` to fail with "enabled at project scope".
+  `UninstallPlugin` now tolerates this message; aide removes the entry
+  from managed state and stops tracking the plugin at user scope.
+- A marketplace plugin installed from a stale local index caused
+  `claude plugin install` to fail with "local copy may be out of date".
+  `InstallPlugin` now detects this, runs `claude plugin marketplace update
+  <marketplace>` once (ignoring update errors), and retries the install.
+  If the plugin name has no `@marketplace` suffix, the error is returned
+  as-is without a retry.
+
 ### Feature
 
 #### Test coverage: aide adopt hook agentDir prefix rewrite

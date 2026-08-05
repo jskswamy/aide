@@ -24,6 +24,30 @@ func (f *fakeRunner) Run(_ context.Context, env map[string]string, name string, 
 	return f.stdout, f.stderr, f.code, f.err
 }
 
+// stepRunner returns different responses per call, cycling through steps.
+type stepRunner struct {
+	steps []runStep
+	idx   int
+	calls [][]string
+}
+
+type runStep struct {
+	stdout, stderr string
+	code           int
+	err            error
+}
+
+func (r *stepRunner) Run(_ context.Context, _ map[string]string, name string, args ...string) (string, string, int, error) {
+	call := append([]string{name}, args...)
+	r.calls = append(r.calls, call)
+	if r.idx >= len(r.steps) {
+		return "", "", 0, nil
+	}
+	s := r.steps[r.idx]
+	r.idx++
+	return s.stdout, s.stderr, s.code, s.err
+}
+
 func TestClaudeCapabilities(t *testing.T) {
 	d := claude.New(&fakeRunner{})
 	if d.Name() != "claude" {
@@ -225,5 +249,51 @@ func TestClaudeAgentDirProfile(t *testing.T) {
 	got := d.AgentDir(ctx)
 	if got != "/Users/u/.claude-work" {
 		t.Errorf("AgentDir (profile) = %q, want /Users/u/.claude-work", got)
+	}
+}
+
+func TestClaudeUninstallProjectScopeTolerated(t *testing.T) {
+	r := &fakeRunner{code: 1, stderr: "plugin is enabled at project scope, not user scope"}
+	d := claude.New(r)
+	if err := d.UninstallPlugin(provision.Context{}, "rfctl-validator"); err != nil {
+		t.Errorf("project-scope uninstall should be tolerated: %v", err)
+	}
+}
+
+func TestClaudeInstallPluginMarketplaceRetry(t *testing.T) {
+	r := &stepRunner{steps: []runStep{
+		{code: 1, stderr: "marketplace may be out of date, run: claude plugin marketplace update rfctl-local"},
+		{code: 0}, // marketplace update
+		{code: 0}, // retry install
+	}}
+	d := claude.New(r)
+	err := d.InstallPlugin(provision.Context{}, provision.Plugin{
+		Key: "rfctl-validator", Name: "rfctl-validator@rfctl-local",
+	})
+	if err != nil {
+		t.Errorf("install after marketplace update should succeed: %v", err)
+	}
+	if len(r.calls) != 3 {
+		t.Errorf("expected 3 calls (install, marketplace update, retry), got %d: %v", len(r.calls), r.calls)
+	}
+	wantUpdate := []string{"claude", "plugin", "marketplace", "update", "rfctl-local"}
+	if !reflect.DeepEqual(r.calls[1], wantUpdate) {
+		t.Errorf("second call = %v, want %v", r.calls[1], wantUpdate)
+	}
+}
+
+func TestClaudeInstallPluginNoRetryWhenMarketplaceUnknown(t *testing.T) {
+	// Plugin names without @marketplace cannot trigger an update.
+	r := &stepRunner{steps: []runStep{
+		{code: 1, stderr: "marketplace may be out of date"},
+		// If retry were attempted, it would use step index 1 (empty = success),
+		// but we verify by checking no second call happens.
+	}}
+	d := claude.New(r)
+	_ = d.InstallPlugin(provision.Context{}, provision.Plugin{
+		Key: "bare-plugin", Name: "bare-plugin",
+	})
+	if len(r.calls) != 1 {
+		t.Errorf("bare plugin with no @marketplace: expected 1 call, got %d: %v", len(r.calls), r.calls)
 	}
 }

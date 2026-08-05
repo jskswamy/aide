@@ -2,6 +2,14 @@
 
 ### Fix
 
+#### hook add help and interactive prompt now list {agent_dir} template variable
+
+The help text for `aide hook add` and the interactive command prompt
+previously listed only `{agent}` as a template variable. `{agent_dir}` was
+registered in `HookTemplateVars` but missing from both display points.
+
+Both now list `{agent_dir}` (replaced with the agent's config directory).
+
 #### Managed state with tilde-form hook paths no longer triggers spurious ops
 
 Hook entries in managed state written before path normalization was introduced

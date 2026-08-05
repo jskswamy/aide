@@ -211,6 +211,7 @@ func capShowCmd() *cobra.Command {
 			capShowPathSection(out, "Writable", resolved.Writable, home)
 			capShowPathSection(out, "Deny", resolved.Deny, home)
 			capShowSection(out, "EnvAllow", resolved.EnvAllow)
+			capShowSection(out, "Allow", resolved.Allow)
 
 			if len(entry.Variants) > 0 {
 				fmt.Fprintln(out, "")

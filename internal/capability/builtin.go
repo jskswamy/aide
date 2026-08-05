@@ -251,6 +251,24 @@ func init() {
 			EnvAllow:    []string{"GNUPGHOME"},
 		},
 
+		// Clipboard (macOS only — Allow rules are inert on Linux)
+		"clipboard": {
+			Name:        "clipboard",
+			Description: "Read/write access to the system clipboard (pasteboard)",
+			Allow: []string{
+				`mach-lookup (global-name "com.apple.pasteboard.1")`,
+				`mach-lookup (global-name "com.apple.lsd.mapdb")`,
+				// com.apple.lsd.modifydb is kept even though plain-text
+				// pbcopy/pbpaste round-trips work without it: this
+				// capability's original motivating case (osascript-based
+				// image clipboard reads) was never verified against its
+				// removal, and removing an unverified-safe rule risks
+				// reintroducing the image-paste regression this capability
+				// exists to fix.
+				`mach-lookup (global-name "com.apple.lsd.modifydb")`,
+			},
+		},
+
 		// Network
 		"network": {
 			Name:        "network",

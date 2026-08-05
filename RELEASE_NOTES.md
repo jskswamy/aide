@@ -2,6 +2,26 @@
 
 ### Feature
 
+#### Test coverage: aide adopt hook agentDir prefix rewrite
+
+Added `TestAdoptHookRewritesAgentDirPrefix` to verify that when a hook
+command starts with the agent directory path, `aide adopt` rewrites it to
+`{agent_dir}/...` in `config.yaml`. Extends `fakeProv` (the shared test
+double) with `AgentDirProvider` and `HookInstaller` so the agentDir prefix
+path can be exercised without a new registered agent name.
+
+#### aide sync and adopt now wire real agentDir values for hook expansion
+
+`aide sync` and `aide adopt` now pass the real `agentDir` and `homeDir` values
+to `provision.ResolveDesired`, enabling hook command path expansion during
+reconciliation. When adopting hooks, commands with paths beginning with the agent
+directory are automatically rewritten to use `{agent_dir}` tokens in the config,
+making the configuration portable across installations.
+
+- `sync.go` calls `ResolveAgentDir` to get the driver's config directory and passes it to `ResolveDesired`
+- `adopt.go` does the same, plus auto-replaces adopted hook commands prefixed with `agentDir` with `{agent_dir}` tokens
+- Adopted hooks with `{agent_dir}` paths remain portable when later synced to other agent installations
+
 #### Hook commands now support {agent_dir} and ~/ path expansion
 
 `ResolveDesired` accepts two new parameters (`agentDir`, `homeDir`) that feed

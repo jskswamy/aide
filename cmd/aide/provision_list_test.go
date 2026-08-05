@@ -12,12 +12,16 @@ import (
 )
 
 // fakeProv wraps the shared FakeProvisioner with a local MCP-state
-// shim. The base behavior (capabilities, error injection, call
-// recording) comes from provisiontest.FakeProvisioner; this wrapper
-// adds the locally-needed mcpInstalled map that feeds fakeMCPHandler.
+// shim and optional hook/agentDir support. The base behavior
+// (capabilities, error injection, call recording) comes from
+// provisiontest.FakeProvisioner; this wrapper adds the locally-needed
+// mcpInstalled map that feeds fakeMCPHandler, plus storedHooks and
+// agentDirVal for tests that exercise hook adoption.
 type fakeProv struct {
 	*provisiontest.FakeProvisioner
 	mcpInstalled map[string]provision.MCPServer
+	storedHooks  []provision.Hook
+	agentDirVal  string
 }
 
 // MCPHandler overrides the base no-op handler to return a
@@ -26,6 +30,21 @@ type fakeProv struct {
 // back through this handler.
 func (f *fakeProv) MCPHandler(_ provision.Context) provision.MCPHandler {
 	return &fakeMCPHandler{servers: f.mcpInstalled}
+}
+
+// AgentDir implements provision.AgentDirProvider. Returns agentDirVal
+// when set, allowing per-test control of the prefix-rewrite path.
+func (f *fakeProv) AgentDir(_ provision.Context) string { return f.agentDirVal }
+
+// ReadHooks implements provision.HookInstaller.
+func (f *fakeProv) ReadHooks(_ provision.Context) ([]provision.Hook, error) {
+	return append([]provision.Hook{}, f.storedHooks...), nil
+}
+
+// WriteHooks implements provision.HookInstaller.
+func (f *fakeProv) WriteHooks(_ provision.Context, _ []provision.Hook, desired []provision.Hook) error {
+	f.storedHooks = desired
+	return nil
 }
 
 var theFakeProv = &fakeProv{
@@ -81,6 +100,8 @@ func fakeProvReset(t *testing.T) {
 	t.Helper()
 	theFakeProv.Reset()
 	theFakeProv.mcpInstalled = nil
+	theFakeProv.storedHooks = nil
+	theFakeProv.agentDirVal = ""
 }
 
 // setupProvisionConfig writes a config.yaml that registers a "work"

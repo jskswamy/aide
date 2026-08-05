@@ -203,6 +203,37 @@ func TestAdopt_NothingToDo(t *testing.T) {
 	}
 }
 
+// TestAdoptHookRewritesAgentDirPrefix verifies that when a hook
+// command starts with agentDir + "/", adopt rewrites the stored
+// command to use the "{agent_dir}" placeholder instead.
+func TestAdoptHookRewritesAgentDirPrefix(t *testing.T) {
+	fakeProvReset(t)
+	home := setupProvisionConfig(t, nil, nil, nil, nil)
+
+	theFakeProv.agentDirVal = "/Users/u/.claude-work"
+	theFakeProv.storedHooks = []provision.Hook{
+		{Event: "pre_tool", Command: "/Users/u/.claude-work/hooks/cbm-gate"},
+	}
+
+	out, err := runAdoptCmd(t, "", "--context", "work", "--yes")
+	if err != nil {
+		t.Fatalf("execute: %v\n%s", err, out)
+	}
+
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "{agent_dir}/hooks/cbm-gate") {
+		t.Errorf("expected rewritten command {agent_dir}/hooks/cbm-gate in config:\n%s", body)
+	}
+	if strings.Contains(body, "/Users/u/.claude-work/hooks/cbm-gate") {
+		t.Errorf("raw agentDir path must not appear in config:\n%s", body)
+	}
+}
+
 func contains(xs []string, target string) bool {
 	for _, x := range xs {
 		if x == target {

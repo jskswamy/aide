@@ -42,7 +42,8 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 	if err != nil {
 		return err
 	}
-	desired, err := provision.ResolveDesired(env.cfg, env.contextName, "", "")
+	agentDir := provision.ResolveAgentDir(env.prov, env.provCtx)
+	desired, err := provision.ResolveDesired(env.cfg, env.contextName, agentDir, env.provCtx.HomeDir)
 	if err != nil {
 		return err
 	}
@@ -295,10 +296,14 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 			}
 		}
 		if !alreadyPresent {
+			cmd := h.Command
+			if agentDir != "" && strings.HasPrefix(cmd, agentDir+"/") {
+				cmd = "{agent_dir}" + cmd[len(agentDir):]
+			}
 			env.cfg.Hooks[h.Event] = append(existing, config.HookEntry{
 				Name:    hookCommandBasename(h.Command),
 				Matcher: h.Matcher,
-				Command: h.Command,
+				Command: cmd,
 				Timeout: h.Timeout,
 			})
 		}

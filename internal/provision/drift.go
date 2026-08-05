@@ -31,7 +31,7 @@ const (
 //
 // Both signals share the same DriftConfigChanged kind because the
 // user-facing remediation is identical: run `aide sync`.
-func DriftStatus(cfg *config.Config, cfgPath, statePath, contextName string) (DriftKind, error) {
+func DriftStatus(cfg *config.Config, cfgPath, statePath, contextName, agentDir, homeDir string) (DriftKind, error) {
 	st, err := LoadState(statePath)
 	if err != nil {
 		return DriftNone, err
@@ -54,7 +54,7 @@ func DriftStatus(cfg *config.Config, cfgPath, statePath, contextName string) (Dr
 
 	// Shortfall: declared items not yet recorded as managed. Cheap
 	// in-process check — no agent poll.
-	desired, err := ResolveDesired(cfg, contextName, "", "")
+	desired, err := ResolveDesired(cfg, contextName, agentDir, homeDir)
 	if err != nil {
 		// Unknown context or malformed config — leave drift silent;
 		// the rest of `aide which` will surface the real error.

@@ -2,6 +2,18 @@
 
 ### Fix
 
+#### DriftStatus no longer reports false drift for {agent_dir} hook commands
+
+After `aide adopt` rewrites a hook command to use `{agent_dir}` and sync runs,
+`aide status` / `aide which` previously showed perpetual "config changed since
+last sync" because the drift check compared the unresolved template
+(`{agent_dir}/hooks/foo`) against the managed resolved path
+(`/Users/name/.claude/hooks/foo`).
+
+`DriftStatus` now receives `agentDir` and `homeDir` from its call site and
+passes them to `ResolveDesired`, producing a fully resolved desired set that
+matches managed state correctly.
+
 #### Plugin sync is now self-healing for project-scope and stale-index errors
 
 Two error patterns previously blocked `aide sync` from cleaning up managed

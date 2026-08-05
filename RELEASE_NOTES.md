@@ -2,6 +2,18 @@
 
 ### Fix
 
+#### Managed state with tilde-form hook paths no longer triggers spurious ops
+
+Hook entries in managed state written before path normalization was introduced
+used tilde-form paths (`~/.claude/hooks/foo`). After upgrading, `aide sync`
+would generate uninstall ops for those stale entries and no matching install
+ops (because the installed hooks appeared as already present in absolute form).
+Running sync would delete hooks from settings.json without re-adding them.
+
+`ComputePlan` and `hasShortfall` now expand tilde paths in managed-state hook
+commands before computing keys, so old tilde-form entries match the new
+absolute-form desired and installed entries. No migration sync required.
+
 #### DriftStatus no longer reports false drift for {agent_dir} hook commands
 
 After `aide adopt` rewrites a hook command to use `{agent_dir}` and sync runs,

@@ -221,6 +221,23 @@ type TemplateVar struct {
 // Drives CLI help and interactive prompts.
 var HookTemplateVars = []TemplateVar{
 	{Name: "agent", Description: "replaced with the agent name for each context"},
+	{Name: "agent_dir", Description: "replaced with the agent's config directory for each context"},
+}
+
+// AgentDirProvider is implemented by drivers that know the per-context
+// config directory for their agent (e.g. Claude's CLAUDE_CONFIG_DIR).
+// Drivers that don't implement this return "" via ResolveAgentDir.
+type AgentDirProvider interface {
+	AgentDir(ctx Context) string
+}
+
+// ResolveAgentDir returns the agent's config directory for ctx if prov
+// implements AgentDirProvider, or "" otherwise.
+func ResolveAgentDir(prov Provisioner, ctx Context) string {
+	if p, ok := prov.(AgentDirProvider); ok {
+		return p.AgentDir(ctx)
+	}
+	return ""
 }
 
 // HookInstaller is the file-edit interface for hook management. Drivers

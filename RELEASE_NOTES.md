@@ -1,6 +1,40 @@
-## v2.1.0 (2026-08-04)
+## Unreleased
 
 ### Fix
+
+#### aide sync no longer reinstalls managed MCP servers every run
+
+When a project-level `.mcp.json` declares an MCP server by the same name as
+one aide manages at user scope, `claude mcp get <name>` returns the
+project-scope entry. The User-scope filter then drops it, leaving the server
+absent from the installed map, so every sync generated a fresh install op
+even though aide had already installed the server.
+
+The planner now skips the install if the server is already in managed state,
+treating managed as the authoritative source when the get query is shadowed by
+a higher-precedence scope.
+
+- Fixes `+ install mcp <name>` reappearing after every `aide sync`
+- A new `TestComputePlanMCPSkipsInstallWhenManaged` test covers the scenario
+
+#### aide adopt no longer corrupts config with name-only marketplace keys
+
+Adopting a marketplace whose key is a bare name (e.g. `rfctl-local` rather
+than `owner/repo` or a URL) wrote an invalid entry into `config.yaml`. On
+the next run, `ValidatePlugins` rejected the config with a shape error.
+
+The fix skips name-only keys during marketplace adoption and prints a note
+telling the user to add the entry manually with a proper repo path.
+
+#### aide sync hook plan shows correct per-matcher labels
+
+Hook operations in the sync plan were missing the matcher segment in their
+display name. Hooks that share event and command but differ by matcher (e.g.
+`session_start startup` vs `session_start compact`) appeared identical in the
+output, giving the impression of duplicates.
+
+The `hookOpName` helper now includes the matcher when non-empty, producing
+`session_start:compact:~/.claude/hooks/cbm-session-reminder` style labels.
 
 #### Claude Code image paste (Ctrl+V) now works inside aide sandbox
 
@@ -14,6 +48,22 @@ Claude module rules. The entry is scoped to the Claude agent only; no
 other sandboxed processes gain clipboard access.
 
 ### Feature
+
+#### aide adopt now promotes unmanaged hooks into config
+
+`aide adopt` previously handled plugins, MCP servers, and marketplaces but
+left hooks untouched. Hooks installed directly in Claude's settings (e.g.
+via `claude hooks add`) were visible in `aide sync` as unmanaged but had no
+path to adoption.
+
+`aide adopt` now discovers, prompts for, and records hooks. Adopted hooks
+are written to the top-level `hooks:` map in `config.yaml` (so they apply
+across contexts) and marked as managed in state so future syncs do not
+surface them as unmanaged.
+
+- Works for any agent that implements `provision.HookInstaller`
+- Hooks are deduplicated by `event+matcher+command` key before writing
+- `--yes` flag adopts all unmanaged hooks without prompting
 
 #### aide statusline: live session state in your terminal
 

@@ -128,6 +128,14 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 	for key, m := range desired.MCPServers {
 		cur, present := installed.MCPServers[key]
 		if !present {
+			// If aide already managed this server, it may be shadowed by a
+			// project-scope entry (e.g. in .mcp.json) that causes
+			// InstalledMCPServers to return the project-scope variant which
+			// our User-scope filter then drops. Trust managed state rather
+			// than reinstalling every sync.
+			if _, wasManaged := managed.MCPServers[key]; wasManaged {
+				continue
+			}
 			mm := m
 			installs = append(installs, Op{
 				Kind: KindMCP, OpKind: OpInstall, Name: key, MCP: &mm,

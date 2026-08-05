@@ -95,6 +95,29 @@ func TestComputePlanMCPUpdate(t *testing.T) {
 	}
 }
 
+func TestComputePlanMCPSkipsInstallWhenManaged(t *testing.T) {
+	// When an MCP server is desired and managed but not visible in installed
+	// (e.g. shadowed by a project-scope entry), ComputePlan must not
+	// generate a reinstall op.
+	desired := provision.Desired{
+		MCPServers: map[string]provision.MCPServer{
+			"1mcp": {Key: "1mcp", URL: "http://127.0.0.1:3050/mcp"},
+		},
+	}
+	installed := provision.Installed{
+		MCPServers: map[string]provision.MCPServer{}, // shadowed — not returned by InstalledMCPServers
+	}
+	managed := provision.ContextState{
+		MCPServers: map[string]provision.ManagedItem{"1mcp": {}},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "default"}, desired, installed, managed)
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindMCP && op.OpKind == provision.OpInstall {
+			t.Errorf("unexpected install op for managed+shadowed MCP server: %+v", op)
+		}
+	}
+}
+
 func TestComputePlanInstallsMarketplaceFirst(t *testing.T) {
 	desired := provision.Desired{
 		Marketplaces: map[string]provision.Marketplace{

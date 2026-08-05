@@ -14,6 +14,17 @@ into hook command substitution. When non-empty, `agentDir` replaces
 - Extends `provision.ResolveDesired` signature to accept `agentDir, homeDir string`
 - Updates all six call sites in `cmd/aide/` and `internal/provision/drift.go`
 
+#### AgentDirProvider interface enables drivers to advertise per-context config directory
+
+Drivers can now implement `AgentDirProvider` to declare their agent's per-context
+config directory (e.g. Claude's `CLAUDE_CONFIG_DIR`). The `ResolveAgentDir` helper
+returns the directory if implemented, or "" otherwise, enabling hook commands to
+reference `{agent_dir}` as an absolute path to the agent's profile.
+
+- Adds `provision.AgentDirProvider` interface with `AgentDir(ctx Context) string` method
+- Adds `provision.ResolveAgentDir(prov Provisioner, ctx Context) string` helper
+- Registers `{agent_dir}` in `HookTemplateVars` for CLI help and interactive prompts
+
 ### Fix
 
 #### aide sync no longer reinstalls managed MCP servers every run

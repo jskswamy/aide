@@ -52,3 +52,12 @@ func TestKindHookString(t *testing.T) {
 		t.Errorf("KindHook.String() = %q, want %q", provision.KindHook.String(), "hook")
 	}
 }
+
+func TestResolveAgentDirReturnsEmptyWhenNotImplemented(t *testing.T) {
+	// DriverBase does not implement AgentDirProvider; result must be "".
+	var base provision.DriverBase
+	got := provision.ResolveAgentDir(base, provision.Context{HomeDir: "/home/u"})
+	if got != "" {
+		t.Errorf("ResolveAgentDir for non-provider = %q, want \"\"", got)
+	}
+}

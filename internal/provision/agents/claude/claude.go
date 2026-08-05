@@ -113,21 +113,47 @@ func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, e
 	return out, nil
 }
 
-// InstallPlugin invokes `claude plugin install <ref>`. The ref shape
-// is `<name>@<marketplace>` per Claude docs.
+// InstallPlugin invokes `claude plugin install <ref>`. If the install fails
+// because the local marketplace index is stale ("may be out of date"), it
+// updates the marketplace index and retries once. The marketplace name is
+// extracted from the `@<marketplace>` suffix of p.Name.
 func (d *Driver) InstallPlugin(pctx provision.Context, p provision.Plugin) error {
-	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+	err := provision.RunCLI(context.Background(), d.runner, pctx.Env,
 		"claude plugin install "+p.Name,
 		"claude", []string{"plugin", "install", p.Name})
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "may be out of date") {
+		if marketplace := marketplaceFromPluginName(p.Name); marketplace != "" {
+			// Ignore update errors — the retry is the real signal.
+			_, _, _, _ = d.runner.Run(context.Background(), pctx.Env,
+				"claude", "plugin", "marketplace", "update", marketplace)
+			return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+				"claude plugin install "+p.Name,
+				"claude", []string{"plugin", "install", p.Name})
+		}
+	}
+	return err
+}
+
+// marketplaceFromPluginName extracts the marketplace name from the
+// `<plugin>@<marketplace>` suffix. Returns "" for bare plugin names.
+func marketplaceFromPluginName(name string) string {
+	if i := strings.LastIndexByte(name, '@'); i > 0 {
+		return name[i+1:]
+	}
+	return ""
 }
 
 // UninstallPlugin invokes `claude plugin uninstall <ref>`. Tolerates
-// "not installed" / "not found" stderr for rollback safety.
+// "not installed" / "not found" / "project scope" stderr for rollback safety
+// and for plugins that were installed at project scope (aide stops tracking them).
 func (d *Driver) UninstallPlugin(pctx provision.Context, name string) error {
 	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
 		"claude plugin uninstall "+name,
 		"claude", []string{"plugin", "uninstall", name},
-		provision.DefaultTolerateStderr...)
+		append(provision.DefaultTolerateStderr, "project scope")...)
 }
 
 // claudeMarketplaceEntry mirrors the shape of one element from

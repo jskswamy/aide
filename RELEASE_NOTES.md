@@ -86,16 +86,24 @@ output, giving the impression of duplicates.
 The `hookOpName` helper now includes the matcher when non-empty, producing
 `session_start:compact:~/.claude/hooks/cbm-session-reminder` style labels.
 
-#### Claude Code image paste (Ctrl+V) now works inside aide sandbox
+#### Clipboard access is now its own opt-in capability (fixes copy-out regression)
 
-The macOS sandbox blocked `com.apple.pasteboard.1`, the per-user mach
-service that `osascript` uses to read clipboard data. Claude Code uses
-osascript to detect and read PNG image data on Ctrl+V, so pasting
-screenshots silently failed with "clipboard empty" when running via `aide`.
+The mach-lookup allow added to fix Claude Code's Ctrl+V image paste only
+granted `com.apple.pasteboard.1`, one of three Mach services `pbcopy`
+needs. Without the other two (`com.apple.lsd.mapdb` and
+`com.apple.lsd.modifydb`, both Launch Services type lookups needed when
+writing a pasteboard flavor), `pbcopy` exited 0 but silently failed to
+write to the real host pasteboard, breaking any clipboard fallback logic
+that trusted that exit code. Copying text out of the sandbox stopped
+working while paste (a pure read) kept working.
 
-The fix adds a mach-lookup allow for `com.apple.pasteboard.1` to the
-Claude module rules. The entry is scoped to the Claude agent only; no
-other sandboxed processes gain clipboard access.
+Clipboard access is now the `clipboard` capability
+(`internal/capability/builtin.go`), grants all three required Mach
+services, and is available to every agent, not just Claude.
+
+**Breaking change:** clipboard access is opt-in. If you relied on Claude
+Code image paste working automatically, add `clipboard` to your context's
+`capabilities:` list or pass `--with clipboard`.
 
 ### Feature
 

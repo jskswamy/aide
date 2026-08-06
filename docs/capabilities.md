@@ -74,6 +74,7 @@ orchestration, infrastructure tools, language runtimes, and developer tools.
 |------------|----------------|-------|-------------|
 | `github` | GitHub CLI and credentials | `~/.config/gh/` | `GITHUB_TOKEN`, `GH_TOKEN` |
 | `gpg` | GPG keys and signing | `~/.gnupg/` | `GNUPGHOME` |
+| `clipboard` | Read/write access to the system clipboard (macOS only) | - | - |
 
 Run `aide cap list` to see all available capabilities including any custom ones
 you've defined. Run `aide cap show <name>` to inspect a specific capability's

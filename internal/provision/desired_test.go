@@ -341,6 +341,36 @@ contexts:
 	}
 }
 
+func TestResolveDesiredNormalizesWildcardMatcher(t *testing.T) {
+	// matcher: '*' in config means "match all" and must normalize to "" so that
+	// HookKey comparisons against ReadHooks output (which returns "" for entries
+	// with no matcher field in settings.json) match correctly. Without this
+	// normalization, aide sync generates a perpetual install op for every sync.
+	y := `
+hooks:
+  SubagentStart:
+    - matcher: "*"
+      command: /usr/local/bin/my-hook
+contexts:
+  default:
+    agent: claude
+`
+	var cfg config.Config
+	if err := yaml.NewDecoder(strings.NewReader(y)).Decode(&cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	desired, err := provision.ResolveDesired(&cfg, "default", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desired.Hooks) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(desired.Hooks))
+	}
+	if desired.Hooks[0].Matcher != "" {
+		t.Errorf("matcher = %q, want \"\" (normalised from \"*\")", desired.Hooks[0].Matcher)
+	}
+}
+
 func TestResolveDesiredExpandsTilde(t *testing.T) {
 	y := `
 hooks:

@@ -221,6 +221,26 @@ func TestComputePlanHookReinstallWhenManagedButMissingFromAgent(t *testing.T) {
 	}
 }
 
+func TestComputePlanHookWildcardMatcherEqualsNoMatcher(t *testing.T) {
+	// A hook written with matcher:"*" in settings.json (by an older aide version
+	// or a user) must be treated as equivalent to a desired hook with no matcher
+	// ("" = match-all). Without this normalization the plan perpetually generates
+	// an install op because "*" ≠ "" as a string.
+	installed := provision.Installed{
+		Hooks: []provision.Hook{{Event: "SubagentStart", Matcher: "*", Command: "/a/hooks/remind"}},
+	}
+	desired := provision.Desired{
+		Hooks: []provision.Hook{{Event: "SubagentStart", Matcher: "", Command: "/a/hooks/remind"}},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "work"}, desired, installed, provision.ContextState{})
+
+	for _, op := range plan.Ops {
+		if op.Kind == provision.KindHook {
+			t.Errorf("expected no hook ops (installed * == desired empty), got %+v", op)
+		}
+	}
+}
+
 func TestComputePlanHookAdoptionCandidate(t *testing.T) {
 	installed := provision.Installed{
 		Hooks: []provision.Hook{{Event: "pre_tool", Matcher: "shell", Command: "user-hook"}},

@@ -176,7 +176,7 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 	managedHookSet := map[string]bool{}
 	for _, mh := range managed.Hooks {
 		expandedCmd := ExpandPath(mh.Command, ctx.HomeDir)
-		managedHookSet[HookKey(mh.Event, mh.Matcher, expandedCmd)] = true
+		managedHookSet[HookKey(mh.Event, normalizeHookMatcher(mh.Matcher), expandedCmd)] = true
 	}
 	desiredHookSet := map[string]bool{}
 	for _, h := range desired.Hooks {
@@ -184,7 +184,7 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 	}
 	installedHookSet := map[string]bool{}
 	for _, h := range installed.Hooks {
-		installedHookSet[HookKey(h.Event, h.Matcher, h.Command)] = true
+		installedHookSet[HookKey(h.Event, normalizeHookMatcher(h.Matcher), h.Command)] = true
 	}
 	// desired + not installed → install (also covers managed+desired+missing in agent)
 	for _, h := range desired.Hooks {
@@ -200,11 +200,12 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 			Hook:   &hh,
 		})
 	}
-	// managed + not desired → uninstall (expand command for comparison)
+	// managed + not desired → uninstall (expand command and normalise matcher for comparison)
 	for _, mh := range managed.Hooks {
 		expandedCmd := ExpandPath(mh.Command, ctx.HomeDir)
-		if !desiredHookSet[HookKey(mh.Event, mh.Matcher, expandedCmd)] {
-			h := Hook{Event: mh.Event, Matcher: mh.Matcher, Command: expandedCmd}
+		normMatcher := normalizeHookMatcher(mh.Matcher)
+		if !desiredHookSet[HookKey(mh.Event, normMatcher, expandedCmd)] {
+			h := Hook{Event: mh.Event, Matcher: normMatcher, Command: expandedCmd}
 			uninstalls = append(uninstalls, Op{
 				Kind:   KindHook,
 				OpKind: OpUninstall,
@@ -215,7 +216,7 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 	}
 	// installed + not managed + not desired → OpIgnore (adoption candidate)
 	for _, h := range installed.Hooks {
-		key := HookKey(h.Event, h.Matcher, h.Command)
+		key := HookKey(h.Event, normalizeHookMatcher(h.Matcher), h.Command)
 		if desiredHookSet[key] || managedHookSet[key] {
 			continue
 		}

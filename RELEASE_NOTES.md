@@ -2,37 +2,42 @@
 
 ### Fix
 
-#### hook add help and interactive prompt now list {agent_dir} template variable
+#### aide sync no longer perpetually reinstalls hooks with explicit matchers
 
-The help text for `aide hook add` and the interactive command prompt
-previously listed only `{agent}` as a template variable. `{agent_dir}` was
-registered in `HookTemplateVars` but missing from both display points.
+When `config.yaml` declares hooks with matchers such as `Grep|Glob`,
+`compact`, `startup`, or `'*'`, `aide sync` generated a fresh
+`+ install hook` operation on every run even after the hook was already
+installed in `settings.json`.
 
-Both now list `{agent_dir}` (replaced with the agent's config directory).
+Root cause: `WriteHooks` used `claudeMatcherMap[h.Matcher]` to translate
+aide-internal matcher names to Claude Code's native names. The map only
+contains `shell -> Bash`; every other matcher produced the zero-value `""`
+and was written to `settings.json` without a matcher field. On the next
+read, `ReadHooks` returned `matcher: ""`, causing a HookKey mismatch
+against the desired set (which kept the original matcher) on every sync.
+A related gap in `ComputePlan` meant the `'*'` wildcard read back from
+`settings.json` was never normalized to the same "match all" sentinel
+used for desired and managed hooks, so it also looked perpetually
+out of sync.
 
-#### Managed state with tilde-form hook paths no longer triggers spurious ops
+Three fixes address this:
 
-Hook entries in managed state written before path normalization was introduced
-used tilde-form paths (`~/.claude/hooks/foo`). After upgrading, `aide sync`
-would generate uninstall ops for those stale entries and no matching install
-ops (because the installed hooks appeared as already present in absolute form).
-Running sync would delete hooks from settings.json without re-adding them.
+- `WriteHooks` now uses `toNativeMatcher`, which passes through any
+  matcher not explicitly in `claudeMatcherMap` unchanged. Only aide-
+  internal shorthands (currently only `shell`) are translated.
+- `normalizeHookMatcher` converts the `'*'` wildcard to `''` consistently
+  across desired, managed, *and* installed hook comparisons, so the
+  "match all" sentinel always matches an entry with no matcher field.
+- `WriteHooks` bucket grouping now uses a `bucketRefs` map instead of
+  `buckets[len-1]`. When two hooks share the same event+matcher but
+  differ in command path (e.g. both contexts declare a `compact` hook),
+  the old code appended the second command to whichever bucket was last
+  in the array rather than the correct one, silently misrouting commands
+  into the wrong matcher bucket in settings.json.
 
-`ComputePlan` and `hasShortfall` now expand tilde paths in managed-state hook
-commands before computing keys, so old tilde-form entries match the new
-absolute-form desired and installed entries. No migration sync required.
-
-#### DriftStatus no longer reports false drift for {agent_dir} hook commands
-
-After `aide adopt` rewrites a hook command to use `{agent_dir}` and sync runs,
-`aide status` / `aide which` previously showed perpetual "config changed since
-last sync" because the drift check compared the unresolved template
-(`{agent_dir}/hooks/foo`) against the managed resolved path
-(`/Users/name/.claude/hooks/foo`).
-
-`DriftStatus` now receives `agentDir` and `homeDir` from its call site and
-passes them to `ResolveDesired`, producing a fully resolved desired set that
-matches managed state correctly.
+The removal path in `WriteHooks` also accepts the empty-matcher form of a
+hook when removing managed entries, so hooks written by older aide versions
+(without a matcher field) are cleaned up during the next sync.
 
 #### Plugin sync is now self-healing for project-scope and stale-index errors
 
@@ -50,64 +55,6 @@ state, causing the same errors to reappear on every run:
   If the plugin name has no `@marketplace` suffix, the error is returned
   as-is without a retry.
 
-### Feature
-
-#### Test coverage: aide adopt hook agentDir prefix rewrite
-
-Added `TestAdoptHookRewritesAgentDirPrefix` to verify that when a hook
-command starts with the agent directory path, `aide adopt` rewrites it to
-`{agent_dir}/...` in `config.yaml`. Extends `fakeProv` (the shared test
-double) with `AgentDirProvider` and `HookInstaller` so the agentDir prefix
-path can be exercised without a new registered agent name.
-
-#### aide sync and adopt now wire real agentDir values for hook expansion
-
-`aide sync` and `aide adopt` now pass the real `agentDir` and `homeDir` values
-to `provision.ResolveDesired`, enabling hook command path expansion during
-reconciliation. When adopting hooks, commands with paths beginning with the agent
-directory are automatically rewritten to use `{agent_dir}` tokens in the config,
-making the configuration portable across installations.
-
-- `sync.go` calls `ResolveAgentDir` to get the driver's config directory and passes it to `ResolveDesired`
-- `adopt.go` does the same, plus auto-replaces adopted hook commands prefixed with `agentDir` with `{agent_dir}` tokens
-- Adopted hooks with `{agent_dir}` paths remain portable when later synced to other agent installations
-
-#### Hook commands now support {agent_dir} and ~/ path expansion
-
-`ResolveDesired` accepts two new parameters (`agentDir`, `homeDir`) that feed
-into hook command substitution. When non-empty, `agentDir` replaces
-`{agent_dir}` tokens in hook commands, and `homeDir` expands `~/` and
-`$HOME/` prefixes to absolute paths. All existing callers pass `"", ""`
-(no-op), preserving current behaviour until a later task wires in real values.
-
-- Adds exported `provision.ExpandPath(s, homeDir string) string`
-- Extends `provision.ResolveDesired` signature to accept `agentDir, homeDir string`
-- Updates all six call sites in `cmd/aide/` and `internal/provision/drift.go`
-
-#### AgentDirProvider interface enables drivers to advertise per-context config directory
-
-Drivers can now implement `AgentDirProvider` to declare their agent's per-context
-config directory (e.g. Claude's `CLAUDE_CONFIG_DIR`). The `ResolveAgentDir` helper
-returns the directory if implemented, or "" otherwise, enabling hook commands to
-reference `{agent_dir}` as an absolute path to the agent's profile.
-
-- Adds `provision.AgentDirProvider` interface with `AgentDir(ctx Context) string` method
-- Adds `provision.ResolveAgentDir(prov Provisioner, ctx Context) string` helper
-- Registers `{agent_dir}` in `HookTemplateVars` for CLI help and interactive prompts
-
-#### Claude driver implements AgentDirProvider; ReadHooks expands tilde paths
-
-The Claude driver now satisfies `AgentDirProvider`: `AgentDir` returns
-`CLAUDE_CONFIG_DIR` when set (profile contexts) or `~/.claude` otherwise.
-`ReadHooks` now calls `ExpandPath` on every command it reads from
-`settings.json`, converting `~/` and `$HOME/` prefixes to absolute paths
-before returning them to the engine.
-
-- Adds `(*Driver).AgentDir(ctx provision.Context) string` to `claude.go`
-- Applies `provision.ExpandPath(cmd, ctx.HomeDir)` in `ReadHooks` inside `hooks.go`
-
-### Fix
-
 #### aide sync no longer reinstalls managed MCP servers every run
 
 When a project-level `.mcp.json` declares an MCP server by the same name as
@@ -119,9 +66,6 @@ even though aide had already installed the server.
 The planner now skips the install if the server is already in managed state,
 treating managed as the authoritative source when the get query is shadowed by
 a higher-precedence scope.
-
-- Fixes `+ install mcp <name>` reappearing after every `aide sync`
-- A new `TestComputePlanMCPSkipsInstallWhenManaged` test covers the scenario
 
 #### aide adopt no longer corrupts config with name-only marketplace keys
 
@@ -154,6 +98,28 @@ Claude module rules. The entry is scoped to the Claude agent only; no
 other sandboxed processes gain clipboard access.
 
 ### Feature
+
+#### Hook commands support {agent_dir} and ~/ path expansion
+
+Hook commands in `config.yaml` can now reference `{agent_dir}` (the
+agent's per-context config directory, e.g. Claude's `CLAUDE_CONFIG_DIR`)
+and `~/` / `$HOME/` paths, resolved to absolute paths wherever hooks are
+compared: sync, adopt, and drift checks.
+
+- Drivers implement the new `AgentDirProvider` interface to advertise
+  their config directory; `ResolveAgentDir` returns it if implemented,
+  or `""` otherwise. The Claude driver returns `CLAUDE_CONFIG_DIR` when
+  set (profile contexts) or `~/.claude` otherwise.
+- `provision.ExpandPath` expands `{agent_dir}` and `~/`/`$HOME/` prefixes
+  in hook commands. `ResolveDesired`, `ReadHooks`, and `DriftStatus` all
+  apply it consistently, so desired, installed, and managed hook paths
+  compare correctly and `aide status` / `aide which` no longer report
+  false drift for `{agent_dir}` hooks.
+- `aide adopt` rewrites hook commands prefixed with the agent directory
+  to `{agent_dir}` tokens automatically, keeping adopted config portable
+  across installations.
+- `aide hook add`'s help text and interactive prompt list `{agent_dir}`
+  alongside `{agent}` as an available template variable.
 
 #### aide adopt now promotes unmanaged hooks into config
 

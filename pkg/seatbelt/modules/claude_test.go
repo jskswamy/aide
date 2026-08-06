@@ -93,12 +93,3 @@ func TestClaudeAgent_Name(t *testing.T) {
 		t.Errorf("expected 'Claude Agent', got %q", name)
 	}
 }
-
-func TestClaudeAgent_ClipboardMachService(t *testing.T) {
-	ctx := &seatbelt.Context{HomeDir: "/home/user"}
-	result := ClaudeAgent().Rules(ctx)
-	got := rulesToString(result.Rules)
-	if !strings.Contains(got, "com.apple.pasteboard.1") {
-		t.Error("expected com.apple.pasteboard.1 in Claude module rules for clipboard image paste")
-	}
-}

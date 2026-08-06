@@ -56,17 +56,6 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 )`),
 	)
 
-	// osascript reads clipboard images via the per-user pasteboard server.
-	// com.apple.pasteboard.1 is the mach service for slot 1 (the standard
-	// single-user slot). Without it the sandbox blocks the clipboard read
-	// and Claude Code reports "clipboard empty" on Ctrl+V image paste.
-	rules = append(rules,
-		seatbelt.SectionAllow("osascript clipboard access"),
-		seatbelt.AllowRule(`(allow mach-lookup
-    (global-name "com.apple.pasteboard.1")
-)`),
-	)
-
 	result := seatbelt.GuardResult{Rules: rules}
 	augmentLinuxPaths(ctx, &result)
 	return result

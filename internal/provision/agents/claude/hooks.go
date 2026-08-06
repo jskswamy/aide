@@ -24,6 +24,17 @@ var claudeMatcherMap = map[string]string{
 	"shell": "Bash",
 }
 
+// toNativeMatcher returns the Claude Code native matcher for an aide matcher.
+// Known aide-internal names are translated via claudeMatcherMap; all others
+// pass through unchanged. The empty string is the "match all" sentinel and
+// is written as no matcher field in settings.json.
+func toNativeMatcher(m string) string {
+	if n, ok := claudeMatcherMap[m]; ok {
+		return n
+	}
+	return m
+}
+
 func settingsPath(ctx provision.Context) string {
 	dir := ctx.Env["CLAUDE_CONFIG_DIR"]
 	if dir == "" {
@@ -94,7 +105,13 @@ func (d *Driver) WriteHooks(ctx provision.Context, prevManaged []provision.Hook,
 		if nativeEvent == "" {
 			nativeEvent = h.Event
 		}
-		removeSet[hookID{nativeEvent, claudeMatcherMap[h.Matcher], h.Command}] = true
+		nm := toNativeMatcher(h.Matcher)
+		removeSet[hookID{nativeEvent, nm, h.Command}] = true
+		if nm != "" {
+			// Backward compat: also remove the empty-matcher form written by
+			// older aide versions that dropped unknown matchers.
+			removeSet[hookID{nativeEvent, "", h.Command}] = true
+		}
 	}
 
 	// Remove prevManaged entries from every bucket.
@@ -126,17 +143,19 @@ func (d *Driver) WriteHooks(ctx provision.Context, prevManaged []provision.Hook,
 	}
 
 	// Add desired hooks, grouped by (nativeEvent, nativeMatcher).
+	// bucketRefs holds a direct reference to each created bucket map so
+	// that additional commands for the same (event, matcher) pair are
+	// appended to the correct entry rather than always to the last one.
 	type bucketKey struct{ event, matcher string }
-	added := map[bucketKey]bool{}
+	bucketRefs := map[bucketKey]map[string]interface{}{}
 	for _, h := range desired {
 		nativeEvent := claudeEventMap[h.Event]
 		if nativeEvent == "" {
 			nativeEvent = h.Event
 		}
-		nativeMatcher := claudeMatcherMap[h.Matcher]
+		nativeMatcher := toNativeMatcher(h.Matcher)
 		bk := bucketKey{nativeEvent, nativeMatcher}
-		if !added[bk] {
-			added[bk] = true
+		if _, exists := bucketRefs[bk]; !exists {
 			entry := map[string]interface{}{
 				"hooks": []interface{}{},
 			}
@@ -146,11 +165,11 @@ func (d *Driver) WriteHooks(ctx provision.Context, prevManaged []provision.Hook,
 			existing, _ := hooksObj[nativeEvent].([]interface{})
 			existing = append(existing, entry)
 			hooksObj[nativeEvent] = existing
+			bucketRefs[bk] = entry
 		}
-		buckets, _ := hooksObj[nativeEvent].([]interface{})
-		lastBucket, _ := buckets[len(buckets)-1].(map[string]interface{})
-		items, _ := lastBucket["hooks"].([]interface{})
-		lastBucket["hooks"] = append(items, map[string]interface{}{
+		bucket := bucketRefs[bk]
+		items, _ := bucket["hooks"].([]interface{})
+		bucket["hooks"] = append(items, map[string]interface{}{
 			"type":    "command",
 			"command": h.Command,
 		})

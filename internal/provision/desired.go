@@ -8,6 +8,18 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 )
 
+// normalizeHookMatcher converts the "*" wildcard to "" (empty = match all),
+// which is the canonical internal form. Claude Code's settings.json omits
+// the matcher field for "match all" entries, so ReadHooks returns "" for them.
+// Normalizing at config-read time keeps desired, installed, and managed keys
+// consistent across the plan/drift/state pipeline.
+func normalizeHookMatcher(m string) string {
+	if m == "*" {
+		return ""
+	}
+	return m
+}
+
 // ExpandPath converts ~/... and $HOME/... to absolute paths using homeDir.
 // All other paths are returned unchanged. homeDir="" is a no-op.
 func ExpandPath(s, homeDir string) string {
@@ -139,7 +151,7 @@ func ResolveDesired(cfg *config.Config, contextName, agentDir, homeDir string) (
 		for _, e := range entries {
 			desired.Hooks = append(desired.Hooks, Hook{
 				Event:   event,
-				Matcher: e.Matcher,
+				Matcher: normalizeHookMatcher(e.Matcher),
 				Command: substituteHookVars(e.Command, agentName, agentDir, homeDir),
 				Timeout: e.Timeout,
 			})

@@ -6,13 +6,24 @@
 
 Stop babysitting your agent.
 
-One command. Any agent. Sandboxed, reproducible, zero decision fatigue.
+One command. Any agent. Sandboxed, reproducible, macOS and Linux.
 
 ---
 
 You planned the work. You know what needs to happen. But instead of letting your agent execute, you're stuck evaluating every file read, every shell command, every network call. That's not autonomy - that's babysitting with extra steps.
 
-aide fixes three things:
+OS-native sandboxing fixes the catastrophic case - the agent physically can't touch your SSH keys or a production kubeconfig (your Kubernetes cluster credentials). But that's the floor, not the ceiling. Once a rogue write is off the table, you're still switching CLIs and env vars per agent, losing track of which sandbox mode is even active mid-session, leaking API keys into `.env` files, and reinstalling the same plugin set by hand on every new machine.
+
+aide bundles the sandbox with five other things below, all behind one command. It enforces the sandbox natively on both macOS (Seatbelt, Apple's kernel-level sandboxing) and Linux (Landlock + seccomp, with a bubblewrap fallback on older kernels) - equally supported, not macOS-first with Linux bolted on.
+
+aide covers six things:
+
+- **Sandbox** - OS-native guardrails, zero config, macOS and Linux
+- **Unified UX** - one command resolves the right agent, credentials, and capabilities per project
+- **Session visibility** - live sandbox and capability state in your statusline, not just at launch
+- **Reproducibility** - secrets encrypted at rest, config portable across machines and CI
+- **Provisioning** - declare your plugin set once, sync it everywhere, per profile
+- **Diagnostics** - `--diagnose` turns a cryptic agent failure into a redacted, shareable report
 
 ### Sandbox - stop choosing between scary and exhausting
 
@@ -36,7 +47,7 @@ aide    # agent launches sandboxed automatically
    🛡 sandbox: network outbound, code-only
 ```
 
-Code-only mode. Your agent can read your code, run tests, hit the network - but it physically cannot touch your SSH keys, cloud credentials, or browser data. 10 guards active by default, zero configuration.
+Code-only mode. Your agent can read your code, run tests, hit the network - but it physically cannot touch your SSH keys, cloud credentials, or browser data. 11 guards active by default - filesystem, network, credentials, cloud providers, toolchains, and common dev tools (full list in [docs/sandbox.md](docs/sandbox.md)) - zero configuration.
 
 **Ready to deploy?** Tell aide what you're doing:
 
@@ -57,7 +68,7 @@ aide --with docker k8s gcp  # debug cloud infra too
       ⚠ credentials exposed: GOOGLE_APPLICATION_CREDENTIALS
 ```
 
-Each capability unlocks exactly what the agent needs - nothing more. Docker gets registry creds. Kubernetes gets kubeconfig. GCP gets gcloud auth. Everything else stays locked.
+Each capability unlocks only the access that tool needs. Docker gets registry creds. Kubernetes gets kubeconfig. GCP gets gcloud auth. Everything else stays locked. Some capabilities also have to expose a credential as an environment variable rather than a scoped file path - aide flags those explicitly (see the ⚠ above) so you know what the agent can see.
 
 **Protect what matters:**
 
@@ -66,7 +77,7 @@ aide cap never-allow ~/.kube/prod-config
 aide cap never-allow --env PRODUCTION_DB_PASSWORD
 ```
 
-Now no capability - not even `k8s` - can ever read your production kubeconfig. The agent sees your dev and staging clusters but production is a hard wall:
+Now no capability - not even `k8s` - can ever read your production kubeconfig. `never-allow` paths are appended to the sandbox's own deny list, so this is enforced by the OS sandbox's deny-wins semantics, not just aide's own resolution logic - a capability that tries to grant broader access still can't override it. (On Linux, this holds under the bubblewrap backend; the Landlock backend can't deny a single file nested inside an already-granted directory - see [docs/capabilities.md](docs/capabilities.md#never_allow-the-hard-ceiling) for the platform-specific workaround.) The agent sees your dev and staging clusters but production is a hard wall:
 
 ```
 🔧 aide · work (claude)
@@ -98,7 +109,7 @@ aide cap create k8s-dev --extends k8s --deny ~/.kube/prod-config
 aide --with k8s-dev docker    # dev clusters only, production blocked
 ```
 
-19 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, `go`, `rust`, `python`, `ruby`, `java`, `github`, `gpg`, and more. Or define your own.
+23 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, `go`, `rust`, `python`, `ruby`, `java`, `github`, `gpg`, and more. Or define your own.
 
 ### Unified UX - one command, any agent
 
@@ -233,9 +244,9 @@ This works with any agent - aide resolves context and sandbox, then execs the ag
 1. Run `aide` in any project directory.
 2. aide matches the git remote URL and directory path against your config.
 3. It resolves the context: agent, credentials, capabilities, and sandbox policy.
-4. Secrets decrypt in-process via the sops Go library. Nothing hits disk.
+4. Secrets decrypt in-process via [sops](https://github.com/getsops/sops) (Mozilla's secrets-encryption tool) using [age](https://github.com/FiloSottile/age) keys. Nothing hits disk.
 5. Capabilities translate to sandbox rules - each `--with` flag unlocks specific tool access while keeping everything else locked.
-6. aide applies the sandbox via the platform-native enforcer - macOS Seatbelt or Linux Landlock (kernel ≥ 5.13, with full port enforcement on kernel ≥ 6.7) - and execs the agent inside it. When Landlock is unavailable, bubblewrap provides filesystem isolation. See [Supported Linux tier](docs/sandbox.md#supported-linux-tier-minimum-system-requirements) for details.
+6. aide applies the sandbox via the platform-native enforcer - macOS Seatbelt, or Linux Landlock + seccomp (kernel ≥ 5.13, with full network port enforcement on kernel ≥ 6.7) - and execs the agent inside it. When Landlock is unavailable, bubblewrap provides filesystem-only isolation. **If neither Landlock nor bubblewrap is available, aide logs a warning and launches the agent without OS-level isolation rather than refusing to run** - run `aide sandbox show` to confirm your active tier before trusting it. See [Supported Linux tier](docs/sandbox.md#supported-linux-tier-minimum-system-requirements) for details.
 
 No config file? aide detects your agent on PATH and launches it directly.
 
@@ -382,18 +393,7 @@ Secrets decrypt in-process at launch and never exist as plaintext on disk. See [
 
 ## Provisioning - stop reinstalling your plugins on every machine
 
-If you've ever set up a new laptop and spent an hour running
-`claude plugin install <foo>` ten times in a row, only to realise
-two weeks later that you forgot the `commit-tools` plugin on your
-work machine and that's why every commit message looks different
-from your personal machine - this section is for you.
-
-The same problem shows up across teammates. Onboarding a new
-engineer to the project means writing a setup README that lists
-"please install these plugins, then add this MCP server" and hoping
-they read past step 3. Six months later, half the team is on a
-different plugin set than the other half and nobody knows when it
-diverged.
+New machine means reinstalling every plugin by hand - miss one (say, `commit-tools`) and you won't notice until your commit messages look different from your other machine. Across a team it's the same drift, compounded: onboarding docs go stale, and six months later nobody's plugin set matches anyone else's.
 
 Declare it once in `config.yaml` and reconcile with one command:
 
@@ -445,7 +445,7 @@ aide handles the per-agent env quirks.
 See [docs/provisioning.md](docs/provisioning.md) for the full
 reference.
 
-## Reproducibility
+### Versioning your setup
 
 **Personal setup** tracked in git:
 
@@ -456,14 +456,18 @@ git init && git add -A && git commit -m "aide config"
 
 Encrypted secrets are safe to commit. Only holders of the age private key can decrypt.
 
-**Docker / CI:**
+**Docker / CI:** bake the config into the image, but inject the age key at runtime, not build time - an `ENV` or `ARG` with the key becomes part of the image's layer history. Requires the agent binary (e.g. `claude`) to be installed and on PATH.
 
 ```dockerfile
-# Requires the agent binary (e.g. claude) to be installed and on PATH.
 COPY aide-config/ /root/.config/aide/
-ENV SOPS_AGE_KEY=AGE-SECRET-KEY-1...
-RUN aide --agent claude -- -p "run tests"
 ```
+
+```bash
+docker run -e SOPS_AGE_KEY="$(cat ~/.config/sops/age/keys.txt)" your-image \
+  aide --agent claude -- -p "run tests"
+```
+
+Same idea in CI: store the key as a repository secret and pass it via env at job-run time. See [docs/deployment.md](docs/deployment.md) for the full GitHub Actions example.
 
 ## Diagnosing a failed run
 

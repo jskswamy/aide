@@ -27,10 +27,10 @@ Each team member clones the shared config repo:
 git clone git@github.com:your-org/aide-config.git ~/.config/aide
 ```
 
-Add each member's age public key as a recipient:
+Add each member's age public key as a recipient (they run `age-keygen -y ~/.config/sops/age/keys.txt` on their own machine to derive their public key from their private key, and send you the `age1...` output):
 
 ```sh
-aide secrets rotate work --add-key $(age-keygen -y ~/.config/aide/keys/alice.pub)
+aide secrets rotate work --add-key age1alicepubkey...
 ```
 
 Commit and push the re-encrypted secrets. Every team member decrypts with their own private key. No plaintext is ever shared.

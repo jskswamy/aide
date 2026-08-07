@@ -31,9 +31,11 @@ aide reads those capabilities and produces a sandbox profile that grants Docker 
 
 ## On by Default
 
-If no `sandbox:` block appears in your config, aide applies a default policy automatically. With 10 guards active out of the box, the sandbox covers filesystem, network, credentials, cloud providers, toolchains, and common development tools.
+If no `sandbox:` block appears in your config, aide applies a default policy automatically. With 11 guards active out of the box (see [Guard inventory](#guard-inventory) below for the full list), the sandbox covers filesystem, network, credentials, cloud providers, toolchains, and common development tools.
 
 Run `aide status` to see what is active for the current context.
+
+The table below covers the two settings you can tune directly at the top level; everything else (filesystem, credentials, cloud provider, toolchain access) is controlled by which guards and capabilities are active.
 
 | Category     | Default                  |
 |--------------|--------------------------|
@@ -172,15 +174,19 @@ Capabilities are the user-facing concept, but under the hood aide translates the
 
 ### Guard inventory
 
-aide ships with 10 built-in guards across two tiers:
+aide ships with 13 built-in guards across three tiers:
 
-**Always guards** (7) - cannot be disabled, form the baseline policy:
+**Always guards** (8) - cannot be disabled, form the baseline policy:
 
-`base`, `system-runtime`, `network`, `filesystem`, `keychain`, `node-toolchain`, `nix-toolchain`
+`base`, `system-runtime`, `network`, `filesystem`, `git-integration`, `keychain`, `node-toolchain`, `nix-toolchain`
 
 **Default guards** (3) - active out of the box, can be disabled with `unguard`:
 
 `project-secrets`, `dev-credentials`, `aide-secrets`
+
+**Opt-in guards** (2) - not active by default; enabled automatically when a capability that needs them is active (e.g. the `git-remote` and `ssh` capabilities):
+
+`git-remote`, `ssh`
 
 ### Guard commands
 
@@ -239,8 +245,9 @@ When neither is available, aide logs `aide: warning: OS-level sandboxing unavail
 
 ### Linux vs macOS differences
 
-- **Filesystem**: macOS Seatbelt enforces per-subpath rules including glob patterns. Landlock enforces directory-level rules (no per-file glob inside a writable directory).
+- **Filesystem**: macOS Seatbelt enforces per-subpath rules including glob patterns. Landlock enforces directory-level rules (no per-file glob inside a writable directory) - it cannot deny one file nested inside an already-granted directory; bubblewrap can. See the `never_allow` platform note in [docs/capabilities.md](capabilities.md#never_allow-the-hard-ceiling).
 - **Network**: Both enforce mode (outbound / none / unrestricted). Port allow/deny lists require Landlock ABI ≥ 4 on Linux; all ports apply on earlier kernels.
+- **Subprocess containment**: macOS Seatbelt denies `process-exec` directly in the profile. Linux additionally layers seccomp BPF plus a PID namespace to block subprocess spawning (`clone`/`fork`/`vfork`/`clone3`) when a context doesn't allow subprocesses.
 - **Diagnostics**: `aide sandbox test` on Linux prints a human-readable profile; on macOS it prints the raw `.sb` file.
 
 ## Debugging
@@ -285,7 +292,7 @@ If `dmesg | grep -i landlock` shows nothing but `/sys/kernel/security/lsm` lists
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `cursor-agent: permission denied` on `~/.cursor/` writes | Config dir not in writable set | Confirm `CURSOR_CONFIG_DIR` is unset or points to the correct dir; run `aide sandbox show --agent cursor-agent` to inspect granted paths. |
+| `cursor-agent: permission denied` on `~/.cursor/` writes | Config dir not in writable set | Confirm `CURSOR_CONFIG_DIR` is unset or points to the correct dir; run `aide sandbox show` (add `--context <name>` if you have multiple contexts) to inspect granted paths. |
 | `agent update` fails inside aide | Auto-update writes to `~/.local/share/cursor-agent/versions/` which is not writable inside the sandbox | Run `cursor-agent update` outside of aide (this is by design). |
 | `aide` does not detect cursor-agent | `cursor-agent` not on PATH | Confirm `which cursor-agent` resolves; the shorter `agent` symlink is not registered - use `cursor-agent` explicitly. |
 

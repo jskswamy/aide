@@ -124,7 +124,7 @@ exactly the right environment variables, and denies everything
 else. See [docs/capabilities.md](docs/capabilities.md) for the
 full reference.
 
-aide ships with 19 built-in capabilities:
+aide ships with 23 built-in capabilities:
 
 | Category | Capabilities |
 |----------|-------------|
@@ -183,15 +183,19 @@ manage.
 | default | active | Protects important data. On by default, can be disabled. |
 | opt-in | inactive | Extra restriction. Off by default, user enables. |
 
-**Built-in guards.** aide ships with 10 guards across two tiers:
+**Built-in guards.** aide ships with 13 guards across three tiers:
 
-- **Always guards (7):** `base`, `system-runtime`, `network`,
-  `filesystem`, `keychain`, `node-toolchain`, `nix-toolchain`.
-  These form the baseline policy and cannot be disabled.
+- **Always guards (8):** `base`, `system-runtime`, `network`,
+  `filesystem`, `git-integration`, `keychain`, `node-toolchain`,
+  `nix-toolchain`. These form the baseline policy and cannot be
+  disabled.
 
 - **Default guards (3):** `project-secrets`, `dev-credentials`,
   `aide-secrets`. Active out of the box, can be disabled with
   `unguard`.
+
+- **Opt-in guards (2):** `git-remote`, `ssh`. Inactive by default,
+  enabled automatically when a capability that needs them is active.
 
 **Guard resolution:**
 

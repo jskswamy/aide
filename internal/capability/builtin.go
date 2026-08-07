@@ -269,6 +269,13 @@ func init() {
 			},
 		},
 
+		// CLI Tools
+		"ccstatusline": {
+			Name:        "ccstatusline",
+			Description: "Beautiful highly customizable statusline for Claude Code CLI with powerline support, themes, and more.",
+			Readable:    []string{"~/.config/ccstatusline/settings.json"},
+		},
+
 		// Network
 		"network": {
 			Name:        "network",

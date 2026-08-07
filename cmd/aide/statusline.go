@@ -20,15 +20,20 @@ func statuslineCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "statusline [agent]",
 		Short:        "Render or install the aide statusline for a coding agent",
+		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			effectiveAgent := agent
+			if len(args) > 0 {
+				effectiveAgent = args[0]
+			}
 			if install || remove {
-				if agent == "" {
+				if effectiveAgent == "" {
 					return fmt.Errorf(`--agent is required with --install/--remove (or use "aide statusline <agent> --install")`)
 				}
-				return runStatuslineInstallRemove(cmd, agent, install, remove, contextName)
+				return runStatuslineInstallRemove(cmd, effectiveAgent, install, remove, contextName)
 			}
-			return runStatuslineRender(cmd, agent, modules)
+			return runStatuslineRender(cmd, effectiveAgent, modules)
 		},
 	}
 	cmd.Flags().StringVar(&agent, "agent", "", "Coding agent (default: auto-detected)")
@@ -87,18 +92,52 @@ func runStatuslineInstallRemove(cmd *cobra.Command, agent string, install, remov
 	return removeStatusline(cmd, pCtx, homeDir)
 }
 
-// runStatuslineRender resolves the agent and renders the requested modules
-// (or the full combined output when modules is empty) to stdout. Runs
-// identically whether stdin is piped (Claude Code invoking it on every
-// update) or a TTY (a human previewing the statusline directly) — the only
-// difference is how the agent gets resolved (see resolveStatuslineAgent).
+// validStatuslineModules are the module names renderStatuslineModules
+// understands. Kept in cfg.Order's canonical rendering order for use in
+// error messages.
+var validStatuslineModules = []string{"sandbox", "network", "caps", "trust", "context", "auto_approve"}
+
+// validateStatuslineModules returns an error naming the first unrecognized
+// module in modules, so a typo'd --module value (the primary use case is a
+// human hand-editing a third-party statusline composer's config) fails loud
+// instead of silently rendering nothing.
+func validateStatuslineModules(modules []string) error {
+	valid := make(map[string]bool, len(validStatuslineModules))
+	for _, m := range validStatuslineModules {
+		valid[m] = true
+	}
+	for _, m := range modules {
+		if !valid[m] {
+			return fmt.Errorf("unknown module %q (valid modules: %s)", m, strings.Join(validStatuslineModules, ", "))
+		}
+	}
+	return nil
+}
+
+// runStatuslineRender determines whether stdin is a TTY or a pipe and
+// delegates to runStatuslineRenderWithStdin. Split out so tests can drive
+// the TTY branch directly without needing real terminal I/O.
 func runStatuslineRender(cmd *cobra.Command, explicitAgent string, modules []string) error {
 	fi, statErr := os.Stdin.Stat()
 	isTTY := statErr != nil || (fi.Mode()&os.ModeCharDevice) != 0
+	return runStatuslineRenderWithStdin(cmd, explicitAgent, modules, isTTY, os.Stdin)
+}
+
+// runStatuslineRenderWithStdin resolves the agent and renders the requested
+// modules (or the full combined output when modules is empty) to stdout.
+// Runs identically whether stdin is piped (Claude Code invoking it on every
+// update) or a TTY (a human previewing the statusline directly) — the only
+// difference is how the agent gets resolved (see resolveStatuslineAgent).
+// isTTY and stdin are parameters (rather than reading os.Stdin directly) so
+// tests can exercise the TTY branch in-process.
+func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modules []string, isTTY bool, stdin io.Reader) error {
+	if err := validateStatuslineModules(modules); err != nil {
+		return err
+	}
 
 	var stdinData []byte
 	if !isTTY {
-		data, err := io.ReadAll(os.Stdin)
+		data, err := io.ReadAll(stdin)
 		if err != nil {
 			return fmt.Errorf("reading stdin: %w", err)
 		}

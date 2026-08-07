@@ -39,7 +39,7 @@ match:
   - path: ~/clients/**    # recursive glob
 ```
 
-**Remote rules** match the git remote URL. Override the default remote name with `remote_name`.
+**Remote rules** match the git remote URL. Override the default remote name (`origin`) with `remote_name`.
 
 ```yaml
 match:
@@ -53,13 +53,16 @@ match:
 
 aide scores every match rule and picks the highest-scoring context:
 
-| Match type | Base score | Tiebreaker |
-|------------|-----------|------------|
-| Exact path | 300 | + pattern length |
-| Glob path  | 200 | + pattern length |
-| Remote     | 100 | + pattern length |
+| Match type   | Base score | Tiebreaker |
+|--------------|-----------|------------|
+| Exact path   | 300 | + pattern length |
+| Exact remote | 250 | + pattern length |
+| Glob path    | 200 | + pattern length |
+| Glob remote  | 100 | + pattern length |
 
-Longer patterns beat shorter patterns within the same tier. If no rule matches, `default_context` is the fallback. A `.aide.yaml` project file wins over everything.
+An exact remote match (`remote: "github.com/acme/api"`) deliberately outranks a glob path match - it's more specific even though it's not a path rule. Longer patterns beat shorter patterns within the same tier. If no rule matches, `default_context` is the fallback.
+
+`.aide.yaml` does not add a fifth scoring tier - it's a field-by-field override merged on top of whichever context wins the scoring above (some fields, like `env`, merge additively; others replace only if set). See [Per-Project Override](#per-project-override) below.
 
 ## Per-Project Override
 

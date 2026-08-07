@@ -28,8 +28,9 @@ The sandbox remains deny-default. Capabilities punch precise holes in it.
 
 ## Built-in Capabilities
 
-aide ships with 19 built-in capabilities covering cloud providers, containers,
-orchestration, infrastructure tools, language runtimes, and developer tools.
+aide ships with 23 built-in capabilities covering cloud providers, containers,
+orchestration, infrastructure tools, language runtimes, developer tools, and
+network access.
 
 ### Cloud Providers
 
@@ -73,6 +74,7 @@ orchestration, infrastructure tools, language runtimes, and developer tools.
 | Capability | What it unlocks | Paths | Key env vars |
 |------------|----------------|-------|-------------|
 | `github` | GitHub CLI and credentials | `~/.config/gh/` | `GITHUB_TOKEN`, `GH_TOKEN` |
+| `git-remote` | Git remote operations over HTTPS (port 443) - for SSH-based remotes, also enable `ssh` | - | - |
 | `gpg` | GPG keys and signing | `~/.gnupg/` | `GNUPGHOME` |
 | `clipboard` | Read/write access to the system clipboard (macOS only) | - | - |
 | `ccstatusline` | Read access to ccstatusline's settings, for `aide statusline` invoked from a ccstatusline Custom Command widget | `~/.config/ccstatusline/settings.json` | - |
@@ -81,6 +83,12 @@ orchestration, infrastructure tools, language runtimes, and developer tools.
 settings file exists on disk at context-resolution time, it's added to the
 effective capability set automatically, without needing `--with ccstatusline`
 or a `capabilities:` entry. Every other built-in requires explicit opt-in.
+
+### Network
+
+| Capability | What it unlocks | Paths | Key env vars |
+|------------|----------------|-------|-------------|
+| `network` | Unrestricted network access (inbound and outbound), overriding the default outbound-only sandbox network mode | - | - |
 
 Run `aide cap list` to see all available capabilities including any custom ones
 you've defined. Run `aide cap show <name>` to inspect a specific capability's
@@ -215,9 +223,19 @@ never_allow:
 ```
 
 Implementation detail: `never_allow` paths are appended to the deny list after
-all capability resolution. Since Seatbelt uses deny-wins semantics, these paths
-are always blocked. All paths are symlink-resolved before being added to the
-profile.
+all capability resolution. All paths are symlink-resolved before being added
+to the profile.
+
+**Platform note:** on macOS, Seatbelt's deny-wins semantics enforce this
+unconditionally, even for a path nested inside an already-granted directory.
+On Linux it depends on the active backend: bubblewrap supports the same
+carve-out, but Landlock - the primary backend on modern kernels - has no
+per-file deny inside an already-allowed directory. A `never_allow` path
+nested inside a capability's granted directory is **not currently enforced
+under Landlock**. Run `aide sandbox show` to check your active backend; if
+it's Landlock, define a narrowly-scoped capability (like `k8s-dev` below)
+instead of relying on `never_allow` to carve an exception out of a broad
+grant. This is a known platform limitation, not a configuration mistake.
 
 **Example: protecting production kubeconfig**
 
@@ -236,7 +254,11 @@ capabilities:
 ```
 
 Even if someone later creates a broader capability that tries to read
-`~/.kube/prod-config`, the `never_allow` rule blocks it.
+`~/.kube/prod-config`, the `never_allow` rule blocks it - on macOS, and on
+Linux under the bubblewrap backend. Under Landlock, this is why `k8s-dev`
+above grants only the specific dev/staging files rather than the whole
+`~/.kube/` directory: a narrow grant doesn't need `never_allow` to carve an
+exception out of it.
 
 ### never_allow_env: blocking sensitive variables
 

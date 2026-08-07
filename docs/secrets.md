@@ -69,8 +69,7 @@ Copy the `age1...` value - you will pass it to `aide secrets create`.
 aide status
 ```
 
-The status output reports which age source aide picked up. You should
-see the path to your `keys.txt`. If not, see [Finding Your Existing Age
+`aide status` will show your secret with a key count if aide successfully found and decrypted with your age key - that's an indirect confirmation the key is discoverable. It does not print which source (env var, key file, YubiKey) was used or the file path. If the secret fails to load, see [Finding Your Existing Age
 Key](#finding-your-existing-age-key).
 
 ## Quick Start: Wiring an Anthropic API Key
@@ -187,11 +186,13 @@ export SOPS_AGE_KEY_FILE=/path/to/keys.txt
 aide secrets keys personal
 ```
 
-To see which source aide picked up, run:
+To confirm aide can decrypt with whichever key it picked up, run:
 
 ```sh
 aide status
 ```
+
+This shows the secret name and key count if decryption succeeded - it does not report which source was used.
 
 ## Creating Secrets
 
@@ -243,10 +244,9 @@ Rotation re-encrypts the secret for the updated recipient set. aide decrypts the
 
 ## Security Guarantees
 
-- aide removes temp files immediately after re-encryption.
-- Decrypted values exist only in the process's memory and environment. They are not written to disk and do not persist after the process exits.
-- Signal handlers clean up the runtime directory on normal and abnormal exit.
-- aide removes stale runtime directories from previous crashed sessions on the next launch.
+**At launch** (secrets injected into the agent's environment): decrypted values exist only in the process's memory and environment. They are not written to disk and do not persist after the process exits. Signal handlers clean up the runtime directory on normal and abnormal exit, and aide removes stale runtime directories left by previous crashed sessions on the next launch.
+
+**During `create`/`edit`**: plaintext is written to a temp file for the duration of the `$EDITOR` session and removed immediately after re-encryption. This path is not currently covered by the same signal-handler cleanup as the launch path - killing the process mid-edit (e.g. Ctrl-C while `$EDITOR` is open) can leave the plaintext temp file behind. This is a known gap, not yet fixed.
 
 ## CI and Docker
 

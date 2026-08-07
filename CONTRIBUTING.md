@@ -10,11 +10,11 @@ Welcome to aide. We appreciate contributions of all kinds - bug fixes, features,
 nix develop
 ```
 
-This provides: Go, GNU Make, golangci-lint, gitleaks, yq-go, and pre-commit.
+This provides: Go, GNU Make, golangci-lint, gosec, govulncheck, gitleaks, yq-go, and pre-commit.
 
 On shell entry, the devshell automatically:
+- Sets `GOBIN` to a project-local `.gobin/` so Go-installed tools match the devshell Go version
 - Installs git hooks (pre-commit and pre-push) via pre-commit
-- Installs gosec and govulncheck to `.gobin/`
 
 ### Without Nix
 
@@ -22,7 +22,7 @@ Install the following manually:
 
 | Tool | Minimum Version |
 |------|----------------|
-| Go | 1.25.7 |
+| Go | 1.26 |
 | GNU Make | any |
 | golangci-lint | 2.x |
 | pre-commit | any |
@@ -41,16 +41,21 @@ pre-commit install --hook-type pre-push
 |--------|---------|-------------|
 | `all` | `make all` | Build, vet, and test (default) |
 | `build` | `make build` | Compile binary to `bin/aide` |
-| `install` | `make install` | `go install ./cmd/aide` |
-| `test` | `make test` | Run unit tests |
-| `test-integration` | `make test-integration` | Run integration tests (build tag `integration`) |
+| `install` | `make install` | Install via goreleaser (matches release binary exactly) |
+| `install-dev` | `make install-dev` | Install quickly without goreleaser (dev iteration) |
+| `test/unit` | `make test/unit` | Run unit tests with race detector |
+| `test/coverage` | `make test/coverage` | Run tests with coverage and enforce thresholds |
+| `test/sandbox` | `make test/sandbox` | Run Linux sandbox unit tests (no integration tag) |
+| `test/integration` | `make test/integration` | Run integration tests (build tag `integration`) |
 | `vet` | `make vet` | Run `go vet` |
+| `generate` | `make generate` | Regenerate mocks and other generated code |
 | `lint` | `make lint` | Run golangci-lint |
-| `gosec` | `make gosec` | Run gosec with exclusions from `.gosec.yaml` |
-| `clean` | `make clean` | Remove `bin/` |
+| `security/gosec` | `make security/gosec` | Run gosec (`SARIF=1` for CI output) with exclusions from `.gosec.yaml` |
+| `security/vuln` | `make security/vuln` | Run govulncheck for known CVEs |
+| `clean` | `make clean` | Remove build artifacts and coverage output |
 | `devcontainer-build` | `make devcontainer-build` | Build the Linux devcontainer image |
-| `test-linux` | `make test-linux` | Run full test suite inside the Linux devcontainer |
-| `test-all` | `make test-all` | Native tests + Linux container tests |
+| `test/linux` | `make test/linux` | Run full test suite inside the Linux devcontainer |
+| `test/all` | `make test/all` | Native tests + Linux container tests |
 
 ## Project Structure
 
@@ -84,14 +89,16 @@ Zero tolerance policy: `max-issues-per-linter: 0`, `max-same-issues: 0`. Fix all
 | check-yaml | pre-commit-hooks |
 | check-merge-conflict | pre-commit-hooks |
 | detect-private-key | pre-commit-hooks |
+| actionlint | rhysd/actionlint |
 | doc-slop-check | local (`scripts/check-doc-slop.sh`) |
-| golangci-lint | golangci/golangci-lint |
 | go-build | dnephin/pre-commit-golang |
 
 **On push:**
 
 | Hook | Source |
 |------|--------|
+| golangci-lint | golangci/golangci-lint |
+| gosec | local (`make security/gosec`) |
 | gitleaks | gitleaks/gitleaks |
 | go-unit-tests | dnephin/pre-commit-golang |
 

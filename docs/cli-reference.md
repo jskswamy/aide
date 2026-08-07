@@ -30,6 +30,11 @@ sandbox policy.
 | `--no-yolo` | false | Alias for `--no-auto-approve` (kept for backwards compatibility) |
 | `--clean-env` | false | Start agent with only essential environment variables |
 | `--ignore-project-config` | false | Launch without applying .aide.yaml |
+| `--unrestricted-network`, `-N` | false | Allow unrestricted network access, ignoring config port rules |
+| `--diagnose` | false | Wrap the run and write a redacted post-mortem on exit |
+| `--diagnose-trace` | false | Implies `--diagnose`; also capture macOS sandbox denials (Darwin only) |
+| `--variant <cap=variant>` | | Pin variants for capabilities in `--with` (repeatable; must match a `--with` capability) |
+| `--yes` | false | Auto-approve variant consent prompts (non-interactive workflows) |
 
 ```
 aide -- --no-permissions
@@ -181,10 +186,14 @@ allowlists, and deny rules that can be composed and activated per session.
 ### aide cap list
 
 ```
-aide cap list
+aide cap list [flags]
 ```
 
 Lists all capabilities (built-in and user-defined).
+
+| Flag | Description |
+|------|-------------|
+| `--context <name>` | Show enabled/disabled status for a specific context instead of the current one |
 
 ```
 aide cap list
@@ -249,25 +258,37 @@ aide cap edit my-k8s --add-writable /tmp/helm-cache --description "K8s with Helm
 ### aide cap enable
 
 ```
-aide cap enable <name>
+aide cap enable <capability>[,capability...] [flags]
 ```
 
-Adds a capability to the current context.
+Adds one or more capabilities to the current context (or globally with `--global`).
+
+| Flag | Description |
+|------|-------------|
+| `--global` | Apply to user-level config instead of the project |
+| `--context <name>` | Target a specific context name (requires `--global`) |
 
 ```
 aide cap enable docker
+aide cap enable docker,k8s
 ```
 
 ### aide cap disable
 
 ```
-aide cap disable <name>
+aide cap disable <capability>[,capability...] [flags]
 ```
 
-Removes a capability from the current context.
+Removes one or more capabilities from the current context (or globally with `--global`).
+
+| Flag | Description |
+|------|-------------|
+| `--global` | Apply to user-level config instead of the project |
+| `--context <name>` | Target a specific context name (requires `--global`) |
 
 ```
 aide cap disable docker
+aide cap disable docker,k8s
 ```
 
 ### aide cap never-allow
@@ -294,24 +315,29 @@ aide cap never-allow --remove /tmp/scratch
 ### aide cap check
 
 ```
-aide cap check <caps...>
+aide cap check <capability>[,capability...]
 ```
 
 Previews the composed result of one or more capabilities without modifying
 config. Shows the merged readable, writable, denied paths and env allowlist.
+Capabilities are comma-separated, not space-separated.
 
 ```
-aide cap check k8s docker
+aide cap check k8s,docker
 ```
 
 ### aide cap audit
 
 ```
-aide cap audit
+aide cap audit [flags]
 ```
 
 Shows the current context's resolved capabilities -- the effective set of
 paths and environment allowlists after composing all enabled capabilities.
+
+| Flag | Description |
+|------|-------------|
+| `--context <name>` | Audit a specific context instead of the current one |
 
 ```
 aide cap audit
@@ -383,7 +409,7 @@ non-interactive use, supply `--agent` and either `--here` or `--no-here`.
 | `--no-here` | Skip cwd binding entirely. |
 
 ```
-aide context create work --agent claude --secret-store firmus --here
+aide context create work --agent claude --secret-store personal --here
 aide context create work --agent claude --no-here
 ```
 

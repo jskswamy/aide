@@ -8,73 +8,36 @@ end state, then plan and apply": you write a config, run `aide sync
 
 ## Why this exists
 
-Agent plugins and MCP servers are project-shaped concerns that today
-live as machine-shaped state. The split breaks down in three ways:
+Plugin/MCP state is project-shaped, but agents store it machine-shaped: a
+new laptop means reinstalling everything by hand and hoping you didn't
+miss one, a new teammate gets a setup README instead of a source of
+truth, and a client project sharing an agent binary with a personal
+project means uninstalling and reinstalling plugins as you switch - or
+polluting every context with every plugin you've ever needed.
 
-**Across machines.** Set up a new laptop and you go through
-`claude plugin install <foo>` ten times, then realise two weeks
-later that you forgot one and that's why your commit messages look
-different here. Then the question becomes: which machine is
-"correct"? There's no source of truth.
-
-**Across teammates.** Onboarding a new engineer means writing a
-setup README that lists the plugins to install and the MCP servers
-to configure. Six months in, half the team installed the plugins,
-the other half forgot, and a third group installed a different
-version. Diagnosing "why does this prompt produce different output
-on your machine vs. mine" becomes archaeology.
-
-**Across contexts.** Working on a client project with its own
-sandbox of plugins (a private MCP server, an internal-tools
-marketplace) and a personal side project with a completely
-different set, all running on the same agent binary - today there's
-no per-project boundary. You're either uninstalling and reinstalling
-plugins as you switch projects, or polluting every context with
-every plugin you've ever needed.
-
-Declarative provisioning solves all three by treating plugins/MCP
-the same way Terraform treats infrastructure: declared in version-
-controlled config, reconciled with a planned diff, recorded as
-state on disk. One command brings any machine - yours, a teammate's,
-a fresh container - to the exact state your config says it should be
-in.
+Declarative provisioning fixes this by treating plugins/MCP the way
+Terraform treats infrastructure: declared in version-controlled config,
+reconciled with a planned diff, recorded as state on disk. One command
+brings any machine - yours, a teammate's, a fresh container - to the
+exact state your config says it should be in.
 
 ## Why per-context profiles matter
 
-The other half of the workflow is profile isolation.
+Every coding agent reads from one fixed config dir by default
+(`~/.claude`, `~/.gemini`, `~/.copilot`, etc.), holding plugins, MCP
+servers, session history, and credentials for every project you run it
+against. That means session history and MCP servers bleed across
+projects, plugins with conflicting assumptions can't coexist per-project,
+and every project shares the same model-provider credentials even when a
+client requires separate billing.
 
-Every coding agent reads from a fixed config dir by default:
-`~/.claude`, `~/.gemini`, `~/.copilot`, etc. That single dir holds
-plugins, MCP servers, session history, and credentials for every
-project you run the agent against. The result:
-
-- **Cross-project bleed.** Your work session history shows up
-  during your personal-project session. The MCP server you
-  configured for one client is visible to all the others.
-- **Hostile plugin coexistence.** A plugin you need for client A
-  has a strong opinion that conflicts with what client B's prompt
-  conventions assume. Today you uninstall one to use the other.
-- **Credential leakage risk.** All projects share the same API
-  keys for the underlying model provider. If a client mandates a
-  separate billing account, you have no clean way to honour it.
-
-Every major coding agent has the same workaround: a single env
-var that swaps the entire config tree. Claude reads
-`CLAUDE_CONFIG_DIR`; Gemini reads `GEMINI_HOME`; Codex reads
-`CODEX_HOME`; Copilot reads `COPILOT_HOME`. Point it at
-`~/.claude-work` instead of `~/.claude` and you get a fully
-isolated profile.
-
-Doing this manually is fragile:
-
-- You have to remember each agent's env-var name (they don't
-  match each other).
-- You have to remember to tilde-expand because some agents don't
-  do it themselves (this caused real bugs).
-- You have to wire the env into your shell init, then again into
-  whichever script launches the agent, then again into the
-  sandbox rules so the sandbox actually allows reads from the
-  custom dir.
+Every major agent has the same workaround: an env var that swaps the
+entire config tree - `CLAUDE_CONFIG_DIR` for Claude, `GEMINI_HOME` for
+Gemini, `CODEX_HOME` for Codex, `COPILOT_HOME` for Copilot. Doing this by
+hand means remembering each agent's env-var name, tilde-expanding paths
+some agents don't expand themselves, and wiring the env var into your
+shell init, your launch script, and the sandbox rules that grant access
+to the custom dir - three places, three chances to drift.
 
 aide's `profile: <name>` field collapses all of that. You write:
 

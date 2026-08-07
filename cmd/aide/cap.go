@@ -115,7 +115,8 @@ func capConsentRevokeCmd() *cobra.Command {
 }
 
 func capListCmd() *cobra.Command {
-	return &cobra.Command{
+	var contextName string
+	cmd := &cobra.Command{
 		Use:          "list",
 		Short:        "List all capabilities (built-in and user-defined)",
 		SilenceUsage: true,
@@ -130,6 +131,30 @@ func capListCmd() *cobra.Command {
 			userCaps := capability.FromConfigDefs(env.Config().Capabilities)
 			builtins := capability.Builtins()
 
+			_, enabled, err := resolveEffectiveCapabilities(env.Config(), env.CWD(), contextName)
+			if err != nil {
+				return err
+			}
+			enabledSet := make(map[string]bool, len(enabled))
+			for _, name := range enabled {
+				enabledSet[name] = true
+			}
+
+			var disabledSet map[string]bool
+			if contextName == "" && env.Config().ProjectOverride != nil {
+				disabled := env.Config().ProjectOverride.DisabledCapabilities
+				disabledSet = make(map[string]bool, len(disabled))
+				for _, name := range disabled {
+					disabledSet[name] = true
+				}
+			}
+
+			suggested := capability.DetectProject(os.DirFS(env.CWD()))
+			suggestedSet := make(map[string]bool, len(suggested))
+			for _, name := range suggested {
+				suggestedSet[name] = true
+			}
+
 			// Collect and sort names
 			names := make([]string, 0, len(registry))
 			for name := range registry {
@@ -137,7 +162,7 @@ func capListCmd() *cobra.Command {
 			}
 			sort.Strings(names)
 
-			fmt.Fprintf(out, "%-20s %-12s %s\n", "NAME", "SOURCE", "DESCRIPTION")
+			fmt.Fprintf(out, "%-20s %-12s %-12s %s\n", "NAME", "STATUS", "SOURCE", "DESCRIPTION")
 			for _, name := range names {
 				entry := registry[name]
 				source := "built-in"
@@ -162,11 +187,35 @@ func capListCmd() *cobra.Command {
 					}
 					desc = fmt.Sprintf("%s (%d variants: %s)", desc, len(entry.Variants), strings.Join(names, ", "))
 				}
-				fmt.Fprintf(out, "%-20s %-12s %s\n", name, source, desc)
+				status := capListStatus(name, enabledSet, disabledSet, suggestedSet)
+				fmt.Fprintf(out, "%-20s %-12s %-12s %s\n", name, status, source, desc)
 			}
 
 			return nil
 		},
+	}
+	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	return cmd
+}
+
+// capListStatus reports a capability's activation state for the current
+// project: "enabled" if active, "disabled" if explicitly negated by a
+// project override, "suggested" if its markers match this project but
+// it isn't enabled, or "-" if none apply. Precedence: enabled > disabled
+// > suggested (in practice these never overlap, since suggested is only
+// computed for names that aren't enabled, and a name can't be both
+// enabled and disabled given how the merge in resolveEffectiveCapabilities
+// works).
+func capListStatus(name string, enabled, disabled, suggested map[string]bool) string {
+	switch {
+	case enabled[name]:
+		return "enabled"
+	case disabled[name]:
+		return "disabled"
+	case suggested[name]:
+		return "suggested"
+	default:
+		return "-"
 	}
 }
 

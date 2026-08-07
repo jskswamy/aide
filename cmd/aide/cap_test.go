@@ -364,3 +364,122 @@ func runCapCmdInPlace(t *testing.T, args ...string) string {
 	}
 	return buf.String()
 }
+
+func TestCapListStatus_Precedence(t *testing.T) {
+	enabled := map[string]bool{"clipboard": true}
+	disabled := map[string]bool{"ssh": true}
+	suggested := map[string]bool{"go": true}
+
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"clipboard", "enabled"},
+		{"ssh", "disabled"},
+		{"go", "suggested"},
+		{"docker", "-"},
+	}
+	for _, c := range cases {
+		got := capListStatus(c.name, enabled, disabled, suggested)
+		if got != c.want {
+			t.Errorf("capListStatus(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestCapList_ShowsStatusColumn(t *testing.T) {
+	dir := isolatedConfigDir(t)
+
+	configYAML := `default_context: work
+contexts:
+  work:
+    agent: claude
+    capabilities: [clipboard]
+`
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".aide.yaml"), []byte("disabled_capabilities: [docker]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runCapCmdInPlace(t, "list")
+
+	lines := strings.Split(out, "\n")
+	if !strings.HasPrefix(lines[0], "NAME") {
+		t.Fatalf("expected header line starting with NAME, got %q", lines[0])
+	}
+	header := lines[0]
+	nameIdx := strings.Index(header, "NAME")
+	statusIdx := strings.Index(header, "STATUS")
+	sourceIdx := strings.Index(header, "SOURCE")
+	if !(nameIdx < statusIdx && statusIdx < sourceIdx) {
+		t.Fatalf("expected column order NAME < STATUS < SOURCE, got header: %q", header)
+	}
+
+	findRow := func(capName string) string {
+		for _, l := range lines {
+			fields := strings.Fields(l)
+			if len(fields) > 0 && fields[0] == capName {
+				return l
+			}
+		}
+		t.Fatalf("no row found for capability %q in output:\n%s", capName, out)
+		return ""
+	}
+
+	clipboardRow := findRow("clipboard")
+	if !strings.Contains(clipboardRow, "enabled") {
+		t.Errorf("expected clipboard row to show 'enabled', got: %q", clipboardRow)
+	}
+	dockerRow := findRow("docker")
+	if !strings.Contains(dockerRow, "disabled") {
+		t.Errorf("expected docker row to show 'disabled', got: %q", dockerRow)
+	}
+	goRow := findRow("go")
+	if !strings.Contains(goRow, "suggested") {
+		t.Errorf("expected go row to show 'suggested' (go.mod present), got: %q", goRow)
+	}
+	awsRow := findRow("aws")
+	fields := strings.Fields(awsRow)
+	if len(fields) < 2 || fields[1] != "-" {
+		t.Errorf("expected aws row status to be '-', got: %q", awsRow)
+	}
+}
+
+func TestCapList_ContextFlagSkipsProjectOverride(t *testing.T) {
+	dir := isolatedConfigDir(t)
+
+	configYAML := `default_context: other
+contexts:
+  other:
+    agent: claude
+    capabilities: []
+  work:
+    agent: claude
+    capabilities: [clipboard]
+`
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".aide.yaml"), []byte("disabled_capabilities: [clipboard]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runCapCmdInPlace(t, "list", "--context", "work")
+
+	lines := strings.Split(out, "\n")
+	for _, l := range lines {
+		f := strings.Fields(l)
+		if len(f) > 0 && f[0] == "clipboard" {
+			if len(f) < 2 || f[1] != "enabled" {
+				t.Errorf("expected clipboard status 'enabled' for --context work (project override should not apply), got: %q", l)
+			}
+			return
+		}
+	}
+	t.Fatalf("no clipboard row found in output:\n%s", out)
+}

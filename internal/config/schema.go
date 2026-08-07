@@ -863,14 +863,15 @@ type ModuleConfig struct {
 	Outbound     string `yaml:"outbound,omitempty"`
 	Unrestricted string `yaml:"unrestricted,omitempty"`
 	Untrusted    string `yaml:"untrusted,omitempty"`
+	Unmanaged    string `yaml:"unmanaged,omitempty"`
 	Value        string `yaml:"value,omitempty"`
 }
 
 func defaultStatuslineConfig() StatuslineConfig {
 	return StatuslineConfig{
 		Order:       []string{"sandbox", "network", "caps", "trust", "context"},
-		Sandbox:     &ModuleConfig{On: "🔒", Off: "🔓"},
-		Network:     &ModuleConfig{Outbound: "🌐", Unrestricted: "🌍"},
+		Sandbox:     &ModuleConfig{On: "🔒", Off: "🔓", Unmanaged: "💀"},
+		Network:     &ModuleConfig{Outbound: "🌐", Unrestricted: "🌍", Unmanaged: "🌫️"},
 		Caps:        &ModuleConfig{Icon: "⚡"},
 		Trust:       &ModuleConfig{Untrusted: "⚠️"},
 		Context:     &ModuleConfig{Icon: "📁"},
@@ -932,6 +933,9 @@ func applyModuleOverride(dst **ModuleConfig, src *ModuleConfig) {
 	}
 	if src.Untrusted != "" {
 		d.Untrusted = src.Untrusted
+	}
+	if src.Unmanaged != "" {
+		d.Unmanaged = src.Unmanaged
 	}
 	if src.Value != "" {
 		d.Value = src.Value

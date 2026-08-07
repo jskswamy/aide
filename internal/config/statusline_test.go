@@ -92,3 +92,30 @@ func TestResolveStatusline_ProjectCanReenableDisabledModule(t *testing.T) {
 		t.Error("Trust.Disabled should be false (project re-enabled)")
 	}
 }
+
+func TestResolveStatusline_SandboxUnmanagedDefault(t *testing.T) {
+	got := ResolveStatusline(nil, nil)
+	if got.Sandbox == nil || got.Sandbox.Unmanaged != "💀" {
+		t.Errorf("Sandbox.Unmanaged = %q, want 💀", got.Sandbox.Unmanaged)
+	}
+}
+
+func TestResolveStatusline_NetworkUnmanagedDefault(t *testing.T) {
+	got := ResolveStatusline(nil, nil)
+	if got.Network == nil || got.Network.Unmanaged != "🌫️" {
+		t.Errorf("Network.Unmanaged = %q, want 🌫️", got.Network.Unmanaged)
+	}
+}
+
+func TestResolveStatusline_ProjectOverridesUnmanaged(t *testing.T) {
+	project := &StatuslineConfig{
+		Sandbox: &ModuleConfig{Unmanaged: "🚫"},
+	}
+	got := ResolveStatusline(nil, project)
+	if got.Sandbox.Unmanaged != "🚫" {
+		t.Errorf("Sandbox.Unmanaged = %q, want 🚫", got.Sandbox.Unmanaged)
+	}
+	if got.Sandbox.On != "🔒" {
+		t.Errorf("Sandbox.On = %q, want default 🔒 (unchanged)", got.Sandbox.On)
+	}
+}

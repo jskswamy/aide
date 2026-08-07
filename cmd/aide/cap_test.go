@@ -321,3 +321,46 @@ func TestCapConsentList_ProjectFlag(t *testing.T) {
 	_ = os.DirFS
 	_ = filepath.Join
 }
+
+func TestCapAudit_ReflectsProjectOverrideDisabledCapability(t *testing.T) {
+	dir := isolatedConfigDir(t)
+
+	configYAML := `default_context: work
+contexts:
+  work:
+    agent: claude
+    capabilities: [ssh]
+`
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".aide.yaml"), []byte("disabled_capabilities: [ssh]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runCapCmdInPlace(t, "audit")
+
+	if strings.Contains(out, "ssh") {
+		t.Errorf("expected ssh to be excluded by project override disabled_capabilities, got:\n%s", out)
+	}
+	if !strings.Contains(out, `Context "work" has no capabilities enabled.`) {
+		t.Errorf("expected 'no capabilities enabled' message once ssh is disabled, got:\n%s", out)
+	}
+}
+
+// runCapCmdInPlace builds a fresh `cap` cobra command and runs it in the
+// CURRENT working directory (unlike runCapCmd, which chdirs to a fresh
+// tempdir). Callers must have already set up an isolated cwd/config
+// (e.g. via isolatedConfigDir) before calling this.
+func runCapCmdInPlace(t *testing.T, args ...string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	cmd := capCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cap %v: %v\nout: %s", args, err, buf.String())
+	}
+	return buf.String()
+}

@@ -784,12 +784,21 @@ func capAuditCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 
-			cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+			cfg, err := config.Load(config.Dir(), cwd)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			ctxName, caps, err := resolveEffectiveCapabilities(cfg, cwd, contextName)
 			if err != nil {
 				return err
 			}
 
-			if len(ctx.Capabilities) == 0 {
+			if len(caps) == 0 {
 				fmt.Fprintf(out, "Context %q has no capabilities enabled.\n", ctxName)
 				return nil
 			}
@@ -797,7 +806,7 @@ func capAuditCmd() *cobra.Command {
 			userCaps := capability.FromConfigDefs(cfg.Capabilities)
 			registry := capability.MergedRegistry(userCaps)
 
-			set, err := capability.ResolveAll(ctx.Capabilities, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
+			set, err := capability.ResolveAll(caps, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
 			if err != nil {
 				return err
 			}

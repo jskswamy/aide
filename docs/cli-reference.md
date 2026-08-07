@@ -1033,31 +1033,60 @@ aide config edit
 
 ## aide statusline
 
-### aide statusline claude
+### aide statusline [agent]
 
 ```
+aide statusline [agent] [flags]
 aide statusline claude [flags]
 ```
 
 Renders the current aide session state as a compact statusline string for use
-with Claude Code's `statusLine` feature. Reads session state from `AIDE_*`
-environment variables injected by aide before exec.
+with a coding agent's statusline feature (e.g. Claude Code's `statusLine`
+setting). Reads session state from `AIDE_*` environment variables injected by
+aide before exec. `claude` is currently the only agent with rendering
+support; any other resolved agent name (explicit `--agent`, positional
+argument, or `AIDE_AGENT`) returns an error instead of silently rendering.
 
-**Render mode** (when stdin is a pipe: Claude Code's invocation path):
+**Piped mode** (when stdin is a pipe: a coding agent's invocation path):
 
-1. Drains stdin (JSON from Claude Code is discarded; available for future modules).
+1. Reads all of stdin (JSON from the invoking agent).
 2. Reads `AIDE_*` env vars for session state.
 3. Loads merged config (`~/.config/aide/config.yaml` → `.aide.yaml`).
 4. Walks the configured module order, renders each active module to a string.
 5. Joins with ` | ` and writes to stdout.
 
-**TTY mode** (when stdin is a terminal): prints usage help instead of rendering.
+**TTY mode** (when stdin is a terminal: a human previewing the statusline
+directly): stdin is not read at all in this mode. Since there's no
+aide-launched session to read real `AIDE_*` env vars from, TTY mode instead
+*simulates* one: it resolves the CWD-matched aide context and computes what
+a real `aide launch` would set (sandbox, network, capabilities, trust,
+auto-approve) without actually launching: no secret decryption, no
+interactive capability-variant prompts. The agent is resolved via
+`--agent`/positional argument, `AIDE_AGENT`, the aide context matched to the
+current working directory, or `claude` as the final default.
+
+**`--context <name>`** forces this same simulation for an explicitly named
+context, in *both* TTY and piped mode: useful for checking what the
+statusline would look like under a context other than the one CWD would
+match. Errors if the name doesn't exist. Unlike the CWD-matched TTY case,
+a named context is looked up directly with no `.aide.yaml` project-override
+merge (matching `aide cap list`/`aide cap audit`'s treatment of a named
+context). When `--agent` isn't also given, the agent comes from the named
+context's own configuration.
+
+Bare `aide statusline` (no positional argument, no `--agent`, no
+`--context`) auto-detects the agent: `AIDE_AGENT` when set (an
+aide-launched session), otherwise the shape of piped stdin JSON identifies
+Claude Code, otherwise (TTY only) the CWD-matched aide context's configured
+agent, otherwise `claude`.
 
 | Flag | Description |
 |------|-------------|
+| `--agent <name>` | Coding agent to render for (default: auto-detected) |
+| `--module <name>` | Render only this module; repeatable (`--module sandbox --module network`). Valid names: `sandbox`, `network`, `caps`, `trust`, `context`, `auto_approve`. An unrecognized name is an error, not a silently blank widget. |
 | `--install` | Patch the target context's `settings.json` to set `statusLine.command` |
 | `--remove` | Clear the `statusLine` key from the target context's `settings.json` |
-| `--context <name>` | Target a specific aide context (default: matched by CWD). Resolves the correct `CLAUDE_CONFIG_DIR` for profile-based contexts automatically. |
+| `--context <name>` | For `--install`/`--remove`: target a specific aide context (default: matched by CWD), resolving the correct `CLAUDE_CONFIG_DIR` for profile-based contexts automatically. For render mode: preview that context's simulated session instead of the CWD-matched one, in both TTY and piped mode. |
 
 **Install behaviour:**
 

@@ -75,6 +75,12 @@ orchestration, infrastructure tools, language runtimes, and developer tools.
 | `github` | GitHub CLI and credentials | `~/.config/gh/` | `GITHUB_TOKEN`, `GH_TOKEN` |
 | `gpg` | GPG keys and signing | `~/.gnupg/` | `GNUPGHOME` |
 | `clipboard` | Read/write access to the system clipboard (macOS only) | - | - |
+| `ccstatusline` | Read access to ccstatusline's settings, for `aide statusline` invoked from a ccstatusline Custom Command widget | `~/.config/ccstatusline/settings.json` | - |
+
+`ccstatusline` is the one built-in that can auto-enable itself: if its
+settings file exists on disk at context-resolution time, it's added to the
+effective capability set automatically, without needing `--with ccstatusline`
+or a `capabilities:` entry. Every other built-in requires explicit opt-in.
 
 Run `aide cap list` to see all available capabilities including any custom ones
 you've defined. Run `aide cap show <name>` to inspect a specific capability's

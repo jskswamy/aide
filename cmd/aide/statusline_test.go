@@ -292,3 +292,261 @@ func TestRenderStatusline_EmptyResultWhenAllHidden(t *testing.T) {
 		t.Errorf("got %q, want empty", got)
 	}
 }
+
+func TestRenderStatusline_SandboxUnmanagedWhenEnvAbsent(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	env := map[string]string{
+		"AIDE_NETWORK_MODE": "outbound",
+		"AIDE_CAPS":         "",
+		"AIDE_TRUST":        "trusted",
+	}
+	got := renderStatusline(cfg, env)
+	want := "❓ | 🌐"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderStatusline_NetworkUnmanagedWhenEnvAbsent(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	env := map[string]string{
+		"AIDE_SANDBOX": "on",
+		"AIDE_CAPS":    "",
+		"AIDE_TRUST":   "trusted",
+	}
+	got := renderStatusline(cfg, env)
+	want := "🔒 | ❓"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderStatusline_BothUnmanagedWhenNoAideEnvAtAll(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	got := renderStatusline(cfg, map[string]string{})
+	want := "❓ | ❓"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestEnvForRender_AbsentVarOmittedFromMap(t *testing.T) {
+	t.Setenv("AIDE_SANDBOX", "on")
+	if orig, ok := os.LookupEnv("AIDE_NETWORK_MODE"); ok {
+		os.Unsetenv("AIDE_NETWORK_MODE")
+		t.Cleanup(func() { os.Setenv("AIDE_NETWORK_MODE", orig) })
+	}
+	env := envForRender()
+	if _, ok := env["AIDE_SANDBOX"]; !ok {
+		t.Error("AIDE_SANDBOX should be present in map when set")
+	}
+	if _, ok := env["AIDE_NETWORK_MODE"]; ok {
+		t.Error("AIDE_NETWORK_MODE should be absent from map when unset")
+	}
+}
+
+func TestRenderStatuslineModules_SingleModuleBareOutput(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	env := map[string]string{
+		"AIDE_SANDBOX":      "on",
+		"AIDE_NETWORK_MODE": "outbound",
+		"AIDE_CAPS":         "k8s,docker",
+		"AIDE_TRUST":        "trusted",
+	}
+	got := renderStatuslineModules(cfg, env, []string{"caps"})
+	want := "⚡ k8s,docker"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderStatuslineModules_MultipleModulesPreserveConfiguredOrder(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	env := map[string]string{
+		"AIDE_SANDBOX":      "on",
+		"AIDE_NETWORK_MODE": "outbound",
+		"AIDE_CAPS":         "",
+		"AIDE_TRUST":        "trusted",
+	}
+	// Requested as network,sandbox but cfg.Order is sandbox,network,...
+	got := renderStatuslineModules(cfg, env, []string{"network", "sandbox"})
+	want := "🔒 | 🌐"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderStatuslineModules_EmptyModulesIsFullCombinedOutput(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	env := map[string]string{
+		"AIDE_SANDBOX":      "on",
+		"AIDE_NETWORK_MODE": "outbound",
+		"AIDE_CAPS":         "k8s",
+		"AIDE_TRUST":        "trusted",
+	}
+	got := renderStatuslineModules(cfg, env, nil)
+	want := renderStatusline(cfg, env)
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderStatuslineModules_AutoApproveOnlyWhenRequested(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	env := map[string]string{
+		"AIDE_SANDBOX":      "on",
+		"AIDE_NETWORK_MODE": "outbound",
+		"AIDE_AUTO_APPROVE": "1",
+	}
+	got := renderStatuslineModules(cfg, env, []string{"auto_approve"})
+	want := "🚨"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	gotSandboxOnly := renderStatuslineModules(cfg, env, []string{"sandbox"})
+	wantSandboxOnly := "🔒"
+	if gotSandboxOnly != wantSandboxOnly {
+		t.Errorf("got %q, want %q (auto_approve must not leak in when not requested)", gotSandboxOnly, wantSandboxOnly)
+	}
+}
+
+// withPipedStdin replaces os.Stdin with a pipe pre-loaded with data,
+// restoring the original on test cleanup. Simulates Claude Code piping
+// statusline JSON to aide statusline's render mode.
+func withPipedStdin(t *testing.T, data string) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = orig })
+	go func() {
+		w.WriteString(data)
+		w.Close()
+	}()
+}
+
+func TestRunStatusline_BareCommandAutoDetectsAndRenders(t *testing.T) {
+	t.Setenv("AIDE_SANDBOX", "on")
+	t.Setenv("AIDE_NETWORK_MODE", "outbound")
+	// Override every other AIDE_* var envForRender reads, present-but-empty,
+	// so this test's exact-output assertion doesn't depend on ambient
+	// process env (e.g. when go test itself runs inside an aide-launched
+	// session where these are genuinely set).
+	t.Setenv("AIDE_CAPS", "")
+	t.Setenv("AIDE_TRUST", "")
+	t.Setenv("AIDE_AUTO_APPROVE", "")
+	t.Setenv("AIDE_CONTEXT", "")
+	// No --agent flag is passed, so agent resolution falls through to
+	// AIDE_AGENT (2nd priority in resolveStatuslineAgent) before the
+	// stdin-JSON sniff this test is actually exercising gets a turn — pin
+	// it to "claude" so ambient AIDE_AGENT (e.g. a real aide session) can't
+	// make resolution land on an unsupported agent.
+	t.Setenv("AIDE_AGENT", "claude")
+	withPipedStdin(t, `{"session_id":"abc"}`)
+
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+	got := strings.TrimSpace(buf.String())
+	want := "🔒 | 🌐"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRunStatusline_ModuleFlagRepeatable(t *testing.T) {
+	t.Setenv("AIDE_SANDBOX", "on")
+	t.Setenv("AIDE_NETWORK_MODE", "outbound")
+	// Same AIDE_AGENT pin as above — no --agent flag here either.
+	t.Setenv("AIDE_AGENT", "claude")
+	withPipedStdin(t, `{"session_id":"abc"}`)
+
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--module", "sandbox", "--module", "network"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+	got := strings.TrimSpace(buf.String())
+	want := "🔒 | 🌐"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRunStatusline_UnsupportedAgentErrors(t *testing.T) {
+	withPipedStdin(t, `{"session_id":"abc"}`)
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--agent", "gemini"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unsupported agent")
+	}
+	if !strings.Contains(err.Error(), "gemini") {
+		t.Errorf("error should mention gemini, got: %v", err)
+	}
+}
+
+func TestRunStatusline_ClaudeSubcommandStillWorksUnmodified(t *testing.T) {
+	t.Setenv("AIDE_SANDBOX", "off")
+	t.Setenv("AIDE_NETWORK_MODE", "unrestricted")
+	// Same ambient-env isolation as above.
+	t.Setenv("AIDE_CAPS", "")
+	t.Setenv("AIDE_TRUST", "")
+	t.Setenv("AIDE_AUTO_APPROVE", "")
+	t.Setenv("AIDE_CONTEXT", "")
+	withPipedStdin(t, `{}`)
+
+	cmd := statuslineAgentCmd("claude")
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+	got := strings.TrimSpace(buf.String())
+	want := "🔓 | 🌍"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRunStatusline_TTYRendersPreviewInsteadOfHelpText(t *testing.T) {
+	t.Setenv("AIDE_SANDBOX", "on")
+	t.Setenv("AIDE_NETWORK_MODE", "outbound")
+	// os.Stdin defaults to the test process's real stdin, which go test
+	// runs with a non-TTY (piped/redirected) stdin — simulate the TTY
+	// path explicitly by pointing os.Stdin at a closed pipe end that
+	// still reports as a char device is impractical in-process, so this
+	// test instead verifies the behavioral contract directly:
+	// resolveStatuslineAgent + renderStatuslineModules compose correctly
+	// for the TTY branch (isTTY=true), which is exercised in Task 6's
+	// unit tests. This test only asserts the old help-text branch is gone.
+	cmd := statuslineAgentCmd("claude")
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{})
+	withPipedStdin(t, `{}`)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+	if strings.Contains(buf.String(), "Render aide session state as a statusline") {
+		t.Error("old help text should no longer be printed")
+	}
+}

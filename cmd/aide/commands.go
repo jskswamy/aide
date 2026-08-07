@@ -150,6 +150,33 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 	return cfg, contextName, ctx, nil
 }
 
+// resolveEffectiveCapabilities returns the resolved context name and its
+// effective (fully resolved) capabilities list for cwd.
+//
+// When contextName is "", it resolves the applicable context via
+// aidectx.Resolve, which merges any .aide.yaml project override on top
+// of the matched context — this answers "what's actually active here."
+//
+// When contextName is non-empty, it looks up that context by name
+// directly, with no project-override merge, matching the existing
+// precedent in sandboxTestCmd's --context handling: project overrides
+// are tied to cwd, not to an arbitrary named context being inspected.
+func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName string) (name string, caps []string, err error) {
+	if contextName == "" {
+		remoteURL := aidectx.DetectRemote(cwd, "origin")
+		rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+		if err != nil {
+			return "", nil, fmt.Errorf("resolving context: %w", err)
+		}
+		return rc.Name, rc.Context.Capabilities, nil
+	}
+	ctx, ok := cfg.Contexts[contextName]
+	if !ok {
+		return "", nil, fmt.Errorf("context %q not found", contextName)
+	}
+	return contextName, ctx.Capabilities, nil
+}
+
 // resolveProjectOverrideForMutation loads the global config and project override
 // for mutation. Returns the global config (for validation), the project override
 // (empty if .aide.yaml doesn't exist), and the path to write .aide.yaml to.

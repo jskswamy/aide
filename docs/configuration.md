@@ -149,9 +149,11 @@ statusline:
   sandbox:
     on: "🔒"
     off: "🔓"
+    unmanaged: "💀"   # shown when AIDE_SANDBOX is absent entirely
   network:
     outbound: "🌐"
     unrestricted: "🌍"
+    unmanaged: "🌫️"   # shown when AIDE_NETWORK_MODE is absent entirely
   caps:
     icon: "⚡"        # prefix; value is comma-joined capability list
   trust:
@@ -163,6 +165,13 @@ statusline:
 ```
 
 Setting any state value to `""` hides that state silently (e.g. `sandbox.off: ""` hides the module when sandbox is disabled). Each module also accepts `disabled: true` to remove it from output. The `agent` key is accepted but ignored by the renderer (reserved for a future module).
+
+The `sandbox`/`network` modules also accept an `unmanaged:` value, rendered
+when the corresponding `AIDE_SANDBOX`/`AIDE_NETWORK_MODE` env var is absent
+entirely rather than set to `off`/`unrestricted`; this distinguishes "aide
+didn't launch this session at all" from "aide launched it with the sandbox
+explicitly disabled." Defaults to `"💀"` for `sandbox` and `"🌫️"` for
+`network`.
 
 - `sandboxes:` (map) - Named sandbox profiles referenced from contexts (`sandbox: <name>`).
 - `custom_guards:` and `guard_types:` (advanced) - Define custom seatbelt guard modules. Most users should not need these.

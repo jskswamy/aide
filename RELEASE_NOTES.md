@@ -152,8 +152,8 @@ state as a compact, emoji-based statusline string. Claude Code (and compatible
 agents) can invoke it via the `statusLine.command` setting to display sandbox,
 network, capability, trust, and context state directly in the terminal.
 
-- `aide statusline claude` renders the statusline when stdin is a pipe (Claude
-  Code invocation path); prints help when stdin is a TTY
+- `aide statusline claude` renders the statusline whether stdin is a pipe
+  (Claude Code invocation path) or a TTY (human preview)
 - `aide statusline claude --install` patches the target context's
   `settings.json` to set `statusLine.command`; generates a wrapper script if
   another command is already configured
@@ -167,3 +167,42 @@ network, capability, trust, and context state directly in the terminal.
   `AIDE_AUTO_APPROVE=1` is set
 - Modules with no content (`caps`, `context`) are silently hidden
 - `trust` module only appears when `AIDE_TRUST=untrusted`
+
+#### aide statusline: unmanaged state, module filtering, and agent auto-detection
+
+Follow-up to the initial `aide statusline` release above, closing gaps found
+during whole-branch review.
+
+- `sandbox`/`network` modules now distinguish "aide didn't launch this
+  session at all" from "aide launched it with the sandbox/network explicitly
+  off": a new `unmanaged:` value (default `"💀"` for `sandbox`, `"🌫️"` for
+  `network`) renders when the corresponding `AIDE_SANDBOX`/
+  `AIDE_NETWORK_MODE` env var is absent entirely, rather than falling
+  through to the `off`/`unrestricted` state.
+- `aide statusline` (bare, no agent) now auto-detects the agent: `AIDE_AGENT`
+  when set, otherwise the shape of piped stdin JSON identifies Claude Code,
+  otherwise (TTY only) the CWD-matched aide context's configured agent,
+  otherwise `claude`.
+- New repeatable `--module <name>` flag renders only the requested modules
+  (e.g. `aide statusline --module sandbox --module network`), for composing
+  aide's output into a third-party statusline widget. An unrecognized module
+  name is now a hard error listing the valid names, instead of silently
+  producing empty output.
+- An unsupported positional agent (e.g. `aide statusline gemini`, or
+  `--agent gemini`) now errors instead of silently rendering claude's
+  statusline; `claude` remains the only agent with rendering support.
+- TTY mode now renders a real preview instead of printing usage help, and
+  that preview genuinely simulates what a real `aide launch` would set
+  (sandbox, network, capabilities, trust, auto-approve) for the CWD-matched
+  context, instead of reading the real process env (which is empty outside
+  an actual launch). `--context <name>` does the same for an explicitly
+  named context, in both TTY and piped mode, and errors if the name doesn't
+  exist.
+- New `ccstatusline` capability grants read access to
+  `~/.config/ccstatusline/settings.json`, for `aide statusline` invoked from
+  a ccstatusline Custom Command widget. It's the one built-in capability
+  that auto-enables itself: when its settings file exists on disk at
+  context-resolution time, it's added to the effective capability set
+  automatically, both at actual agent launch and in `aide cap
+  list`/`aide cap audit` output, so what those commands report always
+  matches what a real launch grants.

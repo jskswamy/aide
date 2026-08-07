@@ -301,7 +301,7 @@ func TestRenderStatusline_SandboxUnmanagedWhenEnvAbsent(t *testing.T) {
 		"AIDE_TRUST":        "trusted",
 	}
 	got := renderStatusline(cfg, env)
-	want := "❓ | 🌐"
+	want := "💀 | 🌐"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -315,7 +315,7 @@ func TestRenderStatusline_NetworkUnmanagedWhenEnvAbsent(t *testing.T) {
 		"AIDE_TRUST":   "trusted",
 	}
 	got := renderStatusline(cfg, env)
-	want := "🔒 | ❓"
+	want := "🔒 | 🌫️"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -324,7 +324,7 @@ func TestRenderStatusline_NetworkUnmanagedWhenEnvAbsent(t *testing.T) {
 func TestRenderStatusline_BothUnmanagedWhenNoAideEnvAtAll(t *testing.T) {
 	cfg := config.ResolveStatusline(nil, nil)
 	got := renderStatusline(cfg, map[string]string{})
-	want := "❓ | ❓"
+	want := "💀 | 🌫️"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -527,6 +527,13 @@ func TestRunStatusline_ClaudeSubcommandStillWorksUnmodified(t *testing.T) {
 }
 
 func TestRunStatusline_TTYRendersPreviewInsteadOfHelpText(t *testing.T) {
+	// No config.yaml written: launcher.PreviewSessionEnv's CWD-context
+	// resolution fails to match anything, so the TTY branch falls back
+	// to envForRender() — deterministic regardless of the real machine's
+	// aide config, matching the isolation this branch already fought to
+	// establish for its other tests.
+	isolatedConfigDir(t)
+
 	t.Setenv("AIDE_SANDBOX", "on")
 	t.Setenv("AIDE_NETWORK_MODE", "outbound")
 	t.Setenv("AIDE_CAPS", "")
@@ -542,12 +549,17 @@ func TestRunStatusline_TTYRendersPreviewInsteadOfHelpText(t *testing.T) {
 	cmd := statuslineAgentCmd("claude")
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	err := runStatuslineRenderWithStdin(cmd, "claude", nil, true, strings.NewReader(""))
+	err := runStatuslineRenderWithStdin(cmd, "claude", nil, true, strings.NewReader(""), "")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, buf.String())
 	}
 	got := strings.TrimSpace(buf.String())
-	want := "🔒 | 🌐"
+	// Even with no config.yaml, config.Load synthesizes a catch-all
+	// "default" context (internal/config/config.go), which
+	// PreviewSessionEnv resolves and the context module then renders —
+	// this is the TTY preview genuinely simulating a launch, not a
+	// leftover of the old real-env-only behavior.
+	want := "🔒 | 🌐 | 📁 default"
 	if got != want {
 		t.Errorf("got %q, want %q (real rendered statusline output, not just absence of old help text)", got, want)
 	}
@@ -625,5 +637,67 @@ func TestRunStatusline_UnknownModule_Errors(t *testing.T) {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error should list valid module %q, got: %v", name, err)
 		}
+	}
+}
+
+func TestRunStatusline_ExplicitContext_PreviewsSimulatedSession(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeStatuslineConfig(t, dir, "work", "claude", "")
+
+	// Real ambient AIDE_* env is deliberately hostile/absent — an
+	// explicit --context request must simulate the named context's
+	// session instead of reading (or falling back to) real env vars.
+	withPipedStdin(t, `{"session_id":"abc"}`)
+
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--context", "work"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+	got := strings.TrimSpace(buf.String())
+	want := "🔒 | 🌐 | 📁 work"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRunStatusline_ExplicitContext_UnknownNameErrors(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeStatuslineConfig(t, dir, "work", "claude", "")
+	withPipedStdin(t, `{"session_id":"abc"}`)
+
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--context", "nonexistent"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error for unknown context, got success with output: %s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("error should mention nonexistent, got: %v", err)
+	}
+}
+
+func TestRunStatusline_ExplicitContext_AgentFromContextWhenNoAgentFlag(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeStatuslineConfig(t, dir, "work", "gemini", "")
+	withPipedStdin(t, `{"session_id":"abc"}`)
+
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--context", "work"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected unsupported-agent error (context's agent is gemini), got success with output: %s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "gemini") {
+		t.Errorf("error should mention gemini (from context, not a flag), got: %v", err)
 	}
 }

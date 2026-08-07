@@ -2,6 +2,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -17,7 +19,7 @@ func TestResolveEffectiveCapabilities_DefaultContextNoOverride(t *testing.T) {
 		DefaultContext: "work",
 	}
 
-	name, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "")
+	name, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,7 +45,7 @@ func TestResolveEffectiveCapabilities_MergesProjectOverride(t *testing.T) {
 		},
 	}
 
-	name, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "")
+	name, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +76,7 @@ func TestResolveEffectiveCapabilities_ExplicitContextSkipsOverride(t *testing.T)
 		},
 	}
 
-	name, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "other")
+	name, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "other", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,8 +95,50 @@ func TestResolveEffectiveCapabilities_UnknownContextErrors(t *testing.T) {
 		},
 	}
 
-	_, _, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "nonexistent")
+	_, _, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "nonexistent", t.TempDir())
 	if err == nil {
 		t.Fatal("expected error for unknown context, got nil")
+	}
+}
+
+// TestResolveEffectiveCapabilities_AutoIncludesCcstatusline proves the fix
+// for the gap where `aide cap list`/`aide cap audit` could report a
+// different effective capability set than what a real `aide launch`
+// grants: when ~/.config/ccstatusline/settings.json exists, it must show
+// up here too, not just at actual launch time (internal/launcher.Launch).
+func TestResolveEffectiveCapabilities_AutoIncludesCcstatusline(t *testing.T) {
+	homeDir := t.TempDir()
+	ccDir := filepath.Join(homeDir, ".config", "ccstatusline")
+	if err := os.MkdirAll(ccDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ccDir, "settings.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Capabilities: []string{"go"},
+			},
+		},
+		DefaultContext: "work",
+	}
+
+	name, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "", homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "work" {
+		t.Errorf("expected context name %q, got %q", "work", name)
+	}
+	want := map[string]bool{"go": true, "ccstatusline": true}
+	if len(caps) != len(want) {
+		t.Fatalf("expected [go ccstatusline], got %v", caps)
+	}
+	for _, c := range caps {
+		if !want[c] {
+			t.Errorf("unexpected capability %q in %v", c, caps)
+		}
 	}
 }

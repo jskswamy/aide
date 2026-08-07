@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/provision"
 	claudeprov "github.com/jskswamy/aide/internal/provision/agents/claude"
 	"github.com/spf13/cobra"
@@ -33,7 +34,7 @@ func statuslineCmd() *cobra.Command {
 				}
 				return runStatuslineInstallRemove(cmd, effectiveAgent, install, remove, contextName)
 			}
-			return runStatuslineRender(cmd, effectiveAgent, modules)
+			return runStatuslineRender(cmd, effectiveAgent, modules, contextName)
 		},
 	}
 	cmd.Flags().StringVar(&agent, "agent", "", "Coding agent (default: auto-detected)")
@@ -57,7 +58,7 @@ func statuslineAgentCmd(agent string) *cobra.Command {
 			if install || remove {
 				return runStatuslineInstallRemove(cmd, agent, install, remove, contextName)
 			}
-			return runStatuslineRender(cmd, agent, modules)
+			return runStatuslineRender(cmd, agent, modules, contextName)
 		},
 	}
 	cmd.Flags().BoolVar(&install, "install", false, fmt.Sprintf("Install aide statusline for %s", agent))
@@ -117,40 +118,84 @@ func validateStatuslineModules(modules []string) error {
 // runStatuslineRender determines whether stdin is a TTY or a pipe and
 // delegates to runStatuslineRenderWithStdin. Split out so tests can drive
 // the TTY branch directly without needing real terminal I/O.
-func runStatuslineRender(cmd *cobra.Command, explicitAgent string, modules []string) error {
+func runStatuslineRender(cmd *cobra.Command, explicitAgent string, modules []string, contextName string) error {
 	fi, statErr := os.Stdin.Stat()
 	isTTY := statErr != nil || (fi.Mode()&os.ModeCharDevice) != 0
-	return runStatuslineRenderWithStdin(cmd, explicitAgent, modules, isTTY, os.Stdin)
+	return runStatuslineRenderWithStdin(cmd, explicitAgent, modules, isTTY, os.Stdin, contextName)
 }
 
-// runStatuslineRenderWithStdin resolves the agent and renders the requested
-// modules (or the full combined output when modules is empty) to stdout.
-// Runs identically whether stdin is piped (Claude Code invoking it on every
-// update) or a TTY (a human previewing the statusline directly) — the only
-// difference is how the agent gets resolved (see resolveStatuslineAgent).
-// isTTY and stdin are parameters (rather than reading os.Stdin directly) so
-// tests can exercise the TTY branch in-process.
-func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modules []string, isTTY bool, stdin io.Reader) error {
+// runStatuslineRenderWithStdin resolves the agent and env, then renders the
+// requested modules (or the full combined output when modules is empty) to
+// stdout. isTTY and stdin are parameters (rather than reading os.Stdin
+// directly) so tests can exercise the TTY branch in-process.
+//
+// Three paths, depending on contextName and isTTY:
+//   - contextName set: simulate that context's session (agent, sandbox,
+//     network, caps, trust) via launcher.PreviewSessionEnv, regardless of
+//     TTY/piped — an explicit preview request wins over whatever real env
+//     happens to be present. Errors loudly if the context doesn't exist.
+//   - TTY, no contextName: simulate the CWD-matched context so a human
+//     sees what a real launch would show, not just the (mostly absent)
+//     real process env. Falls back to envForRender() on any resolution
+//     failure — same graceful-degradation contract as
+//     resolveStatuslineAgent's CWD-context fallback.
+//   - piped, no contextName: unchanged v1 behavior — reads the real
+//     process env, since this is Claude Code invoking it inside an
+//     already-launched session.
+func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modules []string, isTTY bool, stdin io.Reader, contextName string) error {
 	if err := validateStatuslineModules(modules); err != nil {
 		return err
 	}
 
-	var stdinData []byte
-	if !isTTY {
+	cwd, _ := os.Getwd()
+	cfg, cfgErr := config.Load(config.Dir(), cwd)
+
+	var agent string
+	var env map[string]string
+
+	switch {
+	case contextName != "":
+		if cfgErr != nil {
+			return fmt.Errorf("loading config: %w", cfgErr)
+		}
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("home dir: %w", err)
+		}
+		previewEnv, err := launcher.PreviewSessionEnv(cfg, cwd, contextName, homeDir)
+		if err != nil {
+			return err
+		}
+		env = previewEnv
+		agent = explicitAgent
+		if agent == "" {
+			agent = env["AIDE_AGENT"]
+		}
+
+	case isTTY:
+		agent = resolveStatuslineAgent(explicitAgent, isTTY, nil)
+		if homeDir, err := os.UserHomeDir(); err == nil && cfgErr == nil {
+			if previewEnv, err := launcher.PreviewSessionEnv(cfg, cwd, "", homeDir); err == nil {
+				env = previewEnv
+			}
+		}
+		if env == nil {
+			env = envForRender()
+		}
+
+	default:
 		data, err := io.ReadAll(stdin)
 		if err != nil {
 			return fmt.Errorf("reading stdin: %w", err)
 		}
-		stdinData = data
+		agent = resolveStatuslineAgent(explicitAgent, isTTY, data)
+		env = envForRender()
 	}
 
-	agent := resolveStatuslineAgent(explicitAgent, isTTY, stdinData)
 	if agent != "claude" {
 		return fmt.Errorf("statusline rendering not yet supported for agent %q (only claude is supported)", agent)
 	}
 
-	cwd, _ := os.Getwd()
-	cfg, _ := config.Load(config.Dir(), cwd)
 	var global, project *config.StatuslineConfig
 	if cfg != nil {
 		global = cfg.Statusline
@@ -159,7 +204,7 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 		}
 	}
 	resolved := config.ResolveStatusline(global, project)
-	out := renderStatuslineModules(resolved, envForRender(), modules)
+	out := renderStatuslineModules(resolved, env, modules)
 	if out != "" {
 		fmt.Fprintln(cmd.OutOrStdout(), out)
 	}

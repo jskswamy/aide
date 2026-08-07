@@ -131,7 +131,8 @@ func capListCmd() *cobra.Command {
 			userCaps := capability.FromConfigDefs(env.Config().Capabilities)
 			builtins := capability.Builtins()
 
-			_, enabled, err := resolveEffectiveCapabilities(env.Config(), env.CWD(), contextName)
+			home, _ := os.UserHomeDir()
+			_, enabled, err := resolveEffectiveCapabilities(env.Config(), env.CWD(), contextName, home)
 			if err != nil {
 				return err
 			}
@@ -842,7 +843,8 @@ func capAuditCmd() *cobra.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			ctxName, caps, err := resolveEffectiveCapabilities(cfg, cwd, contextName)
+			home, _ := os.UserHomeDir()
+			ctxName, caps, err := resolveEffectiveCapabilities(cfg, cwd, contextName, home)
 			if err != nil {
 				return err
 			}

@@ -529,24 +529,101 @@ func TestRunStatusline_ClaudeSubcommandStillWorksUnmodified(t *testing.T) {
 func TestRunStatusline_TTYRendersPreviewInsteadOfHelpText(t *testing.T) {
 	t.Setenv("AIDE_SANDBOX", "on")
 	t.Setenv("AIDE_NETWORK_MODE", "outbound")
-	// os.Stdin defaults to the test process's real stdin, which go test
-	// runs with a non-TTY (piped/redirected) stdin — simulate the TTY
-	// path explicitly by pointing os.Stdin at a closed pipe end that
-	// still reports as a char device is impractical in-process, so this
-	// test instead verifies the behavioral contract directly:
-	// resolveStatuslineAgent + renderStatuslineModules compose correctly
-	// for the TTY branch (isTTY=true), which is exercised in Task 6's
-	// unit tests. This test only asserts the old help-text branch is gone.
+	t.Setenv("AIDE_CAPS", "")
+	t.Setenv("AIDE_TRUST", "")
+	t.Setenv("AIDE_AUTO_APPROVE", "")
+	t.Setenv("AIDE_CONTEXT", "")
+	t.Setenv("AIDE_AGENT", "claude")
+
+	// Actually exercises isTTY == true: runStatuslineRenderWithStdin takes
+	// isTTY as a parameter, so no real terminal is needed. stdin is a
+	// no-op reader since the TTY branch never reads it.
+	var buf bytes.Buffer
+	cmd := statuslineAgentCmd("claude")
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	err := runStatuslineRenderWithStdin(cmd, "claude", nil, true, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+	got := strings.TrimSpace(buf.String())
+	want := "🔒 | 🌐"
+	if got != want {
+		t.Errorf("got %q, want %q (real rendered statusline output, not just absence of old help text)", got, want)
+	}
+	if strings.Contains(buf.String(), "Render aide session state as a statusline") {
+		t.Error("old help text should no longer be printed")
+	}
+}
+
+func TestRunStatusline_Help_PrintsFlagUsage(t *testing.T) {
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "--module") || !strings.Contains(out, "--install") {
+		t.Errorf("expected cobra flag usage in --help output, got: %s", out)
+	}
+}
+
+func TestRunStatusline_UnknownPositionalAgent_Errors(t *testing.T) {
+	withPipedStdin(t, `{"session_id":"abc"}`)
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"gemini"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error for unknown positional agent, got success with output: %s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "gemini") {
+		t.Errorf("error should mention gemini, got: %v", err)
+	}
+}
+
+func TestRunStatusline_UnknownPositionalAgent_InstallHonorsPositional(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeStatuslineConfig(t, dir, "work", "claude", "")
+
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"gemini", "--install", "--context", "work"})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("expected positional agent to be honored for --install, got error: %v\n%s", err, buf.String())
+	}
+	settings := readSettingsJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	sl, _ := settings["statusLine"].(map[string]any)
+	if sl["command"] != "aide statusline gemini" {
+		t.Errorf("statusLine.command = %v, want %q", sl["command"], "aide statusline gemini")
+	}
+}
+
+func TestRunStatusline_UnknownModule_Errors(t *testing.T) {
+	withPipedStdin(t, `{"session_id":"abc"}`)
 	cmd := statuslineAgentCmd("claude")
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{})
-	withPipedStdin(t, `{}`)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute: %v\n%s", err, buf.String())
+	cmd.SetArgs([]string{"--module", "bogus"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error for unknown module, got success with output: %s", buf.String())
 	}
-	if strings.Contains(buf.String(), "Render aide session state as a statusline") {
-		t.Error("old help text should no longer be printed")
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("error should mention bogus, got: %v", err)
+	}
+	for _, name := range validStatuslineModules {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error should list valid module %q, got: %v", name, err)
+		}
 	}
 }

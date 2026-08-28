@@ -1,3 +1,26 @@
+## Unreleased
+
+### Feature
+
+#### aide sandbox allow/deny now sync Claude's own permission store
+
+`aide sandbox allow <dir>` and `aide sandbox deny <dir>` previously only
+touched aide's own OS-level sandbox policy (`readable_extra`/
+`writable_extra`/`denied_extra`), leaving the same edit to be made by hand in
+Claude Code's `settings.local.json`/`settings.json`
+`permissions.additionalDirectories`. That manual step now happens
+automatically as part of the same command.
+
+- The agent-side edit is best-effort: it never fails the aide-side
+  mutation, printing a warning instead if it can't be applied.
+- Both commands gained a `--no-agent-grant` flag to opt out and keep the
+  old aide-only behavior.
+- The new `provision.DirectoryGranter` interface is the extension point;
+  other agent drivers can implement it later to gain the same behavior.
+- `sandbox deny` correctly revokes nested grants (e.g. denying `/repo`
+  after allowing `/repo/sub`), not just exact path matches, without
+  touching unrelated parent grants.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

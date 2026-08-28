@@ -768,12 +768,15 @@ aide sandbox allow <path> [--write] [--context name]
 ```
 
 Adds a path to `readable_extra` (default) or `writable_extra` for a context's
-inline sandbox policy.
+inline sandbox policy. When the context's agent supports it (currently
+Claude), the path is also granted in the agent's own permission store; pass
+`--no-agent-grant` to skip this.
 
 | Flag | Description |
 |------|-------------|
 | `--write` | Add to writable_extra instead of readable_extra |
 | `--context <name>` | Target context (default: CWD-matched) |
+| `--no-agent-grant` | Skip granting/revoking this path in the agent's own permission store (e.g. Claude's additionalDirectories) |
 
 ```
 aide sandbox allow ~/shared-docs --write
@@ -785,11 +788,14 @@ aide sandbox allow ~/shared-docs --write
 aide sandbox deny <path> [--context name]
 ```
 
-Adds a path to `denied_extra` for a context's inline sandbox policy.
+Adds a path to `denied_extra` for a context's inline sandbox policy. When the
+context's agent supports it (currently Claude), the path is also revoked from
+the agent's own permission store; pass `--no-agent-grant` to skip this.
 
 | Flag | Description |
 |------|-------------|
 | `--context <name>` | Target context (default: CWD-matched) |
+| `--no-agent-grant` | Skip granting/revoking this path in the agent's own permission store (e.g. Claude's additionalDirectories) |
 
 ```
 aide sandbox deny ~/private

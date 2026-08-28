@@ -183,17 +183,23 @@ func (d *Driver) WriteHooks(ctx provision.Context, prevManaged []provision.Hook,
 }
 
 func readSettings(ctx provision.Context) (map[string]interface{}, error) {
-	path := settingsPath(ctx)
+	return readSettingsFile(settingsPath(ctx))
+}
+
+// readSettingsFile reads and parses the JSON object at path. A missing
+// file returns an empty map rather than an error so callers can treat
+// "no settings file yet" the same as "empty settings".
+func readSettingsFile(path string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]interface{}{}, nil
 		}
-		return nil, fmt.Errorf("claude hooks: read %s: %w", path, err)
+		return nil, fmt.Errorf("claude settings: read %s: %w", path, err)
 	}
 	var m map[string]interface{}
 	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("claude hooks: parse %s: %w", path, err)
+		return nil, fmt.Errorf("claude settings: parse %s: %w", path, err)
 	}
 	if m == nil {
 		m = map[string]interface{}{}

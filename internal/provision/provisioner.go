@@ -240,6 +240,24 @@ func ResolveAgentDir(prov Provisioner, ctx Context) string {
 	return ""
 }
 
+// DirectoryGranter is implemented by drivers that can add/remove a
+// directory from the agent's own permission store — distinct from
+// aide's OS-level sandbox, which is what readable_extra/writable_extra
+// already control. Optional: drivers that don't implement it are
+// skipped via a type assertion, the same pattern as AgentDirProvider.
+type DirectoryGranter interface {
+	// GrantDirectory adds path to the agent's own allow-list so the
+	// agent's internal permission checks (not just the OS sandbox)
+	// permit tool access to it. write is passed through for agents
+	// whose permission model distinguishes read/write extra paths;
+	// implementations that don't make that distinction ignore it.
+	GrantDirectory(ctx Context, path string, write bool) error
+	// RevokeDirectory removes path, and anything nested under it,
+	// from the agent's own allow-list. A parent of path is left
+	// untouched. Must be a no-op (nil error) if nothing matches.
+	RevokeDirectory(ctx Context, path string) error
+}
+
 // HookInstaller is the file-edit interface for hook management. Drivers
 // implement it when the agent has no CLI surface for hook management.
 // Ownership is tracked in managed.json (not via in-file markers).

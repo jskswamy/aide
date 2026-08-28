@@ -1,111 +1,10 @@
-## Unreleased
+## v2.2.0 (2026-08-28)
 
-### Fix
+A statusline for your terminal, hooks that adopt themselves and travel
+across contexts via `{agent_dir}`, more resilient plugin/MCP sync, and a
+round of security patches to the toolchain and dependencies.
 
-#### aide sync no longer perpetually reinstalls hooks with explicit matchers
-
-When `config.yaml` declares hooks with matchers such as `Grep|Glob`,
-`compact`, `startup`, or `'*'`, `aide sync` generated a fresh
-`+ install hook` operation on every run even after the hook was already
-installed in `settings.json`.
-
-Root cause: `WriteHooks` used `claudeMatcherMap[h.Matcher]` to translate
-aide-internal matcher names to Claude Code's native names. The map only
-contains `shell -> Bash`; every other matcher produced the zero-value `""`
-and was written to `settings.json` without a matcher field. On the next
-read, `ReadHooks` returned `matcher: ""`, causing a HookKey mismatch
-against the desired set (which kept the original matcher) on every sync.
-A related gap in `ComputePlan` meant the `'*'` wildcard read back from
-`settings.json` was never normalized to the same "match all" sentinel
-used for desired and managed hooks, so it also looked perpetually
-out of sync.
-
-Three fixes address this:
-
-- `WriteHooks` now uses `toNativeMatcher`, which passes through any
-  matcher not explicitly in `claudeMatcherMap` unchanged. Only aide-
-  internal shorthands (currently only `shell`) are translated.
-- `normalizeHookMatcher` converts the `'*'` wildcard to `''` consistently
-  across desired, managed, *and* installed hook comparisons, so the
-  "match all" sentinel always matches an entry with no matcher field.
-- `WriteHooks` bucket grouping now uses a `bucketRefs` map instead of
-  `buckets[len-1]`. When two hooks share the same event+matcher but
-  differ in command path (e.g. both contexts declare a `compact` hook),
-  the old code appended the second command to whichever bucket was last
-  in the array rather than the correct one, silently misrouting commands
-  into the wrong matcher bucket in settings.json.
-
-The removal path in `WriteHooks` also accepts the empty-matcher form of a
-hook when removing managed entries, so hooks written by older aide versions
-(without a matcher field) are cleaned up during the next sync.
-
-#### Plugin sync is now self-healing for project-scope and stale-index errors
-
-Two error patterns previously blocked `aide sync` from cleaning up managed
-state, causing the same errors to reappear on every run:
-
-- A plugin managed at user scope but installed at project scope caused
-  `claude plugin uninstall` to fail with "enabled at project scope".
-  `UninstallPlugin` now tolerates this message; aide removes the entry
-  from managed state and stops tracking the plugin at user scope.
-- A marketplace plugin installed from a stale local index caused
-  `claude plugin install` to fail with "local copy may be out of date".
-  `InstallPlugin` now detects this, runs `claude plugin marketplace update
-  <marketplace>` once (ignoring update errors), and retries the install.
-  If the plugin name has no `@marketplace` suffix, the error is returned
-  as-is without a retry.
-
-#### aide sync no longer reinstalls managed MCP servers every run
-
-When a project-level `.mcp.json` declares an MCP server by the same name as
-one aide manages at user scope, `claude mcp get <name>` returns the
-project-scope entry. The User-scope filter then drops it, leaving the server
-absent from the installed map, so every sync generated a fresh install op
-even though aide had already installed the server.
-
-The planner now skips the install if the server is already in managed state,
-treating managed as the authoritative source when the get query is shadowed by
-a higher-precedence scope.
-
-#### aide adopt no longer corrupts config with name-only marketplace keys
-
-Adopting a marketplace whose key is a bare name (e.g. `rfctl-local` rather
-than `owner/repo` or a URL) wrote an invalid entry into `config.yaml`. On
-the next run, `ValidatePlugins` rejected the config with a shape error.
-
-The fix skips name-only keys during marketplace adoption and prints a note
-telling the user to add the entry manually with a proper repo path.
-
-#### aide sync hook plan shows correct per-matcher labels
-
-Hook operations in the sync plan were missing the matcher segment in their
-display name. Hooks that share event and command but differ by matcher (e.g.
-`session_start startup` vs `session_start compact`) appeared identical in the
-output, giving the impression of duplicates.
-
-The `hookOpName` helper now includes the matcher when non-empty, producing
-`session_start:compact:~/.claude/hooks/cbm-session-reminder` style labels.
-
-#### Clipboard access is now its own opt-in capability (fixes copy-out regression)
-
-The mach-lookup allow added to fix Claude Code's Ctrl+V image paste only
-granted `com.apple.pasteboard.1`, one of three Mach services `pbcopy`
-needs. Without the other two (`com.apple.lsd.mapdb` and
-`com.apple.lsd.modifydb`, both Launch Services type lookups needed when
-writing a pasteboard flavor), `pbcopy` exited 0 but silently failed to
-write to the real host pasteboard, breaking any clipboard fallback logic
-that trusted that exit code. Copying text out of the sandbox stopped
-working while paste (a pure read) kept working.
-
-Clipboard access is now the `clipboard` capability
-(`internal/capability/builtin.go`), grants all three required Mach
-services, and is available to every agent, not just Claude.
-
-**Breaking change:** clipboard access is opt-in. If you relied on Claude
-Code image paste working automatically, add `clipboard` to your context's
-`capabilities:` list or pass `--with clipboard`.
-
-### Feature
+### 🪝 Hooks
 
 #### Hook commands support {agent_dir} and ~/ path expansion
 
@@ -144,6 +43,94 @@ surface them as unmanaged.
 - Works for any agent that implements `provision.HookInstaller`
 - Hooks are deduplicated by `event+matcher+command` key before writing
 - `--yes` flag adopts all unmanaged hooks without prompting
+
+#### aide sync no longer perpetually reinstalls hooks with explicit matchers
+
+When `config.yaml` declares hooks with matchers such as `Grep|Glob`,
+`compact`, `startup`, or `'*'`, `aide sync` generated a fresh
+`+ install hook` operation on every run even after the hook was already
+installed in `settings.json`.
+
+Root cause: `WriteHooks` used `claudeMatcherMap[h.Matcher]` to translate
+aide-internal matcher names to Claude Code's native names. The map only
+contains `shell -> Bash`; every other matcher produced the zero-value `""`
+and was written to `settings.json` without a matcher field. On the next
+read, `ReadHooks` returned `matcher: ""`, causing a HookKey mismatch
+against the desired set (which kept the original matcher) on every sync.
+A related gap in `ComputePlan` meant the `'*'` wildcard read back from
+`settings.json` was never normalized to the same "match all" sentinel
+used for desired and managed hooks, so it also looked perpetually
+out of sync.
+
+Three fixes address this:
+
+- `WriteHooks` now uses `toNativeMatcher`, which passes through any
+  matcher not explicitly in `claudeMatcherMap` unchanged. Only aide-
+  internal shorthands (currently only `shell`) are translated.
+- `normalizeHookMatcher` converts the `'*'` wildcard to `''` consistently
+  across desired, managed, *and* installed hook comparisons, so the
+  "match all" sentinel always matches an entry with no matcher field.
+- `WriteHooks` bucket grouping now uses a `bucketRefs` map instead of
+  `buckets[len-1]`. When two hooks share the same event+matcher but
+  differ in command path (e.g. both contexts declare a `compact` hook),
+  the old code appended the second command to whichever bucket was last
+  in the array rather than the correct one, silently misrouting commands
+  into the wrong matcher bucket in settings.json.
+
+The removal path in `WriteHooks` also accepts the empty-matcher form of a
+hook when removing managed entries, so hooks written by older aide versions
+(without a matcher field) are cleaned up during the next sync.
+
+#### aide sync hook plan shows correct per-matcher labels
+
+Hook operations in the sync plan were missing the matcher segment in their
+display name. Hooks that share event and command but differ by matcher (e.g.
+`session_start startup` vs `session_start compact`) appeared identical in the
+output, giving the impression of duplicates.
+
+The `hookOpName` helper now includes the matcher when non-empty, producing
+`session_start:compact:~/.claude/hooks/cbm-session-reminder` style labels.
+
+### 🔌 Plugin & MCP sync
+
+#### Plugin sync is now self-healing for project-scope and stale-index errors
+
+Two error patterns previously blocked `aide sync` from cleaning up managed
+state, causing the same errors to reappear on every run:
+
+- A plugin managed at user scope but installed at project scope caused
+  `claude plugin uninstall` to fail with "enabled at project scope".
+  `UninstallPlugin` now tolerates this message; aide removes the entry
+  from managed state and stops tracking the plugin at user scope.
+- A marketplace plugin installed from a stale local index caused
+  `claude plugin install` to fail with "local copy may be out of date".
+  `InstallPlugin` now detects this, runs `claude plugin marketplace update
+  <marketplace>` once (ignoring update errors), and retries the install.
+  If the plugin name has no `@marketplace` suffix, the error is returned
+  as-is without a retry.
+
+#### aide sync no longer reinstalls managed MCP servers every run
+
+When a project-level `.mcp.json` declares an MCP server by the same name as
+one aide manages at user scope, `claude mcp get <name>` returns the
+project-scope entry. The User-scope filter then drops it, leaving the server
+absent from the installed map, so every sync generated a fresh install op
+even though aide had already installed the server.
+
+The planner now skips the install if the server is already in managed state,
+treating managed as the authoritative source when the get query is shadowed by
+a higher-precedence scope.
+
+#### aide adopt no longer corrupts config with name-only marketplace keys
+
+Adopting a marketplace whose key is a bare name (e.g. `rfctl-local` rather
+than `owner/repo` or a URL) wrote an invalid entry into `config.yaml`. On
+the next run, `ValidatePlugins` rejected the config with a shape error.
+
+The fix skips name-only keys during marketplace adoption and prints a note
+telling the user to add the entry manually with a proper repo path.
+
+### 📊 aide statusline
 
 #### aide statusline: live session state in your terminal
 
@@ -206,3 +193,42 @@ during whole-branch review.
   automatically, both at actual agent launch and in `aide cap
   list`/`aide cap audit` output, so what those commands report always
   matches what a real launch grants.
+
+### 🔒 Security
+
+#### Clipboard access is now its own opt-in capability (fixes copy-out regression)
+
+The mach-lookup allow added to fix Claude Code's Ctrl+V image paste only
+granted `com.apple.pasteboard.1`, one of three Mach services `pbcopy`
+needs. Without the other two (`com.apple.lsd.mapdb` and
+`com.apple.lsd.modifydb`, both Launch Services type lookups needed when
+writing a pasteboard flavor), `pbcopy` exited 0 but silently failed to
+write to the real host pasteboard, breaking any clipboard fallback logic
+that trusted that exit code. Copying text out of the sandbox stopped
+working while paste (a pure read) kept working.
+
+Clipboard access is now the `clipboard` capability
+(`internal/capability/builtin.go`), grants all three required Mach
+services, and is available to every agent, not just Claude.
+
+**Breaking change:** clipboard access is opt-in. If you relied on Claude
+Code image paste working automatically, add `clipboard` to your context's
+`capabilities:` list or pass `--with clipboard`.
+
+#### Bump Go toolchain to 1.26.6, resolving seven stdlib CVEs
+
+CI's govulncheck step was failing because the pinned toolchain (1.26.5)
+shipped seven now-patched Go standard library vulnerabilities reachable
+from aide's code, spanning `net/url`, `html/template`, `crypto/tls`,
+`net/http`, `encoding/xml`, and `encoding/asn1`.
+
+- `go.mod`'s `toolchain` directive is bumped to `go1.26.6`.
+- The Nix flake's `nixpkgs` pin is updated so the dev shell also resolves
+  a Go 1.26.6+ toolchain directly, instead of relying on
+  `GOTOOLCHAIN=auto` to silently fetch it over the network.
+
+#### Bump github.com/go-git/go-git/v5 to v5.19.2
+
+Picks up upstream's `[SECURITY]` fixes: a path-traversal guard for git
+reference names in dotgit storage, plus `golang.org/x/crypto`, `x/net`,
+and `x/text` version bumps pulled in transitively.

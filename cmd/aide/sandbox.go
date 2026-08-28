@@ -633,6 +633,7 @@ func ensureProjectSandbox(po *config.ProjectOverride) *config.SandboxPolicy {
 func sandboxDenyCmd() *cobra.Command {
 	var contextName string
 	var global bool
+	var noAgentGrant bool
 	cmd := &cobra.Command{
 		Use:          "deny <path>",
 		Short:        "Add a path to the denied_extra list (project-level by default)",
@@ -640,7 +641,7 @@ func sandboxDenyCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
-			return runScopedMutation(cmd.OutOrStdout(), global, contextName, scopedMutation{
+			if err := runScopedMutation(cmd.OutOrStdout(), global, contextName, scopedMutation{
 				contextMutate: func(ctx *config.Context) error {
 					sp := ensureInlineSandbox(ctx)
 					sp.DeniedExtra = append(sp.DeniedExtra, path)
@@ -653,11 +654,18 @@ func sandboxDenyCmd() *cobra.Command {
 				},
 				successGlobal:  func(ctxName string) string { return fmt.Sprintf("Added %s to denied_extra for context %q (global)", path, ctxName) },
 				successProject: func(poPath string) string { return fmt.Sprintf("Added %s to denied_extra in project (%s)", path, poPath) },
-			})
+			}); err != nil {
+				return err
+			}
+			if !noAgentGrant {
+				revokeAgentDirectory(cmd.OutOrStdout(), cmd.ErrOrStderr(), global, contextName, path)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().BoolVar(&noAgentGrant, "no-agent-grant", false, "skip revoking this path in the agent's own permission store")
 	return cmd
 }
 
@@ -665,6 +673,7 @@ func sandboxAllowCmd() *cobra.Command {
 	var contextName string
 	var global bool
 	var write bool
+	var noAgentGrant bool
 	cmd := &cobra.Command{
 		Use:          "allow <path>",
 		Short:        "Add a path to readable_extra or writable_extra (project-level by default)",
@@ -683,7 +692,7 @@ func sandboxAllowCmd() *cobra.Command {
 					sp.ReadableExtra = append(sp.ReadableExtra, path)
 				}
 			}
-			return runScopedMutation(cmd.OutOrStdout(), global, contextName, scopedMutation{
+			if err := runScopedMutation(cmd.OutOrStdout(), global, contextName, scopedMutation{
 				contextMutate: func(ctx *config.Context) error {
 					apply(ensureInlineSandbox(ctx))
 					return nil
@@ -694,12 +703,19 @@ func sandboxAllowCmd() *cobra.Command {
 				},
 				successGlobal:  func(ctxName string) string { return fmt.Sprintf("Added %s to %s for context %q (global)", path, listName, ctxName) },
 				successProject: func(poPath string) string { return fmt.Sprintf("Added %s to %s in project (%s)", path, listName, poPath) },
-			})
+			}); err != nil {
+				return err
+			}
+			if !noAgentGrant {
+				grantAgentDirectory(cmd.OutOrStdout(), cmd.ErrOrStderr(), global, contextName, path, write)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
 	cmd.Flags().BoolVar(&write, "write", false, "add to writable_extra instead of readable_extra")
+	cmd.Flags().BoolVar(&noAgentGrant, "no-agent-grant", false, "skip granting this path in the agent's own permission store")
 	return cmd
 }
 

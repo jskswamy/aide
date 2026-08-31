@@ -23,6 +23,7 @@ var KnownAgents = []string{
 	"cursor-agent",
 	"gemini",
 	"goose",
+	"opencode",
 }
 
 // LookPathFunc abstracts exec.LookPath for testability.

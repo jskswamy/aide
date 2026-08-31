@@ -14,6 +14,7 @@ require (
 	github.com/landlock-lsm/go-landlock v0.7.0
 	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/spf13/cobra v1.10.2
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	go.uber.org/mock v0.6.0
 	golang.org/x/net v0.56.0
 	golang.org/x/sys v0.46.0

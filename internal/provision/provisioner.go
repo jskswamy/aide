@@ -439,4 +439,11 @@ var (
 
 	// HermesHookArtifact defines hermes' hook artifact shape: aide_<hash> directories (no extension).
 	HermesHookArtifact = HookArtifact{Prefix: "aide_", Ext: ""}
+
+	// OpenCodeHookArtifact defines OpenCode's hook artifact shape:
+	// aide-<hash>.js files, dropped in ~/.config/opencode/plugin/ where OpenCode
+	// auto-loads them (confirmed 2026-08-31: a probe plugin dropped
+	// there printed to stderr and appeared in `opencode debug config`'s
+	// resolved "plugin" array with plugin_origins[].scope: "local").
+	OpenCodeHookArtifact = HookArtifact{Prefix: "aide-", Ext: ".js"}
 )

@@ -112,6 +112,17 @@ func TestAgentModules(t *testing.T) {
 			},
 		},
 		{
+			name:     "OpenCode defaults",
+			module:   OpenCodeAgent(),
+			wantName: "OpenCode Agent",
+			wantContain: []string{
+				"/home/user/.config/opencode",
+				"/home/user/.local/share/opencode",
+				"/home/user/.local/state/opencode",
+				"/home/user/.cache/opencode",
+			},
+		},
+		{
 			name:     "Copilot defaults",
 			module:   CopilotAgent(),
 			wantName: "Copilot Agent",

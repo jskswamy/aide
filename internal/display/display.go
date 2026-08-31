@@ -114,11 +114,12 @@ func RemoveFromSlice(slice []string, item string) []string {
 
 // DefaultAgentIcons maps known agent binary names to their default display icons.
 var DefaultAgentIcons = map[string]string{
-	"claude":  "🤖",
-	"gemini":  "✨",
-	"codex":   "📝",
-	"copilot": "✈️",
-	"cursor":  "🖱",
+	"claude":   "🤖",
+	"gemini":   "✨",
+	"codex":    "📝",
+	"copilot":  "✈️",
+	"cursor":   "🖱",
+	"opencode": "🔷",
 }
 
 // BadgeForSource returns the emoji badge for a given env source classification

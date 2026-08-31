@@ -21,6 +21,21 @@ automatically as part of the same command.
   after allowing `/repo/sub`), not just exact path matches, without
   touching unrelated parent grants.
 
+#### aide can now sandbox OpenCode
+
+`aide` gains a `provision.Provisioner` driver for OpenCode
+(`anomalyco/opencode`, opencode.ai), so `aide context create --agent
+opencode` and `aide launch` work the same way they do for the other
+supported agents.
+
+- MCP servers and plugins are synced by editing `opencode.jsonc`
+  directly rather than shelling out to OpenCode's own CLI, which can't
+  express non-npm plugin sources (git/local refs) and has no
+  list/remove counterpart at all.
+- Hooks are installed as generated JS plugin files dropped in
+  `~/.config/opencode/plugin/` (global scope only; this driver does not
+  write project-scope hooks), which OpenCode auto-loads.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

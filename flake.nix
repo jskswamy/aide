@@ -21,6 +21,31 @@
         stable = nixpkgs-stable.legacyPackages.${system};
       in
       {
+        packages.default = pkgs.buildGoModule.override { go = pkgs.go_1_26; } {
+          pname = "aide";
+          version = self.shortRev or self.dirtyShortRev or "dev";
+          src = self;
+          subPackages = [ "cmd/aide" ];
+          vendorHash = "sha256-vXkHrww9S6HR6jEtcLF+6ZrRpBBtJWbrzdxLO0RgebE=";
+
+          # ponytail: tests run via CI/pre-commit; skipping here avoids pulling
+          # git+perl+python3 into the build closure just for two git-shelling tests.
+          doCheck = false;
+
+          ldflags = [
+            "-s"
+            "-w"
+            "-X main.version=${self.shortRev or self.dirtyShortRev or "dev"}"
+            "-X main.commit=${self.shortRev or self.dirtyShortRev or "none"}"
+          ];
+
+          meta = {
+            description = "aide — Universal Coding Agent Context Manager";
+            homepage = "https://github.com/jskswamy/aide";
+            mainProgram = "aide";
+          };
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = [
             pkgs.go_1_26

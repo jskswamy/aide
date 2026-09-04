@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/tailscale/hujson"
 
@@ -113,36 +112,10 @@ func (openCodeJSON) Write(path string, desired map[string]provision.MCPServer) e
 	if raw, ok := existing["_aide_managed"]; ok {
 		_ = json.Unmarshal(raw, &prevManaged)
 	}
-	wasManaged := map[string]bool{}
-	for _, k := range prevManaged {
-		wasManaged[k] = true
+	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired, openCodeServerBodyAny)
+	if err != nil {
+		return err
 	}
-	newServers := map[string]json.RawMessage{}
-	for key, raw := range prevServers {
-		if wasManaged[key] {
-			continue
-		}
-		newServers[key] = raw
-	}
-	newManaged := make([]string, 0, len(desired))
-	for key, s := range desired {
-		body := openCodeServerBody{Environment: s.Env}
-		if s.Command != "" {
-			body.Type = "local"
-			body.Command = append([]string{s.Command}, s.Args...)
-		}
-		if s.URL != "" {
-			body.Type = "remote"
-			body.URL = s.URL
-		}
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("provision/mcp: marshalling server %q: %w", key, err)
-		}
-		newServers[key] = raw
-		newManaged = append(newManaged, key)
-	}
-	sort.Strings(newManaged)
 
 	managedRaw, _ := json.Marshal(newManaged)
 	serversRaw, _ := json.Marshal(newServers)
@@ -154,4 +127,19 @@ func (openCodeJSON) Write(path string, desired map[string]provision.MCPServer) e
 		return fmt.Errorf("provision/mcp: marshalling %s: %w", path, err)
 	}
 	return fsutil.AtomicWrite(path, out)
+}
+
+// openCodeServerBodyAny converts an MCPServer into OpenCode's on-disk
+// server-body shape, for use as reconcile's body func.
+func openCodeServerBodyAny(s provision.MCPServer) any {
+	body := openCodeServerBody{Environment: s.Env}
+	if s.Command != "" {
+		body.Type = "local"
+		body.Command = append([]string{s.Command}, s.Args...)
+	}
+	if s.URL != "" {
+		body.Type = "remote"
+		body.URL = s.URL
+	}
+	return body
 }

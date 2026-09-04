@@ -74,7 +74,7 @@ func (jsonFlat) Write(path string, desired map[string]provision.MCPServer) error
 	if raw, ok := existing["_aide_managed"]; ok {
 		_ = json.Unmarshal(raw, &prevManaged)
 	}
-	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired)
+	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired, serverBodyAny)
 	if err != nil {
 		return err
 	}
@@ -109,3 +109,6 @@ func serverBody(s provision.MCPServer) map[string]any {
 	}
 	return body
 }
+
+// serverBodyAny adapts serverBody to reconcile's body func signature.
+func serverBodyAny(s provision.MCPServer) any { return serverBody(s) }

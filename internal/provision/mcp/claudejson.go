@@ -118,7 +118,7 @@ func (c claudeJSON) writeFlat(path string, existing map[string]json.RawMessage, 
 	if raw, ok := existing["_aide_managed"]; ok {
 		_ = json.Unmarshal(raw, &prevManaged)
 	}
-	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired)
+	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired, serverBodyAny)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (c claudeJSON) writeNested(path string, existing map[string]json.RawMessage
 	if raw, ok := entry["_aide_managed"]; ok {
 		_ = json.Unmarshal(raw, &prevManaged)
 	}
-	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired)
+	newServers, newManaged, err := reconcile(prevServers, prevManaged, desired, serverBodyAny)
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,9 @@ func (c claudeJSON) writeNested(path string, existing map[string]json.RawMessage
 
 // reconcile merges prev (managed-only entries dropped) with desired
 // and returns the new server map plus the sorted managed-key list.
-func reconcile(prevServers map[string]json.RawMessage, prevManaged []string, desired map[string]provision.MCPServer) (map[string]json.RawMessage, []string, error) {
+// body converts a desired server into its on-disk JSON shape, letting
+// each format-specific handler supply its own server-body encoding.
+func reconcile(prevServers map[string]json.RawMessage, prevManaged []string, desired map[string]provision.MCPServer, body func(provision.MCPServer) any) (map[string]json.RawMessage, []string, error) {
 	wasManaged := map[string]bool{}
 	for _, k := range prevManaged {
 		wasManaged[k] = true
@@ -185,7 +187,7 @@ func reconcile(prevServers map[string]json.RawMessage, prevManaged []string, des
 	}
 	newManaged := make([]string, 0, len(desired))
 	for key, s := range desired {
-		raw, err := json.Marshal(serverBody(s))
+		raw, err := json.Marshal(body(s))
 		if err != nil {
 			return nil, nil, fmt.Errorf("provision/mcp: marshalling server %q: %w", key, err)
 		}

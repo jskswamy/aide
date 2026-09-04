@@ -6,9 +6,7 @@ package opencode
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/tailscale/hujson"
@@ -74,22 +72,15 @@ func (*Driver) MCPHandler(_ provision.Context) provision.MCPHandler { return mcp
 // codex's config.toml handling uses, so plugins and MCP (Task 2, a
 // different key in the same file) never clobber each other's keys.
 func readConfig(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]any{}, nil
+	return provision.ReadGenericDoc(agentName, path, func(data []byte) (map[string]any, error) {
+		standardized, err := hujson.Standardize(data)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("opencode: reading config %s: %w", path, err)
-	}
-	standardized, err := hujson.Standardize(data)
-	if err != nil {
-		return nil, fmt.Errorf("opencode: parsing config %s: %w", path, err)
-	}
-	doc := map[string]any{}
-	if err := json.Unmarshal(standardized, &doc); err != nil {
-		return nil, fmt.Errorf("opencode: parsing config %s: %w", path, err)
-	}
-	return doc, nil
+		doc := map[string]any{}
+		err = json.Unmarshal(standardized, &doc)
+		return doc, err
+	})
 }
 
 func writeConfig(path string, doc map[string]any) error {

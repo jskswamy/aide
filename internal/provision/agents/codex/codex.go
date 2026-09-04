@@ -13,9 +13,7 @@
 package codex
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 
@@ -142,18 +140,11 @@ func (d *Driver) setPluginEnabled(ctx provision.Context, name string, enabled bo
 }
 
 func readConfig(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]any{}, nil
-		}
-		return nil, fmt.Errorf("codex: reading config %s: %w", path, err)
-	}
-	doc := map[string]any{}
-	if err := toml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("codex: parsing config %s: %w", path, err)
-	}
-	return doc, nil
+	return provision.ReadGenericDoc(agentName, path, func(data []byte) (map[string]any, error) {
+		doc := map[string]any{}
+		err := toml.Unmarshal(data, &doc)
+		return doc, err
+	})
 }
 
 // InstalledMarketplaces reads `[plugin_marketplaces.<name>]` tables

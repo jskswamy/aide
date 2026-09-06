@@ -259,7 +259,7 @@ func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan pro
 	if err != nil {
 		return err
 	}
-	secretsHash, err := contextSecretsHash(env.ctx)
+	secretsHash, err := provision.ContextSecretsHash(env.ctx)
 	if err != nil {
 		return err
 	}
@@ -366,69 +366,11 @@ func secretsGateOK(env *provisionEnv, cs provision.ContextState) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	secretsHash, err := contextSecretsHash(env.ctx)
+	secretsHash, err := provision.ContextSecretsHash(env.ctx)
 	if err != nil {
 		return false, err
 	}
 	return configHash == cs.ConfigHash && secretsHash == cs.SecretsHash, nil
-}
-
-// mcpTemplatesSatisfiedByInstalled reports whether every {{ }}-templated
-// MCP env value in desired has a matching key already present in
-// installed — the precondition for skipping decryption safely. Pure
-// check, no mutation: callers must not apply a partial substitution
-// when this returns false, since the fallback decrypt path needs the
-// original {{ .secrets.X }} literals intact to re-resolve everything
-// from scratch (see substituteFromInstalled).
-func mcpTemplatesSatisfiedByInstalled(desired *provision.Desired, installed provision.Installed) bool {
-	for name, server := range desired.MCPServers {
-		if len(server.Env) == 0 {
-			continue
-		}
-		inst, instOK := installed.MCPServers[name]
-		for k, v := range server.Env {
-			if !config.IsTemplate(v) {
-				continue
-			}
-			if !instOK {
-				return false
-			}
-			if _, exists := inst.Env[k]; !exists {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// substituteFromInstalled fills every {{ }}-templated MCP env value in
-// desired with the matching key's value from installed. It builds a
-// fresh Env map per server rather than writing into server.Env's
-// existing entries: that map is shared by reference with the
-// in-memory config struct (via ResolveDesired/ApplyOverride's shallow
-// copy), so mutating it in place would leak a resolved secret into
-// shared state — the same hazard the decrypt path already avoids by
-// assigning a freshly built map to server.Env instead of writing into
-// the original. Callers must only call this after
-// mcpTemplatesSatisfiedByInstalled has returned true for the same
-// (desired, installed) pair — it does not re-check.
-func substituteFromInstalled(desired *provision.Desired, installed provision.Installed) {
-	for name, server := range desired.MCPServers {
-		if len(server.Env) == 0 {
-			continue
-		}
-		inst := installed.MCPServers[name]
-		resolved := make(map[string]string, len(server.Env))
-		for k, v := range server.Env {
-			if config.IsTemplate(v) {
-				resolved[k] = inst.Env[k]
-			} else {
-				resolved[k] = v
-			}
-		}
-		server.Env = resolved
-		desired.MCPServers[name] = server
-	}
 }
 
 // resolveMCPSecretsForSync resolves {{ .secrets.X }} placeholders in
@@ -454,8 +396,8 @@ func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired, ins
 		if err != nil {
 			return err
 		}
-		if ok && mcpTemplatesSatisfiedByInstalled(desired, installed) {
-			substituteFromInstalled(desired, installed)
+		if ok && provision.MCPTemplatesSatisfiedByInstalled(desired, installed) {
+			provision.SubstituteFromInstalled(desired, installed)
 			return nil
 		}
 	}
@@ -474,19 +416,6 @@ func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired, ins
 		}
 	}
 	return provision.ResolveSecretsInMCPEnv(desired, td)
-}
-
-// contextSecretsHash returns the sha256 hash of ctx's encrypted secrets
-// file (via provision.ConfigHash, which already treats a missing file
-// as "" — no separate sentinel needed), or "" if the context has no
-// secret configured. Used both to persist a drift signal after a
-// successful sync and, by secretsGateOK, to decide whether a sync run
-// can skip decryption entirely.
-func contextSecretsHash(ctx config.Context) (string, error) {
-	if ctx.Secret == "" {
-		return "", nil
-	}
-	return provision.ConfigHash(config.ResolveSecretPath(ctx.Secret))
 }
 
 // warnAndFilterDesired emits a warning and zeros out Desired fields

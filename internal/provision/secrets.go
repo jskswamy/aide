@@ -52,3 +52,60 @@ func ResolveSecretsInMCPEnv(desired *Desired, td *config.TemplateData) error {
 	}
 	return nil
 }
+
+// MCPTemplatesSatisfiedByInstalled reports whether every {{ }}-templated
+// MCP env value in desired has a matching key already present in
+// installed — the precondition for a caller (e.g. aide sync's secrets
+// hash gate) to skip decryption safely. Pure check, no mutation:
+// callers must not apply a partial substitution when this returns
+// false, since a decrypt-based fallback needs the original
+// {{ .secrets.X }} literals intact to re-resolve everything from
+// scratch (see SubstituteFromInstalled).
+func MCPTemplatesSatisfiedByInstalled(desired *Desired, installed Installed) bool {
+	for name, server := range desired.MCPServers {
+		if len(server.Env) == 0 {
+			continue
+		}
+		inst, instOK := installed.MCPServers[name]
+		for k, v := range server.Env {
+			if !config.IsTemplate(v) {
+				continue
+			}
+			if !instOK {
+				return false
+			}
+			if _, exists := inst.Env[k]; !exists {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// SubstituteFromInstalled fills every {{ }}-templated MCP env value in
+// desired with the matching key's value from installed. It builds a
+// fresh Env map per server rather than writing into server.Env's
+// existing entries: that map may be shared by reference with other
+// in-memory structures (e.g. a parsed config struct, via a shallow
+// copy upstream), so mutating it in place could leak a resolved
+// secret into shared state. Callers must only call this after
+// MCPTemplatesSatisfiedByInstalled has returned true for the same
+// (desired, installed) pair — it does not re-check.
+func SubstituteFromInstalled(desired *Desired, installed Installed) {
+	for name, server := range desired.MCPServers {
+		if len(server.Env) == 0 {
+			continue
+		}
+		inst := installed.MCPServers[name]
+		resolved := make(map[string]string, len(server.Env))
+		for k, v := range server.Env {
+			if config.IsTemplate(v) {
+				resolved[k] = inst.Env[k]
+			} else {
+				resolved[k] = v
+			}
+		}
+		server.Env = resolved
+		desired.MCPServers[name] = server
+	}
+}

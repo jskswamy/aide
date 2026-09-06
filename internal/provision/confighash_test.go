@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/provision"
 )
 
@@ -50,5 +51,34 @@ func TestConfigHashMissingFileReturnsEmpty(t *testing.T) {
 	}
 	if h != "" {
 		t.Errorf("expected empty hash for missing file, got %q", h)
+	}
+}
+
+func TestContextSecretsHashEmptyWhenNoSecretConfigured(t *testing.T) {
+	h, err := provision.ContextSecretsHash(config.Context{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h != "" {
+		t.Errorf("expected empty hash for no secret configured, got %q", h)
+	}
+}
+
+func TestContextSecretsHashMatchesFileContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret.enc.yaml")
+	if err := os.WriteFile(path, []byte("ciphertext"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := provision.ContextSecretsHash(config.Context{Secret: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := provision.ConfigHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("ContextSecretsHash = %q, want %q", got, want)
 	}
 }

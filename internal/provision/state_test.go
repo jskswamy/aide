@@ -92,3 +92,26 @@ func TestStateRoundTripWithHooks(t *testing.T) {
 		t.Errorf("hooks[0] = %+v", hooks[0])
 	}
 }
+
+func TestSaveStateRoundTripWithSecretsHash(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "managed.json")
+	st := &provision.ManagedState{
+		Version: 1,
+		Contexts: map[string]*provision.ContextState{
+			"work": {
+				ConfigHash:  "sha256:abc",
+				SecretsHash: "sha256:def",
+			},
+		},
+	}
+	if err := provision.SaveState(path, st); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+	got, err := provision.LoadState(path)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if got.Contexts["work"].SecretsHash != "sha256:def" {
+		t.Errorf("SecretsHash = %q, want %q", got.Contexts["work"].SecretsHash, "sha256:def")
+	}
+}

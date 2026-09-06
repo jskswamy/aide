@@ -39,11 +39,16 @@ type ManagedHook struct {
 type ContextState struct {
 	ConfigHash     string                 `json:"config_hash,omitempty"`
 	HookConfigHash string                 `json:"hook_config_hash,omitempty"`
-	SyncedAt       time.Time              `json:"synced_at,omitempty"`
-	Plugins        map[string]ManagedItem `json:"plugins,omitempty"`
-	MCPServers     map[string]ManagedItem `json:"mcp_servers,omitempty"`
-	Marketplaces   map[string]ManagedItem `json:"marketplaces,omitempty"`
-	Hooks          []ManagedHook          `json:"hooks,omitempty"`
+	// SecretsHash is sha256 of the context's encrypted secrets file
+	// bytes (ciphertext only, never plaintext) — lets aide sync skip
+	// decryption when neither this nor ConfigHash changed since the
+	// last successful sync. Empty when the context has no secret file.
+	SecretsHash  string                 `json:"secrets_hash,omitempty"`
+	SyncedAt     time.Time              `json:"synced_at,omitempty"`
+	Plugins      map[string]ManagedItem `json:"plugins,omitempty"`
+	MCPServers   map[string]ManagedItem `json:"mcp_servers,omitempty"`
+	Marketplaces map[string]ManagedItem `json:"marketplaces,omitempty"`
+	Hooks        []ManagedHook          `json:"hooks,omitempty"`
 }
 
 // ManagedState is the on-disk shape of ~/.local/state/aide/managed.json.

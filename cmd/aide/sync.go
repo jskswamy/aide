@@ -370,7 +370,7 @@ func secretsGateOK(env *provisionEnv, cs provision.ContextState) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return configHash == cs.ConfigHash && secretsHash == cs.SecretsHash, nil
+	return provision.ConfigUnchanged(configHash, cs.ConfigHash) && secretsHash == cs.SecretsHash, nil
 }
 
 // resolveMCPSecretsForSync resolves {{ .secrets.X }} placeholders in

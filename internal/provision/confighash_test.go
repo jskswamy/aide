@@ -82,3 +82,24 @@ func TestContextSecretsHashMatchesFileContent(t *testing.T) {
 		t.Errorf("ContextSecretsHash = %q, want %q", got, want)
 	}
 }
+
+func TestConfigUnchanged(t *testing.T) {
+	cases := []struct {
+		name          string
+		cur, stored   string
+		wantUnchanged bool
+	}{
+		{"equal non-empty", "sha256:a", "sha256:a", true},
+		{"different non-empty", "sha256:a", "sha256:b", false},
+		{"both empty", "", "", false},
+		{"cur empty", "", "sha256:a", false},
+		{"stored empty", "sha256:a", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := provision.ConfigUnchanged(c.cur, c.stored); got != c.wantUnchanged {
+				t.Errorf("ConfigUnchanged(%q, %q) = %v, want %v", c.cur, c.stored, got, c.wantUnchanged)
+			}
+		})
+	}
+}

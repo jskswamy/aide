@@ -37,3 +37,14 @@ func ContextSecretsHash(ctx config.Context) (string, error) {
 	}
 	return ConfigHash(config.ResolveSecretPath(ctx.Secret))
 }
+
+// ConfigUnchanged reports whether cur and stored are both non-empty
+// and equal — the shared "has this recorded config hash drifted"
+// predicate used by both DriftStatus (the launch-time banner) and the
+// sync secrets hash gate (aide sync's decrypt-skip decision). Two
+// empty hashes are NOT considered unchanged: an empty hash means the
+// file was missing when computed, an anomaly neither caller should
+// treat as steady state.
+func ConfigUnchanged(cur, stored string) bool {
+	return cur != "" && stored != "" && cur == stored
+}

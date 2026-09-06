@@ -921,7 +921,7 @@ aide agents remove old-agent
 ## aide sync
 
 ```
-aide sync [--context <name>] [--plan] [--yes]
+aide sync [--context <name>] [--plan] [--yes] [--force-secrets]
 ```
 
 Reconciles the declared `plugins:` and `mcp_servers:` sets for a
@@ -932,6 +932,11 @@ Flags:
 - `--context <name>`: operate on a specific context (default: match by CWD).
 - `--plan`: print the plan, exit without mutating state.
 - `--yes`: non-interactive (skip confirmation).
+- `--force-secrets`: force re-resolving secret-templated MCP env values
+  even if neither `config.yaml` nor the encrypted secrets file changed.
+  Sync normally skips decryption in that case, trusting the agent's
+  already-installed values; use this to repair a manually-edited/corrupted
+  installed value.
 
 State is persisted to `~/.local/state/aide/managed.json` atomically and
 only on full success. On any failure, the engine rolls back via an

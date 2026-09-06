@@ -69,10 +69,10 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes, for
 		managedCtxState = *cs
 	}
 
-	// Installed state is fetched before secret resolution so a later
-	// gate can substitute already-installed values for secret-templated
-	// env keys instead of decrypting, when nothing that could affect
-	// them has changed. See resolveMCPSecretsForSync.
+	// Installed state is fetched before secret resolution so the gate in
+	// resolveMCPSecretsForSync can substitute already-installed values
+	// for secret-templated env keys instead of decrypting, when nothing
+	// that could affect them has changed. See resolveMCPSecretsForSync.
 	installed := provision.Installed{
 		MCPServers:   map[string]provision.MCPServer{},
 		Marketplaces: map[string]provision.Marketplace{},
@@ -480,7 +480,7 @@ func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired, ins
 // file (via provision.ConfigHash, which already treats a missing file
 // as "" — no separate sentinel needed), or "" if the context has no
 // secret configured. Used both to persist a drift signal after a
-// successful sync and, in a later change, to decide whether a sync run
+// successful sync and, by secretsGateOK, to decide whether a sync run
 // can skip decryption entirely.
 func contextSecretsHash(ctx config.Context) (string, error) {
 	if ctx.Secret == "" {

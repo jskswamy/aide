@@ -167,7 +167,19 @@ Three keywords:
 The same three keywords apply to `mcp_servers:` blocks per-context.
 Entries use the full inline-table form (just like the top-level schema),
 and `env:` values support `{{ .secrets.<name> }}` templating resolved
-from the context's `secret:` store at sync time:
+from the context's `secret:` store at sync time.
+
+`aide sync` only actually decrypts the secrets store and re-resolves
+these templates when something relevant changed since the last
+successful sync: either `config.yaml` or the encrypted secrets file
+itself. When neither changed, sync skips decryption entirely and
+substitutes the values already installed in the agent's config instead,
+so routine no-op sync runs don't require the age key to be available.
+One consequence: if an installed secret value is manually edited or
+corrupted directly in the agent's own config, sync no longer heals it
+automatically on the next run the way it used to. Run `aide sync
+--force-secrets` to force re-resolution from the secrets store and
+repair drift like that on demand.
 
 ```yaml
 contexts:

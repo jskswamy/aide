@@ -541,3 +541,50 @@ func TestSync_TemplatesSatisfiedCheckDoesNotMutateOnPartialMatch(t *testing.T) {
 		t.Errorf("desired.MCPServers[\"github\"].Env[\"A\"] = %q, want unchanged template literal %q (check must not partially substitute before failing)", got, "{{ .secrets.a }}")
 	}
 }
+
+// TestSync_SubstituteFromInstalled_BuildsFreshEnvMap pins the fix from
+// commit b39e9a59: substituteFromInstalled must build a fresh Env map for
+// the desired server rather than writing the resolved value into the
+// installed server's Env map in place. installed.MCPServers[name].Env is
+// shared by reference with other in-memory structures (see the function's
+// doc comment), so mutating it directly would leak a resolved secret into
+// state the substitution wasn't supposed to touch. A regression back to
+// in-place mutation of installed.Env would not change desired's resolved
+// value (assertion a below would still pass) but would corrupt the
+// installed map's contents as a side effect (assertion b below would catch
+// it).
+func TestSync_SubstituteFromInstalled_BuildsFreshEnvMap(t *testing.T) {
+	installedEnv := map[string]string{"TOKEN": "installed-value"}
+	installed := provision.Installed{
+		MCPServers: map[string]provision.MCPServer{
+			"github": {Command: "github-mcp-server", Env: installedEnv},
+		},
+	}
+	desired := &provision.Desired{
+		MCPServers: map[string]provision.MCPServer{
+			"github": {
+				Command: "github-mcp-server",
+				Env:     map[string]string{"TOKEN": "{{ .secrets.token }}"},
+			},
+		},
+	}
+
+	substituteFromInstalled(desired, installed)
+
+	// (a) The templated key in desired is resolved to installed's value.
+	if got := desired.MCPServers["github"].Env["TOKEN"]; got != "installed-value" {
+		t.Errorf("desired.MCPServers[\"github\"].Env[\"TOKEN\"] = %q, want %q", got, "installed-value")
+	}
+
+	// (b) The original installed Env map object is untouched: same key
+	// count, same value, at the same map reference passed in.
+	if len(installedEnv) != 1 {
+		t.Errorf("installed Env map mutated: len = %d, want 1", len(installedEnv))
+	}
+	if got := installedEnv["TOKEN"]; got != "installed-value" {
+		t.Errorf("installed Env[\"TOKEN\"] = %q, want unchanged %q (substituteFromInstalled must not mutate installed's map)", got, "installed-value")
+	}
+	if got := installed.MCPServers["github"].Env["TOKEN"]; got != "installed-value" {
+		t.Errorf("installed.MCPServers[\"github\"].Env[\"TOKEN\"] = %q, want unchanged %q", got, "installed-value")
+	}
+}

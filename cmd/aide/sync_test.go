@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -247,5 +248,296 @@ func TestSyncWarnsWhenAgentDoesNotSupportHooks(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "does not support hooks") {
 		t.Errorf("expected warning, got %q", buf.String())
+	}
+}
+
+// repoTestdataDir mirrors internal/launcher's helper of the same name —
+// cmd/aide is the same two directories below the repo root.
+func repoTestdataDir(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("unable to determine test file path")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata")
+}
+
+func TestSync_PersistsSecretsHash(t *testing.T) {
+	fakeProvReset(t)
+	theFakeProv.RequireTTY = false
+	td := repoTestdataDir(t)
+	keyFile := filepath.Join(td, "age-key.txt")
+	encFile := filepath.Join(td, "test-secrets.enc.yaml")
+	if _, err := os.Stat(keyFile); err != nil {
+		t.Skipf("test age key not found at %s: %v", keyFile, err)
+	}
+	t.Setenv("SOPS_AGE_KEY_FILE", keyFile)
+
+	home := isolatedConfigDir(t)
+	cwd, _ := os.Getwd()
+	yaml := fmt.Sprintf(`mcp_servers:
+  github:
+    command: github-mcp-server
+    env:
+      TOKEN: "{{ .secrets.anthropic_api_key }}"
+contexts:
+  work:
+    agent: fakeagent
+    secret: %s
+    match:
+      - path: %s
+    mcp_servers:
+      - github
+`, encFile, cwd)
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	if err != nil {
+		t.Fatalf("execute: %v\n%s", err, out)
+	}
+
+	wantHash, err := provision.ConfigHash(encFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := provision.LoadState(provision.DefaultStatePath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := st.Contexts["work"]
+	if cs == nil {
+		t.Fatal("context state missing")
+	}
+	if cs.SecretsHash != wantHash {
+		t.Errorf("SecretsHash = %q, want %q", cs.SecretsHash, wantHash)
+	}
+}
+
+func TestSync_NoSecretContextHasEmptySecretsHash(t *testing.T) {
+	fakeProvReset(t)
+	theFakeProv.RequireTTY = false
+	home := setupProvisionConfig(t,
+		[]string{"linear"}, nil,
+		map[string]string{"linear": "linear@1.2"}, nil,
+	)
+	if _, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := provision.LoadState(provision.DefaultStatePath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Contexts["work"].SecretsHash; got != "" {
+		t.Errorf("SecretsHash = %q, want empty for a context with no secret configured", got)
+	}
+}
+
+func TestSync_ForceSecretsFlagAccepted(t *testing.T) {
+	fakeProvReset(t)
+	theFakeProv.RequireTTY = false
+	setupProvisionConfig(t,
+		[]string{"linear"}, nil,
+		map[string]string{"linear": "linear@1.2"}, nil,
+	)
+	// No secret configured, so --force-secrets is a no-op here — this
+	// test only pins that the flag exists and parses without error.
+	out, err := runSyncCmd(t, "", "--context", "work", "--yes", "--force-secrets")
+	if err != nil {
+		t.Fatalf("execute: %v\n%s", err, out)
+	}
+}
+
+// setupSecretGateFixture writes a config.yaml declaring one MCP server
+// ("github") whose env references {{ .secrets.token }}, with context
+// "work" carrying `secret: <secretsFile>`. It also seeds state as if a
+// previous sync already ran successfully and installed the server with
+// installedTokenValue (empty string means "key missing from installed",
+// for the fallback-to-decrypt test). Returns the home dir and the
+// secrets file path.
+func setupSecretGateFixture(t *testing.T, secretsBytes []byte, installedTokenValue string, hasInstalledKey bool) (home, secretsPath string) {
+	t.Helper()
+	fakeProvReset(t)
+	theFakeProv.RequireTTY = false
+	home = isolatedConfigDir(t)
+	cwd, _ := os.Getwd()
+
+	secretsPath = filepath.Join(home, "secret.enc.yaml")
+	if err := os.WriteFile(secretsPath, secretsBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgYAML := fmt.Sprintf(`mcp_servers:
+  github:
+    command: github-mcp-server
+    env:
+      TOKEN: "{{ .secrets.token }}"
+contexts:
+  work:
+    agent: fakeagent
+    secret: %s
+    match:
+      - path: %s
+    mcp_servers:
+      - github
+`, secretsPath, cwd)
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	installedEnv := map[string]string{}
+	if hasInstalledKey {
+		installedEnv["TOKEN"] = installedTokenValue
+	}
+	theFakeProv.mcpInstalled = map[string]provision.MCPServer{
+		"github": {Command: "github-mcp-server", Env: installedEnv},
+	}
+
+	configHash, err := provision.ConfigHash(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretsHash, err := provision.ConfigHash(secretsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &provision.ManagedState{
+		Version: provision.StateVersion,
+		Contexts: map[string]*provision.ContextState{
+			"work": {
+				ConfigHash:  configHash,
+				SecretsHash: secretsHash,
+				MCPServers:  map[string]provision.ManagedItem{"github": {}},
+			},
+		},
+	}
+	if err := provision.SaveState(provision.DefaultStatePath(home), st); err != nil {
+		t.Fatal(err)
+	}
+
+	// No age identity discoverable: any real decrypt attempt must fail,
+	// which is exactly how these tests detect "did sync try to decrypt".
+	t.Setenv("PATH", "")
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	return home, secretsPath
+}
+
+func TestSync_SkipsDecryptWhenNothingChanged(t *testing.T) {
+	setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "already-correct-token", true)
+
+	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	if err != nil {
+		t.Fatalf("expected sync to succeed without decrypting (no age key available), got: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Nothing to apply") {
+		t.Errorf("expected a no-op plan (installed already matches), got:\n%s", out)
+	}
+}
+
+func TestSync_DecryptsWhenSecretsFileChanged(t *testing.T) {
+	_, secretsPath := setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "already-correct-token", true)
+	// Rotate: change the encrypted file's bytes without touching config.yaml.
+	if err := os.WriteFile(secretsPath, []byte("dummy-ciphertext-v2-rotated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	if err == nil {
+		t.Fatal("expected sync to attempt decryption (secrets file changed) and fail with no age key available")
+	}
+	if !strings.Contains(err.Error(), "age key") {
+		t.Errorf("expected an age-key discovery error, got: %v", err)
+	}
+}
+
+func TestSync_DecryptsWhenConfigChanged(t *testing.T) {
+	home, _ := setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "already-correct-token", true)
+	// Change config.yaml (add an unrelated declared plugin) without
+	// touching the secrets file.
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, append(data, []byte("plugins:\n  extra: \"extra@1.0\"\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = runSyncCmd(t, "", "--context", "work", "--yes")
+	if err == nil {
+		t.Fatal("expected sync to attempt decryption (config.yaml changed) and fail with no age key available")
+	}
+	if !strings.Contains(err.Error(), "age key") {
+		t.Errorf("expected an age-key discovery error, got: %v", err)
+	}
+}
+
+func TestSync_ForceSecretsBypassesGate(t *testing.T) {
+	setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "already-correct-token", true)
+
+	_, err := runSyncCmd(t, "", "--context", "work", "--yes", "--force-secrets")
+	if err == nil {
+		t.Fatal("expected --force-secrets to force a decrypt attempt and fail with no age key available")
+	}
+	if !strings.Contains(err.Error(), "age key") {
+		t.Errorf("expected an age-key discovery error, got: %v", err)
+	}
+}
+
+func TestSync_FallsBackToDecryptWhenInstalledMissingKey(t *testing.T) {
+	// Installed server exists but is missing the TOKEN key entirely
+	// (e.g. manually deleted) — substitution has nothing to copy, so
+	// sync must fall back to a real decrypt rather than silently
+	// leaving the template unresolved.
+	setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "", false)
+
+	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	if err == nil {
+		t.Fatal("expected fallback to decrypt (installed missing templated key) and fail with no age key available")
+	}
+	if !strings.Contains(err.Error(), "age key") {
+		t.Errorf("expected an age-key discovery error, got: %v", err)
+	}
+}
+
+// TestSync_TemplatesSatisfiedCheckDoesNotMutateOnPartialMatch guards the
+// no-mutation-on-check-failure property directly: mcpTemplatesSatisfiedByInstalled
+// must be a pure check. A server with two templated env keys where only one
+// is present in installed must report false, and — critically — must leave
+// the satisfiable key's template literal untouched rather than partially
+// substituting it before discovering the other key is missing. An earlier
+// draft of this design conflated the check with a check-and-fill loop that
+// mutated as it went; this test fails if that regresses.
+func TestSync_TemplatesSatisfiedCheckDoesNotMutateOnPartialMatch(t *testing.T) {
+	desired := &provision.Desired{
+		MCPServers: map[string]provision.MCPServer{
+			"github": {
+				Command: "github-mcp-server",
+				Env: map[string]string{
+					"A": "{{ .secrets.a }}",
+					"B": "{{ .secrets.b }}",
+				},
+			},
+		},
+	}
+	installed := provision.Installed{
+		MCPServers: map[string]provision.MCPServer{
+			"github": {
+				Command: "github-mcp-server",
+				Env:     map[string]string{"A": "already-installed-a"},
+			},
+		},
+	}
+
+	if got := mcpTemplatesSatisfiedByInstalled(desired, installed); got {
+		t.Fatalf("mcpTemplatesSatisfiedByInstalled = true, want false (key B missing from installed)")
+	}
+	if got := desired.MCPServers["github"].Env["A"]; got != "{{ .secrets.a }}" {
+		t.Errorf("desired.MCPServers[\"github\"].Env[\"A\"] = %q, want unchanged template literal %q (check must not partially substitute before failing)", got, "{{ .secrets.a }}")
 	}
 }

@@ -22,6 +22,7 @@ func syncCmd() *cobra.Command {
 	var contextName string
 	var planOnly bool
 	var yes bool
+	var forceSecrets bool
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Reconcile declared plugins and MCP servers for a context",
@@ -30,22 +31,29 @@ against the context's declared plugins and MCP servers, and applies
 the changes through the agent's CLI / config file.
 
 Flags:
-  --plan   Print the plan and exit without making changes.
-  --yes    Non-interactive mode: apply with the default actions and
-           skip the confirmation prompt. Unmanaged items are left
-           in place. Fails fast if the agent's plugin install path
-           requires a TTY.`,
+  --plan            Print the plan and exit without making changes.
+  --yes             Non-interactive mode: apply with the default
+                     actions and skip the confirmation prompt.
+                     Unmanaged items are left in place. Fails fast if
+                     the agent's plugin install path requires a TTY.
+  --force-secrets   Force re-resolving secret-templated MCP env values
+                     even if neither config.yaml nor the encrypted
+                     secrets file changed. Sync normally skips
+                     decryption in that case, trusting the agent's
+                     already-installed values; use this to repair a
+                     manually-edited/corrupted installed value.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSync(cmd.OutOrStdout(), cmd.InOrStdin(), contextName, planOnly, yes)
+			return runSync(cmd.OutOrStdout(), cmd.InOrStdin(), contextName, planOnly, yes, forceSecrets)
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
 	cmd.Flags().BoolVar(&planOnly, "plan", false, "Show the plan and exit without applying")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Apply without prompting")
+	cmd.Flags().BoolVar(&forceSecrets, "force-secrets", false, "Force re-resolving secret-templated MCP env values, bypassing the skip-if-unchanged gate")
 	return cmd
 }
 
-func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool) error {
+func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes, forceSecrets bool) error {
 	env, err := loadProvisionEnv(contextName)
 	if err != nil {
 		return err
@@ -56,21 +64,15 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 		return err
 	}
 
-	// Template-resolve MCP env values against context secrets so the
-	// plan diff compares already-resolved values against the agent's
-	// installed state. Without this, a desired `{{ .secrets.X }}` would
-	// never equal the agent's "real-value" installed state and aide
-	// sync would propose an unnecessary update every run. Plan output
-	// itself only prints op kind + name (not env values), so resolving
-	// here does not leak secrets to stdout / journal files.
-	if err := resolveMCPSecretsForSync(env, &desired); err != nil {
-		return err
+	var managedCtxState provision.ContextState
+	if cs, ok := env.state.Contexts[env.contextName]; ok && cs != nil {
+		managedCtxState = *cs
 	}
 
-	// Warn and filter Desired fields for capabilities the agent doesn't support.
-	// Sync continues for supported capabilities.
-	warnAndFilterDesired(out, env.prov, &desired)
-
+	// Installed state is fetched before secret resolution so a later
+	// gate can substitute already-installed values for secret-templated
+	// env keys instead of decrypting, when nothing that could affect
+	// them has changed. See resolveMCPSecretsForSync.
 	installed := provision.Installed{
 		MCPServers:   map[string]provision.MCPServer{},
 		Marketplaces: map[string]provision.Marketplace{},
@@ -99,11 +101,6 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 			installed.Marketplaces[m.Key] = m
 		}
 	}
-	var managedCtxState provision.ContextState
-	if cs, ok := env.state.Contexts[env.contextName]; ok && cs != nil {
-		managedCtxState = *cs
-	}
-
 	if env.prov.SupportsMCP() {
 		names := provision.MCPQueryNames(desired.MCPServers, managedCtxState.MCPServers)
 		got, err := provision.ReadInstalledMCP(env.prov, env.provCtx, names)
@@ -112,6 +109,21 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes bool
 		}
 		installed.MCPServers = got
 	}
+
+	// Template-resolve MCP env values against context secrets so the
+	// plan diff compares already-resolved values against the agent's
+	// installed state. Without this, a desired `{{ .secrets.X }}` would
+	// never equal the agent's "real-value" installed state and aide
+	// sync would propose an unnecessary update every run. Plan output
+	// itself only prints op kind + name (not env values), so resolving
+	// here does not leak secrets to stdout / journal files.
+	if err := resolveMCPSecretsForSync(env, &desired, installed, managedCtxState, forceSecrets); err != nil {
+		return err
+	}
+
+	// Warn and filter Desired fields for capabilities the agent doesn't support.
+	// Sync continues for supported capabilities.
+	warnAndFilterDesired(out, env.prov, &desired)
 
 	plan := provision.ComputePlan(env.provCtx, desired, installed, managedCtxState)
 	renderPlan(out, plan)
@@ -247,6 +259,10 @@ func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan pro
 	if err != nil {
 		return err
 	}
+	secretsHash, err := contextSecretsHash(env.ctx)
+	if err != nil {
+		return err
+	}
 	if env.state.Contexts == nil {
 		env.state.Contexts = map[string]*provision.ContextState{}
 	}
@@ -313,6 +329,7 @@ func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan pro
 		})
 	}
 	cs.ConfigHash = hash
+	cs.SecretsHash = secretsHash
 	cs.SyncedAt = now
 	if err := os.MkdirAll(parentDir(env.statePath), 0o750); err != nil {
 		return err
@@ -338,29 +355,117 @@ func parentDir(path string) string {
 	return "."
 }
 
-// resolveMCPSecretsForSync mirrors the launcher's secret-decrypt +
-// template-resolve dance, but applies it to the MCP server env map in
-// the sync pipeline. When the context declares a secret file, decrypt
-// it; build a TemplateData; pass it (or nil if no secret is configured)
-// to provision.ResolveSecretsInMCPEnv. ResolveSecretsInMCPEnv's nil-td
-// branch is what catches the misconfiguration where the user references
-// {{ .secrets.X }} in an MCP env without supplying a secret file.
+// secretsGateOK reports whether ctx's config.yaml and secrets file are
+// both byte-identical to the last successful sync recorded in cs — the
+// only two things that can make a secret-templated MCP env value need
+// re-resolution (see docs/superpowers/specs/2026-09-06-sync-secrets-hash-gate-design.md).
+// When true, resolveMCPSecretsForSync can skip decryption entirely and
+// substitute already-installed values instead.
+func secretsGateOK(env *provisionEnv, cs provision.ContextState) (bool, error) {
+	configHash, err := provision.ConfigHash(config.FilePath())
+	if err != nil {
+		return false, err
+	}
+	secretsHash, err := contextSecretsHash(env.ctx)
+	if err != nil {
+		return false, err
+	}
+	return configHash == cs.ConfigHash && secretsHash == cs.SecretsHash, nil
+}
+
+// mcpTemplatesSatisfiedByInstalled reports whether every {{ }}-templated
+// MCP env value in desired has a matching key already present in
+// installed — the precondition for skipping decryption safely. Pure
+// check, no mutation: callers must not apply a partial substitution
+// when this returns false, since the fallback decrypt path needs the
+// original {{ .secrets.X }} literals intact to re-resolve everything
+// from scratch (see substituteFromInstalled).
+func mcpTemplatesSatisfiedByInstalled(desired *provision.Desired, installed provision.Installed) bool {
+	for name, server := range desired.MCPServers {
+		if len(server.Env) == 0 {
+			continue
+		}
+		inst, instOK := installed.MCPServers[name]
+		for k, v := range server.Env {
+			if !config.IsTemplate(v) {
+				continue
+			}
+			if !instOK {
+				return false
+			}
+			if _, exists := inst.Env[k]; !exists {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// substituteFromInstalled fills every {{ }}-templated MCP env value in
+// desired with the matching key's value from installed. It builds a
+// fresh Env map per server rather than writing into server.Env's
+// existing entries: that map is shared by reference with the
+// in-memory config struct (via ResolveDesired/ApplyOverride's shallow
+// copy), so mutating it in place would leak a resolved secret into
+// shared state — the same hazard the decrypt path already avoids by
+// assigning a freshly built map to server.Env instead of writing into
+// the original. Callers must only call this after
+// mcpTemplatesSatisfiedByInstalled has returned true for the same
+// (desired, installed) pair — it does not re-check.
+func substituteFromInstalled(desired *provision.Desired, installed provision.Installed) {
+	for name, server := range desired.MCPServers {
+		if len(server.Env) == 0 {
+			continue
+		}
+		inst := installed.MCPServers[name]
+		resolved := make(map[string]string, len(server.Env))
+		for k, v := range server.Env {
+			if config.IsTemplate(v) {
+				resolved[k] = inst.Env[k]
+			} else {
+				resolved[k] = v
+			}
+		}
+		server.Env = resolved
+		desired.MCPServers[name] = server
+	}
+}
+
+// resolveMCPSecretsForSync resolves {{ .secrets.X }} placeholders in
+// desired's MCP server env maps so the plan diff compares already-
+// resolved values against the agent's installed state. See
+// docs/superpowers/specs/2026-09-06-sync-secrets-hash-gate-design.md.
+//
+// When force is false and secretsGateOK holds, decryption is skipped
+// entirely: every templated env key is filled in from installed
+// instead — sound because an unchanged config+secrets pair guarantees
+// today's true resolved value is exactly what the last successful sync
+// already applied. If any templated key has no installed counterpart
+// (e.g. manually deleted), that guarantee doesn't hold and the code
+// falls back to decrypting for real.
 //
 // RuntimeDir is left empty: sync writes to the agent's config FILE, not
 // the agent's runtime, so {{ .runtime_dir }} has no meaning here.
 // Referencing it in an MCP env will silently substitute an empty string
 // — a known v1 quirk; the canonical use case is {{ .secrets.X }}.
-func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired) error {
+func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired, installed provision.Installed, cs provision.ContextState, force bool) error {
+	if !force {
+		ok, err := secretsGateOK(env, cs)
+		if err != nil {
+			return err
+		}
+		if ok && mcpTemplatesSatisfiedByInstalled(desired, installed) {
+			substituteFromInstalled(desired, installed)
+			return nil
+		}
+	}
+
 	var td *config.TemplateData
 	if env.ctx.Secret != "" {
 		secretsPath := config.ResolveSecretPath(env.ctx.Secret)
-		identity, err := secrets.DiscoverAgeKey()
+		secretsMap, err := secrets.LoadSecretsMap(secretsPath)
 		if err != nil {
-			return fmt.Errorf("discovering age key for context %q: %w", env.contextName, err)
-		}
-		secretsMap, err := secrets.DecryptSecretsFile(secretsPath, identity)
-		if err != nil {
-			return fmt.Errorf("decrypting secrets for context %q: %w", env.contextName, err)
+			return fmt.Errorf("resolving secrets for context %q: %w", env.contextName, err)
 		}
 		cwd, _ := os.Getwd()
 		td = &config.TemplateData{
@@ -369,6 +474,19 @@ func resolveMCPSecretsForSync(env *provisionEnv, desired *provision.Desired) err
 		}
 	}
 	return provision.ResolveSecretsInMCPEnv(desired, td)
+}
+
+// contextSecretsHash returns the sha256 hash of ctx's encrypted secrets
+// file (via provision.ConfigHash, which already treats a missing file
+// as "" — no separate sentinel needed), or "" if the context has no
+// secret configured. Used both to persist a drift signal after a
+// successful sync and, in a later change, to decide whether a sync run
+// can skip decryption entirely.
+func contextSecretsHash(ctx config.Context) (string, error) {
+	if ctx.Secret == "" {
+		return "", nil
+	}
+	return provision.ConfigHash(config.ResolveSecretPath(ctx.Secret))
 }
 
 // warnAndFilterDesired emits a warning and zeros out Desired fields

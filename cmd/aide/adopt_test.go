@@ -234,6 +234,59 @@ func TestAdoptHookRewritesAgentDirPrefix(t *testing.T) {
 	}
 }
 
+// TestAdoptHookDedupAcrossAgentDirs verifies that adopting the same
+// logical hook from two different contexts (each with its own
+// agentDir, e.g. ~/.claude-work vs ~/.claude-hackathon) writes only
+// ONE entry to the shared top-level config.Hooks map, not one per
+// context. The dedup guard must compare the templated "{agent_dir}"
+// form on both sides, not a templated stored value against a raw
+// freshly-read one.
+func TestAdoptHookDedupAcrossAgentDirs(t *testing.T) {
+	fakeProvReset(t)
+	dir := isolatedConfigDir(t)
+	cfgYAML := `contexts:
+  work:
+    agent: fakeagent
+  hackathon:
+    agent: fakeagent
+`
+	cfgPath := filepath.Join(dir, "xdg", "aide", "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// First adopt: context "work", agentDir ~/.claude-work.
+	theFakeProv.agentDirVal = "/Users/u/.claude-work"
+	theFakeProv.storedHooks = []provision.Hook{
+		{Event: "SubagentStart", Matcher: "*", Command: "/Users/u/.claude-work/hooks/cbm-subagent-reminder"},
+	}
+	if out, err := runAdoptCmd(t, "", "--context", "work", "--yes"); err != nil {
+		t.Fatalf("first adopt: %v\n%s", err, out)
+	}
+
+	// Second adopt: context "hackathon", same logical hook but
+	// discovered under a different agentDir prefix.
+	theFakeProv.agentDirVal = "/Users/u/.claude-hackathon"
+	theFakeProv.storedHooks = []provision.Hook{
+		{Event: "SubagentStart", Matcher: "*", Command: "/Users/u/.claude-hackathon/hooks/cbm-subagent-reminder"},
+	}
+	if out, err := runAdoptCmd(t, "", "--context", "hackathon", "--yes"); err != nil {
+		t.Fatalf("second adopt: %v\n%s", err, out)
+	}
+
+	cfg, err := config.Load(filepath.Join(dir, "xdg", "aide"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Hooks["SubagentStart"]
+	if len(got) != 1 {
+		t.Fatalf("want 1 deduped SubagentStart hook, got %d: %+v", len(got), got)
+	}
+	if got[0].Command != "{agent_dir}/hooks/cbm-subagent-reminder" {
+		t.Errorf("unexpected command: %q", got[0].Command)
+	}
+}
+
 func contains(xs []string, target string) bool {
 	for _, x := range xs {
 		if x == target {

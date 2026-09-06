@@ -287,19 +287,19 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 		env.cfg.Hooks = config.HooksMap{}
 	}
 	for _, h := range adoptedHooks {
+		cmd := h.Command
+		if agentDir != "" && strings.HasPrefix(cmd, agentDir+"/") {
+			cmd = "{agent_dir}" + cmd[len(agentDir):]
+		}
 		existing := env.cfg.Hooks[h.Event]
 		alreadyPresent := false
 		for _, e := range existing {
-			if e.Matcher == h.Matcher && e.Command == h.Command {
+			if e.Matcher == h.Matcher && e.Command == cmd {
 				alreadyPresent = true
 				break
 			}
 		}
 		if !alreadyPresent {
-			cmd := h.Command
-			if agentDir != "" && strings.HasPrefix(cmd, agentDir+"/") {
-				cmd = "{agent_dir}" + cmd[len(agentDir):]
-			}
 			env.cfg.Hooks[h.Event] = append(existing, config.HookEntry{
 				Name:    hookCommandBasename(h.Command),
 				Matcher: h.Matcher,

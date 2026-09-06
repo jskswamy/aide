@@ -312,15 +312,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	var secretsMap map[string]string
 	if rc.Context.Secret != "" {
 		secretsPath := config.ResolveSecretPath(rc.Context.Secret)
-		identity, err := secrets.DiscoverAgeKey()
+		var err error
+		secretsMap, err = secrets.LoadSecretsMap(secretsPath)
 		if err != nil {
 			cleanup()
-			return fmt.Errorf("discovering age key: %w", err)
-		}
-		secretsMap, err = secrets.DecryptSecretsFile(secretsPath, identity)
-		if err != nil {
-			cleanup()
-			return fmt.Errorf("decrypting secrets: %w", err)
+			return err
 		}
 	}
 

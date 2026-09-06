@@ -2,6 +2,23 @@
 
 ### Feature
 
+#### aide sync no longer requires the age key for routine no-op runs
+
+`aide sync` previously decrypted a context's age-encrypted secrets file on
+every run, even when nothing about the declared config or the secrets
+themselves had changed. That coupled routine sync runs (e.g. as part of a
+home-manager activation) to age-key availability and plaintext-secret
+handling for no reason.
+
+- Sync now skips decryption entirely when neither `config.yaml` nor the
+  encrypted secrets file changed since the last successful sync,
+  substituting the already-installed MCP env values instead of
+  re-resolving `{{ .secrets.X }}` templates.
+- A new `--force-secrets` flag bypasses this gate on demand, forcing a
+  real decrypt + re-resolve, the remedy if an installed secret value is
+  manually edited or corrupted, since that drift is no longer auto-healed
+  on every sync the way it used to be.
+
 #### aide sandbox allow/deny now sync Claude's own permission store
 
 `aide sandbox allow <dir>` and `aide sandbox deny <dir>` previously only

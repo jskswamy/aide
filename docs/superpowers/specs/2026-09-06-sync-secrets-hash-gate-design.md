@@ -80,21 +80,41 @@ type ContextState struct {
 Computed with the same sha256-over-file-bytes helper `ConfigHash`
 already uses (`internal/provision/confighash.go`), just pointed at the
 context's resolved secrets path instead of `config.yaml`. A context
-with no secrets file hashes to a fixed sentinel (e.g. sha256 of an
-empty byte slice) so "no secrets file" produces a stable, comparable
-value across runs rather than an empty/zero string that could
-coincidentally collide with an unset-state zero value.
+with no secrets file hashes to `""`, reusing `ConfigHash`'s existing
+missing-file convention directly rather than a separate sentinel — see
+"What shipped" below.
 
 Before `resolveMCPSecretsForSync` runs, `runSync` checks: does the
 current `config.yaml` hash equal `state.ConfigHash`, AND does the
 current secrets-file hash equal `state.SecretsHash`? If both match,
-skip secret discovery/decryption/resolution entirely for this run —
-proceed to `ComputePlan` using the desired config as-is for any server
-that has no `{{ }}` template in its env (servers with unresolved
-templates simply won't appear as needing changes, because nothing
-about their inputs changed either). If either hash differs, run
-exactly today's path: discover key, decrypt, resolve templates, diff,
-apply.
+skip secret discovery/decryption/resolution entirely for this run. If
+either hash differs, run exactly today's path: discover key, decrypt,
+resolve templates, diff, apply.
+
+**What shipped (correction from an earlier draft of this section):**
+the paragraph above originally proposed that, on a gate pass, servers
+with unresolved `{{ }}` templates would "simply not appear as needing
+changes." That was wrong: `mcpEqual` is template-blind (see Research
+Findings below), so leaving an unresolved `{{ .secrets.X }}` literal in
+`desired` would produce a spurious diff against the installed value
+and, worse, get written into the agent's config verbatim on apply.
+What Task 5 actually built instead is substitute-from-installed:
+`mcpTemplatesSatisfiedByInstalled` checks that every templated env key
+in `desired` has a same-name key already present in `installed`, and
+if so `substituteFromInstalled` fills each templated key with its
+installed counterpart before diffing — so `desired` never carries a raw
+template literal past the gate. If any templated key has no installed
+counterpart (e.g. manually deleted), the gate falls back to a real
+decrypt so the value is still resolved correctly instead of left as a
+literal.
+
+Reusing `""` for "no secrets file" (see above) is also part of what
+shipped, in place of the fixed-sentinel idea from the earlier draft:
+`ConfigHash` already treats a missing file as `""`, so pointing the
+same helper at the secrets path gives a stable, comparable value with
+no new convention needed. `""` cannot collide with a real hash (sha256
+hex digests are never empty), so it's just as safe as a dedicated
+sentinel would have been.
 
 This works because the two hashes together capture every source of
 legitimate drift for secret-templated values: `SecretsHash` catches
@@ -179,6 +199,19 @@ the secrets file changed — sync trusts the installed state in that
 case. `--force-secrets` is the explicit remedy; this trade-off was
 discussed and accepted in favor of not requiring the age key present
 for every routine, unmodified-state sync run.
+
+**`{{ .project_root }}` is frozen under the gate too, and this is
+reachable, not a hypothetical.** The gate freezes *every* templated env
+value on a gate pass, not just `{{ .secrets.X }}` — an MCP env value
+using `{{ .project_root }}` is substituted from the installed value the
+same way. This is reachable in an ordinary config that also has
+`secret:` set: `config.IsTemplate` just checks for `{{`, so any
+templated key participates in the same freeze regardless of which
+variable it references. The impact is benign, arguably an improvement:
+sync previously re-resolved `{{ .project_root }}` from the invoking
+process's cwd on every run, which varied by invocation directory;
+freezing it to the last successfully-resolved value is more stable,
+not less correct.
 
 ## Testing
 

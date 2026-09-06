@@ -48,7 +48,7 @@ func DriftStatus(cfg *config.Config, cfgPath, statePath, contextName, agentDir, 
 	if err != nil {
 		return DriftNone, err
 	}
-	if cur != "" && cs.ConfigHash != "" && cur != cs.ConfigHash {
+	if cur != "" && cs.ConfigHash != "" && !ConfigUnchanged(cur, cs.ConfigHash) {
 		return DriftConfigChanged, nil
 	}
 

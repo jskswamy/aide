@@ -30,6 +30,12 @@ dist/
 # Refactor scanner working dir (agent artifact)
 .refactor-scan/
 
+# Superpowers implementation plans (task breakdowns for agent-driven
+# development). Ephemeral by design: value is during implementation,
+# not after merge. Design docs (docs/superpowers/specs/) stay tracked
+# — those are the durable "why" record; plans are scratch work.
+docs/superpowers/plans/
+
 # IDE/editor
 .idea/
 .vscode/

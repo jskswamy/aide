@@ -9,6 +9,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/consent"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -50,6 +51,7 @@ capture sandbox-deny events from the failed run.`,
 		Version:            version,
 		DisableFlagParsing: false,
 		SilenceUsage:       true,
+		SilenceErrors:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -124,13 +126,31 @@ capture sandbox-deny events from the failed run.`,
 		return capabilityNamesForCompletion(), cobra.ShellCompDirectiveNoFileComp
 	})
 
-	if err := rootCmd.Execute(); err != nil {
-		var ee interface{ ExitCode() int }
-		if errors.As(err, &ee) {
-			os.Exit(ee.ExitCode())
-		}
-		os.Exit(1)
+	output.RegisterFlag(rootCmd)
+
+	os.Exit(runMain(rootCmd))
+}
+
+// runMain executes cmd and returns the process exit code. Extracted
+// from main() so the error-formatting/exit-code logic is unit
+// testable without a real os.Exit call.
+func runMain(cmd *cobra.Command) int {
+	err := cmd.Execute()
+	if err == nil {
+		return 0
 	}
+	format, ferr := output.FromCmd(cmd)
+	if ferr != nil {
+		// --format itself held an invalid value; err below already
+		// says so. Fall back to human so it's readable at all.
+		format = output.Human
+	}
+	output.PrintError(cmd.ErrOrStderr(), format, err)
+	var ee interface{ ExitCode() int }
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	return 1
 }
 
 // parseVariantFlag turns ["python=uv", "node=pnpm"] into a map keyed

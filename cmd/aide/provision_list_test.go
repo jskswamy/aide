@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/provision/provisiontest"
 )
@@ -218,6 +220,72 @@ func TestPluginList_DeclaredInstalledManaged(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output:\n%s", want, out)
 		}
+	}
+}
+
+func TestPluginList_JSONFormat(t *testing.T) {
+	fakeProvReset(t)
+	setupProvisionConfig(t, nil, nil, map[string]string{"linear": "linear"}, nil)
+	theFakeProv.InstalledPluginList = []provision.Plugin{{Key: "linear"}}
+
+	cmd := pluginListCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+
+	var got pluginListResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got.Context != "work" || got.Agent != "fakeagent" {
+		t.Errorf("got context=%q agent=%q", got.Context, got.Agent)
+	}
+	found := false
+	for _, p := range got.Plugins {
+		if p.Name == "linear" && p.Declared && p.Installed {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("linear plugin missing/incomplete: %+v", got.Plugins)
+	}
+}
+
+func TestMCPList_JSONFormat(t *testing.T) {
+	fakeProvReset(t)
+	setupProvisionConfig(t, nil, []string{"shared"}, nil, map[string]string{"shared": "shared-mcp"})
+	theFakeProv.mcpInstalled = map[string]provision.MCPServer{"shared": {Command: "shared-mcp"}}
+
+	cmd := mcpListCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+
+	var got mcpListResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got.Context != "work" || got.Agent != "fakeagent" {
+		t.Errorf("got context=%q agent=%q", got.Context, got.Agent)
+	}
+	found := false
+	for _, s := range got.Servers {
+		if s.Name == "shared" && s.Declared && s.Installed {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("shared MCP server missing/incomplete: %+v", got.Servers)
 	}
 }
 

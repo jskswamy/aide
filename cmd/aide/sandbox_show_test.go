@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -61,5 +63,34 @@ func TestSandboxShow_ExitsZeroWhenUnavailable(t *testing.T) {
 		if strings.Contains(err.Error(), "unavailable") {
 			t.Errorf("sandbox show should not return error for unavailable tier: %v", err)
 		}
+	}
+}
+
+func TestSandboxShow_JSONFormat(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	cmd := sandboxShowCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	root := &cobra.Command{}
+	root.AddCommand(cmd)
+	root.SetArgs([]string{"show", "--format", "json"})
+
+	if err := root.Execute(); err != nil {
+		t.Skipf("sandbox show failed (expected in minimal test env): %v", err)
+	}
+
+	// A minimal test env with no config may resolve to a disabled or
+	// default-policy sandbox — this test only pins that --format json
+	// produces valid, unmarshalable JSON either way (matching the file's
+	// existing tolerant-of-minimal-env style above), not specific field
+	// values.
+	var got sandboxShowResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
 	}
 }

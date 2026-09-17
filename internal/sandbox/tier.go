@@ -38,9 +38,9 @@ const (
 // configured port rules are enforced ("strict"), silently downgraded
 // ("degraded"), or simply not applicable ("unsupported").
 type IsolationTier struct {
-	Tier          string
-	Backend       string
-	Reason        string
-	KernelABI     int
-	PortFiltering string
+	Tier          string `json:"tier"`
+	Backend       string `json:"backend"`
+	Reason        string `json:"reason,omitempty"`
+	KernelABI     int    `json:"kernel_abi,omitempty"`
+	PortFiltering string `json:"port_filtering,omitempty"`
 }

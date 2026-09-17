@@ -19,6 +19,7 @@ import (
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
@@ -340,11 +341,17 @@ func whichCmd() *cobra.Command {
 			}
 
 			// aide which always renders regardless of show_info
-			style := effectiveBannerStyle(prefs.InfoStyle, isInteractiveTerminal(os.Stdout), os.Getenv("AIDE_INFO_STYLE"))
-			if err := ui.RenderBanner(out, style, data); err != nil {
-				return fmt.Errorf("rendering banner: %w", err)
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
 			}
-			return nil
+			style := effectiveBannerStyle(prefs.InfoStyle, isInteractiveTerminal(os.Stdout), os.Getenv("AIDE_INFO_STYLE"))
+			return output.Emit(out, format, data, func(w io.Writer) error {
+				if err := ui.RenderBanner(w, style, data); err != nil {
+					return fmt.Errorf("rendering banner: %w", err)
+				}
+				return nil
+			})
 		},
 	}
 

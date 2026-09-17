@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jskswamy/aide/internal/output"
 )
 
 func runSandboxCmd(t *testing.T, args ...string) (string, error) {
@@ -18,6 +20,55 @@ func runSandboxCmd(t *testing.T, args ...string) (string, error) {
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	return buf.String(), err
+}
+
+func runSandboxCmdFormat(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	var buf bytes.Buffer
+	cmd := sandboxCmd()
+	output.RegisterFlag(cmd)
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return buf.String(), err
+}
+
+func TestSandboxList_JSONFormat(t *testing.T) {
+	out, err := runSandboxCmdFormat(t, "list", "--format", "json")
+	if err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, out)
+	}
+	var got []sandboxProfileEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, out)
+	}
+	found := false
+	for _, e := range got {
+		if e.Name == "default" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("default profile missing: %s", out)
+	}
+}
+
+func TestSandboxTypes_JSONFormat(t *testing.T) {
+	out, err := runSandboxCmdFormat(t, "types", "--format", "json")
+	if err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, out)
+	}
+	var got []sandboxTypeEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, out)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries, want 3: %+v", len(got), got)
+	}
+	if got[0].Type != "always" || !got[0].DefaultOn {
+		t.Errorf("entries[0] = %+v", got[0])
+	}
 }
 
 // writeClaudeAgentConfig writes a minimal global config.yaml declaring

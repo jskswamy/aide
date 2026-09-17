@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -75,6 +77,26 @@ func sandboxNetworkCmd() *cobra.Command {
 	return cmd
 }
 
+type sandboxPathEntry struct {
+	Path   string `json:"path"`
+	Origin string `json:"origin,omitempty"`
+}
+
+type sandboxShowResult struct {
+	Context       string             `json:"context"`
+	Disabled      bool               `json:"disabled"`
+	IsolationTier string             `json:"isolation_tier,omitempty"`
+	Backend       string             `json:"backend,omitempty"`
+	PortFiltering string             `json:"port_filtering,omitempty"`
+	Reason        string             `json:"reason,omitempty"`
+	Source        string             `json:"source,omitempty"`
+	Guards        []string           `json:"guards,omitempty"`
+	Writable      []sandboxPathEntry `json:"writable,omitempty"`
+	Readable      []sandboxPathEntry `json:"readable,omitempty"`
+	Denied        []sandboxPathEntry `json:"denied,omitempty"`
+	Network       string             `json:"network,omitempty"`
+}
+
 func sandboxShowCmd() *cobra.Command {
 	var contextName string
 	var withCaps, withoutCaps []string
@@ -116,9 +138,16 @@ func sandboxShowCmd() *cobra.Command {
 				return fmt.Errorf("resolving sandbox: %w", sbErr)
 			}
 
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
 			if disabled {
-				fmt.Fprintf(out, "Sandbox: disabled (context %q)\n", rc.Name)
-				return nil
+				result := sandboxShowResult{Context: rc.Name, Disabled: true}
+				return output.Emit(out, format, result, func(w io.Writer) error {
+					fmt.Fprintf(w, "Sandbox: disabled (context %q)\n", result.Context)
+					return nil
+				})
 			}
 
 			// Resolve capabilities and merge into sandbox config
@@ -138,8 +167,11 @@ func sandboxShowCmd() *cobra.Command {
 				return fmt.Errorf("building sandbox policy: %w", err)
 			}
 			if policy == nil {
-				fmt.Fprintf(out, "Sandbox: disabled (context %q)\n", rc.Name)
-				return nil
+				result := sandboxShowResult{Context: rc.Name, Disabled: true}
+				return output.Emit(out, format, result, func(w io.Writer) error {
+					fmt.Fprintf(w, "Sandbox: disabled (context %q)\n", result.Context)
+					return nil
+				})
 			}
 
 			source := "default"
@@ -152,58 +184,59 @@ func sandboxShowCmd() *cobra.Command {
 			}
 
 			tier := sandbox.PlatformIsolationTier(*policy)
-			fmt.Fprintf(out, "Isolation tier:  %s\n", tier.Tier)
-			fmt.Fprintf(out, "Backend:         %s\n", tier.Backend)
-			fmt.Fprintf(out, "Port filtering:  %s\n", tier.PortFiltering)
-			if tier.Reason != "" {
-				fmt.Fprintf(out, "Reason:          %s\n", tier.Reason)
-			}
-			fmt.Fprintln(out)
-
-			fmt.Fprintf(out, "Effective sandbox policy (%s):\n", source)
-			fmt.Fprintf(out, "  Guards:     %s\n", strings.Join(policy.Guards, ", "))
-
-			// PlatformGrantedPaths includes OS bootstrap entries (e.g. /usr,
-			// /lib, /proc on Linux) that the Landlock backend must allow.
-			// DeriveGrantedPathSet only returns the guard-derived subset and
-			// produced an incomplete output for the Landlock backend.
 			gps := sandbox.PlatformGrantedPaths(*policy)
-			if len(gps.Writable) > 0 {
-				fmt.Fprintln(out, "  Writable:")
-				for _, p := range gps.Writable {
-					origin := gps.OriginGuard[p]
-					if origin != "" {
-						fmt.Fprintf(out, "    %s  [%s]\n", p, origin)
-					} else {
-						fmt.Fprintf(out, "    %s\n", p)
-					}
+
+			toPathEntries := func(paths []string) []sandboxPathEntry {
+				entries := make([]sandboxPathEntry, 0, len(paths))
+				for _, p := range paths {
+					entries = append(entries, sandboxPathEntry{Path: p, Origin: gps.OriginGuard[p]})
 				}
-			}
-			if len(gps.Readable) > 0 {
-				fmt.Fprintln(out, "  Readable:")
-				for _, p := range gps.Readable {
-					origin := gps.OriginGuard[p]
-					if origin != "" {
-						fmt.Fprintf(out, "    %s  [%s]\n", p, origin)
-					} else {
-						fmt.Fprintf(out, "    %s\n", p)
-					}
-				}
-			}
-			if len(gps.Denied) > 0 {
-				fmt.Fprintln(out, "  Denied:")
-				for _, p := range gps.Denied {
-					origin := gps.OriginGuard[p]
-					if origin != "" {
-						fmt.Fprintf(out, "    %s  [%s]\n", p, origin)
-					} else {
-						fmt.Fprintf(out, "    %s\n", p)
-					}
-				}
+				return entries
 			}
 
-			fmt.Fprintf(out, "  Network:    %s\n", policy.Network)
-			return nil
+			result := sandboxShowResult{
+				Context:       rc.Name,
+				IsolationTier: tier.Tier,
+				Backend:       tier.Backend,
+				PortFiltering: tier.PortFiltering,
+				Reason:        tier.Reason,
+				Source:        source,
+				Guards:        policy.Guards,
+				Writable:      toPathEntries(gps.Writable),
+				Readable:      toPathEntries(gps.Readable),
+				Denied:        toPathEntries(gps.Denied),
+				Network:       string(policy.Network),
+			}
+
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				fmt.Fprintf(w, "Isolation tier:  %s\n", result.IsolationTier)
+				fmt.Fprintf(w, "Backend:         %s\n", result.Backend)
+				fmt.Fprintf(w, "Port filtering:  %s\n", result.PortFiltering)
+				if result.Reason != "" {
+					fmt.Fprintf(w, "Reason:          %s\n", result.Reason)
+				}
+				fmt.Fprintln(w)
+				fmt.Fprintf(w, "Effective sandbox policy (%s):\n", result.Source)
+				fmt.Fprintf(w, "  Guards:     %s\n", strings.Join(policy.Guards, ", "))
+				printPathEntries := func(label string, entries []sandboxPathEntry) {
+					if len(entries) == 0 {
+						return
+					}
+					fmt.Fprintf(w, "  %s:\n", label)
+					for _, e := range entries {
+						if e.Origin != "" {
+							fmt.Fprintf(w, "    %s  [%s]\n", e.Path, e.Origin)
+						} else {
+							fmt.Fprintf(w, "    %s\n", e.Path)
+						}
+					}
+				}
+				printPathEntries("Writable", result.Writable)
+				printPathEntries("Readable", result.Readable)
+				printPathEntries("Denied", result.Denied)
+				fmt.Fprintf(w, "  Network:    %s\n", result.Network)
+				return nil
+			})
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "show policy for a specific context")
@@ -321,6 +354,12 @@ func sandboxTestCmd() *cobra.Command {
 	return cmd
 }
 
+type sandboxProfileEntry struct {
+	Name    string `json:"name"`
+	Source  string `json:"source"`
+	Details string `json:"details,omitempty"`
+}
+
 func sandboxListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "list",
@@ -334,9 +373,7 @@ func sandboxListCmd() *cobra.Command {
 			}
 			cfg := env.Config()
 
-			fmt.Fprintf(out, "%-16s %-12s %s\n", "NAME", "SOURCE", "DETAILS")
-			fmt.Fprintf(out, "%-16s %-12s %s\n", "default", "(built-in)", "network=outbound")
-
+			entries := []sandboxProfileEntry{{Name: "default", Source: "(built-in)", Details: "network=outbound"}}
 			if cfg.Sandboxes != nil {
 				names := make([]string, 0, len(cfg.Sandboxes))
 				for name := range cfg.Sandboxes {
@@ -355,11 +392,21 @@ func sandboxListCmd() *cobra.Command {
 						}
 						details += fmt.Sprintf("denied_extra: %s", strings.Join(sp.DeniedExtra, ", "))
 					}
-					fmt.Fprintf(out, "%-16s %-12s %s\n", name, "(config)", details)
+					entries = append(entries, sandboxProfileEntry{Name: name, Source: "(config)", Details: details})
 				}
 			}
 
-			return nil
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				fmt.Fprintf(w, "%-16s %-12s %s\n", "NAME", "SOURCE", "DETAILS")
+				for _, e := range entries {
+					fmt.Fprintf(w, "%-16s %-12s %s\n", e.Name, e.Source, e.Details)
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -787,6 +834,13 @@ func sandboxPortsCmd() *cobra.Command {
 	return cmd
 }
 
+type sandboxGuardEntry struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Active      bool   `json:"active"`
+	Description string `json:"description"`
+}
+
 func sandboxGuardsCmd() *cobra.Command {
 	var contextName string
 	var withCaps, withoutCaps []string
@@ -832,15 +886,31 @@ func sandboxGuardsCmd() *cobra.Command {
 				activeSet[n] = true
 			}
 
-			fmt.Fprintf(out, "%-20s %-12s %-10s %s\n", "GUARD", "TYPE", "STATUS", "DESCRIPTION")
+			entries := make([]sandboxGuardEntry, 0, len(allGuards))
 			for _, g := range allGuards {
-				status := "inactive"
-				if activeSet[g.Name()] {
-					status = "active"
-				}
-				fmt.Fprintf(out, "%-20s %-12s %-10s %s\n", g.Name(), g.Type(), status, g.Description())
+				entries = append(entries, sandboxGuardEntry{
+					Name:        g.Name(),
+					Type:        g.Type(),
+					Active:      activeSet[g.Name()],
+					Description: g.Description(),
+				})
 			}
-			return nil
+
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				fmt.Fprintf(w, "%-20s %-12s %-10s %s\n", "GUARD", "TYPE", "STATUS", "DESCRIPTION")
+				for _, e := range entries {
+					status := "inactive"
+					if e.Active {
+						status = "active"
+					}
+					fmt.Fprintf(w, "%-20s %-12s %-10s %s\n", e.Name, e.Type, status, e.Description)
+				}
+				return nil
+			})
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
@@ -983,6 +1053,12 @@ func sandboxUnguardCmd() *cobra.Command {
 	return cmd
 }
 
+type sandboxTypeEntry struct {
+	Type        string `json:"type"`
+	DefaultOn   bool   `json:"default_on"`
+	Description string `json:"description"`
+}
+
 func sandboxTypesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "types",
@@ -990,11 +1066,26 @@ func sandboxTypesCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "%-12s %-10s %s\n", "TYPE", "STATE", "DESCRIPTION")
-			fmt.Fprintf(out, "%-12s %-10s %s\n", "always", "on", "Always active; cannot be disabled")
-			fmt.Fprintf(out, "%-12s %-10s %s\n", "default", "on", "Active by default; can be disabled with unguard")
-			fmt.Fprintf(out, "%-12s %-10s %s\n", "opt-in", "off", "Inactive by default; enable with guard")
-			return nil
+			entries := []sandboxTypeEntry{
+				{Type: "always", DefaultOn: true, Description: "Always active; cannot be disabled"},
+				{Type: "default", DefaultOn: true, Description: "Active by default; can be disabled with unguard"},
+				{Type: "opt-in", DefaultOn: false, Description: "Inactive by default; enable with guard"},
+			}
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				fmt.Fprintf(w, "%-12s %-10s %s\n", "TYPE", "STATE", "DESCRIPTION")
+				for _, e := range entries {
+					state := "off"
+					if e.DefaultOn {
+						state = "on"
+					}
+					fmt.Fprintf(w, "%-12s %-10s %s\n", e.Type, state, e.Description)
+				}
+				return nil
+			})
 		},
 	}
 }

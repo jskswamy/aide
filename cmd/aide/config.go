@@ -3,13 +3,21 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 
 	"github.com/spf13/cobra"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/output"
 )
+
+type configShowResult struct {
+	Path   string `json:"path"`
+	Exists bool   `json:"exists"`
+	Raw    string `json:"raw,omitempty"`
+}
 
 func configCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -29,17 +37,27 @@ func configShowCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			configPath := config.FilePath()
 			data, err := os.ReadFile(configPath)
+			out := cmd.OutOrStdout()
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
 			if err != nil {
 				if os.IsNotExist(err) {
-					fmt.Fprintln(cmd.OutOrStdout(), "No config file found. Run `aide init` to create one.")
-					return nil
+					result := configShowResult{Path: configPath, Exists: false}
+					return output.Emit(out, format, result, func(w io.Writer) error {
+						fmt.Fprintln(w, "No config file found. Run `aide init` to create one.")
+						return nil
+					})
 				}
 				return fmt.Errorf("reading config file: %w", err)
 			}
-			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "# %s\n", configPath)
-			fmt.Fprint(out, string(data))
-			return nil
+			result := configShowResult{Path: configPath, Exists: true, Raw: string(data)}
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				fmt.Fprintf(w, "# %s\n", result.Path)
+				fmt.Fprint(w, result.Raw)
+				return nil
+			})
 		},
 	}
 }

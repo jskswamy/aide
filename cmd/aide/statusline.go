@@ -8,6 +8,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
 	claudeprov "github.com/jskswamy/aide/internal/provision/agents/claude"
 	"github.com/spf13/cobra"
@@ -204,11 +205,23 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 		}
 	}
 	resolved := config.ResolveStatusline(global, project)
-	out := renderStatuslineModules(resolved, env, modules)
-	if out != "" {
-		fmt.Fprintln(cmd.OutOrStdout(), out)
+	result := statuslineResult{Line: renderStatuslineModules(resolved, env, modules)}
+
+	format, ferr := output.FromCmd(cmd)
+	if ferr != nil {
+		return ferr
 	}
-	return nil
+	return output.Emit(cmd.OutOrStdout(), format, result, func(w io.Writer) error {
+		if result.Line != "" {
+			fmt.Fprintln(w, result.Line)
+		}
+		return nil
+	})
+}
+
+// statuslineResult is the JSON shape for `aide statusline --format json`.
+type statuslineResult struct {
+	Line string `json:"line"`
 }
 
 func installStatusline(cmd *cobra.Command, ctx provision.Context, homeDir, agent string) error {

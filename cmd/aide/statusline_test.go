@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/output"
 )
 
 func boolPtrST(b bool) *bool { return &b }
@@ -482,6 +483,40 @@ func TestRunStatusline_ModuleFlagRepeatable(t *testing.T) {
 	want := "🔒 | 🌐"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRunStatusline_JSONFormat(t *testing.T) {
+	t.Setenv("AIDE_SANDBOX", "on")
+	t.Setenv("AIDE_NETWORK_MODE", "outbound")
+	// Same ambient-env scrub as TestRunStatusline_BareCommandAutoDetectsAndRenders
+	// above — without --module filtering, renderStatusline picks up every
+	// AIDE_* var envForRender reads, including ones set by a real aide-launched
+	// session (like this one, when go test itself runs under aide).
+	t.Setenv("AIDE_CAPS", "")
+	t.Setenv("AIDE_TRUST", "")
+	t.Setenv("AIDE_AUTO_APPROVE", "")
+	t.Setenv("AIDE_CONTEXT", "")
+	t.Setenv("AIDE_AGENT", "claude")
+	withPipedStdin(t, `{"session_id":"abc"}`)
+
+	cmd := statuslineCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\n%s", err, buf.String())
+	}
+
+	var got statuslineResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	want := "🔒 | 🌐"
+	if got.Line != want {
+		t.Errorf("Line = %q, want %q", got.Line, want)
 	}
 }
 

@@ -60,3 +60,34 @@ contexts:
 		t.Errorf("claude missing from JSON output: %s", buf.String())
 	}
 }
+
+func TestAgentsList_JSONFormat_Empty(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Chdir(t.TempDir())
+	// Empty PATH so launcher.ScanAgents finds nothing on top of the
+	// empty configured-agents list, giving a deterministic zero-entry
+	// result.
+	t.Setenv("PATH", t.TempDir())
+
+	cmd := agentsCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"list", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+
+	var got []agentEntry
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got == nil {
+		t.Error("expected [], got JSON null")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %+v", got)
+	}
+}

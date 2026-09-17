@@ -75,6 +75,51 @@ func TestRunMain_Success_ReturnsZero(t *testing.T) {
 	}
 }
 
+// TestRunMain_LeafSilenceErrors_TotalSilence mirrors promptCmd's
+// contract: a leaf command that sets its own SilenceErrors: true (not
+// just relying on root's) must produce zero output on error, in every
+// --format mode, while still returning a non-zero exit code. This is
+// what lets Starship invoke `aide prompt` on every render without ever
+// seeing stderr noise.
+func TestRunMain_LeafSilenceErrors_TotalSilence(t *testing.T) {
+	for _, format := range []string{"", "json"} {
+		t.Run("format="+format, func(t *testing.T) {
+			leafCmd := &cobra.Command{
+				Use:           "leaf",
+				SilenceUsage:  true,
+				SilenceErrors: true,
+				RunE: func(*cobra.Command, []string) error {
+					return errors.New("leaf failed")
+				},
+			}
+			root := &cobra.Command{
+				Use:           "root",
+				SilenceUsage:  true,
+				SilenceErrors: true,
+			}
+			root.AddCommand(leafCmd)
+			output.RegisterFlag(root)
+
+			var out bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&out)
+			args := []string{"leaf"}
+			if format != "" {
+				args = append(args, "--format", format)
+			}
+			root.SetArgs(args)
+
+			code := runMain(root)
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1", code)
+			}
+			if out.Len() != 0 {
+				t.Errorf("expected empty output, got %q", out.String())
+			}
+		})
+	}
+}
+
 func TestRunMain_JSONFormat_SubcommandError_RootFallback(t *testing.T) {
 	sub := &cobra.Command{
 		Use: "sub",

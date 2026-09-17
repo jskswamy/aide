@@ -53,6 +53,7 @@ func promptCmd() *cobra.Command {
 			remoteURL := aidectx.DetectRemote(cwd, "origin")
 			resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
 			if err != nil {
+				// No context matched — Starship hides the module on non-zero exit.
 				return err
 			}
 

@@ -178,6 +178,19 @@ explicitly disabled." Defaults to `"💀"` for `sandbox` and `"🌫️"` for
 
 ---
 
+## Control Environment Variables
+
+Alongside `AIDE_SANDBOX`, `AIDE_NETWORK_MODE`, and `AIDE_INFO_STYLE` (used
+elsewhere in this doc to detect or override aide's runtime state), aide
+also honors:
+
+- `AIDE_FORMAT` - Sets the default output format (`human` or `json`) for
+  read/query commands (`aide which`, `aide cap list`, `aide status`,
+  etc.) when `--format` isn't passed explicitly. Precedence: explicit
+  `--format` flag > `AIDE_FORMAT` > `human`.
+
+---
+
 ## Context Fields
 
 - `match:`: list of path or remote rules that activate the context. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against git remote URL). `remote_name:` defaults to `origin`.

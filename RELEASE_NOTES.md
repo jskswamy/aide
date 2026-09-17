@@ -2,6 +2,20 @@
 
 ### Feature
 
+#### aide commands support --format json output
+
+Read/query commands (`aide which`, `aide cap list`, `aide status`, etc.)
+now support `--format json` for machine-readable output, alongside the
+existing human-readable default.
+
+- Every read/query command accepts `--format json` (default: `human`).
+- The `$AIDE_FORMAT` environment variable sets the default when
+  `--format` isn't passed explicitly (flag > env var > `human`).
+- `aide explain`'s existing `--format human|agent|json` flag is
+  unchanged.
+- Errors under `--format json` are emitted as a `{"error": "..."}` JSON
+  object instead of plain text.
+
 #### aide sync no longer requires the age key for routine no-op runs
 
 `aide sync` previously decrypted a context's age-encrypted secrets file on

@@ -16,6 +16,7 @@ sandbox policy.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--resolve` | false | Show detailed startup info (agent path, env sources, sandbox) |
+| `--format` | human | Output format for read/query commands: `human` or `json`. Also settable via `$AIDE_FORMAT`. |
 
 **Local Flags:**
 

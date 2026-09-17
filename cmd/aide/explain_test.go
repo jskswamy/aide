@@ -67,3 +67,35 @@ func TestExplainCmd_TopicArg_UnknownTopic(t *testing.T) {
 		t.Errorf("error should mention the topic name, got: %v", err)
 	}
 }
+
+func TestExplainCmd_AideFormatEnvSetsDefault(t *testing.T) {
+	t.Setenv("AIDE_FORMAT", "json")
+	cmd := explainCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(nil)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "\"state\"") {
+		t.Errorf("expected JSON with state key from AIDE_FORMAT=json, got:\n%s", out.String())
+	}
+}
+
+func TestExplainCmd_ExplicitFlagBeatsAideFormatEnv(t *testing.T) {
+	t.Setenv("AIDE_FORMAT", "json")
+	cmd := explainCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--format", "human"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if strings.Contains(out.String(), "\"state\"") {
+		t.Errorf("explicit --format human must override AIDE_FORMAT=json, got:\n%s", out.String())
+	}
+}

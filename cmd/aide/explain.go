@@ -7,6 +7,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/explain"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -77,6 +78,6 @@ Formats: human (default), agent (markdown for injection), json.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "human", "Output format: human, agent, or json")
+	cmd.Flags().StringVar(&format, "format", output.DefaultFromEnv("human"), "Output format: human, agent, or json")
 	return cmd
 }

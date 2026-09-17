@@ -17,6 +17,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/output"
 )
 
 func contextCmd() *cobra.Command {
@@ -35,6 +36,20 @@ func contextCmd() *cobra.Command {
 	return cmd
 }
 
+type matchRuleEntry struct {
+	Path   string `json:"path,omitempty"`
+	Remote string `json:"remote,omitempty"`
+}
+
+type contextEntry struct {
+	Name    string           `json:"name"`
+	Default bool             `json:"default"`
+	Agent   string           `json:"agent"`
+	Secret  string           `json:"secret,omitempty"`
+	Match   []matchRuleEntry `json:"match,omitempty"`
+	EnvKeys []string         `json:"env_keys,omitempty"`
+}
+
 func contextListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "list",
@@ -46,35 +61,26 @@ func contextListCmd() *cobra.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 			cfg := env.Config()
-			if len(cfg.Contexts) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No contexts configured.")
-				return nil
-			}
-
 			out := cmd.OutOrStdout()
+
 			names := make([]string, 0, len(cfg.Contexts))
 			for name := range cfg.Contexts {
 				names = append(names, name)
 			}
 			sort.Strings(names)
 
-			for i, name := range names {
+			entries := make([]contextEntry, 0, len(names))
+			for _, name := range names {
 				ctx := cfg.Contexts[name]
-				if name == cfg.DefaultContext {
-					fmt.Fprintf(out, "%s (default)\n", name)
-				} else {
-					fmt.Fprintln(out, name)
-				}
-				fmt.Fprintf(out, "  Agent:    %s\n", ctx.Agent)
-				if ctx.Secret != "" {
-					fmt.Fprintf(out, "  Secret:   %s\n", ctx.Secret)
+				e := contextEntry{
+					Name:    name,
+					Default: name == cfg.DefaultContext,
+					Agent:   ctx.Agent,
+					Secret:  ctx.Secret,
 				}
 				for _, rule := range ctx.Match {
-					if rule.Path != "" {
-						fmt.Fprintf(out, "  Match:    %s\n", rule.Path)
-					}
-					if rule.Remote != "" {
-						fmt.Fprintf(out, "  Match:    %s (remote)\n", rule.Remote)
+					if rule.Path != "" || rule.Remote != "" {
+						e.Match = append(e.Match, matchRuleEntry{Path: rule.Path, Remote: rule.Remote})
 					}
 				}
 				if len(ctx.Env) > 0 {
@@ -83,13 +89,47 @@ func contextListCmd() *cobra.Command {
 						keys = append(keys, k)
 					}
 					sort.Strings(keys)
-					fmt.Fprintf(out, "  Env:      %s\n", strings.Join(keys, ", "))
+					e.EnvKeys = keys
 				}
-				if i < len(names)-1 {
-					fmt.Fprintln(out)
-				}
+				entries = append(entries, e)
 			}
-			return nil
+
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				if len(entries) == 0 {
+					fmt.Fprintln(w, "No contexts configured.")
+					return nil
+				}
+				for i, e := range entries {
+					if e.Default {
+						fmt.Fprintf(w, "%s (default)\n", e.Name)
+					} else {
+						fmt.Fprintln(w, e.Name)
+					}
+					fmt.Fprintf(w, "  Agent:    %s\n", e.Agent)
+					if e.Secret != "" {
+						fmt.Fprintf(w, "  Secret:   %s\n", e.Secret)
+					}
+					for _, rule := range e.Match {
+						if rule.Path != "" {
+							fmt.Fprintf(w, "  Match:    %s\n", rule.Path)
+						}
+						if rule.Remote != "" {
+							fmt.Fprintf(w, "  Match:    %s (remote)\n", rule.Remote)
+						}
+					}
+					if len(e.EnvKeys) > 0 {
+						fmt.Fprintf(w, "  Env:      %s\n", strings.Join(e.EnvKeys, ", "))
+					}
+					if i < len(entries)-1 {
+						fmt.Fprintln(w)
+					}
+				}
+				return nil
+			})
 		},
 	}
 }

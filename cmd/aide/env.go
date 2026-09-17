@@ -15,6 +15,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
 )
@@ -25,6 +26,16 @@ var (
 	discoverAgeKey     = secrets.DiscoverAgeKey
 	decryptSecretsFile = secrets.DecryptSecretsFile
 )
+
+type envVarEntry struct {
+	Key        string `json:"key"`
+	Annotation string `json:"annotation"`
+}
+
+type envListResult struct {
+	Context string        `json:"context"`
+	Vars    []envVarEntry `json:"vars"`
+}
 
 func envCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -278,32 +289,39 @@ func envListCmd() *cobra.Command {
 				envMap = resolved.Context.Env
 			}
 
-			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Context: %s\n", targetName)
-			if len(envMap) == 0 {
-				fmt.Fprintln(out, "  (no env vars)")
-				return nil
-			}
-
 			keys := make([]string, 0, len(envMap))
 			for k := range envMap {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
 
-			maxKeyLen := 0
+			result := envListResult{Context: targetName, Vars: make([]envVarEntry, 0, len(keys))}
 			for _, k := range keys {
-				if len(k) > maxKeyLen {
-					maxKeyLen = len(k)
-				}
+				result.Vars = append(result.Vars, envVarEntry{Key: k, Annotation: display.EnvAnnotation(envMap[k])})
 			}
 
-			for _, k := range keys {
-				v := envMap[k]
-				annotation := display.EnvAnnotation(v)
-				fmt.Fprintf(out, "  %-*s   %s\n", maxKeyLen, k, annotation)
+			out := cmd.OutOrStdout()
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
 			}
-			return nil
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				fmt.Fprintf(w, "Context: %s\n", result.Context)
+				if len(result.Vars) == 0 {
+					fmt.Fprintln(w, "  (no env vars)")
+					return nil
+				}
+				maxKeyLen := 0
+				for _, v := range result.Vars {
+					if len(v.Key) > maxKeyLen {
+						maxKeyLen = len(v.Key)
+					}
+				}
+				for _, v := range result.Vars {
+					fmt.Fprintf(w, "  %-*s   %s\n", maxKeyLen, v.Key, v.Annotation)
+				}
+				return nil
+			})
 		},
 	}
 

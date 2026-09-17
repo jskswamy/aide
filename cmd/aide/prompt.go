@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/ui"
 	"github.com/spf13/cobra"
@@ -21,6 +23,10 @@ when = true
 symbol = ""
 timeout = 100
 `
+
+type promptResult struct {
+	Line string `json:"line"`
+}
 
 func promptCmd() *cobra.Command {
 	var printStarshipConfig bool
@@ -47,7 +53,6 @@ func promptCmd() *cobra.Command {
 			remoteURL := aidectx.DetectRemote(cwd, "origin")
 			resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
 			if err != nil {
-				// No context matched — Starship hides the module on non-zero exit.
 				return err
 			}
 
@@ -61,9 +66,16 @@ func promptCmd() *cobra.Command {
 			}
 			agentIcon := launcher.ResolveAgentIcon(resolved.Context.Agent, agentDef)
 
-			line := formatPromptLine(resolved.Name, ctxIcon, agentIcon, sbDisabled, trustStatus, compact)
-			fmt.Fprintln(cmd.OutOrStdout(), line)
-			return nil
+			result := promptResult{Line: formatPromptLine(resolved.Name, ctxIcon, agentIcon, sbDisabled, trustStatus, compact)}
+
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(cmd.OutOrStdout(), format, result, func(w io.Writer) error {
+				fmt.Fprintln(w, result.Line)
+				return nil
+			})
 		},
 	}
 

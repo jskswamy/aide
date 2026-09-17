@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +36,7 @@ func hookListCmd() *cobra.Command {
 		Short:         "Show declared and managed hooks",
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runHookList(cmd.OutOrStdout(), contextName)
+			return runHookList(cmd, contextName)
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
@@ -97,7 +98,47 @@ The matcher is optional; if omitted, the first entry matching event and command 
 	return cmd
 }
 
-func runHookList(out io.Writer, contextName string) error {
+type hookEntry struct {
+	Event   string `json:"event"`
+	Matcher string `json:"matcher,omitempty"`
+	Command string `json:"command"`
+	Managed bool   `json:"managed"`
+}
+
+type hookListResult struct {
+	Context string      `json:"context"`
+	Agent   string      `json:"agent"`
+	Hooks   []hookEntry `json:"hooks"`
+}
+
+// buildHookEntries merges desired and managed hooks into one ordered
+// list: every desired hook first (in declared order), then any managed
+// hook not present in desired (drift — declared removed but still
+// installed).
+func buildHookEntries(desired []provision.Hook, managed []provision.ManagedHook) []hookEntry {
+	managedSet := buildManagedHookSet(managed)
+	entries := make([]hookEntry, 0, len(desired)+len(managed))
+	for _, h := range desired {
+		key := provision.HookKey(h.Event, h.Matcher, h.Command)
+		entries = append(entries, hookEntry{Event: h.Event, Matcher: h.Matcher, Command: h.Command, Managed: managedSet[key]})
+	}
+	for _, m := range managed {
+		key := provision.HookKey(m.Event, m.Matcher, m.Command)
+		found := false
+		for _, d := range desired {
+			if provision.HookKey(d.Event, d.Matcher, d.Command) == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			entries = append(entries, hookEntry{Event: m.Event, Matcher: m.Matcher, Command: m.Command, Managed: true})
+		}
+	}
+	return entries
+}
+
+func runHookList(cmd *cobra.Command, contextName string) error {
 	env, err := loadProvisionEnv(contextName)
 	if err != nil {
 		return err
@@ -112,76 +153,44 @@ func runHookList(out io.Writer, contextName string) error {
 		managedHooks = cs.Hooks
 	}
 
-	fmt.Fprintf(out, "Context: %s (agent: %s)\n\n", env.contextName, env.ctx.Agent)
-	renderHookTable(out, desired.Hooks, managedHooks)
-	return nil
+	result := hookListResult{
+		Context: env.contextName,
+		Agent:   env.ctx.Agent,
+		Hooks:   buildHookEntries(desired.Hooks, managedHooks),
+	}
+
+	out := cmd.OutOrStdout()
+	format, ferr := output.FromCmd(cmd)
+	if ferr != nil {
+		return ferr
+	}
+	return output.Emit(out, format, result, func(w io.Writer) error {
+		fmt.Fprintf(w, "Context: %s (agent: %s)\n\n", result.Context, result.Agent)
+		renderHookTable(w, result.Hooks)
+		return nil
+	})
 }
 
-func renderHookTable(out io.Writer, desired []provision.Hook, managed []provision.ManagedHook) {
-	managedSet := buildManagedHookSet(managed)
-
+func renderHookTable(out io.Writer, entries []hookEntry) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "  EVENT\tMATCHER\tCOMMAND\tMANAGED")
 
-	// Combine desired and managed for display
-	displayHooks := make([]struct {
-		event   string
-		matcher string
-		command string
-		managed bool
-	}, 0)
-
-	// Add all desired hooks
-	for _, h := range desired {
-		matcher := h.Matcher
-		if matcher == "" {
-			matcher = "—"
-		}
-		key := provision.HookKey(h.Event, h.Matcher, h.Command)
-		displayHooks = append(displayHooks, struct {
-			event   string
-			matcher string
-			command string
-			managed bool
-		}{h.Event, matcher, h.Command, managedSet[key]})
-	}
-
-	// Add any managed hooks not in desired
-	for _, m := range managed {
-		key := provision.HookKey(m.Event, m.Matcher, m.Command)
-		found := false
-		for _, d := range desired {
-			if provision.HookKey(d.Event, d.Matcher, d.Command) == key {
-				found = true
-				break
-			}
-		}
-		if !found {
-			matcher := m.Matcher
-			if matcher == "" {
-				matcher = "—"
-			}
-			displayHooks = append(displayHooks, struct {
-				event   string
-				matcher string
-				command string
-				managed bool
-			}{m.Event, matcher, m.Command, true})
-		}
-	}
-
-	if len(displayHooks) == 0 {
+	if len(entries) == 0 {
 		fmt.Fprintln(tw, "  (no hooks declared)")
 		_ = tw.Flush()
 		return
 	}
 
-	for _, h := range displayHooks {
+	for _, e := range entries {
+		matcher := e.Matcher
+		if matcher == "" {
+			matcher = "—"
+		}
 		mgd := "—"
-		if h.managed {
+		if e.Managed {
 			mgd = "✓"
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", h.event, h.matcher, h.command, mgd)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", e.Event, matcher, e.Command, mgd)
 	}
 	_ = tw.Flush()
 }

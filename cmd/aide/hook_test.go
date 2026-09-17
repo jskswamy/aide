@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
 )
 
@@ -37,6 +39,48 @@ func TestHookListEmpty(t *testing.T) {
 	}
 	if !strings.Contains(out, "Context: work") {
 		t.Errorf("missing 'Context: work' in output:\n%s", out)
+	}
+}
+
+func TestHookList_JSONFormat(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("HOME", xdg)
+	cfgDir := filepath.Join(xdg, "aide")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgYAML := `
+contexts:
+  work:
+    agent: claude
+hooks:
+  pre_tool:
+    - command: "echo hi"
+`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfgYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := hookListCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+
+	var got hookListResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got.Context != "work" || got.Agent != "claude" {
+		t.Errorf("got context=%q agent=%q", got.Context, got.Agent)
+	}
+	if len(got.Hooks) != 1 || got.Hooks[0].Command != "echo hi" {
+		t.Errorf("Hooks = %+v", got.Hooks)
 	}
 }
 
@@ -72,7 +116,7 @@ func TestHookKey(t *testing.T) {
 
 func TestRenderHookTableEmpty(t *testing.T) {
 	out := &bytes.Buffer{}
-	renderHookTable(out, nil, nil)
+	renderHookTable(out, nil)
 	if !strings.Contains(out.String(), "(no hooks declared)") {
 		t.Errorf("expected '(no hooks declared)', got: %s", out.String())
 	}
@@ -127,7 +171,7 @@ func TestRenderHookTableWithHooks(t *testing.T) {
 	managed := []provision.ManagedHook{
 		{Event: "pre_tool", Matcher: "shell", Command: "rtk hook claude"},
 	}
-	renderHookTable(out, hooks, managed)
+	renderHookTable(out, buildHookEntries(hooks, managed))
 	s := out.String()
 	if !strings.Contains(s, "pre_tool") {
 		t.Errorf("expected pre_tool in output: %s", s)

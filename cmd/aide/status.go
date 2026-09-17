@@ -1127,6 +1127,32 @@ func setupCreateSecrets(out io.Writer, reader *bufio.Reader) (string, error) {
 	return name, nil
 }
 
+type statusCapEntry struct {
+	Name     string   `json:"name"`
+	Extends  []string `json:"extends,omitempty"`
+	Readable []string `json:"readable,omitempty"`
+	Writable []string `json:"writable,omitempty"`
+	Deny     []string `json:"deny,omitempty"`
+	EnvAllow []string `json:"env_allow,omitempty"`
+}
+
+type statusResult struct {
+	Context             string           `json:"context"`
+	Agent               string           `json:"agent"`
+	AgentPath           string           `json:"agent_path,omitempty"`
+	Matched             string           `json:"matched,omitempty"`
+	Secret              string           `json:"secret,omitempty"`
+	SecretKeyCount      int              `json:"secret_key_count,omitempty"`
+	Capabilities        []statusCapEntry `json:"capabilities,omitempty"`
+	NeverAllow          []string         `json:"never_allow,omitempty"`
+	CredentialWarnings  []string         `json:"credential_warnings,omitempty"`
+	CompositionWarnings []string         `json:"composition_warnings,omitempty"`
+	Network             string           `json:"network"`
+	SandboxTier         string           `json:"sandbox_tier"`
+	SandboxGuardCount   int              `json:"sandbox_guard_count"`
+	AutoApprove         bool             `json:"auto_approve"`
+}
+
 func statusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "status",
@@ -1225,88 +1251,39 @@ func statusCmd() *cobra.Command {
 			// Determine auto-approve
 			autoApprove := resolved.Context.Yolo != nil && *resolved.Context.Yolo
 
-			// Print formatted output
-			line := strings.Repeat("\u2500", 40)
-			fmt.Fprintln(out, line)
-
-			fmt.Fprintf(out, "Context:      %s\n", resolved.Name)
-			fmt.Fprintf(out, "Agent:        %s \u2192 %s\n", agentName, agentPath)
-			fmt.Fprintf(out, "Matched:      %s\n", resolved.MatchReason)
-
-			if secretName != "" {
-				if secretKeyCount > 0 {
-					fmt.Fprintf(out, "Secret:       %s (%d keys)\n", secretName, secretKeyCount)
-				} else {
-					fmt.Fprintf(out, "Secret:       %s\n", secretName)
-				}
-			}
-
-			// Capabilities section
-			if capSet != nil && len(capSet.Capabilities) > 0 {
-				fmt.Fprintln(out)
-				fmt.Fprintln(out, "Capabilities:")
+			var capEntries []statusCapEntry
+			if capSet != nil {
+				capEntries = make([]statusCapEntry, 0, len(capSet.Capabilities))
 				for _, cap := range capSet.Capabilities {
-					// Show name with inheritance chain
-					label := cap.Name
+					entry := statusCapEntry{
+						Name:     cap.Name,
+						Readable: cap.Readable,
+						Writable: cap.Writable,
+						Deny:     cap.Deny,
+						EnvAllow: cap.EnvAllow,
+					}
 					if len(cap.Sources) > 1 {
-						label += " (extends " + strings.Join(cap.Sources[1:], ", ") + ")"
+						entry.Extends = cap.Sources[1:]
 					}
-					fmt.Fprintf(out, "  %s\n", label)
-
-					if len(cap.Readable) > 0 {
-						fmt.Fprintf(out, "    readable:  %s\n", strings.Join(cap.Readable, ", "))
-					}
-					if len(cap.Writable) > 0 {
-						fmt.Fprintf(out, "    writable:  %s\n", strings.Join(cap.Writable, ", "))
-					}
-					if len(cap.Deny) > 0 {
-						fmt.Fprintf(out, "    deny:      %s\n", strings.Join(cap.Deny, ", "))
-					}
-					if len(cap.EnvAllow) > 0 {
-						fmt.Fprintf(out, "    env:       %s\n", strings.Join(cap.EnvAllow, ", "))
-					}
-					fmt.Fprintf(out, "    source:    context config\n")
-					fmt.Fprintln(out)
+					capEntries = append(capEntries, entry)
 				}
 			}
 
-			// Never-allow section
 			neverAllow := cfg.NeverAllow
 			if capSet != nil {
 				neverAllow = capSet.NeverAllow
 			}
-			if len(neverAllow) > 0 {
-				fmt.Fprintln(out, "Never-allow:")
-				for _, path := range neverAllow {
-					fmt.Fprintf(out, "  %s\n", path)
-				}
-			}
 
-			// Credential warnings
+			var credWarnings, compWarnings []string
 			if capSet != nil && len(capSet.Capabilities) > 0 {
 				var allEnvAllow []string
 				for _, cap := range capSet.Capabilities {
 					allEnvAllow = append(allEnvAllow, cap.EnvAllow...)
 				}
-				credWarnings := capability.CredentialWarnings(allEnvAllow)
-				if len(credWarnings) > 0 {
-					fmt.Fprintln(out)
-					fmt.Fprintln(out, "Credentials exposed:")
-					for _, w := range credWarnings {
-						fmt.Fprintf(out, "  \u26a0 %s\n", w)
-					}
-				}
-
-				compWarnings := capability.CompositionWarnings(capSet.Capabilities)
-				if len(compWarnings) > 0 {
-					fmt.Fprintln(out)
-					for _, w := range compWarnings {
-						fmt.Fprintf(out, "\u26a0 %s\n", w)
-					}
-				}
+				credWarnings = capability.CredentialWarnings(allEnvAllow)
+				compWarnings = capability.CompositionWarnings(capSet.Capabilities)
 			}
 
-			// Compute isolation tier for Linux (and platform-native on others).
 			var sandboxTierLine string
 			if sandboxDisabled {
 				sandboxTierLine = "disabled"
@@ -1325,17 +1302,101 @@ func statusCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Fprintln(out)
-			fmt.Fprintf(out, "Network: %s\n", networkMode)
-			fmt.Fprintf(out, "Sandbox: %s (%d guards)\n", sandboxTierLine, guardCount)
-			if autoApprove {
-				fmt.Fprintln(out, "Auto-approve: yes")
-			} else {
-				fmt.Fprintln(out, "Auto-approve: no")
+			result := statusResult{
+				Context:             resolved.Name,
+				Agent:               agentName,
+				AgentPath:           agentPath,
+				Matched:             resolved.MatchReason,
+				Secret:              secretName,
+				SecretKeyCount:      secretKeyCount,
+				Capabilities:        capEntries,
+				NeverAllow:          neverAllow,
+				CredentialWarnings:  credWarnings,
+				CompositionWarnings: compWarnings,
+				Network:             networkMode,
+				SandboxTier:         sandboxTierLine,
+				SandboxGuardCount:   guardCount,
+				AutoApprove:         autoApprove,
 			}
-			fmt.Fprintln(out, line)
 
-			return nil
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				line := strings.Repeat("\u2500", 40)
+				fmt.Fprintln(w, line)
+
+				fmt.Fprintf(w, "Context:      %s\n", result.Context)
+				fmt.Fprintf(w, "Agent:        %s \u2192 %s\n", result.Agent, result.AgentPath)
+				fmt.Fprintf(w, "Matched:      %s\n", result.Matched)
+
+				if result.Secret != "" {
+					if result.SecretKeyCount > 0 {
+						fmt.Fprintf(w, "Secret:       %s (%d keys)\n", result.Secret, result.SecretKeyCount)
+					} else {
+						fmt.Fprintf(w, "Secret:       %s\n", result.Secret)
+					}
+				}
+
+				if len(result.Capabilities) > 0 {
+					fmt.Fprintln(w)
+					fmt.Fprintln(w, "Capabilities:")
+					for _, cap := range result.Capabilities {
+						label := cap.Name
+						if len(cap.Extends) > 0 {
+							label += " (extends " + strings.Join(cap.Extends, ", ") + ")"
+						}
+						fmt.Fprintf(w, "  %s\n", label)
+						if len(cap.Readable) > 0 {
+							fmt.Fprintf(w, "    readable:  %s\n", strings.Join(cap.Readable, ", "))
+						}
+						if len(cap.Writable) > 0 {
+							fmt.Fprintf(w, "    writable:  %s\n", strings.Join(cap.Writable, ", "))
+						}
+						if len(cap.Deny) > 0 {
+							fmt.Fprintf(w, "    deny:      %s\n", strings.Join(cap.Deny, ", "))
+						}
+						if len(cap.EnvAllow) > 0 {
+							fmt.Fprintf(w, "    env:       %s\n", strings.Join(cap.EnvAllow, ", "))
+						}
+						fmt.Fprintf(w, "    source:    context config\n")
+						fmt.Fprintln(w)
+					}
+				}
+
+				if len(result.NeverAllow) > 0 {
+					fmt.Fprintln(w, "Never-allow:")
+					for _, path := range result.NeverAllow {
+						fmt.Fprintf(w, "  %s\n", path)
+					}
+				}
+
+				if len(result.CredentialWarnings) > 0 {
+					fmt.Fprintln(w)
+					fmt.Fprintln(w, "Credentials exposed:")
+					for _, warn := range result.CredentialWarnings {
+						fmt.Fprintf(w, "  \u26a0 %s\n", warn)
+					}
+				}
+				if len(result.CompositionWarnings) > 0 {
+					fmt.Fprintln(w)
+					for _, warn := range result.CompositionWarnings {
+						fmt.Fprintf(w, "\u26a0 %s\n", warn)
+					}
+				}
+
+				fmt.Fprintln(w)
+				fmt.Fprintf(w, "Network: %s\n", result.Network)
+				fmt.Fprintf(w, "Sandbox: %s (%d guards)\n", result.SandboxTier, result.SandboxGuardCount)
+				if result.AutoApprove {
+					fmt.Fprintln(w, "Auto-approve: yes")
+				} else {
+					fmt.Fprintln(w, "Auto-approve: no")
+				}
+				fmt.Fprintln(w, line)
+				return nil
+			})
 		},
 	}
 }

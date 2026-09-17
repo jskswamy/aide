@@ -176,7 +176,7 @@ func agentsListCmd() *cobra.Command {
 			cfg := env.Config()
 
 			configured := make(map[string]bool)
-			var entries []agentEntry
+			entries := make([]agentEntry, 0)
 
 			if len(cfg.Agents) > 0 {
 				agentContexts := make(map[string][]string)

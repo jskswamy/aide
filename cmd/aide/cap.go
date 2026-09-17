@@ -1035,6 +1035,9 @@ func capSuggestForPathCmd() *cobra.Command {
 			registry := env.Registry()
 
 			suggestions := capability.SuggestForPath(targetPath, registry)
+			if suggestions == nil {
+				suggestions = []string{}
+			}
 			sort.Strings(suggestions)
 			result := capSuggestResult{Path: targetPath, Suggestions: suggestions}
 
@@ -1054,7 +1057,7 @@ func capSuggestForPathCmd() *cobra.Command {
 
 type capReportEntry struct {
 	Name    string   `json:"name"`
-	Sources []string `json:"sources,omitempty"`
+	Extends []string `json:"extends,omitempty"`
 }
 
 type capReportResult struct {
@@ -1077,7 +1080,7 @@ func buildCapReportResult(set *capability.Set, context string) capReportResult {
 	for _, cap := range set.Capabilities {
 		e := capReportEntry{Name: cap.Name}
 		if len(cap.Sources) > 1 {
-			e.Sources = cap.Sources[1:]
+			e.Extends = cap.Sources[1:]
 		}
 		entries = append(entries, e)
 	}
@@ -1100,8 +1103,8 @@ func buildCapReportResult(set *capability.Set, context string) capReportResult {
 func renderCapReportHuman(out io.Writer, r capReportResult) {
 	fmt.Fprintln(out, "Capabilities:")
 	for _, e := range r.Capabilities {
-		if len(e.Sources) > 0 {
-			fmt.Fprintf(out, "  %s (via %s)\n", e.Name, strings.Join(e.Sources, " -> "))
+		if len(e.Extends) > 0 {
+			fmt.Fprintf(out, "  %s (via %s)\n", e.Name, strings.Join(e.Extends, " -> "))
 		} else {
 			fmt.Fprintf(out, "  %s\n", e.Name)
 		}

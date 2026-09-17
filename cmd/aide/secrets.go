@@ -25,6 +25,7 @@ type secretsFileEntry struct {
 	File       string   `json:"file"`
 	Recipients []string `json:"recipients,omitempty"`
 	UsedBy     []string `json:"used_by,omitempty"`
+	Error      string   `json:"error,omitempty"`
 }
 
 func secretsCmd() *cobra.Command {
@@ -222,7 +223,10 @@ func secretsListCmd() *cobra.Command {
 			for _, p := range paths {
 				baseName := filepath.Base(p)
 				e := secretsFileEntry{File: fmt.Sprintf("secrets/%s", baseName)}
-				if recipients, err := secrets.ListRecipients(p); err == nil {
+				recipients, err := secrets.ListRecipients(p)
+				if err != nil {
+					e.Error = err.Error()
+				} else {
 					e.Recipients = recipients
 				}
 				if ctxNames, ok := secretsToContexts[baseName]; ok {
@@ -244,7 +248,9 @@ func secretsListCmd() *cobra.Command {
 				}
 				for i, e := range entries {
 					fmt.Fprintln(w, e.File)
-					if len(e.Recipients) > 0 {
+					if e.Error != "" {
+						fmt.Fprintf(w, "  Recipients: (error: %s)\n", e.Error)
+					} else if len(e.Recipients) > 0 {
 						fmt.Fprintf(w, "  Recipients: %s\n", strings.Join(e.Recipients, ", "))
 					}
 					if len(e.UsedBy) > 0 {

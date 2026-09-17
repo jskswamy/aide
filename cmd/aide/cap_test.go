@@ -622,3 +622,27 @@ func TestCapSuggestForPath_JSONFormat(t *testing.T) {
 		t.Errorf("Path = %q, want %q", got.Path, proj)
 	}
 }
+
+func TestCapSuggestForPath_JSONFormat_Empty(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Chdir(t.TempDir())
+
+	cmd := capCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"suggest-for-path", "/definitely-not-a-real-path-xyz123", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+
+	var got capSuggestResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got.Suggestions == nil {
+		t.Error("expected [], got JSON null")
+	}
+}

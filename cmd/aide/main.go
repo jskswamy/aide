@@ -135,9 +135,22 @@ capture sandbox-deny events from the failed run.`,
 // from main() so the error-formatting/exit-code logic is unit
 // testable without a real os.Exit call.
 func runMain(cmd *cobra.Command) int {
-	err := cmd.Execute()
+	leaf, err := cmd.ExecuteC()
 	if err == nil {
 		return 0
+	}
+	if leaf != nil && leaf.SilenceErrors && leaf != cmd {
+		// The leaf command (not root) explicitly opted into total
+		// silence on error (e.g. promptCmd, for Starship's contract
+		// that this command never writes to stderr). Root's own
+		// SilenceErrors exists only to suppress cobra's built-in
+		// print so PrintError below can run instead — it doesn't
+		// mean "no output ever" the way a leaf's own flag does.
+		var ee interface{ ExitCode() int }
+		if errors.As(err, &ee) {
+			return ee.ExitCode()
+		}
+		return 1
 	}
 	format, ferr := output.FromCmd(cmd)
 	if ferr != nil {

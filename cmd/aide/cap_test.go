@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/consent"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/testutil"
 )
 
@@ -482,4 +484,141 @@ contexts:
 		}
 	}
 	t.Fatalf("no clipboard row found in output:\n%s", out)
+}
+
+// runCapCmdFormat mirrors runCapCmd but registers --format first, so
+// tests can pass --format json. runCapCmd itself is untouched — every
+// existing caller keeps working via output.FromCmd's absent-flag
+// default of human.
+func runCapCmdFormat(t *testing.T, args ...string) string {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Chdir(t.TempDir())
+	var buf bytes.Buffer
+	cmd := capCmd()
+	output.RegisterFlag(cmd)
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cap %v: %v\nout: %s", args, err, buf.String())
+	}
+	return buf.String()
+}
+
+func TestCapList_JSONFormat(t *testing.T) {
+	out := runCapCmdFormat(t, "list", "--format", "json")
+	var got []capListEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, out)
+	}
+	found := false
+	for _, e := range got {
+		if e.Name == "python" {
+			found = true
+			if e.Source == "" {
+				t.Errorf("python entry missing source: %+v", e)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("python capability missing from JSON list: %s", out)
+	}
+}
+
+func TestCapShow_JSONFormat(t *testing.T) {
+	out := runCapCmdFormat(t, "show", "python", "--format", "json")
+	var got capShowResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, out)
+	}
+	if got.Name != "python" {
+		t.Errorf("Name = %q, want python", got.Name)
+	}
+	if len(got.Variants) == 0 {
+		t.Errorf("expected variants in JSON output: %+v", got)
+	}
+}
+
+func TestCapVariants_JSONFormat(t *testing.T) {
+	out := runCapCmdFormat(t, "variants", "--format", "json")
+	var got []capVariantPair
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, out)
+	}
+	found := false
+	for _, p := range got {
+		if p.Capability == "python" && p.Variant == "uv" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("python/uv pair missing: %s", out)
+	}
+}
+
+func TestCapConsentList_JSONFormat_Empty(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", xdg)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	proj := t.TempDir()
+	t.Chdir(proj)
+
+	cmd := capCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"consent", "list", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+	var got []capConsentEntry
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got == nil {
+		t.Error("expected [], got JSON null")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %+v", got)
+	}
+}
+
+func TestCapCheck_JSONFormat(t *testing.T) {
+	out := runCapCmdFormat(t, "check", "python", "--format", "json")
+	var got capReportResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, out)
+	}
+	if len(got.Capabilities) != 1 || got.Capabilities[0].Name != "python" {
+		t.Errorf("Capabilities = %+v", got.Capabilities)
+	}
+}
+
+func TestCapSuggestForPath_JSONFormat(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	proj := t.TempDir()
+	t.Chdir(proj)
+	if err := os.WriteFile(filepath.Join(proj, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := capCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"suggest-for-path", proj, "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+	var got capSuggestResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got.Path != proj {
+		t.Errorf("Path = %q, want %q", got.Path, proj)
+	}
 }

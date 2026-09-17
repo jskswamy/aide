@@ -19,6 +19,7 @@ import (
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/trust"
 )
 
@@ -52,6 +53,13 @@ func capConsentCmd() *cobra.Command {
 	return cmd
 }
 
+type capConsentEntry struct {
+	Capability  string    `json:"capability"`
+	Variants    []string  `json:"variants,omitempty"`
+	ConfirmedAt time.Time `json:"confirmed_at"`
+	Markers     string    `json:"markers,omitempty"`
+}
+
 func capConsentListCmd() *cobra.Command {
 	var projectFlag string
 	cmd := &cobra.Command{
@@ -73,19 +81,35 @@ func capConsentListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listing consents: %w", err)
 			}
-			if len(grants) == 0 {
-				fmt.Fprintf(out, "no consents recorded for %s\n", project)
-				return nil
-			}
+			entries := make([]capConsentEntry, 0, len(grants))
 			for _, g := range grants {
-				fmt.Fprintf(out, "%s  variants=%s  confirmed_at=%s  markers=%s\n",
-					g.Capability,
-					strings.Join(g.Variants, ","),
-					g.ConfirmedAt.Format(time.RFC3339),
-					g.Summary,
-				)
+				entries = append(entries, capConsentEntry{
+					Capability:  g.Capability,
+					Variants:    g.Variants,
+					ConfirmedAt: g.ConfirmedAt,
+					Markers:     g.Summary,
+				})
 			}
-			return nil
+
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				if len(entries) == 0 {
+					fmt.Fprintf(w, "no consents recorded for %s\n", project)
+					return nil
+				}
+				for _, e := range entries {
+					fmt.Fprintf(w, "%s  variants=%s  confirmed_at=%s  markers=%s\n",
+						e.Capability,
+						strings.Join(e.Variants, ","),
+						e.ConfirmedAt.Format(time.RFC3339),
+						e.Markers,
+					)
+				}
+				return nil
+			})
 		},
 	}
 	cmd.Flags().StringVar(&projectFlag, "project", "", "Project root (defaults to current directory)")
@@ -112,6 +136,13 @@ func capConsentRevokeCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+type capListEntry struct {
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	Source      string `json:"source"`
+	Description string `json:"description"`
 }
 
 func capListCmd() *cobra.Command {
@@ -163,7 +194,7 @@ func capListCmd() *cobra.Command {
 			}
 			sort.Strings(names)
 
-			fmt.Fprintf(out, "%-20s %-12s %-12s %s\n", "NAME", "STATUS", "SOURCE", "DESCRIPTION")
+			entries := make([]capListEntry, 0, len(names))
 			for _, name := range names {
 				entry := registry[name]
 				source := "built-in"
@@ -177,22 +208,31 @@ func capListCmd() *cobra.Command {
 						source = "custom"
 					}
 				} else if _, isUser := userCaps[name]; isUser {
-					// User override of a built-in
 					source = "custom"
 				}
 				desc := entry.Description
 				if len(entry.Variants) > 0 {
-					names := make([]string, len(entry.Variants))
+					vnames := make([]string, len(entry.Variants))
 					for i, v := range entry.Variants {
-						names[i] = v.Name
+						vnames[i] = v.Name
 					}
-					desc = fmt.Sprintf("%s (%d variants: %s)", desc, len(entry.Variants), strings.Join(names, ", "))
+					desc = fmt.Sprintf("%s (%d variants: %s)", desc, len(entry.Variants), strings.Join(vnames, ", "))
 				}
 				status := capListStatus(name, enabledSet, disabledSet, suggestedSet)
-				fmt.Fprintf(out, "%-20s %-12s %-12s %s\n", name, status, source, desc)
+				entries = append(entries, capListEntry{Name: name, Status: status, Source: source, Description: desc})
 			}
 
-			return nil
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				fmt.Fprintf(w, "%-20s %-12s %-12s %s\n", "NAME", "STATUS", "SOURCE", "DESCRIPTION")
+				for _, e := range entries {
+					fmt.Fprintf(w, "%-20s %-12s %-12s %s\n", e.Name, e.Status, e.Source, e.Description)
+				}
+				return nil
+			})
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
@@ -218,6 +258,53 @@ func capListStatus(name string, enabled, disabled, suggested map[string]bool) st
 	default:
 		return "-"
 	}
+}
+
+type capPathEntry struct {
+	Declared    string `json:"declared"`
+	Resolved    string `json:"resolved,omitempty"`
+	OutsideHome bool   `json:"outside_home,omitempty"`
+}
+
+// resolvePathEntries mirrors the per-item symlink-resolution logic that
+// used to live inline in capShowPathSection. Shared by the JSON result
+// builder and (refactored) capShowPathSection so both surfaces agree.
+func resolvePathEntries(items []string, home string) []capPathEntry {
+	entries := make([]capPathEntry, 0, len(items))
+	for _, p := range items {
+		entry := capPathEntry{Declared: p}
+		expanded := homepath.Expand(p, home)
+		resolved, changed, underHome := fsutil.ResolveWidening(expanded, home)
+		if changed {
+			entry.Resolved = resolved
+			entry.OutsideHome = !underHome
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+type capVariantEntry struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Markers     []string `json:"markers,omitempty"`
+	Readable    []string `json:"readable,omitempty"`
+	Writable    []string `json:"writable,omitempty"`
+	EnvAllow    []string `json:"env_allow,omitempty"`
+}
+
+type capShowResult struct {
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	Sources         []string          `json:"sources,omitempty"`
+	Unguard         []string          `json:"unguard,omitempty"`
+	Readable        []capPathEntry    `json:"readable,omitempty"`
+	Writable        []capPathEntry    `json:"writable,omitempty"`
+	Deny            []capPathEntry    `json:"deny,omitempty"`
+	EnvAllow        []string          `json:"env_allow,omitempty"`
+	Allow           []string          `json:"allow,omitempty"`
+	Variants        []capVariantEntry `json:"variants,omitempty"`
+	DefaultVariants []string          `json:"default_variants,omitempty"`
 }
 
 func capShowCmd() *cobra.Command {
@@ -248,51 +335,86 @@ func capShowCmd() *cobra.Command {
 			}
 
 			entry := registry[name]
-			fmt.Fprintf(out, "Name:        %s\n", name)
-			fmt.Fprintf(out, "Description: %s\n", entry.Description)
-
-			if len(resolved.Sources) > 1 {
-				fmt.Fprintf(out, "Sources:     %s\n", strings.Join(resolved.Sources, " -> "))
-			}
-
 			home, _ := os.UserHomeDir()
-			capShowSection(out, "Unguard", resolved.Unguard)
-			capShowPathSection(out, "Readable", resolved.Readable, home)
-			capShowPathSection(out, "Writable", resolved.Writable, home)
-			capShowPathSection(out, "Deny", resolved.Deny, home)
-			capShowSection(out, "EnvAllow", resolved.EnvAllow)
-			capShowSection(out, "Allow", resolved.Allow)
-
-			if len(entry.Variants) > 0 {
-				fmt.Fprintln(out, "")
-				fmt.Fprintln(out, "Variants:")
-				for _, v := range entry.Variants {
-					fmt.Fprintf(out, "  %s", v.Name)
-					if v.Description != "" {
-						fmt.Fprintf(out, " — %s", v.Description)
-					}
-					fmt.Fprintln(out)
-					for _, m := range v.Markers {
-						fmt.Fprintf(out, "    marker: %s\n", m.MatchSummary())
-					}
-					if len(v.Readable) > 0 {
-						fmt.Fprintf(out, "    readable: %s\n", strings.Join(v.Readable, ", "))
-					}
-					if len(v.Writable) > 0 {
-						fmt.Fprintf(out, "    writable: %s\n", strings.Join(v.Writable, ", "))
-					}
-					if len(v.EnvAllow) > 0 {
-						fmt.Fprintf(out, "    env: %s\n", strings.Join(v.EnvAllow, ", "))
-					}
-				}
-				if len(entry.DefaultVariants) > 0 {
-					fmt.Fprintf(out, "\nDefault variants: %s\n", strings.Join(entry.DefaultVariants, ", "))
-				}
+			result := capShowResult{
+				Name:        name,
+				Description: entry.Description,
 			}
+			if len(resolved.Sources) > 1 {
+				result.Sources = resolved.Sources
+			}
+			result.Unguard = resolved.Unguard
+			result.Readable = resolvePathEntries(resolved.Readable, home)
+			result.Writable = resolvePathEntries(resolved.Writable, home)
+			result.Deny = resolvePathEntries(resolved.Deny, home)
+			result.EnvAllow = resolved.EnvAllow
+			result.Allow = resolved.Allow
+			for _, v := range entry.Variants {
+				ve := capVariantEntry{
+					Name:        v.Name,
+					Description: v.Description,
+					Readable:    v.Readable,
+					Writable:    v.Writable,
+					EnvAllow:    v.EnvAllow,
+				}
+				for _, m := range v.Markers {
+					ve.Markers = append(ve.Markers, m.MatchSummary())
+				}
+				result.Variants = append(result.Variants, ve)
+			}
+			result.DefaultVariants = entry.DefaultVariants
 
-			return nil
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				fmt.Fprintf(w, "Name:        %s\n", result.Name)
+				fmt.Fprintf(w, "Description: %s\n", result.Description)
+				if len(result.Sources) > 1 {
+					fmt.Fprintf(w, "Sources:     %s\n", strings.Join(result.Sources, " -> "))
+				}
+				capShowSection(w, "Unguard", result.Unguard)
+				capShowPathSection(w, "Readable", resolved.Readable, home)
+				capShowPathSection(w, "Writable", resolved.Writable, home)
+				capShowPathSection(w, "Deny", resolved.Deny, home)
+				capShowSection(w, "EnvAllow", result.EnvAllow)
+				capShowSection(w, "Allow", result.Allow)
+				if len(entry.Variants) > 0 {
+					fmt.Fprintln(w, "")
+					fmt.Fprintln(w, "Variants:")
+					for _, v := range entry.Variants {
+						fmt.Fprintf(w, "  %s", v.Name)
+						if v.Description != "" {
+							fmt.Fprintf(w, " — %s", v.Description)
+						}
+						fmt.Fprintln(w)
+						for _, m := range v.Markers {
+							fmt.Fprintf(w, "    marker: %s\n", m.MatchSummary())
+						}
+						if len(v.Readable) > 0 {
+							fmt.Fprintf(w, "    readable: %s\n", strings.Join(v.Readable, ", "))
+						}
+						if len(v.Writable) > 0 {
+							fmt.Fprintf(w, "    writable: %s\n", strings.Join(v.Writable, ", "))
+						}
+						if len(v.EnvAllow) > 0 {
+							fmt.Fprintf(w, "    env: %s\n", strings.Join(v.EnvAllow, ", "))
+						}
+					}
+					if len(entry.DefaultVariants) > 0 {
+						fmt.Fprintf(w, "\nDefault variants: %s\n", strings.Join(entry.DefaultVariants, ", "))
+					}
+				}
+				return nil
+			})
 		},
 	}
+}
+
+type capVariantPair struct {
+	Capability string `json:"capability"`
+	Variant    string `json:"variant"`
 }
 
 func capVariantsCmd() *cobra.Command {
@@ -307,17 +429,29 @@ func capVariantsCmd() *cobra.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 			registry := env.Registry()
-			pairs := make([]string, 0)
+			pairs := make([]capVariantPair, 0)
 			for capName, entry := range registry {
 				for _, v := range entry.Variants {
-					pairs = append(pairs, capName+"/"+v.Name)
+					pairs = append(pairs, capVariantPair{Capability: capName, Variant: v.Name})
 				}
 			}
-			sort.Strings(pairs)
-			for _, p := range pairs {
-				fmt.Fprintln(out, p)
+			sort.Slice(pairs, func(i, j int) bool {
+				if pairs[i].Capability != pairs[j].Capability {
+					return pairs[i].Capability < pairs[j].Capability
+				}
+				return pairs[i].Variant < pairs[j].Variant
+			})
+
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
 			}
-			return nil
+			return output.Emit(out, format, pairs, func(w io.Writer) error {
+				for _, p := range pairs {
+					fmt.Fprintln(w, p.Capability+"/"+p.Variant)
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -347,26 +481,13 @@ func capShowPathSection(out io.Writer, label string, items []string, home string
 	if len(items) == 0 {
 		return
 	}
-	type annotated struct {
-		declared    string
-		resolved    string
-		outsideHome bool
-	}
-	rows := make([]annotated, 0, len(items))
+	rows := resolvePathEntries(items, home)
 	hasResolution := false
-	for _, p := range items {
-		row := annotated{declared: p}
-		// Tilde-expand here because cap-definition strings (unlike
-		// ctx.ExtraReadable in the launcher path) are not pre-expanded.
-		// fsutil.ResolveWidening is intentionally pure — see its docstring.
-		expanded := homepath.Expand(p, home)
-		resolved, changed, underHome := fsutil.ResolveWidening(expanded, home)
-		if changed {
-			row.resolved = resolved
-			row.outsideHome = !underHome
+	for _, r := range rows {
+		if r.Resolved != "" {
 			hasResolution = true
+			break
 		}
-		rows = append(rows, row)
 	}
 	if !hasResolution {
 		fmt.Fprintf(out, "%-12s %s\n", label+":", strings.Join(items, ", "))
@@ -375,16 +496,15 @@ func capShowPathSection(out io.Writer, label string, items []string, home string
 	fmt.Fprintf(out, "%s:\n", label)
 	for _, r := range rows {
 		switch {
-		case r.outsideHome:
-			fmt.Fprintf(out, "  %s  →  %s  ⚠ outside $HOME (resolved target will not be widened; use AIDE-mu8 escape hatch to opt in)\n", r.declared, r.resolved)
-		case r.resolved != "":
-			fmt.Fprintf(out, "  %s  →  %s\n", r.declared, r.resolved)
+		case r.OutsideHome:
+			fmt.Fprintf(out, "  %s  →  %s  ⚠ outside $HOME (resolved target will not be widened; use AIDE-mu8 escape hatch to opt in)\n", r.Declared, r.Resolved)
+		case r.Resolved != "":
+			fmt.Fprintf(out, "  %s  →  %s\n", r.Declared, r.Resolved)
 		default:
-			fmt.Fprintf(out, "  %s\n", r.declared)
+			fmt.Fprintf(out, "  %s\n", r.Declared)
 		}
 	}
 }
-
 
 func capCreateCmd() *cobra.Command {
 	var extends string
@@ -817,8 +937,15 @@ This is a preview — nothing is launched or modified.`,
 				return err
 			}
 
-			printCapabilityReport(out, set)
-			return nil
+			result := buildCapReportResult(set, "")
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				renderCapReportHuman(w, result)
+				return nil
+			})
 		},
 	}
 }
@@ -862,13 +989,25 @@ func capAuditCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(out, "Context: %s\n\n", ctxName)
-			printCapabilityReport(out, set)
-			return nil
+			result := buildCapReportResult(set, ctxName)
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				fmt.Fprintf(w, "Context: %s\n\n", ctxName)
+				renderCapReportHuman(w, result)
+				return nil
+			})
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
 	return cmd
+}
+
+type capSuggestResult struct {
+	Path        string   `json:"path"`
+	Suggestions []string `json:"suggestions"`
 }
 
 func capSuggestForPathCmd() *cobra.Command {
@@ -897,54 +1036,97 @@ func capSuggestForPathCmd() *cobra.Command {
 
 			suggestions := capability.SuggestForPath(targetPath, registry)
 			sort.Strings(suggestions)
-			for _, name := range suggestions {
-				fmt.Fprintln(out, name)
+			result := capSuggestResult{Path: targetPath, Suggestions: suggestions}
+
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
 			}
-			return nil
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				for _, name := range result.Suggestions {
+					fmt.Fprintln(w, name)
+				}
+				return nil
+			})
 		},
 	}
 }
 
-// printCapabilityReport displays the merged sandbox overrides and warnings for a CapabilitySet.
-func printCapabilityReport(out io.Writer, set *capability.Set) {
-	overrides := set.ToSandboxOverrides()
+type capReportEntry struct {
+	Name    string   `json:"name"`
+	Sources []string `json:"sources,omitempty"`
+}
 
-	// Show per-capability sources
-	fmt.Fprintln(out, "Capabilities:")
+type capReportResult struct {
+	Context             string           `json:"context,omitempty"`
+	Capabilities        []capReportEntry `json:"capabilities"`
+	Unguard             []string         `json:"unguard,omitempty"`
+	Readable            []string         `json:"readable,omitempty"`
+	Writable            []string         `json:"writable,omitempty"`
+	Denied              []string         `json:"denied,omitempty"`
+	EnvAllow            []string         `json:"env_allow,omitempty"`
+	CredentialWarnings  []string         `json:"credential_warnings,omitempty"`
+	CompositionWarnings []string         `json:"composition_warnings,omitempty"`
+}
+
+// buildCapReportResult mirrors what printCapabilityReport used to
+// print, as data. context is "" for cap check (no context concept).
+func buildCapReportResult(set *capability.Set, context string) capReportResult {
+	overrides := set.ToSandboxOverrides()
+	entries := make([]capReportEntry, 0, len(set.Capabilities))
 	for _, cap := range set.Capabilities {
+		e := capReportEntry{Name: cap.Name}
 		if len(cap.Sources) > 1 {
-			fmt.Fprintf(out, "  %s (via %s)\n", cap.Name, strings.Join(cap.Sources[1:], " -> "))
+			e.Sources = cap.Sources[1:]
+		}
+		entries = append(entries, e)
+	}
+	return capReportResult{
+		Context:             context,
+		Capabilities:        entries,
+		Unguard:             overrides.Unguard,
+		Readable:            overrides.ReadableExtra,
+		Writable:            overrides.WritableExtra,
+		Denied:              overrides.DeniedExtra,
+		EnvAllow:            overrides.EnvAllow,
+		CredentialWarnings:  capability.CredentialWarnings(overrides.EnvAllow),
+		CompositionWarnings: capability.CompositionWarnings(set.Capabilities),
+	}
+}
+
+// renderCapReportHuman renders r exactly as printCapabilityReport used
+// to. Does not print r.Context — callers that need a "Context: %s\n\n"
+// header (capAuditCmd) print it themselves before calling this.
+func renderCapReportHuman(out io.Writer, r capReportResult) {
+	fmt.Fprintln(out, "Capabilities:")
+	for _, e := range r.Capabilities {
+		if len(e.Sources) > 0 {
+			fmt.Fprintf(out, "  %s (via %s)\n", e.Name, strings.Join(e.Sources, " -> "))
 		} else {
-			fmt.Fprintf(out, "  %s\n", cap.Name)
+			fmt.Fprintf(out, "  %s\n", e.Name)
 		}
 	}
 	fmt.Fprintln(out)
 
-	// Show merged overrides
 	fmt.Fprintln(out, "Merged sandbox overrides:")
-	capReportSection(out, "Unguard", overrides.Unguard)
-	capReportSection(out, "Readable", overrides.ReadableExtra)
-	capReportSection(out, "Writable", overrides.WritableExtra)
-	capReportSection(out, "Denied", overrides.DeniedExtra)
-	capReportSection(out, "EnvAllow", overrides.EnvAllow)
+	capReportSection(out, "Unguard", r.Unguard)
+	capReportSection(out, "Readable", r.Readable)
+	capReportSection(out, "Writable", r.Writable)
+	capReportSection(out, "Denied", r.Denied)
+	capReportSection(out, "EnvAllow", r.EnvAllow)
 
-	if len(overrides.Unguard) == 0 && len(overrides.ReadableExtra) == 0 &&
-		len(overrides.WritableExtra) == 0 && len(overrides.DeniedExtra) == 0 &&
-		len(overrides.EnvAllow) == 0 {
+	if len(r.Unguard) == 0 && len(r.Readable) == 0 &&
+		len(r.Writable) == 0 && len(r.Denied) == 0 && len(r.EnvAllow) == 0 {
 		fmt.Fprintln(out, "  (none)")
 	}
 
-	// Show warnings
-	credWarnings := capability.CredentialWarnings(overrides.EnvAllow)
-	compWarnings := capability.CompositionWarnings(set.Capabilities)
-
-	if len(credWarnings) > 0 || len(compWarnings) > 0 {
+	if len(r.CredentialWarnings) > 0 || len(r.CompositionWarnings) > 0 {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "Warnings:")
-		for _, env := range credWarnings {
+		for _, env := range r.CredentialWarnings {
 			fmt.Fprintf(out, "  [credential] %s is a known credential-bearing env var\n", env)
 		}
-		for _, w := range compWarnings {
+		for _, w := range r.CompositionWarnings {
 			fmt.Fprintf(out, "  [composition] %s\n", w)
 		}
 	}

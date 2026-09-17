@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,8 +12,20 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/secrets"
 )
+
+type secretsKeysResult struct {
+	File string   `json:"file"`
+	Keys []string `json:"keys"`
+}
+
+type secretsFileEntry struct {
+	File       string   `json:"file"`
+	Recipients []string `json:"recipients,omitempty"`
+	UsedBy     []string `json:"used_by,omitempty"`
+}
 
 func secretsCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -160,12 +173,19 @@ func secretsKeysCmd() *cobra.Command {
 			}
 			sort.Strings(keys)
 
+			result := secretsKeysResult{File: fmt.Sprintf("secrets/%s.enc.yaml", name), Keys: keys}
 			out := cmd.OutOrStdout()
-			for _, k := range keys {
-				fmt.Fprintln(out, k)
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
 			}
-			fmt.Fprintf(out, "\n%d keys in secrets/%s.enc.yaml\n", len(keys), name)
-			return nil
+			return output.Emit(out, format, result, func(w io.Writer) error {
+				for _, k := range result.Keys {
+					fmt.Fprintln(w, k)
+				}
+				fmt.Fprintf(w, "\n%d keys in %s\n", len(result.Keys), result.File)
+				return nil
+			})
 		},
 	}
 }
@@ -177,61 +197,65 @@ func secretsListCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			secretsDir := config.SecretsDir()
-			entries, err := filepath.Glob(filepath.Join(secretsDir, "*.enc.yaml"))
+			paths, err := filepath.Glob(filepath.Join(secretsDir, "*.enc.yaml"))
 			if err != nil {
 				return fmt.Errorf("scanning secrets directory: %w", err)
 			}
+			sort.Strings(paths)
 
-			if len(entries) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No secrets files found.")
-				return nil
-			}
-
-			// Load config to find context references
 			env, _ := cmdEnv(cmd)
 			cfg := env.Config()
-
-			// Build a map of secret -> context names
 			secretsToContexts := make(map[string][]string)
 			if cfg != nil {
 				for ctxName, ctx := range cfg.Contexts {
 					if ctx.Secret != "" {
-						// Normalize bare name to filename for matching
 						key := ctx.Secret
 						if !strings.HasSuffix(key, ".enc.yaml") {
 							key += ".enc.yaml"
 						}
-						secretsToContexts[key] = append(
-							secretsToContexts[key], ctxName,
-						)
+						secretsToContexts[key] = append(secretsToContexts[key], ctxName)
 					}
 				}
 			}
 
-			out := cmd.OutOrStdout()
-			sort.Strings(entries)
-			for i, entry := range entries {
-				baseName := filepath.Base(entry)
-				fmt.Fprintf(out, "secrets/%s\n", baseName)
-
-				recipients, err := secrets.ListRecipients(entry)
-				if err != nil {
-					fmt.Fprintf(out, "  Recipients: (error: %s)\n", err)
-				} else if len(recipients) > 0 {
-					fmt.Fprintf(out, "  Recipients: %s\n", strings.Join(recipients, ", "))
+			entries := make([]secretsFileEntry, 0, len(paths))
+			for _, p := range paths {
+				baseName := filepath.Base(p)
+				e := secretsFileEntry{File: fmt.Sprintf("secrets/%s", baseName)}
+				if recipients, err := secrets.ListRecipients(p); err == nil {
+					e.Recipients = recipients
 				}
-
 				if ctxNames, ok := secretsToContexts[baseName]; ok {
 					sort.Strings(ctxNames)
-					fmt.Fprintf(out, "  Used by: %s\n", strings.Join(ctxNames, ", "))
+					e.UsedBy = ctxNames
 				}
-
-				if i < len(entries)-1 {
-					fmt.Fprintln(out)
-				}
+				entries = append(entries, e)
 			}
 
-			return nil
+			out := cmd.OutOrStdout()
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
+			}
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				if len(entries) == 0 {
+					fmt.Fprintln(w, "No secrets files found.")
+					return nil
+				}
+				for i, e := range entries {
+					fmt.Fprintln(w, e.File)
+					if len(e.Recipients) > 0 {
+						fmt.Fprintf(w, "  Recipients: %s\n", strings.Join(e.Recipients, ", "))
+					}
+					if len(e.UsedBy) > 0 {
+						fmt.Fprintf(w, "  Used by: %s\n", strings.Join(e.UsedBy, ", "))
+					}
+					if i < len(entries)-1 {
+						fmt.Fprintln(w)
+					}
+				}
+				return nil
+			})
 		},
 	}
 }

@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os/exec"
 	"sort"
 	"strings"
@@ -11,7 +12,15 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/launcher"
+	"github.com/jskswamy/aide/internal/output"
 )
+
+type agentEntry struct {
+	Name       string   `json:"name"`
+	Path       string   `json:"path"`
+	Configured bool     `json:"configured"`
+	UsedBy     []string `json:"used_by,omitempty"`
+}
 
 func agentsCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -167,6 +176,7 @@ func agentsListCmd() *cobra.Command {
 			cfg := env.Config()
 
 			configured := make(map[string]bool)
+			var entries []agentEntry
 
 			if len(cfg.Agents) > 0 {
 				agentContexts := make(map[string][]string)
@@ -191,40 +201,62 @@ func agentsListCmd() *cobra.Command {
 					if lookErr != nil {
 						resolvedPath = "(not found)"
 					}
-
-					usedBy := ""
+					var usedBy []string
 					if ctxs, ok := agentContexts[name]; ok && len(ctxs) > 0 {
 						sort.Strings(ctxs)
-						usedBy = fmt.Sprintf("  (used by: %s)", strings.Join(ctxs, ", "))
+						usedBy = ctxs
 					}
-
-					fmt.Fprintf(out, "%-10s %s%s\n", name, resolvedPath, usedBy)
+					entries = append(entries, agentEntry{Name: name, Path: resolvedPath, Configured: true, UsedBy: usedBy})
 				}
 			}
 
 			result := launcher.ScanAgents(exec.LookPath)
-			var unconfigured []string
-			for name, path := range result.Found {
+			var unconfiguredNames []string
+			for name := range result.Found {
 				if !configured[name] {
-					unconfigured = append(unconfigured, fmt.Sprintf("%-10s %s  (not configured)", name, path))
+					unconfiguredNames = append(unconfiguredNames, name)
 				}
 			}
-			if len(unconfigured) > 0 {
-				if len(configured) > 0 {
-					fmt.Fprintln(out)
-				}
-				sort.Strings(unconfigured)
-				for _, line := range unconfigured {
-					fmt.Fprintln(out, line)
-				}
+			sort.Strings(unconfiguredNames)
+			for _, name := range unconfiguredNames {
+				entries = append(entries, agentEntry{Name: name, Path: result.Found[name], Configured: false})
 			}
 
-			if len(configured) == 0 && len(unconfigured) == 0 {
-				fmt.Fprintln(out, "No agents configured or found on PATH.")
-				fmt.Fprintln(out, "Run `aide init` to get started.")
+			format, ferr := output.FromCmd(cmd)
+			if ferr != nil {
+				return ferr
 			}
-
-			return nil
+			return output.Emit(out, format, entries, func(w io.Writer) error {
+				configuredCount := 0
+				for _, e := range entries {
+					if !e.Configured {
+						continue
+					}
+					configuredCount++
+					usedBy := ""
+					if len(e.UsedBy) > 0 {
+						usedBy = fmt.Sprintf("  (used by: %s)", strings.Join(e.UsedBy, ", "))
+					}
+					fmt.Fprintf(w, "%-10s %s%s\n", e.Name, e.Path, usedBy)
+				}
+				unconfiguredCount := len(entries) - configuredCount
+				if unconfiguredCount > 0 {
+					if configuredCount > 0 {
+						fmt.Fprintln(w)
+					}
+					for _, e := range entries {
+						if e.Configured {
+							continue
+						}
+						fmt.Fprintf(w, "%-10s %s  (not configured)\n", e.Name, e.Path)
+					}
+				}
+				if len(entries) == 0 {
+					fmt.Fprintln(w, "No agents configured or found on PATH.")
+					fmt.Fprintln(w, "Run `aide init` to get started.")
+				}
+				return nil
+			})
 		},
 	}
 }

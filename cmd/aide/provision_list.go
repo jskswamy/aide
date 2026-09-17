@@ -14,6 +14,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/spf13/cobra"
 )
@@ -64,7 +65,7 @@ func pluginListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "Show declared, installed, and managed plugins for a context",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runPluginList(cmd.OutOrStdout(), contextName)
+			return runPluginList(cmd, contextName)
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
@@ -77,11 +78,39 @@ func mcpListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "Show declared, installed, and managed MCP servers for a context",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runMCPList(cmd.OutOrStdout(), contextName)
+			return runMCPList(cmd, contextName)
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
 	return cmd
+}
+
+// provisionRow is one declared/installed/managed row shared by the
+// plugin, marketplace, and MCP list tables — both the human table
+// renderers and the JSON encoders consume the same row shape.
+type provisionRow struct {
+	Name           string `json:"name"`
+	Declared       bool   `json:"declared"`
+	DeclaredLabel  string `json:"declared_label,omitempty"`
+	Installed      bool   `json:"installed"`
+	InstalledLabel string `json:"installed_label,omitempty"`
+	Managed        bool   `json:"managed"`
+	Note           string `json:"note,omitempty"`
+}
+
+// pluginListResult is the JSON shape for `aide plugin list`.
+type pluginListResult struct {
+	Context      string         `json:"context"`
+	Agent        string         `json:"agent"`
+	Marketplaces []provisionRow `json:"marketplaces,omitempty"`
+	Plugins      []provisionRow `json:"plugins"`
+}
+
+// mcpListResult is the JSON shape for `aide mcp list`.
+type mcpListResult struct {
+	Context string         `json:"context"`
+	Agent   string         `json:"agent"`
+	Servers []provisionRow `json:"servers"`
 }
 
 // provisionEnv bundles the per-command setup shared by sync/adopt/list.
@@ -134,7 +163,7 @@ func loadProvisionEnv(contextName string) (*provisionEnv, error) {
 	}, nil
 }
 
-func runPluginList(out io.Writer, contextName string) error {
+func runPluginList(cmd *cobra.Command, contextName string) error {
 	env, err := loadProvisionEnv(contextName)
 	if err != nil {
 		return err
@@ -153,21 +182,36 @@ func runPluginList(out io.Writer, contextName string) error {
 	}
 	managed := managedPluginNames(env.state, env.contextName)
 
-	fmt.Fprintf(out, "Context: %s (agent: %s)\n\n", env.contextName, env.ctx.Agent)
-
+	result := pluginListResult{
+		Context: env.contextName,
+		Agent:   env.ctx.Agent,
+		Plugins: buildPluginRows(desired.Plugins, installed, managed),
+	}
 	// Marketplace section first, only for marketplace-class agents.
 	// Plugins logically live "under" their marketplaces, so the section
 	// order mirrors the install order (marketplaces precede plugins).
 	if supportsMarketplaces(env.prov) {
 		installedMarkets, _ := env.prov.InstalledMarketplaces(env.provCtx)
 		managedMarkets := managedMarketplaceNames(env.state, env.contextName)
-		fmt.Fprintln(out, "MARKETPLACES")
-		renderMarketplaceTable(out, desired.Marketplaces, installedMarkets, managedMarkets)
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, "PLUGINS")
+		result.Marketplaces = buildMarketplaceRows(desired.Marketplaces, installedMarkets, managedMarkets)
 	}
-	renderPluginTable(out, desired.Plugins, installed, managed)
-	return nil
+
+	out := cmd.OutOrStdout()
+	format, ferr := output.FromCmd(cmd)
+	if ferr != nil {
+		return ferr
+	}
+	return output.Emit(out, format, result, func(w io.Writer) error {
+		fmt.Fprintf(w, "Context: %s (agent: %s)\n\n", result.Context, result.Agent)
+		if result.Marketplaces != nil {
+			fmt.Fprintln(w, "MARKETPLACES")
+			renderMarketplaceTable(w, result.Marketplaces)
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "PLUGINS")
+		}
+		renderPluginTable(w, result.Plugins)
+		return nil
+	})
 }
 
 // supportsMarketplaces reports whether the provisioner advertises
@@ -191,49 +235,67 @@ func managedMarketplaceNames(st *provision.ManagedState, name string) map[string
 	return out
 }
 
-// renderMarketplaceTable mirrors renderPluginTable shape:
-// NAME / DECLARED / INSTALLED / MANAGED / NOTE.
-func renderMarketplaceTable(out io.Writer, declared map[string]provision.Marketplace, installed []provision.Marketplace, managed map[string]bool) {
+// buildMarketplaceRows computes the declared/installed/managed row set
+// for the marketplaces table. Pure: no I/O.
+func buildMarketplaceRows(declared map[string]provision.Marketplace, installed []provision.Marketplace, managed map[string]bool) []provisionRow {
 	installedSet := map[string]provision.Marketplace{}
 	for _, m := range installed {
 		installedSet[m.Key] = m
 	}
-	declaredKeys := make([]string, 0, len(declared))
-	for k := range declared {
-		declaredKeys = append(declaredKeys, k)
-	}
-	installedKeys := make([]string, 0, len(installedSet))
-	for k := range installedSet {
-		installedKeys = append(installedKeys, k)
-	}
-	names := unionNames(declaredKeys, installedKeys, keysOfBool(managed))
+	names := unionNames(keysOfMarketplaces(declared), keysOfInstalledMarketplaces(installedSet), keysOfBool(managed))
 
+	rows := make([]provisionRow, 0, len(names))
+	for _, n := range names {
+		row := provisionRow{Name: n, Managed: managed[n]}
+		if _, ok := declared[n]; ok {
+			row.Declared = true
+		}
+		if m, ok := installedSet[n]; ok {
+			row.Installed = true
+			row.InstalledLabel = m.Name
+		}
+		row.Note = marketplaceNote(declared, installedSet, managed, n)
+		if row.InstalledLabel != "" && row.Note == "" {
+			row.Note = "(" + row.InstalledLabel + ")"
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// keysOfMarketplaces / keysOfInstalledMarketplaces mirror keysOfPlugins
+// et al: plain key extraction for unionNames.
+func keysOfMarketplaces(m map[string]provision.Marketplace) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+func keysOfInstalledMarketplaces(m map[string]provision.Marketplace) []string {
+	return keysOfMarketplaces(m)
+}
+
+// renderMarketplaceTable mirrors renderPluginTable shape:
+// NAME / DECLARED / INSTALLED / MANAGED / NOTE.
+func renderMarketplaceTable(out io.Writer, rows []provisionRow) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "  NAME\tDECLARED\tINSTALLED\tMANAGED\tNOTE")
-	for _, n := range names {
-		decl := "—"
-		if _, ok := declared[n]; ok {
+	for _, r := range rows {
+		decl, inst, mgd := "—", "—", "—"
+		if r.Declared {
 			decl = "✓"
 		}
-		inst := "—"
-		instLabel := ""
-		if m, ok := installedSet[n]; ok {
+		if r.Installed {
 			inst = "✓"
-			if m.Name != "" {
-				instLabel = "(" + m.Name + ")"
-			}
 		}
-		mgd := "—"
-		if managed[n] {
+		if r.Managed {
 			mgd = "✓"
 		}
-		note := marketplaceNote(declared, installedSet, managed, n)
-		if instLabel != "" && note == "" {
-			note = instLabel
-		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", n, decl, inst, mgd, note)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", r.Name, decl, inst, mgd, r.Note)
 	}
-	if len(names) == 0 {
+	if len(rows) == 0 {
 		fmt.Fprintln(tw, "  (no marketplaces declared, installed, or managed)")
 	}
 	_ = tw.Flush()
@@ -254,7 +316,7 @@ func marketplaceNote(declared map[string]provision.Marketplace, installed map[st
 	return ""
 }
 
-func runMCPList(out io.Writer, contextName string) error {
+func runMCPList(cmd *cobra.Command, contextName string) error {
 	env, err := loadProvisionEnv(contextName)
 	if err != nil {
 		return err
@@ -278,9 +340,22 @@ func runMCPList(out io.Writer, contextName string) error {
 	}
 	managed := managedMCPNames(env.state, env.contextName)
 
-	fmt.Fprintf(out, "Context: %s (agent: %s)\n\n", env.contextName, env.ctx.Agent)
-	renderMCPTable(out, desired.MCPServers, installed, managed)
-	return nil
+	result := mcpListResult{
+		Context: env.contextName,
+		Agent:   env.ctx.Agent,
+		Servers: buildMCPRows(desired.MCPServers, installed, managed),
+	}
+
+	out := cmd.OutOrStdout()
+	format, ferr := output.FromCmd(cmd)
+	if ferr != nil {
+		return ferr
+	}
+	return output.Emit(out, format, result, func(w io.Writer) error {
+		fmt.Fprintf(w, "Context: %s (agent: %s)\n\n", result.Context, result.Agent)
+		renderMCPTable(w, result.Servers)
+		return nil
+	})
 }
 
 func managedPluginNames(st *provision.ManagedState, name string) map[string]bool {
@@ -309,67 +384,97 @@ func managedMCPNames(st *provision.ManagedState, name string) map[string]bool {
 	return out
 }
 
-func renderPluginTable(out io.Writer, declared map[string]provision.Plugin, installed []provision.Plugin, managed map[string]bool) {
+// buildPluginRows computes the declared/installed/managed row set for
+// the plugins table. Pure: no I/O.
+func buildPluginRows(declared map[string]provision.Plugin, installed []provision.Plugin, managed map[string]bool) []provisionRow {
 	installedSet := map[string]bool{}
 	for _, p := range installed {
 		installedSet[p.Key] = true
 	}
 	names := unionNames(keysOfPlugins(declared), pluginKeys(installed), keysOfBool(managed))
 
+	rows := make([]provisionRow, 0, len(names))
+	for _, n := range names {
+		row := provisionRow{Name: n, Installed: installedSet[n], Managed: managed[n]}
+		if p, ok := declared[n]; ok {
+			row.Declared = true
+			row.DeclaredLabel = fmt.Sprintf("%s %s", p.Source, p.Name)
+		}
+		row.Note = pluginNote(declared, installedSet, managed, n)
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func renderPluginTable(out io.Writer, rows []provisionRow) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "  NAME\tDECLARED\tINSTALLED\tMANAGED\tNOTE")
-	for _, n := range names {
+	for _, r := range rows {
 		decl := "—"
-		if p, ok := declared[n]; ok {
-			decl = fmt.Sprintf("%s %s", p.Source, p.Name)
+		if r.Declared {
+			decl = r.DeclaredLabel
 		}
-		inst := "—"
-		if installedSet[n] {
+		inst, mgd := "—", "—"
+		if r.Installed {
 			inst = "✓"
 		}
-		mgd := "—"
-		if managed[n] {
+		if r.Managed {
 			mgd = "✓"
 		}
-		note := pluginNote(declared, installedSet, managed, n)
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", n, decl, inst, mgd, note)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", r.Name, decl, inst, mgd, r.Note)
 	}
-	if len(names) == 0 {
+	if len(rows) == 0 {
 		fmt.Fprintln(tw, "  (no plugins declared, installed, or managed)")
 	}
 	_ = tw.Flush()
 }
 
-func renderMCPTable(out io.Writer, declared map[string]provision.MCPServer, installed map[string]provision.MCPServer, managed map[string]bool) {
+// buildMCPRows computes the declared/installed/managed row set for the
+// MCP servers table. Pure: no I/O.
+func buildMCPRows(declared map[string]provision.MCPServer, installed map[string]provision.MCPServer, managed map[string]bool) []provisionRow {
 	names := unionNames(keysOfMCP(declared), keysOfMCP(installed), keysOfBool(managed))
 
+	rows := make([]provisionRow, 0, len(names))
+	for _, n := range names {
+		row := provisionRow{Name: n, Managed: managed[n]}
+		if m, ok := declared[n]; ok {
+			row.Declared = true
+			label := m.Command
+			if label == "" {
+				label = m.URL
+			}
+			row.DeclaredLabel = label
+		}
+		if _, ok := installed[n]; ok {
+			row.Installed = true
+		}
+		row.Note = stateNote(row.Declared, row.Installed, managed[n])
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func renderMCPTable(out io.Writer, rows []provisionRow) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "  NAME\tDECLARED\tINSTALLED\tMANAGED\tNOTE")
-	for _, n := range names {
+	for _, r := range rows {
 		decl := "—"
-		if m, ok := declared[n]; ok {
-			decl = m.Command
-			if decl == "" {
-				decl = m.URL
-			}
+		if r.Declared {
+			decl = r.DeclaredLabel
 			if decl == "" {
 				decl = "(declared)"
 			}
 		}
-		inst := "—"
-		if _, ok := installed[n]; ok {
+		inst, mgd := "—", "—"
+		if r.Installed {
 			inst = "✓"
 		}
-		mgd := "—"
-		if managed[n] {
+		if r.Managed {
 			mgd = "✓"
 		}
-		_, hasDecl := declared[n]
-		_, hasInst := installed[n]
-		note := stateNote(hasDecl, hasInst, managed[n])
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", n, decl, inst, mgd, note)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", r.Name, decl, inst, mgd, r.Note)
 	}
-	if len(names) == 0 {
+	if len(rows) == 0 {
 		fmt.Fprintln(tw, "  (no MCP servers declared, installed, or managed)")
 	}
 	_ = tw.Flush()

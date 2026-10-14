@@ -104,6 +104,7 @@ func fakeProvReset(t *testing.T) {
 	theFakeProv.mcpInstalled = nil
 	theFakeProv.storedHooks = nil
 	theFakeProv.agentDirVal = ""
+	theFakeProv.ByInstallRef = false
 }
 
 // setupProvisionConfig writes a config.yaml that registers a "work"
@@ -253,6 +254,33 @@ func TestPluginList_JSONFormat(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("linear plugin missing/incomplete: %+v", got.Plugins)
+	}
+}
+
+// TestPluginList_URLDirectMatchedByInstallRef pins that a URL-direct
+// plugin, which the agent reports by install ref, shows as one
+// installed row under its config key rather than a declared-only row
+// plus an unmanaged one.
+func TestPluginList_URLDirectMatchedByInstallRef(t *testing.T) {
+	fakeProvReset(t)
+	setupProvisionConfig(t, nil, nil, map[string]string{"hello": "npm:@acme/hello"}, nil)
+	theFakeProv.InstalledPluginList = []provision.Plugin{{Key: "npm:@acme/hello", Name: "npm:@acme/hello"}}
+
+	cmd := pluginListCmd()
+	output.RegisterFlag(cmd)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
+	}
+	var got pluginListResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if len(got.Plugins) != 1 || got.Plugins[0].Name != "hello" || !got.Plugins[0].Installed {
+		t.Errorf("plugins = %+v, want one installed row named hello", got.Plugins)
 	}
 }
 

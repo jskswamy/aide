@@ -73,6 +73,20 @@ sandboxed agent.
   present. Expect each one to be reinstalled once on the first sync
   after upgrading.
 
+#### URL-direct plugins no longer reinstall on every sync
+
+Agents that take plugins as bare install refs (OpenCode, and now Pi)
+report installed plugins by that ref (`npm:@acme/hello`), never by the
+readable key you chose in `config.yaml`. `aide sync` matched on the key,
+so every run reinstalled each such plugin and listed its ref as
+unmanaged, and removing an entry from config tried to uninstall the key,
+which the agent didn't recognise, leaving the plugin installed.
+
+- Sync and `aide plugin list` now credit a reported install ref to its
+  config key, and uninstall by the ref aide recorded when installing it.
+- Plugins synced before this fix are matched on the next sync, which
+  also records their ref for later removal.
+
 #### aide can now sandbox OpenCode
 
 `aide` gains a `provision.Provisioner` driver for OpenCode

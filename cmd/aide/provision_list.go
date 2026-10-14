@@ -221,6 +221,14 @@ func runPluginList(cmd *cobra.Command, contextName string) error {
 			installed = list
 		}
 	}
+	// Credit URL-direct plugins, reported by install ref, to their keys.
+	var managedItems map[string]provision.ManagedItem
+	if cs := env.state.Contexts[env.contextName]; cs != nil {
+		managedItems = cs.Plugins
+	}
+	for i, key := range provision.InstalledPluginKeys(installed, desired.Plugins, managedItems) {
+		installed[i].Key = key
+	}
 	managed := managedPluginNames(env.state, env.contextName)
 
 	result := pluginListResult{

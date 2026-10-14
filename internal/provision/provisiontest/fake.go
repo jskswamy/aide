@@ -27,6 +27,7 @@ type FakeProvisioner struct {
 	SupportsHooksCfg bool
 	MCPPath          string
 	MCPHandlerValue  provision.MCPHandler
+	ByInstallRef     bool
 
 	// State the driver reports back.
 	InstalledPluginList []provision.Plugin
@@ -70,6 +71,9 @@ func (f *FakeProvisioner) Reset() {
 
 // Name implements provision.Provisioner.
 func (f *FakeProvisioner) Name() string { return f.AgentName }
+
+// PluginsByInstallRef implements provision.InstallRefAddresser.
+func (f *FakeProvisioner) PluginsByInstallRef() bool { return f.ByInstallRef }
 
 // SupportsPlugins implements provision.Provisioner.
 func (f *FakeProvisioner) SupportsPlugins() bool { return f.SupportsPlug }

@@ -135,9 +135,10 @@ func TestPiUninstallPlugin(t *testing.T) {
 // TestPiUninstallMissingIsOK pins the tolerated-stderr fix: Pi's own
 // wording ("No matching package found for X") does NOT contain any
 // substring in provision.DefaultTolerateStderr ("not installed", "not
-// found", "not configured") — confirmed 2026-08-31 (and re-confirmed against pi 1.1.0 on 2026-10-14) by running `pi
-// remove` against a package that was never installed. Without the
-// extra tolerated substring below, this test fails.
+// found", "not configured") — confirmed 2026-08-31 and again against
+// pi 1.1.0 on 2026-10-14 by running `pi remove` against a package that
+// was never installed. Without the extra tolerated substring below,
+// this test fails.
 func TestPiUninstallMissingIsOK(t *testing.T) {
 	r := &fakeRunner{code: 1, stderr: "No matching package found for npm:@nonexistent/pkg"}
 	d := pidriver.New(r)
@@ -147,11 +148,12 @@ func TestPiUninstallMissingIsOK(t *testing.T) {
 }
 
 // TestPiInstalledPluginsParsesTwoLinePerEntryOutput pins the real `pi
-// list` shape confirmed 2026-08-31 (and re-confirmed against pi 1.1.0 on 2026-10-14) by installing a real local
-// extension against an isolated $HOME: each entry is TWO lines — a
-// 2-space-indented declared source, then a 4-space-indented resolved
-// absolute path. provision.ParsePluginList (one entry per line) can't
-// parse this; the Pi driver needs its own two-line-aware parser.
+// list` shape, confirmed 2026-08-31 and again against pi 1.1.0 on
+// 2026-10-14 by installing a real local extension against an isolated
+// $HOME: each entry is TWO lines — a 2-space-indented declared source,
+// then a 4-space-indented resolved absolute path.
+// provision.ParsePluginList (one entry per line) can't parse this; the
+// Pi driver needs its own two-line-aware parser.
 func TestPiInstalledPluginsParsesTwoLinePerEntryOutput(t *testing.T) {
 	stdout := "User packages:\n" +
 		"  npm:@foo/bar\n" +
@@ -168,7 +170,7 @@ func TestPiInstalledPluginsParsesTwoLinePerEntryOutput(t *testing.T) {
 	for _, p := range got {
 		names = append(names, p.Name)
 	}
-	want := []string{"npm:@foo/bar", "../../../dummy_ext"}
+	want := []string{"npm:@foo/bar", "/private/tmp/scratch/dummy_ext"}
 	if !reflect.DeepEqual(names, want) {
 		t.Errorf("names = %v, want %v", names, want)
 	}
@@ -210,5 +212,39 @@ func TestPiMarketplaceMethodsNoOp(t *testing.T) {
 	}
 	if err := d.AddMarketplace(provision.Context{}, provision.Marketplace{}); err == nil {
 		t.Error("AddMarketplace should error — Pi has no marketplace concept")
+	}
+}
+
+// TestPiInstalledPluginsReportsLocalPathsAbsolute pins that local
+// packages are reported by their resolved absolute path. Pi rewrites a
+// local source relative to settings.json ("../../../x"), which matches
+// neither the path declared in aide's config nor anything stable; the
+// resolved path does, and `pi remove <abs>` accepts it (confirmed
+// against pi 1.1.0).
+func TestPiInstalledPluginsReportsLocalPathsAbsolute(t *testing.T) {
+	stdout := "User packages:\n" +
+		"  npm:@foo/bar\n" +
+		"    /home/u/.pi/agent/packages/npm/@foo/bar\n" +
+		"  ../../../plugins/hello\n" +
+		"    /work/plugins/hello\n"
+	d := pidriver.New(&fakeRunner{stdout: stdout})
+	got, err := d.InstalledPlugins(provision.Context{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []provision.Plugin{
+		{Key: "npm:@foo/bar", Name: "npm:@foo/bar"},
+		{Key: "/work/plugins/hello", Name: "/work/plugins/hello"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("InstalledPlugins = %+v, want %+v", got, want)
+	}
+}
+
+// TestPiPluginsByInstallRef pins that the driver reports and removes
+// plugins by install ref, so the engine addresses them that way.
+func TestPiPluginsByInstallRef(t *testing.T) {
+	if !pidriver.New(&fakeRunner{}).PluginsByInstallRef() {
+		t.Error("plugins should be addressed by install ref")
 	}
 }

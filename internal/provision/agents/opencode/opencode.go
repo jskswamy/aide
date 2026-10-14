@@ -32,12 +32,13 @@ type Driver struct {
 func New(r provision.Runner) *Driver {
 	return &Driver{
 		DriverBase: provision.DriverBase{Caps: provision.Capabilities{
-			AgentName:       agentName,
-			SupportsPlugins: true,
-			SupportsMCP:     true,
-			RequiresTTY:     false,
-			SourceShapes:    []provision.SourceShape{provision.ShapeURLDirect},
-			SupportsHooks:   true,
+			AgentName:           agentName,
+			SupportsPlugins:     true,
+			SupportsMCP:         true,
+			RequiresTTY:         false,
+			SourceShapes:        []provision.SourceShape{provision.ShapeURLDirect},
+			PluginsByInstallRef: true,
+			SupportsHooks:       true,
 		}},
 		runner: r,
 	}

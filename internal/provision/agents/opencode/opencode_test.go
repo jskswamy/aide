@@ -167,3 +167,11 @@ func TestOpenCodeMarketplaceMethodsNoOp(t *testing.T) {
 		t.Error("AddMarketplace should error — OpenCode has no marketplace concept")
 	}
 }
+
+// TestOpenCodePluginsByInstallRef pins that the driver reports and removes
+// plugins by install ref, so the engine addresses them that way.
+func TestOpenCodePluginsByInstallRef(t *testing.T) {
+	if !opencode.New(fakeRunner{}).PluginsByInstallRef() {
+		t.Error("plugins should be addressed by install ref")
+	}
+}

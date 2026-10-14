@@ -16,6 +16,58 @@ type Plugin struct {
 	Key    string
 	Source string
 	Name   string
+	// Direct marks a URL-direct entry: Name is the install ref the
+	// agent reports the plugin back under, not a marketplace-qualified
+	// name, so installed plugins match on it and uninstall addresses it.
+	Direct bool
+}
+
+// InstallRefAddresser is implemented by drivers that can say whether
+// their agent addresses URL-direct plugins by install ref. DriverBase
+// implements it from Capabilities.PluginsByInstallRef; drivers that
+// don't implement it are treated as key-addressed.
+type InstallRefAddresser interface {
+	PluginsByInstallRef() bool
+}
+
+// pluginRef is the name prov's agent knows p by: the install ref for a
+// URL-direct entry on an install-ref driver, the config key otherwise.
+func pluginRef(prov Provisioner, p Plugin) string {
+	if r, ok := prov.(InstallRefAddresser); ok && r.PluginsByInstallRef() && p.Direct {
+		return p.Name
+	}
+	return p.Key
+}
+
+// InstalledPluginKeys maps the plugins an agent reports onto config
+// keys. Marketplace agents report plugins under the same key the config
+// uses. URL-direct agents (OpenCode, Pi) only know the install ref, so a
+// reported plugin whose ref matches a desired entry, or the ref recorded
+// for a managed one, is credited to that entry's key. Anything else
+// keeps the agent's own key and surfaces as unmanaged.
+func InstalledPluginKeys(got []Plugin, desired map[string]Plugin, managed map[string]ManagedItem) []string {
+	byRef := map[string]string{}
+	for key, mi := range managed {
+		if mi.Source != "" {
+			byRef[mi.Source] = key
+		}
+	}
+	for key, p := range desired {
+		if p.Direct {
+			byRef[p.Name] = key
+		}
+	}
+	keys := make([]string, 0, len(got))
+	for _, p := range got {
+		if _, ok := desired[p.Key]; ok {
+			keys = append(keys, p.Key)
+		} else if key, ok := byRef[p.Name]; ok {
+			keys = append(keys, key)
+		} else {
+			keys = append(keys, p.Key)
+		}
+	}
+	return keys
 }
 
 // ParsePluginList parses agent CLI list output (one plugin per line) and

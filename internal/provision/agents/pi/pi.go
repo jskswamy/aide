@@ -34,13 +34,14 @@ type Driver struct {
 func New(r provision.Runner) *Driver {
 	return &Driver{
 		DriverBase: provision.DriverBase{Caps: provision.Capabilities{
-			AgentName:       agentName,
-			SupportsPlugins: true,
-			SupportsMCP:     true,
-			RequiresTTY:     false,
-			SourceShapes:    []provision.SourceShape{provision.ShapeURLDirect},
-			SupportsHooks:   true,
-			ProfileEnvKey:   "PI_CODING_AGENT_DIR",
+			AgentName:           agentName,
+			SupportsPlugins:     true,
+			SupportsMCP:         true,
+			RequiresTTY:         false,
+			SourceShapes:        []provision.SourceShape{provision.ShapeURLDirect},
+			PluginsByInstallRef: true,
+			SupportsHooks:       true,
+			ProfileEnvKey:       "PI_CODING_AGENT_DIR",
 		}},
 		runner: r,
 	}
@@ -127,21 +128,40 @@ func (d *Driver) InstalledPlugins(ctx provision.Context) ([]provision.Plugin, er
 	return parsePackageList(stdout), nil
 }
 
-// parsePackageList extracts the declared-source lines (exactly two
-// leading spaces) from `pi list` output. Resolved-path lines (four
-// leading spaces), section headers ("User packages:") and the
-// empty-state message ("No packages installed.") are skipped.
+// parsePackageList extracts plugin entries from `pi list` output. Each
+// entry is a declared-source line (two leading spaces) followed by its
+// resolved absolute path (four leading spaces); section headers ("User
+// packages:") and the empty-state message ("No packages installed.")
+// have no indent and are skipped.
+//
+// Pi rewrites a local source relative to settings.json ("../../../x"),
+// which matches neither the path declared in aide's config nor anything
+// stable, so local packages are reported by their resolved absolute path
+// instead (`pi remove` accepts it). Other sources (npm:, git:) are
+// reported as declared.
 func parsePackageList(out string) []provision.Plugin {
 	var plugins []provision.Plugin
 	for _, line := range strings.Split(out, "\n") {
-		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "    ") {
-			continue
-		}
-		if source := strings.TrimSpace(line); source != "" {
-			plugins = append(plugins, provision.Plugin{Key: source, Name: source})
+		switch {
+		case strings.HasPrefix(line, "    "):
+			last := len(plugins) - 1
+			if last >= 0 && isLocalSource(plugins[last].Name) {
+				resolved := strings.TrimSpace(line)
+				plugins[last] = provision.Plugin{Key: resolved, Name: resolved}
+			}
+		case strings.HasPrefix(line, "  "):
+			if source := strings.TrimSpace(line); source != "" {
+				plugins = append(plugins, provision.Plugin{Key: source, Name: source})
+			}
 		}
 	}
 	return plugins
+}
+
+// isLocalSource reports whether a declared `pi list` source is a
+// filesystem path rather than an npm:/git: reference.
+func isLocalSource(source string) bool {
+	return strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/")
 }
 
 // InstalledMarketplaces is inherited from DriverBase: Pi has no

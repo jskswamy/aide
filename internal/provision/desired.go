@@ -81,6 +81,7 @@ func ResolveDesired(cfg *config.Config, contextName, agentDir, homeDir string) (
 				Key:    key,
 				Source: ParseSourceRef(entry.Source).Classify(),
 				Name:   entry.Source,
+				Direct: true,
 			}
 		}
 	}

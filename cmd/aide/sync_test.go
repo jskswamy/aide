@@ -538,3 +538,40 @@ func TestSync_AgentDirChangeReinstallsManagedMCP(t *testing.T) {
 		t.Errorf("changed agent dir: expected reinstall of shared, got:\n%s", out)
 	}
 }
+
+// TestSync_URLDirectPluginMatchedByInstallRef pins plugin reconciliation
+// for URL-direct agents (OpenCode, Pi). They report installed plugins
+// by install ref ("npm:@acme/hello"), never by the readable config key
+// ("hello"), so sync must credit a reported ref to its key — otherwise
+// every sync reinstalls the plugin and lists the ref as unmanaged — and
+// must uninstall by ref, since the agent has never heard of the key.
+func TestSync_URLDirectPluginMatchedByInstallRef(t *testing.T) {
+	fakeProvReset(t)
+	theFakeProv.RequireTTY = false
+	theFakeProv.ByInstallRef = true
+	home := setupProvisionConfig(t, nil, nil, map[string]string{"hello": "npm:@acme/hello"}, nil)
+	if out, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+		t.Fatalf("initial sync: %v\n%s", err, out)
+	}
+
+	theFakeProv.InstalledPluginList = []provision.Plugin{{Key: "npm:@acme/hello", Name: "npm:@acme/hello"}}
+	out, err := runSyncCmd(t, "", "--context", "work", "--plan")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "+ install") || strings.Contains(out, "unmanaged") {
+		t.Errorf("installed plugin should match its config key, got:\n%s", out)
+	}
+
+	cwd, _ := os.Getwd()
+	cfg := "contexts:\n  work:\n    agent: fakeagent\n    match:\n      - path: " + cwd + "\n"
+	if err := os.WriteFile(filepath.Join(home, "xdg", "aide", "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+		t.Fatalf("removal sync: %v\n%s", err, out)
+	}
+	if len(theFakeProv.UninstallCall) != 1 || theFakeProv.UninstallCall[0] != "npm:@acme/hello" {
+		t.Errorf("uninstall calls = %v, want [npm:@acme/hello]", theFakeProv.UninstallCall)
+	}
+}

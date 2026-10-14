@@ -23,6 +23,10 @@ type Capabilities struct {
 	// not support profile (see DriverBase.Profile, which returns
 	// ErrProfileNotSupported in that case).
 	ProfileEnvKey string
+	// PluginsByInstallRef marks drivers whose agent reports and removes
+	// URL-direct plugins by install ref (OpenCode, Pi) rather than by a
+	// name matching the config key (Gemini). See InstallRefAddresser.
+	PluginsByInstallRef bool
 }
 
 // DriverBase is embeddable in per-agent Driver structs. It carries
@@ -31,6 +35,9 @@ type Capabilities struct {
 type DriverBase struct {
 	Caps Capabilities
 }
+
+// PluginsByInstallRef implements InstallRefAddresser.
+func (d DriverBase) PluginsByInstallRef() bool { return d.Caps.PluginsByInstallRef }
 
 // Name implements Provisioner.
 func (d DriverBase) Name() string { return d.Caps.AgentName }

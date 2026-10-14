@@ -1,6 +1,7 @@
 package provision_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/provision"
@@ -255,5 +256,37 @@ func TestComputePlanHookAdoptionCandidate(t *testing.T) {
 	}
 	if len(hookOps) != 1 || hookOps[0].OpKind != provision.OpIgnore {
 		t.Fatalf("expected OpIgnore adoption candidate, got %+v", hookOps)
+	}
+}
+
+func TestInstalledPluginKeys(t *testing.T) {
+	got := []provision.Plugin{
+		{Key: "beads", Name: "beads"},                     // reported by config key
+		{Key: "npm:@acme/hello", Name: "npm:@acme/hello"}, // install ref of a desired entry
+		{Key: "/plugins/old", Name: "/plugins/old"},       // install ref recorded in managed state
+		{Key: "manual", Name: "manual"},                   // unknown to aide
+	}
+	desired := map[string]provision.Plugin{
+		"beads": {Key: "beads", Name: "beads@steveyegge/beads"},
+		"hello": {Key: "hello", Name: "npm:@acme/hello", Direct: true},
+	}
+	managed := map[string]provision.ManagedItem{"old": {Source: "/plugins/old"}}
+	keys := provision.InstalledPluginKeys(got, desired, managed)
+	want := []string{"beads", "hello", "old", "manual"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Errorf("InstalledPluginKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestComputePlanUninstallCarriesManagedInstallRef(t *testing.T) {
+	managed := provision.ContextState{
+		Plugins: map[string]provision.ManagedItem{"hello": {Source: "npm:@acme/hello"}},
+	}
+	plan := provision.ComputePlan(provision.Context{Name: "work"}, provision.Desired{}, provision.Installed{}, managed)
+	if len(plan.Ops) != 1 || plan.Ops[0].OpKind != provision.OpUninstall {
+		t.Fatalf("expected one uninstall op, got %+v", plan.Ops)
+	}
+	if p := plan.Ops[0].Plugin; p == nil || p.Name != "npm:@acme/hello" || !p.Direct {
+		t.Errorf("uninstall op plugin = %+v, want direct ref npm:@acme/hello", p)
 	}
 }

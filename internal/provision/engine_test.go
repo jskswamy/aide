@@ -216,3 +216,51 @@ func TestEngineUninstallsHook(t *testing.T) {
 		t.Errorf("StoredHooks should be empty after uninstall, got %+v", fp.StoredHooks)
 	}
 }
+
+// TestApplyURLDirectPluginUsesInstallRef pins that uninstall and
+// install rollback address a URL-direct plugin by its install ref: the
+// agent only knows "npm:@acme/hello", never the config key "hello".
+func TestApplyURLDirectPluginUsesInstallRef(t *testing.T) {
+	fp := &provisiontest.FakeProvisioner{AgentName: "pi", SupportsPlug: true, ByInstallRef: true}
+	plan := provision.Plan{Ops: []provision.Op{{
+		Kind: provision.KindPlugin, OpKind: provision.OpUninstall, Name: "hello",
+		Plugin: &provision.Plugin{Key: "hello", Name: "npm:@acme/hello", Direct: true},
+	}}}
+	if _, err := provision.Apply(fp, plan, provision.ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fp.UninstallCall) != 1 || fp.UninstallCall[0] != "npm:@acme/hello" {
+		t.Errorf("uninstall calls = %v, want [npm:@acme/hello]", fp.UninstallCall)
+	}
+
+	fp = &provisiontest.FakeProvisioner{AgentName: "pi", SupportsPlug: true, ByInstallRef: true, SupportsMCPCfg: true, MCPWriteErr: errors.New("boom")}
+	plan = provision.Plan{Ops: []provision.Op{
+		{Kind: provision.KindPlugin, OpKind: provision.OpInstall, Name: "hello",
+			Plugin: &provision.Plugin{Key: "hello", Name: "npm:@acme/hello", Direct: true}},
+		{Kind: provision.KindMCP, OpKind: provision.OpInstall, Name: "srv",
+			MCP: &provision.MCPServer{Key: "srv", Command: "srv"}},
+	}}
+	if _, err := provision.Apply(fp, plan, provision.ApplyOptions{}); err == nil {
+		t.Fatal("expected MCP failure to trigger rollback")
+	}
+	if len(fp.UninstallCall) != 1 || fp.UninstallCall[0] != "npm:@acme/hello" {
+		t.Errorf("rollback uninstall calls = %v, want [npm:@acme/hello]", fp.UninstallCall)
+	}
+}
+
+// TestApplyURLDirectPluginNameAddressedDriverUsesKey pins that drivers
+// addressing plugins by name (Gemini: `gemini extensions uninstall
+// <name>`) keep receiving the config key even for URL-direct entries.
+func TestApplyURLDirectPluginNameAddressedDriverUsesKey(t *testing.T) {
+	fp := &provisiontest.FakeProvisioner{AgentName: "gemini", SupportsPlug: true}
+	plan := provision.Plan{Ops: []provision.Op{{
+		Kind: provision.KindPlugin, OpKind: provision.OpUninstall, Name: "hello",
+		Plugin: &provision.Plugin{Key: "hello", Name: "github:acme/hello", Direct: true},
+	}}}
+	if _, err := provision.Apply(fp, plan, provision.ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fp.UninstallCall) != 1 || fp.UninstallCall[0] != "hello" {
+		t.Errorf("uninstall calls = %v, want [hello]", fp.UninstallCall)
+	}
+}

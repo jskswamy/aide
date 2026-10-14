@@ -105,11 +105,15 @@ func ComputePlan(ctx Context, desired Desired, installed Installed, managed Cont
 			})
 		}
 	}
-	for key := range managed.Plugins {
+	for key, mi := range managed.Plugins {
 		if _, stillDesired := desired.Plugins[key]; !stillDesired {
-			uninstalls = append(uninstalls, Op{
-				Kind: KindPlugin, OpKind: OpUninstall, Name: key,
-			})
+			op := Op{Kind: KindPlugin, OpKind: OpUninstall, Name: key}
+			// A URL-direct plugin is uninstalled by the install ref
+			// recorded when aide installed it; the agent never saw the key.
+			if mi.Source != "" {
+				op.Plugin = &Plugin{Key: key, Name: mi.Source, Direct: true}
+			}
+			uninstalls = append(uninstalls, op)
 		}
 	}
 	for _, key := range installed.Plugins {

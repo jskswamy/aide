@@ -99,11 +99,15 @@ func Apply(prov Provisioner, plan Plan, opts ApplyOptions) (ApplyResult, error) 
 					_ = j.Rollback()
 					return res, fmt.Errorf("install plugin %q: %w", op.Name, err)
 				}
-				name := op.Name
-				j.Record(func() error { return prov.UninstallPlugin(plan.Context, name) })
+				ref := pluginRef(prov, *op.Plugin)
+				j.Record(func() error { return prov.UninstallPlugin(plan.Context, ref) })
 				res.Performed++
 			case OpUninstall:
-				if err := prov.UninstallPlugin(plan.Context, op.Name); err != nil {
+				ref := op.Name
+				if op.Plugin != nil {
+					ref = pluginRef(prov, *op.Plugin)
+				}
+				if err := prov.UninstallPlugin(plan.Context, ref); err != nil {
 					_ = j.Rollback()
 					return res, fmt.Errorf("uninstall plugin %q: %w", op.Name, err)
 				}

@@ -89,9 +89,7 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes, for
 		if err != nil {
 			return fmt.Errorf("listing installed plugins: %w", err)
 		}
-		for _, p := range got {
-			installed.Plugins = append(installed.Plugins, p.Key)
-		}
+		installed.Plugins = provision.InstalledPluginKeys(got, desired.Plugins, managedCtxState.Plugins)
 		// Marketplaces are an attribute of plugin-supporting agents.
 		mks, err := env.prov.InstalledMarketplaces(env.provCtx)
 		if err != nil {
@@ -312,6 +310,9 @@ func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan pro
 			mi.InstalledAt = now
 		}
 		mi.Version = pluginVersion(p.Name)
+		if p.Direct {
+			mi.Source = p.Name
+		}
 		cs.Plugins[k] = mi
 	}
 	for k := range desired.MCPServers {

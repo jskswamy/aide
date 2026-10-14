@@ -120,6 +120,7 @@ var DefaultAgentIcons = map[string]string{
 	"copilot":  "✈️",
 	"cursor":   "🖱",
 	"opencode": "🔷",
+	"pi":       "🥧",
 }
 
 // BadgeForSource returns the emoji badge for a given env source classification

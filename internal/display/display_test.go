@@ -210,6 +210,7 @@ func TestDefaultAgentIcons(t *testing.T) {
 		{"copilot", "✈️"},
 		{"cursor", "🖱"},
 		{"opencode", "🔷"},
+		{"pi", "🥧"},
 		{"unknown", ""},
 	}
 	for _, tt := range tests {

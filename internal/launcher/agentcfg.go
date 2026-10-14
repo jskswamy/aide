@@ -19,6 +19,7 @@ var agentModuleResolvers = map[string]func() seatbelt.Module{
 	"gemini":       modules.GeminiAgent,
 	"goose":        modules.GooseAgent,
 	"opencode":     modules.OpenCodeAgent,
+	"pi":           modules.PiAgent,
 }
 
 // ResolveAgentModule returns the seatbelt module for the named agent, or nil.

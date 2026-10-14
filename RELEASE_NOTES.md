@@ -87,6 +87,12 @@ which the agent didn't recognise, leaving the plugin installed.
 - Plugins synced before this fix are matched on the next sync, which
   also records their ref for later removal.
 
+#### Launch banner names the agent again under the Linux sandbox
+
+On Linux the startup banner showed `claude → /path/to/aide` because it
+was rendered after the sandbox rewrote the command into aide's own
+re-exec wrapper. It now shows the agent binary, as on macOS.
+
 #### aide can now sandbox OpenCode
 
 `aide` gains a `provision.Provisioner` driver for OpenCode

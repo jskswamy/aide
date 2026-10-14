@@ -123,6 +123,26 @@ func TestAgentModules(t *testing.T) {
 			},
 		},
 		{
+			name:     "Pi defaults",
+			module:   PiAgent(),
+			wantName: "Pi Agent",
+			wantContain: []string{
+				"/home/user/.pi",
+			},
+		},
+		{
+			name:     "Pi env override",
+			module:   PiAgent(),
+			wantName: "Pi Agent",
+			env:      []string{"PI_CODING_AGENT_DIR=/custom/pi-agent"},
+			wantContain: []string{
+				"/custom/pi-agent",
+			},
+			wantAbsent: []string{
+				"/home/user/.pi",
+			},
+		},
+		{
 			name:     "Copilot defaults",
 			module:   CopilotAgent(),
 			wantName: "Copilot Agent",

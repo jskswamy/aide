@@ -125,7 +125,17 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes, for
 	// Sync continues for supported capabilities.
 	warnAndFilterDesired(out, env.prov, &desired)
 
-	plan := provision.ComputePlan(env.provCtx, desired, installed, managedCtxState)
+	// ComputePlan trusts a managed MCP server the agent doesn't report,
+	// since a project-scope entry may shadow it. That trust only holds
+	// for the config dir it was provisioned into: after the dir changes
+	// (a profile switch, or the Linux sandbox's CLAUDE_CONFIG_DIR
+	// redirect) the new dir has never been provisioned, so plan as if
+	// nothing were managed there.
+	planState := managedCtxState
+	if managedCtxState.AgentDir != agentDir {
+		planState.MCPServers = nil
+	}
+	plan := provision.ComputePlan(env.provCtx, desired, installed, planState)
 	renderPlan(out, plan)
 
 	if planOnly {
@@ -331,6 +341,7 @@ func updateStateAfterSync(env *provisionEnv, desired provision.Desired, plan pro
 	cs.ConfigHash = hash
 	cs.SecretsHash = secretsHash
 	cs.SyncedAt = now
+	cs.AgentDir = provision.ResolveAgentDir(env.prov, env.provCtx)
 	if err := os.MkdirAll(parentDir(env.statePath), 0o750); err != nil {
 		return err
 	}

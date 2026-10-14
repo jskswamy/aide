@@ -67,6 +67,11 @@ sandboxed agent.
   using Claude's defaults.
 - Run `aide sync` once after upgrading so already-declared MCP servers
   and hooks land in `~/.config/aide/claude`. macOS is unaffected.
+- Sync now records which agent config dir it provisioned into. When that
+  dir changes (this fix, or switching a context's `profile:`), managed
+  MCP servers are reinstalled into the new dir instead of being assumed
+  present. Expect each one to be reinstalled once on the first sync
+  after upgrading.
 
 #### aide can now sandbox OpenCode
 

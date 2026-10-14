@@ -45,6 +45,10 @@ type ContextState struct {
 	// last successful sync. Empty when the context has no secret file.
 	SecretsHash  string                 `json:"secrets_hash,omitempty"`
 	SyncedAt     time.Time              `json:"synced_at,omitempty"`
+	// AgentDir is the agent config dir the last successful sync
+	// provisioned into (empty for agents without one). Managed MCP
+	// entries only vouch for that dir; see runSync.
+	AgentDir     string                 `json:"agent_dir,omitempty"`
 	Plugins      map[string]ManagedItem `json:"plugins,omitempty"`
 	MCPServers   map[string]ManagedItem `json:"mcp_servers,omitempty"`
 	Marketplaces map[string]ManagedItem `json:"marketplaces,omitempty"`

@@ -504,3 +504,37 @@ func TestSync_FallsBackToDecryptWhenInstalledMissingKey(t *testing.T) {
 		t.Errorf("expected an age-key discovery error, got: %v", err)
 	}
 }
+
+// TestSync_AgentDirChangeReinstallsManagedMCP pins that managed MCP
+// entries only vouch for the config dir they were provisioned into.
+// Sync normally trusts a managed server the agent doesn't report (it
+// may be shadowed by a project-scope entry), but once the agent's
+// config dir changes — a profile switch, or the Linux sandbox's
+// CLAUDE_CONFIG_DIR redirect — the new dir has never been provisioned
+// and the server must be reinstalled there.
+func TestSync_AgentDirChangeReinstallsManagedMCP(t *testing.T) {
+	fakeProvReset(t)
+	theFakeProv.RequireTTY = false
+	theFakeProv.agentDirVal = "/agent/old"
+	setupProvisionConfig(t, nil, []string{"shared"}, nil, map[string]string{"shared": "shared-mcp"})
+	if out, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+		t.Fatalf("initial sync: %v\n%s", err, out)
+	}
+
+	out, err := runSyncCmd(t, "", "--context", "work", "--plan")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "+ install") {
+		t.Errorf("same agent dir: managed server should be trusted, got:\n%s", out)
+	}
+
+	theFakeProv.agentDirVal = "/agent/new"
+	out, err = runSyncCmd(t, "", "--context", "work", "--plan")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "+ install") || !strings.Contains(out, "shared") {
+		t.Errorf("changed agent dir: expected reinstall of shared, got:\n%s", out)
+	}
+}

@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"path/filepath"
+	"runtime"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
@@ -29,4 +30,20 @@ func ResolveAgentModule(agentName string) seatbelt.Module {
 		return factory()
 	}
 	return nil
+}
+
+// SandboxAgentEnv returns the env overrides the named agent's sandbox
+// module injects at launch (e.g. Claude's CLAUDE_CONFIG_DIR redirect to
+// ~/.config/aide/claude on Linux). Provisioning that runs outside a
+// launch (aide sync, agent permission grants) applies the same overrides
+// so it writes the config dir the sandboxed agent will actually read.
+// env is the full KEY=VALUE environment the module inspects for user
+// overrides. Returns nil when the agent has no module or the module
+// injects nothing.
+func SandboxAgentEnv(agentName, homeDir string, env []string) map[string]string {
+	provider, ok := ResolveAgentModule(agentName).(seatbelt.EnvProvider)
+	if !ok {
+		return nil
+	}
+	return provider.AgentEnv(&seatbelt.Context{HomeDir: homeDir, Env: env, GOOS: runtime.GOOS})
 }

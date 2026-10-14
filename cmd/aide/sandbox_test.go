@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 )
 
@@ -129,13 +130,23 @@ func TestSandboxAllow_GlobalScope_WritesUserSettingsNotProject(t *testing.T) {
 		t.Fatalf("sandbox allow: %v\n%s", err, out)
 	}
 
-	got := readAdditionalDirs(t, filepath.Join(dir, ".claude", "settings.json"))
+	got := readAdditionalDirs(t, filepath.Join(sandboxedClaudeConfigDir(dir), "settings.json"))
 	if len(got) != 1 || got[0] != "/repo/extra" {
 		t.Fatalf("additionalDirectories = %v, want [/repo/extra]", got)
 	}
 	if _, statErr := os.Stat(filepath.Join(dir, ".claude", "settings.local.json")); statErr == nil {
 		t.Errorf("global grant should not touch project settings.local.json")
 	}
+}
+
+// sandboxedClaudeConfigDir returns the user-scope config dir a sandboxed
+// Claude reads under home: the launch-time CLAUDE_CONFIG_DIR redirect
+// where the platform applies one (Linux), else Claude's default ~/.claude.
+func sandboxedClaudeConfigDir(home string) string {
+	if dir := launcher.SandboxAgentEnv("claude", home, os.Environ())["CLAUDE_CONFIG_DIR"]; dir != "" {
+		return dir
+	}
+	return filepath.Join(home, ".claude")
 }
 
 func TestSandboxAllow_NoAgentGrantFlagSkipsClaudeWrite(t *testing.T) {

@@ -52,6 +52,22 @@ automatically as part of the same command.
   after allowing `/repo/sub`), not just exact path matches, without
   touching unrelated parent grants.
 
+#### aide sync on Linux now provisions the Claude config dir the sandbox uses
+
+On Linux, a sandboxed Claude launch points `CLAUDE_CONFIG_DIR` at
+`~/.config/aide/claude`, but `aide sync` and the Claude permission grant
+behind `aide sandbox allow --global` kept writing Claude's default
+`~/.claude.json` and `~/.claude/settings.json`. MCP servers, hooks and
+directory grants that aide synced were therefore invisible to the
+sandboxed agent.
+
+- Sync and grants now apply the same launch-time redirect, so they write
+  where the sandboxed Claude reads. A `profile:` or a `CLAUDE_CONFIG_DIR`
+  you set yourself still wins, and contexts with `sandbox: false` keep
+  using Claude's defaults.
+- Run `aide sync` once after upgrading so already-declared MCP servers
+  and hooks land in `~/.config/aide/claude`. macOS is unaffected.
+
 #### aide can now sandbox OpenCode
 
 `aide` gains a `provision.Provisioner` driver for OpenCode

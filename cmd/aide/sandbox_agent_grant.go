@@ -22,7 +22,7 @@ import (
 // doesn't implement DirectoryGranter) — not a failure the caller should
 // report.
 func resolveAgentGrantContext(global bool, contextName string) (granter provision.DirectoryGranter, agentName string, pctx provision.Context, ok bool, err error) {
-	_, ctxName, ctx, err := resolveContextForMutation(contextName)
+	cfg, ctxName, ctx, err := resolveContextForMutation(contextName)
 	if err != nil {
 		return nil, "", provision.Context{}, false, err
 	}
@@ -46,7 +46,7 @@ func resolveAgentGrantContext(global bool, contextName string) (granter provisio
 		}
 		projectRoot = aidectx.ProjectRoot(cwd)
 	}
-	pctx, err = provision.ResolveContext(ctxName, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
+	pctx, err = resolveProvisionContext(cfg, ctxName, ctx, homeDir, projectRoot)
 	if err != nil {
 		return nil, ctx.Agent, provision.Context{}, false, fmt.Errorf("context %q: %w", ctxName, err)
 	}

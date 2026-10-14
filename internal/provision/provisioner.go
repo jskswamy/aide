@@ -446,4 +446,9 @@ var (
 	// there printed to stderr and appeared in `opencode debug config`'s
 	// resolved "plugin" array with plugin_origins[].scope: "local").
 	OpenCodeHookArtifact = HookArtifact{Prefix: "aide-", Ext: ".js"}
+
+	// PiHookArtifact defines Pi's hook artifact shape: aide-<hash>.ts
+	// extension files, dropped in ~/.pi/agent/extensions/ (or under
+	// PI_CODING_AGENT_DIR) where Pi auto-discovers them for all projects.
+	PiHookArtifact = HookArtifact{Prefix: "aide-", Ext: ".ts"}
 )

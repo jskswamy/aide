@@ -362,6 +362,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		}
 		binary = resolved
 	}
+	// The banner names the agent; binary may be rewritten to the sandbox
+	// wrapper below.
+	agentBinary := binary
 
 	// 12. Resolve capabilities and merge into sandbox config.
 	capNames := sandbox.MergeCapNames(rc.Context.Capabilities, withCaps, withoutCaps)
@@ -517,7 +520,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefs.InfoDetail = "detailed"
 	}
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
-		bannerData := l.buildBannerData(rc, agentName, binary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra, trustInfo)
+		bannerData := l.buildBannerData(rc, agentName, agentBinary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra, trustInfo)
 		bannerData.Yolo = effectiveYolo
 		bannerData.AutoApprove = effectiveYolo
 		style := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))

@@ -1028,6 +1028,35 @@ func TestLaunch_BannerPrintsToStderr(t *testing.T) {
 	}
 }
 
+// TestLaunch_BannerShowsAgentBinaryUnderSandbox pins that the banner
+// names the agent binary, not the wrapper the sandbox rewrites the
+// command to (aide itself on Linux, re-exec'd as __sandbox-apply).
+func TestLaunch_BannerShowsAgentBinaryUnderSandbox(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+	writeMinimalConfig(t, configDir, `agent: /usr/local/bin/my-agent`)
+
+	var stderrBuf bytes.Buffer
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	l := &Launcher{
+		Execer:    mockExec,
+		ConfigDir: configDir,
+		Stderr:    &stderrBuf,
+	}
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+	out := stderrBuf.String()
+	if !strings.Contains(out, "/usr/local/bin/my-agent") {
+		t.Errorf("banner should name the agent binary, got:\n%s", out)
+	}
+	if exe, err := os.Executable(); err == nil && strings.Contains(out, exe) {
+		t.Errorf("banner names the sandbox wrapper %q instead of the agent:\n%s", exe, out)
+	}
+}
+
 func TestLaunch_ShowInfoFalse(t *testing.T) {
 	configDir := t.TempDir()
 	cwd := t.TempDir()

@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -14,8 +15,10 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
+	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/spf13/cobra"
 )
 
@@ -37,6 +40,44 @@ func resolveContextEnv(ctx config.Context, homeDir string) map[string]string {
 		out[k] = homepath.Expand(v, homeDir)
 	}
 	return out
+}
+
+// resolveProvisionContext wraps provision.ResolveContext and, when the
+// context launches sandboxed, layers in the agent module's launch-time
+// env overrides (e.g. Claude's CLAUDE_CONFIG_DIR redirect on Linux).
+// Without them, sync and agent grants would write the agent's default
+// config dir while the sandboxed agent reads the redirected one. Values
+// the context already sets, such as a profile dir, win.
+func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context, homeDir, projectRoot string) (provision.Context, error) {
+	pCtx, err := provision.ResolveContext(name, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
+	if err != nil {
+		return pCtx, err
+	}
+	if _, disabled, err := sandbox.ResolveSandboxRef(ctx.Sandbox, cfg.Sandboxes); err != nil || disabled {
+		return pCtx, nil
+	}
+	// Context values go first: the module's env lookup returns the first
+	// match, so they must shadow the host environment.
+	env := make([]string, 0, len(pCtx.Env))
+	for k, v := range pCtx.Env {
+		env = append(env, k+"="+v)
+	}
+	env = append(env, os.Environ()...)
+	overrides := launcher.SandboxAgentEnv(ctx.Agent, homeDir, env)
+	if len(overrides) == 0 {
+		return pCtx, nil
+	}
+	merged := maps.Clone(pCtx.Env)
+	if merged == nil {
+		merged = map[string]string{}
+	}
+	for k, v := range overrides {
+		if _, set := merged[k]; !set {
+			merged[k] = v
+		}
+	}
+	pCtx.Env = merged
+	return pCtx, nil
 }
 
 // pluginCmd is the `aide plugin` parent.
@@ -142,7 +183,7 @@ func loadProvisionEnv(contextName string) (*provisionEnv, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving working directory: %w", err)
 	}
-	pCtx, err := provision.ResolveContext(name, ctx, home, cwd, resolveContextEnv(ctx, home))
+	pCtx, err := resolveProvisionContext(cfg, name, ctx, home, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("resolving provision context: %w", err)
 	}

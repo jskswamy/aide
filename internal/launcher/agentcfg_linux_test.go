@@ -4,6 +4,7 @@ package launcher
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,5 +48,34 @@ func TestApplyAgentEnv_InjectedKeysReflectedInPolicyEnv(t *testing.T) {
 	}
 	if !strings.HasPrefix(injected, home) {
 		t.Errorf("CLAUDE_CONFIG_DIR %q not rooted under home %q", injected, home)
+	}
+}
+
+// TestSandboxAgentEnv_ClaudeRedirect pins that callers provisioning
+// outside a launch (aide sync, sandbox grants) see the same
+// CLAUDE_CONFIG_DIR redirect the sandboxed launch injects.
+func TestSandboxAgentEnv_ClaudeRedirect(t *testing.T) {
+	home := t.TempDir()
+	got := SandboxAgentEnv("claude", home, []string{"HOME=" + home})
+	want := filepath.Join(home, ".config", "aide", "claude")
+	if got["CLAUDE_CONFIG_DIR"] != want {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want %q", got["CLAUDE_CONFIG_DIR"], want)
+	}
+}
+
+func TestSandboxAgentEnv_RespectsUserValue(t *testing.T) {
+	home := t.TempDir()
+	got := SandboxAgentEnv("claude", home, []string{"HOME=" + home, "CLAUDE_CONFIG_DIR=/custom"})
+	if _, ok := got["CLAUDE_CONFIG_DIR"]; ok {
+		t.Errorf("user-set CLAUDE_CONFIG_DIR should not be overridden, got %v", got)
+	}
+}
+
+func TestSandboxAgentEnv_NoRedirectAgents(t *testing.T) {
+	home := t.TempDir()
+	for _, name := range []string{"pi", "opencode", "not-an-agent"} {
+		if got := SandboxAgentEnv(name, home, []string{"HOME=" + home}); len(got) != 0 {
+			t.Errorf("SandboxAgentEnv(%q) = %v, want empty", name, got)
+		}
 	}
 }

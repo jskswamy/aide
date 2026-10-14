@@ -14,18 +14,14 @@ MCP servers, manage their plugins, or install hooks into them.
 
 - `aide` sandboxes both agents (seatbelt profile, same as every other
   supported agent).
-- `aide` manages OpenCode's MCP servers declaratively, the same way it
-  does for Gemini/Copilot.
+- `aide` manages both agents' MCP servers declaratively, the same way
+  it does for Gemini/Copilot.
 - `aide` manages plugins (OpenCode) and extensions (Pi) declaratively.
 - `aide` installs/removes hooks into both agents' native lifecycle-event
   mechanisms.
 
 ## Non-goals
 
-- **Pi MCP.** Pi has no first-party MCP client; the only option is a
-  third-party extension (`pi-mcp-extension`) with a config format
-  `earendil-works` doesn't own and could change without notice. Skipped
-  for this pass — revisit if/when Pi gets a first-party MCP story.
 - **Marketplaces.** Neither agent has the concept. Both use bare
   npm/git/local-path refs per plugin entry (`ShapeURLDirect`), not
   named marketplaces (`ShapeMarketplace`). `AddMarketplace` /
@@ -217,12 +213,25 @@ func New(r provision.Runner) *Driver {
 }
 ```
 
-- **No MCP** — `SupportsMCP` stays `false`; `MCPConfigPath`/`MCPHandler`
-  fall through to `DriverBase`'s stubs.
-- **Plugins**: CLI-driven, mirroring the `claude` driver's shape:
-  - `InstallPlugin` → `pi install <source>` (`-l` appended for
-    project-scope contexts).
-  - `UninstallPlugin` → `pi remove <source>` (`-l` for project scope),
+- **MCP** — `SupportsMCP: true`. An earlier draft of this spec left
+  Pi MCP out because Pi had no first-party client. Pi 1.1.0 added one
+  (re-verified 2026-10-14): it reads `~/.pi/agent/mcp.json` (under
+  `PI_CODING_AGENT_DIR` when set) with the standard top-level
+  `mcpServers` map (`command`/`args`/`env` for stdio, `url` for HTTP).
+  `MCPConfigPath` returns `<AgentDir>/mcp.json` and `MCPHandler`
+  reuses `mcp.NewJSONFlat()`, the Gemini/Copilot handler. Confirmed
+  that Pi ignores the top-level `_aide_managed` marker: `pi mcp list
+  --json` against a file carrying it reports `"errors": []`. The
+  file-edit path is used rather than `pi mcp add/remove`, for the same
+  read-diff-write reasons as OpenCode, and because `pi mcp list`
+  live-connects to every server.
+- **Plugins**: CLI-driven, mirroring the `claude` driver's shape. Every
+  invocation targets user scope (no `-l`, matching every other driver,
+  none of which split plugin installs by scope) and passes
+  `--no-approve` so it never blocks on Pi's project-trust prompt,
+  whatever directory aide runs it from:
+  - `InstallPlugin` → `pi install <source> --no-approve`.
+  - `UninstallPlugin` → `pi remove <source> --no-approve`,
     via `provision.RunCLI` with `DefaultTolerateStderr` plus
     `"No matching package found"` appended (see Research Findings).
   - `InstalledPlugins` → `pi list`, parsed with a small
@@ -235,13 +244,15 @@ func New(r provision.Runner) *Driver {
     treating "not installed" as "nothing installed" rather than an
     error.
 - **Hooks**: `SupportsHooks: true`, `ReadHooks`/`WriteHooks` generate/
-  remove files in `.pi/extensions/` (project) or
-  `~/.pi/agent/extensions/` (global). New `PiHookArtifact =
-  HookArtifact{Prefix: "aide-", Ext: ".ts"}`. Generated file registers
-  a `pi.on("tool_call", ...)` (pre-tool) or equivalent post-tool/
-  session event handler shelling out to `h.Command`, with the matcher
-  applied as an `if` check on the tool-call payload, same reasoning as
-  OpenCode's generated hooks.
+  remove files in `<AgentDir>/extensions/` (global scope only, like
+  every other hook-capable driver). New `PiHookArtifact =
+  HookArtifact{Prefix: "aide-", Ext: ".ts"}`. The generated file
+  registers `pi.on("tool_call", ...)` for `pre_tool` or
+  `pi.on("tool_result", ...)` for `post_tool`, shelling out to
+  `h.Command`. Session events stay unmapped: Pi's `session_shutdown`
+  fires on session switch, not only process exit, so there's no clean
+  `session_end` equivalent. Matchers are not applied inside the
+  generated file, matching how OpenCode's hooks shipped.
 - **`AgentDir`**: `PI_CODING_AGENT_DIR` is a confirmed, documented env
   var for the whole config directory (default `~/.pi/agent`) — unlike
   OpenCode, Pi *does* get `ProfileEnvKey` and an `AgentDirProvider`
@@ -287,6 +298,9 @@ above.
   agent packages.
 - `internal/display/display.go`: add icon entries for `"opencode"` and
   `"pi"`.
+- `internal/launcher/passthrough.go`: add both names to `KnownAgents`,
+  or `aide context create --agent <name>` and the interactive picker
+  reject them as unknown.
 
 ## Known Limitations
 
@@ -324,8 +338,9 @@ handler needs to produce.
   add/remove/rename-on-desired-change, parallel to
   `hermes_test.go`/`claude/hooks_test.go`.
 - `internal/provision/agents/pi/pi_test.go`: `InstallPlugin`/
-  `UninstallPlugin` CLI invocation shape (including `-l` for project
-  scope) via a fake `Runner`, `InstalledPlugins`' two-line-output
+  `UninstallPlugin` CLI invocation shape (including `--no-approve`)
+  via a fake `Runner`, `MCPConfigPath` with and without
+  `PI_CODING_AGENT_DIR`, `InstalledPlugins`' two-line-output
   parser against real captured `pi list` output (including the
   empty-state `"No packages installed."` case), tolerated-stderr
   behavior for `"No matching package found"`.

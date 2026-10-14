@@ -67,6 +67,26 @@ supported agents.
   `~/.config/opencode/plugin/` (global scope only; this driver does not
   write project-scope hooks), which OpenCode auto-loads.
 
+#### aide can now sandbox Pi
+
+`aide` gains a `provision.Provisioner` driver for Pi
+(`earendil-works/pi`, pi.dev), so `aide context create --agent pi` and
+`aide launch` work the same way they do for the other supported agents.
+
+- The sandbox grants `~/.pi`, or `$PI_CODING_AGENT_DIR` when set.
+  `PI_CODING_AGENT_DIR` is also Pi's profile env key.
+- MCP servers are synced into Pi's built-in `mcp.json`
+  (`~/.pi/agent/mcp.json`, or under `$PI_CODING_AGENT_DIR`), which
+  uses the same `mcpServers` shape as Gemini and Copilot.
+- Plugins (Pi "packages") are synced through Pi's own `pi install`,
+  `pi remove` and `pi list`, always at user scope.
+- Hooks are installed as generated TypeScript extensions in
+  `~/.pi/agent/extensions/` (global scope only), which Pi auto-loads.
+  `pre_tool` maps to Pi's `tool_call` event and `post_tool` to
+  `tool_result`; session events are not mapped yet.
+- Project-local Pi config still needs Pi's one-time project-trust
+  approval; `aide` does not grant it on your behalf.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

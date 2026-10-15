@@ -8,8 +8,8 @@ type baseGuard struct{}
 // BaseGuard returns a Guard that emits the Seatbelt version and default-deny policy.
 func BaseGuard() seatbelt.Guard { return &baseGuard{} }
 
-func (g *baseGuard) Name() string        { return "base" }
-func (g *baseGuard) Type() string        { return "always" }
+func (g *baseGuard) Name() string { return "base" }
+func (g *baseGuard) Type() string { return "always" }
 func (g *baseGuard) Description() string {
 	return "Sandbox foundation — blocks all access unless explicitly allowed"
 }

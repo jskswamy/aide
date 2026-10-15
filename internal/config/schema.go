@@ -12,39 +12,39 @@ import (
 // format. Otherwise it is the minimal (flat) format treated as a single default context.
 type Config struct {
 	// --- Full format fields ---
-	Agents         map[string]AgentDef        `yaml:"agents,omitempty"`
-	Contexts       map[string]Context         `yaml:"contexts,omitempty"`
-	DefaultContext string                     `yaml:"default_context,omitempty"`
-	Sandboxes      map[string]SandboxPolicy   `yaml:"sandboxes,omitempty"`
-	CustomGuards   map[string]CustomGuard     `yaml:"custom_guards,omitempty"`
-	GuardTypes     map[string]GuardType       `yaml:"guard_types,omitempty"`
-	Capabilities  map[string]CapabilityDef `yaml:"capabilities,omitempty"`
-	NeverAllow    []string                 `yaml:"never_allow,omitempty"`
-	NeverAllowEnv []string                 `yaml:"never_allow_env,omitempty"`
-	Plugins       PluginMap                `yaml:"plugins,omitempty"`
+	Agents         map[string]AgentDef      `yaml:"agents,omitempty"`
+	Contexts       map[string]Context       `yaml:"contexts,omitempty"`
+	DefaultContext string                   `yaml:"default_context,omitempty"`
+	Sandboxes      map[string]SandboxPolicy `yaml:"sandboxes,omitempty"`
+	CustomGuards   map[string]CustomGuard   `yaml:"custom_guards,omitempty"`
+	GuardTypes     map[string]GuardType     `yaml:"guard_types,omitempty"`
+	Capabilities   map[string]CapabilityDef `yaml:"capabilities,omitempty"`
+	NeverAllow     []string                 `yaml:"never_allow,omitempty"`
+	NeverAllowEnv  []string                 `yaml:"never_allow_env,omitempty"`
+	Plugins        PluginMap                `yaml:"plugins,omitempty"`
 	// MCPServers is the v2 top-level mcp_servers map. The custom
 	// MCPServerMap unmarshaller also accepts the legacy minimal-format
 	// list-of-names form; those names are stored with empty MCPServer
 	// values so normalizeMinimal can still propagate them as a
 	// MCPServersList on the synthesised default context.
-	MCPServers  MCPServerMap `yaml:"mcp_servers,omitempty"`
-	Hooks       HooksMap        `yaml:"hooks,omitempty"`
-	Preferences *Preferences    `yaml:"preferences,omitempty"`
+	MCPServers  MCPServerMap      `yaml:"mcp_servers,omitempty"`
+	Hooks       HooksMap          `yaml:"hooks,omitempty"`
+	Preferences *Preferences      `yaml:"preferences,omitempty"`
 	Statusline  *StatuslineConfig `yaml:"statusline,omitempty"`
 
 	// --- Minimal (flat) format fields ---
 	// These are promoted to a synthetic "default" context during loading.
-	Agent       string            `yaml:"agent,omitempty"`
-	Env         map[string]string `yaml:"env,omitempty"`
-	Secret      string            `yaml:"secret,omitempty"`
-	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
-	Yolo        *bool             `yaml:"yolo,omitempty"`
+	Agent   string            `yaml:"agent,omitempty"`
+	Env     map[string]string `yaml:"env,omitempty"`
+	Secret  string            `yaml:"secret,omitempty"`
+	Sandbox *SandboxPolicy    `yaml:"sandbox,omitempty"`
+	Yolo    *bool             `yaml:"yolo,omitempty"`
 
 	// --- Project override (populated by loader, not from YAML) ---
 	// Holds .aide.yaml data to be merged on top of the matched context at
 	// resolution time. Not serialized to YAML.
-	ProjectOverride     *ProjectOverride `yaml:"-"`
-	ProjectConfigPath   string           `yaml:"-"` // absolute path to .aide.yaml, if found
+	ProjectOverride   *ProjectOverride `yaml:"-"`
+	ProjectConfigPath string           `yaml:"-"` // absolute path to .aide.yaml, if found
 }
 
 // IsMinimal returns true when the config uses the flat single-context format.
@@ -81,11 +81,11 @@ type AgentDef struct {
 // Context holds everything needed to launch an agent in a specific environment.
 // Env, secrets, and MCP selection live here, not on the agent (DD-5).
 type Context struct {
-	Match              []MatchRule          `yaml:"match,omitempty"`
-	Agent              string               `yaml:"agent"`
-	Icon               string               `yaml:"icon,omitempty"`
-	Secret             string               `yaml:"secret,omitempty"`
-	Env                map[string]string    `yaml:"env,omitempty"`
+	Match  []MatchRule       `yaml:"match,omitempty"`
+	Agent  string            `yaml:"agent"`
+	Icon   string            `yaml:"icon,omitempty"`
+	Secret string            `yaml:"secret,omitempty"`
+	Env    map[string]string `yaml:"env,omitempty"`
 	// Profile selects a per-context agent config directory. When set,
 	// the agent driver injects its env var (CLAUDE_CONFIG_DIR for
 	// claude, GEMINI_HOME for gemini, etc.) pointing at
@@ -99,9 +99,9 @@ type Context struct {
 	// non-empty depending on how the user wrote the YAML.
 	MCPServers         []string                    `yaml:"-"`
 	MCPServersOverride *ContextOverride[MCPServer] `yaml:"-"`
-	Sandbox            *SandboxRef          `yaml:"sandbox,omitempty"`
-	Yolo               *bool                `yaml:"yolo,omitempty"`
-	Capabilities       []string             `yaml:"capabilities,omitempty"`
+	Sandbox            *SandboxRef                 `yaml:"sandbox,omitempty"`
+	Yolo               *bool                       `yaml:"yolo,omitempty"`
+	Capabilities       []string                    `yaml:"capabilities,omitempty"`
 	// Plugins is populated by UnmarshalYAML when the per-context
 	// `plugins:` value is a mapping (v2 delta form). The yaml tag is
 	// "-" because UnmarshalYAML handles it directly.
@@ -759,16 +759,16 @@ type GuardType struct {
 // It is NOT stored as a context. Instead, the resolver merges it on top
 // of whichever global context matches.
 type ProjectOverride struct {
-	Agent       string            `yaml:"agent,omitempty"`
-	Env         map[string]string `yaml:"env,omitempty"`
-	Secret      string            `yaml:"secret,omitempty"`
-	MCPServers  []string          `yaml:"mcp_servers,omitempty"`
-	Sandbox     *SandboxPolicy    `yaml:"sandbox,omitempty"`
-	Preferences  *Preferences      `yaml:"preferences,omitempty"`
-	Statusline   *StatuslineConfig `yaml:"statusline,omitempty"`
-	Yolo         *bool             `yaml:"yolo,omitempty"`
-	Capabilities []string          `yaml:"capabilities,omitempty"`
-	DisabledCapabilities []string  `yaml:"disabled_capabilities,omitempty"`
+	Agent                string            `yaml:"agent,omitempty"`
+	Env                  map[string]string `yaml:"env,omitempty"`
+	Secret               string            `yaml:"secret,omitempty"`
+	MCPServers           []string          `yaml:"mcp_servers,omitempty"`
+	Sandbox              *SandboxPolicy    `yaml:"sandbox,omitempty"`
+	Preferences          *Preferences      `yaml:"preferences,omitempty"`
+	Statusline           *StatuslineConfig `yaml:"statusline,omitempty"`
+	Yolo                 *bool             `yaml:"yolo,omitempty"`
+	Capabilities         []string          `yaml:"capabilities,omitempty"`
+	DisabledCapabilities []string          `yaml:"disabled_capabilities,omitempty"`
 	// CapabilityVariants pins specific variants for named capabilities,
 	// bypassing the detection/consent flow. Keys must appear in
 	// Capabilities (or be activated via --with). Values are variant

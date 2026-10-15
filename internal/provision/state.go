@@ -37,14 +37,14 @@ type ManagedHook struct {
 // independent — a successful sync in one context does not silence
 // the drift banner for another.
 type ContextState struct {
-	ConfigHash     string                 `json:"config_hash,omitempty"`
-	HookConfigHash string                 `json:"hook_config_hash,omitempty"`
+	ConfigHash     string `json:"config_hash,omitempty"`
+	HookConfigHash string `json:"hook_config_hash,omitempty"`
 	// SecretsHash is sha256 of the context's encrypted secrets file
 	// bytes (ciphertext only, never plaintext) — lets aide sync skip
 	// decryption when neither this nor ConfigHash changed since the
 	// last successful sync. Empty when the context has no secret file.
-	SecretsHash  string                 `json:"secrets_hash,omitempty"`
-	SyncedAt     time.Time              `json:"synced_at,omitempty"`
+	SecretsHash string    `json:"secrets_hash,omitempty"`
+	SyncedAt    time.Time `json:"synced_at,omitempty"`
 	// AgentDir is the agent config dir the last successful sync
 	// provisioned into (empty for agents without one). Managed MCP
 	// entries only vouch for that dir; see runSync.

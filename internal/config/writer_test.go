@@ -14,7 +14,7 @@ func TestWriteConfig_FullFormat(t *testing.T) {
 	allowSub := true
 	cfg := &Config{
 		Agents: map[string]AgentDef{
-			"claude": {Binary: "claude"},
+			"claude":  {Binary: "claude"},
 			"copilot": {Binary: "gh-copilot"},
 		},
 		MCPServers: MCPServerMap{

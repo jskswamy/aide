@@ -9,7 +9,7 @@ var credentialEnvVars = map[string]bool{
 	"AWS_SESSION_TOKEN":              true,
 	"VAULT_TOKEN":                    true,
 	"DIGITALOCEAN_ACCESS_TOKEN":      true,
-	"NPM_TOKEN":                     true,
+	"NPM_TOKEN":                      true,
 	"NODE_AUTH_TOKEN":                true,
 	"GOOGLE_APPLICATION_CREDENTIALS": true,
 }

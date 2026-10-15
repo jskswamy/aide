@@ -8,9 +8,9 @@ import (
 )
 
 type fakeDiagRunner struct {
-	result          *RunResult
-	gotExtraFiles   []*os.File
-	gotArgs         []string
+	result        *RunResult
+	gotExtraFiles []*os.File
+	gotArgs       []string
 }
 
 func (f *fakeDiagRunner) Run(_ string, args []string, _ []string, extraFiles []*os.File) (*RunResult, error) {

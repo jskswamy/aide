@@ -12,8 +12,8 @@ type devCredentialsGuard struct{}
 // DevCredentialsGuard returns a Guard that denies access to development tool credential files.
 func DevCredentialsGuard() seatbelt.Guard { return &devCredentialsGuard{} }
 
-func (g *devCredentialsGuard) Name() string        { return "dev-credentials" }
-func (g *devCredentialsGuard) Type() string        { return "default" }
+func (g *devCredentialsGuard) Name() string { return "dev-credentials" }
+func (g *devCredentialsGuard) Type() string { return "default" }
 func (g *devCredentialsGuard) Description() string {
 	return "Blocks access to development tool credential files within allowed directories"
 }
@@ -25,15 +25,15 @@ var credentialPaths = []struct {
 	rel   string
 	isDir bool
 }{
-	{".config/gh", true},                  // GitHub CLI OAuth tokens
-	{".cargo/credentials.toml", false},    // crates.io publish token
-	{".gradle/gradle.properties", false},  // Maven/Artifactory tokens
-	{".m2/settings.xml", false},           // Maven repository credentials
-	{".config/hub", false},                // Hub CLI GitHub token
-	{".config/glab-cli", true},            // GitLab CLI token
-	{".pypirc", false},                    // PyPI upload credentials
-	{".gem/credentials", false},           // RubyGems push token
-	{".git-credentials", false},           // Git plaintext credential store
+	{".config/gh", true},                 // GitHub CLI OAuth tokens
+	{".cargo/credentials.toml", false},   // crates.io publish token
+	{".gradle/gradle.properties", false}, // Maven/Artifactory tokens
+	{".m2/settings.xml", false},          // Maven repository credentials
+	{".config/hub", false},               // Hub CLI GitHub token
+	{".config/glab-cli", true},           // GitLab CLI token
+	{".pypirc", false},                   // PyPI upload credentials
+	{".gem/credentials", false},          // RubyGems push token
+	{".git-credentials", false},          // Git plaintext credential store
 }
 
 func (g *devCredentialsGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {

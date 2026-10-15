@@ -91,7 +91,7 @@ func TestRedactValue(t *testing.T) {
 	}{
 		// Short secrets: fixed mask only (no chars exposed)
 		{"abc", "••••••••"},
-		{"12345678", "••••••••"},     // exactly 8 chars
+		{"12345678", "••••••••"},         // exactly 8 chars
 		{"1234567890123456", "••••••••"}, // exactly 16 chars
 		// Long secrets: 4-char prefix + mask
 		{"sk-ant-api03-very-long-key", "sk-a••••••••"},

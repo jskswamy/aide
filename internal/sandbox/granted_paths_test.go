@@ -244,10 +244,10 @@ func TestDeriveGrantedPathSet_DenyWinsSubtree(t *testing.T) {
 	}
 
 	policy := Policy{
-		ExtraDenied:  []string{parent},
+		ExtraDenied:   []string{parent},
 		ExtraWritable: []string{child},
 		ExtraReadable: []string{child},
-		Guards:       []string{},
+		Guards:        []string{},
 	}
 
 	// Act
@@ -279,9 +279,9 @@ func TestDeriveGrantedPathSet_DenyWinsSubtree_SiblingUnaffected(t *testing.T) {
 	}
 
 	policy := Policy{
-		ExtraDenied:  []string{denied},
+		ExtraDenied:   []string{denied},
 		ExtraReadable: []string{sibling},
-		Guards:       []string{},
+		Guards:        []string{},
 	}
 
 	// Act

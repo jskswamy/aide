@@ -222,7 +222,6 @@ func alwaysGuardNames() []string {
 	return names
 }
 
-
 // isGlobPattern reports whether path contains any glob metacharacters.
 func isGlobPattern(path string) bool {
 	return strings.ContainsAny(path, "*?[{")

@@ -93,7 +93,7 @@ func TestContextBind_PathFlag_ForcesPathRule(t *testing.T) {
 }
 
 func TestContextBind_RemoteFlag_OutsideGitRepo_Errors(t *testing.T) {
-	isolatedConfigDir(t) // tempdir is not a git repo
+	isolatedConfigDir(t)                              // tempdir is not a git repo
 	writeConfig(t, isolatedConfigDirReuse(t), "work") // sub-helper not needed; test isolation is per-test
 	// The test above already isolated; we only care about the error.
 	_, err := runContextBind(t, "work", "--remote")

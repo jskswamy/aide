@@ -144,8 +144,8 @@ func TestHookSyncLifecycle(t *testing.T) {
 // works whether the user types the raw template or the resolved agent name.
 func TestHookRemoveAcceptsBothRawAndResolvedCommand(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		rmCmd   string
+		name  string
+		rmCmd string
 	}{
 		{"raw template", "rtk hook {agent}"},
 		{"resolved form", "rtk hook fakehookagent"},

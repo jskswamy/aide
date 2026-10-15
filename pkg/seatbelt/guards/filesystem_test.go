@@ -194,9 +194,9 @@ func TestFilesystemGuard_ExtraReadable_ResolvesTwoHopChain(t *testing.T) {
 	tmp := testutil.CanonicalTempDir(t)
 	home := filepath.Join(tmp, "home")
 	chain := testutil.MakeSymlinkChain(t, tmp, []string{
-		"home/.config/bd/config.yaml",       // declared (entry point)
-		"nix-store-fake/config.yaml",        // intermediate (outside home)
-		"home/nixos-config/config.yaml",     // final target (back inside home)
+		"home/.config/bd/config.yaml",   // declared (entry point)
+		"nix-store-fake/config.yaml",    // intermediate (outside home)
+		"home/nixos-config/config.yaml", // final target (back inside home)
 	})
 	declared, finalTarget := chain[0], chain[2]
 
@@ -494,8 +494,8 @@ func TestFilesystemGuard_NarrowBaseline(t *testing.T) {
 
 	// Should have narrow baseline reads
 	allowedPaths := []struct {
-		path    string
-		kind    string // "literal" or "subpath"
+		path string
+		kind string // "literal" or "subpath"
 	}{
 		{`(subpath "/Users/testuser/.config/aide")`, "aide config"},
 		{`(subpath "/Users/testuser/.local/share/aide")`, "aide data"},

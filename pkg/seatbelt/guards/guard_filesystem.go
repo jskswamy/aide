@@ -20,8 +20,8 @@ type filesystemGuard struct{}
 // ctx.RuntimeDir, ctx.TempDir, and ctx.ExtraDenied for filesystem rules.
 func FilesystemGuard() seatbelt.Guard { return &filesystemGuard{} }
 
-func (g *filesystemGuard) Name() string        { return "filesystem" }
-func (g *filesystemGuard) Type() string        { return "always" }
+func (g *filesystemGuard) Name() string { return "filesystem" }
+func (g *filesystemGuard) Type() string { return "always" }
 func (g *filesystemGuard) Description() string {
 	return "Project directory (read-write) and scoped home directory (read-only) access"
 }
@@ -158,7 +158,6 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 
 	return seatbelt.GuardResult{Rules: rules}
 }
-
 
 // safeResolvedWidening returns (resolved, true) when path is a symlink
 // whose target differs from path AND lives under home. Returns ("", false)

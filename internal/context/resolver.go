@@ -61,12 +61,12 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 			}
 		}
 		ctx := config.Context{
-			Agent:       cfg.Agent,
-			Env:         cfg.Env,
-			Secret:      cfg.Secret,
-			MCPServers:  mcpList,
-			Sandbox:     config.SandboxPolicyToRef(cfg.Sandbox),
-			Yolo:        cfg.Yolo,
+			Agent:      cfg.Agent,
+			Env:        cfg.Env,
+			Secret:     cfg.Secret,
+			MCPServers: mcpList,
+			Sandbox:    config.SandboxPolicyToRef(cfg.Sandbox),
+			Yolo:       cfg.Yolo,
 		}
 		rc := &ResolvedContext{
 			Name:        "default",
@@ -213,7 +213,6 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride, sandb
 	}
 	rc.MatchReason = fmt.Sprintf("project override on top of %s", rc.MatchReason)
 }
-
 
 // subtractStrings returns elements in a that are not in b.
 func subtractStrings(a, b []string) []string {
@@ -382,7 +381,6 @@ func canonicalizeRemotePattern(s string) string {
 	}
 	return s
 }
-
 
 // describeMatch produces a human-readable description of why a rule matched.
 func describeMatch(rule *config.MatchRule, score int) string {

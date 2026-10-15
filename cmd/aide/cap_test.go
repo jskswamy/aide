@@ -418,7 +418,7 @@ contexts:
 	nameIdx := strings.Index(header, "NAME")
 	statusIdx := strings.Index(header, "STATUS")
 	sourceIdx := strings.Index(header, "SOURCE")
-	if !(nameIdx < statusIdx && statusIdx < sourceIdx) {
+	if nameIdx >= statusIdx || statusIdx >= sourceIdx {
 		t.Fatalf("expected column order NAME < STATUS < SOURCE, got header: %q", header)
 	}
 

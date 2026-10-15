@@ -334,8 +334,8 @@ func TestRenderStatusline_BothUnmanagedWhenNoAideEnvAtAll(t *testing.T) {
 func TestEnvForRender_AbsentVarOmittedFromMap(t *testing.T) {
 	t.Setenv("AIDE_SANDBOX", "on")
 	if orig, ok := os.LookupEnv("AIDE_NETWORK_MODE"); ok {
-		os.Unsetenv("AIDE_NETWORK_MODE")
-		t.Cleanup(func() { os.Setenv("AIDE_NETWORK_MODE", orig) })
+		_ = os.Unsetenv("AIDE_NETWORK_MODE")
+		t.Cleanup(func() { _ = os.Setenv("AIDE_NETWORK_MODE", orig) })
 	}
 	env := envForRender()
 	if _, ok := env["AIDE_SANDBOX"]; !ok {
@@ -425,8 +425,8 @@ func withPipedStdin(t *testing.T, data string) {
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = orig })
 	go func() {
-		w.WriteString(data)
-		w.Close()
+		_, _ = w.WriteString(data)
+		_ = w.Close()
 	}()
 }
 

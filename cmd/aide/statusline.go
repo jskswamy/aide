@@ -73,7 +73,7 @@ func statuslineAgentCmd(agent string) *cobra.Command {
 // dispatches to installStatusline/removeStatusline. Shared by the bare
 // `aide statusline --agent X --install` form and the explicit
 // `aide statusline X --install` subcommand form.
-func runStatuslineInstallRemove(cmd *cobra.Command, agent string, install, remove bool, contextName string) error {
+func runStatuslineInstallRemove(cmd *cobra.Command, agent string, install, _ bool, contextName string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("home dir: %w", err)

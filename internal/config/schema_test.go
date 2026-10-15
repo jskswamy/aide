@@ -129,9 +129,9 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 		},
 		Contexts: map[string]config.Context{
 			"work": {
-				Agent:  "claude",
-				Secret: "work",
-				Env:    map[string]string{"ORG": "acme"},
+				Agent:      "claude",
+				Secret:     "work",
+				Env:        map[string]string{"ORG": "acme"},
 				MCPServers: []string{"git"},
 				Match: []config.MatchRule{
 					{Remote: "github.com/acme/*"},

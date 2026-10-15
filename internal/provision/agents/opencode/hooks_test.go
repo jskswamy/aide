@@ -109,3 +109,46 @@ func TestOpenCodePostToolEventMapsCorrectly(t *testing.T) {
 		t.Errorf("ReadHooks = %+v, want event=post_tool", got)
 	}
 }
+
+func TestOpenCodeWriteHooksAppliesMatcher(t *testing.T) {
+	home := t.TempDir()
+	ctx := provision.Context{HomeDir: home}
+	d := opencode.New(fakeRunner{})
+
+	hooks := []provision.Hook{
+		{Event: "pre_tool", Matcher: "shell", Command: "rtk hook opencode"},
+		{Event: "pre_tool", Command: "rtk hook opencode"},
+	}
+	if err := d.WriteHooks(ctx, nil, hooks); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.ReadHooks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ReadHooks = %+v, want both hooks round-tripped", got)
+	}
+	keys := map[string]bool{}
+	for _, h := range got {
+		keys[provision.HookKey(h.Event, h.Matcher, h.Command)] = true
+	}
+	for _, h := range hooks {
+		if !keys[provision.HookKey(h.Event, h.Matcher, h.Command)] {
+			t.Errorf("hook %+v did not round-trip; got %+v", h, got)
+		}
+	}
+
+	dir := filepath.Join(home, ".config", "opencode", "plugin")
+	entries, _ := os.ReadDir(dir)
+	guarded := 0
+	for _, e := range entries {
+		data, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		if strings.Contains(string(data), `if (input.tool !== "bash") return`) {
+			guarded++
+		}
+	}
+	if guarded != 1 {
+		t.Errorf("want exactly one plugin guarded on tool bash, got %d", guarded)
+	}
+}

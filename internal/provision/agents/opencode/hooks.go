@@ -19,6 +19,13 @@ var openCodeEventMap = map[string]string{
 	"post_tool": "tool.execute.after",
 }
 
+// openCodeMatcherMap maps aide's normalized matchers to OpenCode's
+// built-in tool ids, as passed in the hook's input.tool (verified
+// against opencode 1.19.0).
+var openCodeMatcherMap = map[string]string{
+	"shell": "bash",
+}
+
 func openCodeHooksDir(ctx provision.Context) string {
 	return filepath.Join(ctx.HomeDir, ".config", "opencode", "plugin")
 }
@@ -30,9 +37,16 @@ var openCodeHookCodec = &provision.CommentHookCodec{
 	Label:    "opencode hooks",
 	Artifact: provision.OpenCodeHookArtifact,
 	Events:   openCodeEventMap,
-	Body: func(nativeEvent, command string) string {
+	Matchers: openCodeMatcherMap,
+	Body: func(nativeEvent, toolGuard, command string) string {
+		handler, guard := "async () => {\n", ""
+		if toolGuard != "" {
+			handler = "async (input) => {\n"
+			guard = "    if (input.tool !== " + toolGuard + ") return\n"
+		}
 		return "export const AideHook = async ({ $ }) => ({\n" +
-			"  \"" + nativeEvent + "\": async () => {\n" +
+			"  \"" + nativeEvent + "\": " + handler +
+			guard +
 			"    await $`" + command + "`\n" +
 			"  },\n" +
 			"})\n"

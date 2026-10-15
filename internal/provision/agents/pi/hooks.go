@@ -19,6 +19,12 @@ var piEventMap = map[string]string{
 	"post_tool": "tool_result",
 }
 
+// piMatcherMap maps aide's normalized matchers to Pi's built-in tool
+// names, as carried in the event's toolName (types.d.ts in pi 1.1.0).
+var piMatcherMap = map[string]string{
+	"shell": "bash",
+}
+
 func extensionsDir(ctx provision.Context) string {
 	return filepath.Join(agentDir(ctx), "extensions")
 }
@@ -31,11 +37,18 @@ var piHookCodec = &provision.CommentHookCodec{
 	Label:    "pi hooks",
 	Artifact: provision.PiHookArtifact,
 	Events:   piEventMap,
-	Body: func(nativeEvent, command string) string {
+	Matchers: piMatcherMap,
+	Body: func(nativeEvent, toolGuard, command string) string {
+		handler, guard := "async () => {\n", ""
+		if toolGuard != "" {
+			handler = "async (event) => {\n"
+			guard = "    if (event.toolName !== " + toolGuard + ") return;\n"
+		}
 		return "import { execSync } from \"node:child_process\";\n" +
 			"import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\n\n" +
 			"export default function (pi: ExtensionAPI) {\n" +
-			"  pi.on(\"" + nativeEvent + "\", async () => {\n" +
+			"  pi.on(\"" + nativeEvent + "\", " + handler +
+			guard +
 			"    execSync(\"" + command + "\", { stdio: \"inherit\" });\n" +
 			"  });\n" +
 			"}\n"

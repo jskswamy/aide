@@ -134,11 +134,17 @@ func injectAideSessionEnv(
 }
 
 // agentYoloFlags maps agent names to their "skip all permissions" flags.
+// An empty flag means the agent never prompts for permissions, so yolo is
+// already its only mode and nothing needs adding.
 var agentYoloFlags = map[string]string{
-	"claude":  "--dangerously-skip-permissions",
-	"codex":   "--full-auto",
-	"gemini":  "--yolo",
-	"copilot": "--yolo",
+	"claude":   "--dangerously-skip-permissions",
+	"codex":    "--full-auto",
+	"gemini":   "--yolo",
+	"copilot":  "--yolo",
+	"opencode": "--auto",
+	// Pi's --approve trusts project-local files, a separate decision aide
+	// leaves to the user; it is not a permissions bypass.
+	"pi": "",
 }
 
 // Launcher orchestrates the full agent launch flow.
@@ -615,6 +621,9 @@ func YoloArgs(agentName string) ([]string, error) {
 	// Normalize: strip path prefix to match by binary basename.
 	base := filepath.Base(agentName)
 	if flag, ok := agentYoloFlags[base]; ok {
+		if flag == "" {
+			return nil, nil
+		}
 		return []string{flag}, nil
 	}
 	supported := make([]string, 0, len(agentYoloFlags))

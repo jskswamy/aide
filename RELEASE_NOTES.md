@@ -226,6 +226,17 @@ automatically as part of the same command.
   after allowing `/repo/sub`), not just exact path matches, without
   touching unrelated parent grants.
 
+#### Auto-approve works with Pi and OpenCode
+
+With `yolo: true` in your preferences or a context, or with
+`--auto-approve`, launching Pi or OpenCode failed with `--yolo not
+supported for agent`.
+
+- OpenCode now gets its `--auto` flag.
+- Pi never asks for permission, so it launches unchanged. Its
+  `--approve` flag trusts project-local files, a separate decision
+  aide leaves to you.
+
 ### 🔒 Security
 
 #### Go 1.26.9 and patched dependencies resolve twelve vulnerabilities

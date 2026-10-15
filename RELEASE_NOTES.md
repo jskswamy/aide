@@ -1,56 +1,59 @@
-## Unreleased
+## v2.3.0 (2026-10-15)
 
-### Feature
+Pi and OpenCode join the supported agents, the Linux sandbox now gives
+every agent its own config directory, plugin/hook/MCP sync is fixed
+across agents and profiles, and the toolchain and dependencies are
+patched for twelve reachable vulnerabilities.
 
-#### aide commands support --format json output
+### ✨ New agents
 
-Read/query commands (`aide which`, `aide cap list`, `aide status`, etc.)
-now support `--format json` for machine-readable output, alongside the
-existing human-readable default.
+#### aide can now sandbox Pi
 
-- Every read/query command accepts `--format json` (default: `human`).
-- The `$AIDE_FORMAT` environment variable sets the default when
-  `--format` isn't passed explicitly (flag > env var > `human`).
-- `aide explain`'s existing `--format human|agent|json` flag is
-  unchanged.
-- Errors under `--format json` are emitted as a `{"error": "..."}` JSON
-  object instead of plain text.
+`aide` gains a `provision.Provisioner` driver for Pi
+(`earendil-works/pi`, pi.dev), so `aide context create --agent pi` and
+`aide launch` work the same way they do for the other supported agents.
 
-#### aide sync no longer requires the age key for routine no-op runs
+- The sandbox grants `~/.pi`, or `$PI_CODING_AGENT_DIR` when set.
+  `PI_CODING_AGENT_DIR` is also Pi's profile env key.
+- MCP servers are synced into Pi's built-in `mcp.json`
+  (`~/.pi/agent/mcp.json`, or under `$PI_CODING_AGENT_DIR`), which
+  uses the same `mcpServers` shape as Gemini and Copilot.
+- Plugins (Pi "packages") are synced through Pi's own `pi install`,
+  `pi remove` and `pi list`, always at user scope.
+- Hooks are installed as generated TypeScript extensions in
+  `~/.pi/agent/extensions/` (global scope only), which Pi auto-loads.
+  `pre_tool` maps to Pi's `tool_call` event and `post_tool` to
+  `tool_result`.
+- Project-local Pi config still needs Pi's one-time project-trust
+  approval; `aide` does not grant it on your behalf.
 
-`aide sync` previously decrypted a context's age-encrypted secrets file on
-every run, even when nothing about the declared config or the secrets
-themselves had changed. That coupled routine sync runs (e.g. as part of a
-home-manager activation) to age-key availability and plaintext-secret
-handling for no reason.
+#### aide can now sandbox OpenCode
 
-- Sync now skips decryption entirely when neither `config.yaml` nor the
-  encrypted secrets file changed since the last successful sync,
-  substituting the already-installed MCP env values instead of
-  re-resolving `{{ .secrets.X }}` templates.
-- A new `--force-secrets` flag bypasses this gate on demand, forcing a
-  real decrypt + re-resolve, the remedy if an installed secret value is
-  manually edited or corrupted, since that drift is no longer auto-healed
-  on every sync the way it used to be.
+`aide` gains a `provision.Provisioner` driver for OpenCode
+(`anomalyco/opencode`, opencode.ai), so `aide context create --agent
+opencode` and `aide launch` work the same way they do for the other
+supported agents.
 
-#### aide sandbox allow/deny now sync Claude's own permission store
+- MCP servers and plugins are synced by editing `opencode.jsonc`
+  directly rather than shelling out to OpenCode's own CLI, which can't
+  express non-npm plugin sources (git/local refs) and has no
+  list/remove counterpart at all.
+- Hooks are installed as generated JS plugin files dropped in
+  `~/.config/opencode/plugin/` (global scope only; this driver does not
+  write project-scope hooks), which OpenCode auto-loads.
 
-`aide sandbox allow <dir>` and `aide sandbox deny <dir>` previously only
-touched aide's own OS-level sandbox policy (`readable_extra`/
-`writable_extra`/`denied_extra`), leaving the same edit to be made by hand in
-Claude Code's `settings.local.json`/`settings.json`
-`permissions.additionalDirectories`. That manual step now happens
-automatically as part of the same command.
+### 🐧 Linux sandbox
 
-- The agent-side edit is best-effort: it never fails the aide-side
-  mutation, printing a warning instead if it can't be applied.
-- Both commands gained a `--no-agent-grant` flag to opt out and keep the
-  old aide-only behavior.
-- The new `provision.DirectoryGranter` interface is the extension point;
-  other agent drivers can implement it later to gain the same behavior.
-- `sandbox deny` correctly revokes nested grants (e.g. denying `/repo`
-  after allowing `/repo/sub`), not just exact path matches, without
-  touching unrelated parent grants.
+#### Agents can write their own config under the Linux sandbox
+
+On Linux, Landlock only grants paths an agent module lists as writable,
+and the shared module behind most agents listed none. Pi, OpenCode,
+Codex, Gemini, Aider, Amp and Goose ran with no write access to their
+own config directory. They now get it, matching macOS.
+
+- Symlinked config dirs resolve to their real targets before being
+  granted, as they already did for Claude and cursor-agent.
+- macOS sandbox profiles are unchanged.
 
 #### aide sync on Linux now provisions the Claude config dir the sandbox uses
 
@@ -73,6 +76,39 @@ sandboxed agent.
   present. Expect each one to be reinstalled once on the first sync
   after upgrading.
 
+#### aide statusline --install targets the sandboxed Claude config on Linux
+
+On Linux, a sandboxed Claude reads its config from
+`~/.config/aide/claude`, but `aide statusline claude --install` wrote
+the status line into `~/.claude/settings.json`, so it never appeared.
+It now writes to the same directory `aide sync` uses. Unsandboxed
+contexts and macOS still use `~/.claude`.
+
+#### Launch banner names the agent again under the Linux sandbox
+
+On Linux the startup banner showed `claude → /path/to/aide` because it
+was rendered after the sandbox rewrote the command into aide's own
+re-exec wrapper. It now shows the agent binary, as on macOS.
+
+### 🔌 Plugin, hook & MCP sync
+
+#### aide sync no longer requires the age key for routine no-op runs
+
+`aide sync` previously decrypted a context's age-encrypted secrets file on
+every run, even when nothing about the declared config or the secrets
+themselves had changed. That coupled routine sync runs (e.g. as part of a
+home-manager activation) to age-key availability and plaintext-secret
+handling for no reason.
+
+- Sync now skips decryption entirely when neither `config.yaml` nor the
+  encrypted secrets file changed since the last successful sync,
+  substituting the already-installed MCP env values instead of
+  re-resolving `{{ .secrets.X }}` templates.
+- A new `--force-secrets` flag bypasses this gate on demand, forcing a
+  real decrypt + re-resolve, the remedy if an installed secret value is
+  manually edited or corrupted, since that drift is no longer auto-healed
+  on every sync the way it used to be.
+
 #### URL-direct plugins no longer reinstall on every sync
 
 Agents that take plugins as bare install refs (OpenCode, and now Pi)
@@ -87,66 +123,6 @@ which the agent didn't recognise, leaving the plugin installed.
 - Plugins synced before this fix are matched on the next sync, which
   also records their ref for later removal.
 
-#### Launch banner names the agent again under the Linux sandbox
-
-On Linux the startup banner showed `claude → /path/to/aide` because it
-was rendered after the sandbox rewrote the command into aide's own
-re-exec wrapper. It now shows the agent binary, as on macOS.
-
-#### Agents can write their own config under the Linux sandbox
-
-On Linux, Landlock only grants paths an agent module lists as writable,
-and the shared module behind most agents listed none. Pi, OpenCode,
-Codex, Gemini, Aider, Amp and Goose ran with no write access to their
-own config directory. They now get it, matching macOS.
-
-- Symlinked config dirs resolve to their real targets before being
-  granted, as they already did for Claude and cursor-agent.
-- macOS sandbox profiles are unchanged.
-
-#### aide can now sandbox OpenCode
-
-`aide` gains a `provision.Provisioner` driver for OpenCode
-(`anomalyco/opencode`, opencode.ai), so `aide context create --agent
-opencode` and `aide launch` work the same way they do for the other
-supported agents.
-
-- MCP servers and plugins are synced by editing `opencode.jsonc`
-  directly rather than shelling out to OpenCode's own CLI, which can't
-  express non-npm plugin sources (git/local refs) and has no
-  list/remove counterpart at all.
-- Hooks are installed as generated JS plugin files dropped in
-  `~/.config/opencode/plugin/` (global scope only; this driver does not
-  write project-scope hooks), which OpenCode auto-loads.
-
-#### aide can now sandbox Pi
-
-`aide` gains a `provision.Provisioner` driver for Pi
-(`earendil-works/pi`, pi.dev), so `aide context create --agent pi` and
-`aide launch` work the same way they do for the other supported agents.
-
-- The sandbox grants `~/.pi`, or `$PI_CODING_AGENT_DIR` when set.
-  `PI_CODING_AGENT_DIR` is also Pi's profile env key.
-- MCP servers are synced into Pi's built-in `mcp.json`
-  (`~/.pi/agent/mcp.json`, or under `$PI_CODING_AGENT_DIR`), which
-  uses the same `mcpServers` shape as Gemini and Copilot.
-- Plugins (Pi "packages") are synced through Pi's own `pi install`,
-  `pi remove` and `pi list`, always at user scope.
-- Hooks are installed as generated TypeScript extensions in
-  `~/.pi/agent/extensions/` (global scope only), which Pi auto-loads.
-  `pre_tool` maps to Pi's `tool_call` event and `post_tool` to
-  `tool_result`.
-- Project-local Pi config still needs Pi's one-time project-trust
-  approval; `aide` does not grant it on your behalf.
-
-#### aide which reports the real sandbox tier
-
-`aide which` always printed `sandbox: disabled`, even for contexts
-that launch under Landlock or Seatbelt, because only the launch path
-evaluated the isolation tier. It now shows the same tier the launch
-banner does, e.g. `primary (Landlock ABI 4)`, and `--format json`
-includes `isolation_tier`.
-
 #### aide sync follows an exported agent config dir
 
 If you export `CLAUDE_CONFIG_DIR` (or another agent's config-dir
@@ -157,14 +133,14 @@ the default one. Sync and `aide statusline --install` now target the
 exported directory. A value set in the context's `env:` or `profile:`
 still takes precedence.
 
-#### aide plugin list labels URL-direct sources by type
+#### Codex, Copilot and Gemini profiles get their own MCP config and hooks
 
-`aide plugin list` showed `marketplace npm:@x/y` or
-`marketplace file:///...` for plugins declared with a URL-direct
-source, because every unrecognised source fell back to `marketplace`.
-The DECLARED column now names the source type: `npm`, `file`, `url`
-(http/https), `git`, `github` (including bare `owner/repo`) or
-`local`. Plugins installed from a marketplace still show `marketplace`.
+`aide sync` now writes Codex's `config.toml`, Copilot's
+`mcp-config.json` and Gemini's hook scripts under `CODEX_HOME`,
+`COPILOT_HOME` and `GEMINI_HOME` when the context's `profile:`, `env:`
+or your shell sets them. Before, these files always went to `~/.codex`,
+`~/.copilot` and `~/.gemini`, so an agent running under a profile never
+saw the MCP servers or hooks aide synced for it.
 
 #### Claude marketplaces keyed by a URL or local path now install their plugins
 
@@ -198,254 +174,70 @@ OpenCode and Pi. They are now installed:
 - As with Claude, both also fire when you switch to a new or resumed
   session.
 
-#### aide statusline --install targets the sandboxed Claude config on Linux
+#### aide plugin list labels URL-direct sources by type
 
-On Linux, a sandboxed Claude reads its config from
-`~/.config/aide/claude`, but `aide statusline claude --install` wrote
-the status line into `~/.claude/settings.json`, so it never appeared.
-It now writes to the same directory `aide sync` uses. Unsandboxed
-contexts and macOS still use `~/.claude`.
+`aide plugin list` showed `marketplace npm:@x/y` or
+`marketplace file:///...` for plugins declared with a URL-direct
+source, because every unrecognised source fell back to `marketplace`.
+The DECLARED column now names the source type: `npm`, `file`, `url`
+(http/https), `git`, `github` (including bare `owner/repo`) or
+`local`. Plugins installed from a marketplace still show `marketplace`.
 
-#### Codex, Copilot and Gemini profiles get their own MCP config and hooks
+### 🧰 CLI
 
-`aide sync` now writes Codex's `config.toml`, Copilot's
-`mcp-config.json` and Gemini's hook scripts under `CODEX_HOME`,
-`COPILOT_HOME` and `GEMINI_HOME` when the context's `profile:`, `env:`
-or your shell sets them. Before, these files always went to `~/.codex`,
-`~/.copilot` and `~/.gemini`, so an agent running under a profile never
-saw the MCP servers or hooks aide synced for it.
+#### aide commands support --format json output
 
-## v2.2.0 (2026-08-28)
+Read/query commands (`aide which`, `aide cap list`, `aide status`, etc.)
+now support `--format json` for machine-readable output, alongside the
+existing human-readable default.
 
-A statusline for your terminal, hooks that adopt themselves and travel
-across contexts via `{agent_dir}`, more resilient plugin/MCP sync, and a
-round of security patches to the toolchain and dependencies.
+- Every read/query command accepts `--format json` (default: `human`).
+- The `$AIDE_FORMAT` environment variable sets the default when
+  `--format` isn't passed explicitly (flag > env var > `human`).
+- `aide explain`'s existing `--format human|agent|json` flag is
+  unchanged.
+- Errors under `--format json` are emitted as a `{"error": "..."}` JSON
+  object instead of plain text.
 
-### 🪝 Hooks
+#### aide which reports the real sandbox tier
 
-#### Hook commands support {agent_dir} and ~/ path expansion
+`aide which` always printed `sandbox: disabled`, even for contexts
+that launch under Landlock or Seatbelt, because only the launch path
+evaluated the isolation tier. It now shows the same tier the launch
+banner does, e.g. `primary (Landlock ABI 4)`, and `--format json`
+includes `isolation_tier`.
 
-Hook commands in `config.yaml` can now reference `{agent_dir}` (the
-agent's per-context config directory, e.g. Claude's `CLAUDE_CONFIG_DIR`)
-and `~/` / `$HOME/` paths, resolved to absolute paths wherever hooks are
-compared: sync, adopt, and drift checks.
+#### aide sandbox allow/deny now sync Claude's own permission store
 
-- Drivers implement the new `AgentDirProvider` interface to advertise
-  their config directory; `ResolveAgentDir` returns it if implemented,
-  or `""` otherwise. The Claude driver returns `CLAUDE_CONFIG_DIR` when
-  set (profile contexts) or `~/.claude` otherwise.
-- `provision.ExpandPath` expands `{agent_dir}` and `~/`/`$HOME/` prefixes
-  in hook commands. `ResolveDesired`, `ReadHooks`, and `DriftStatus` all
-  apply it consistently, so desired, installed, and managed hook paths
-  compare correctly and `aide status` / `aide which` no longer report
-  false drift for `{agent_dir}` hooks.
-- `aide adopt` rewrites hook commands prefixed with the agent directory
-  to `{agent_dir}` tokens automatically, keeping adopted config portable
-  across installations.
-- `aide hook add`'s help text and interactive prompt list `{agent_dir}`
-  alongside `{agent}` as an available template variable.
+`aide sandbox allow <dir>` and `aide sandbox deny <dir>` previously only
+touched aide's own OS-level sandbox policy (`readable_extra`/
+`writable_extra`/`denied_extra`), leaving the same edit to be made by hand in
+Claude Code's `settings.local.json`/`settings.json`
+`permissions.additionalDirectories`. That manual step now happens
+automatically as part of the same command.
 
-#### aide adopt now promotes unmanaged hooks into config
-
-`aide adopt` previously handled plugins, MCP servers, and marketplaces but
-left hooks untouched. Hooks installed directly in Claude's settings (e.g.
-via `claude hooks add`) were visible in `aide sync` as unmanaged but had no
-path to adoption.
-
-`aide adopt` now discovers, prompts for, and records hooks. Adopted hooks
-are written to the top-level `hooks:` map in `config.yaml` (so they apply
-across contexts) and marked as managed in state so future syncs do not
-surface them as unmanaged.
-
-- Works for any agent that implements `provision.HookInstaller`
-- Hooks are deduplicated by `event+matcher+command` key before writing
-- `--yes` flag adopts all unmanaged hooks without prompting
-
-#### aide sync no longer perpetually reinstalls hooks with explicit matchers
-
-When `config.yaml` declares hooks with matchers such as `Grep|Glob`,
-`compact`, `startup`, or `'*'`, `aide sync` generated a fresh
-`+ install hook` operation on every run even after the hook was already
-installed in `settings.json`.
-
-Root cause: `WriteHooks` used `claudeMatcherMap[h.Matcher]` to translate
-aide-internal matcher names to Claude Code's native names. The map only
-contains `shell -> Bash`; every other matcher produced the zero-value `""`
-and was written to `settings.json` without a matcher field. On the next
-read, `ReadHooks` returned `matcher: ""`, causing a HookKey mismatch
-against the desired set (which kept the original matcher) on every sync.
-A related gap in `ComputePlan` meant the `'*'` wildcard read back from
-`settings.json` was never normalized to the same "match all" sentinel
-used for desired and managed hooks, so it also looked perpetually
-out of sync.
-
-Three fixes address this:
-
-- `WriteHooks` now uses `toNativeMatcher`, which passes through any
-  matcher not explicitly in `claudeMatcherMap` unchanged. Only aide-
-  internal shorthands (currently only `shell`) are translated.
-- `normalizeHookMatcher` converts the `'*'` wildcard to `''` consistently
-  across desired, managed, *and* installed hook comparisons, so the
-  "match all" sentinel always matches an entry with no matcher field.
-- `WriteHooks` bucket grouping now uses a `bucketRefs` map instead of
-  `buckets[len-1]`. When two hooks share the same event+matcher but
-  differ in command path (e.g. both contexts declare a `compact` hook),
-  the old code appended the second command to whichever bucket was last
-  in the array rather than the correct one, silently misrouting commands
-  into the wrong matcher bucket in settings.json.
-
-The removal path in `WriteHooks` also accepts the empty-matcher form of a
-hook when removing managed entries, so hooks written by older aide versions
-(without a matcher field) are cleaned up during the next sync.
-
-#### aide sync hook plan shows correct per-matcher labels
-
-Hook operations in the sync plan were missing the matcher segment in their
-display name. Hooks that share event and command but differ by matcher (e.g.
-`session_start startup` vs `session_start compact`) appeared identical in the
-output, giving the impression of duplicates.
-
-The `hookOpName` helper now includes the matcher when non-empty, producing
-`session_start:compact:~/.claude/hooks/cbm-session-reminder` style labels.
-
-### 🔌 Plugin & MCP sync
-
-#### Plugin sync is now self-healing for project-scope and stale-index errors
-
-Two error patterns previously blocked `aide sync` from cleaning up managed
-state, causing the same errors to reappear on every run:
-
-- A plugin managed at user scope but installed at project scope caused
-  `claude plugin uninstall` to fail with "enabled at project scope".
-  `UninstallPlugin` now tolerates this message; aide removes the entry
-  from managed state and stops tracking the plugin at user scope.
-- A marketplace plugin installed from a stale local index caused
-  `claude plugin install` to fail with "local copy may be out of date".
-  `InstallPlugin` now detects this, runs `claude plugin marketplace update
-  <marketplace>` once (ignoring update errors), and retries the install.
-  If the plugin name has no `@marketplace` suffix, the error is returned
-  as-is without a retry.
-
-#### aide sync no longer reinstalls managed MCP servers every run
-
-When a project-level `.mcp.json` declares an MCP server by the same name as
-one aide manages at user scope, `claude mcp get <name>` returns the
-project-scope entry. The User-scope filter then drops it, leaving the server
-absent from the installed map, so every sync generated a fresh install op
-even though aide had already installed the server.
-
-The planner now skips the install if the server is already in managed state,
-treating managed as the authoritative source when the get query is shadowed by
-a higher-precedence scope.
-
-#### aide adopt no longer corrupts config with name-only marketplace keys
-
-Adopting a marketplace whose key is a bare name (e.g. `rfctl-local` rather
-than `owner/repo` or a URL) wrote an invalid entry into `config.yaml`. On
-the next run, `ValidatePlugins` rejected the config with a shape error.
-
-The fix skips name-only keys during marketplace adoption and prints a note
-telling the user to add the entry manually with a proper repo path.
-
-### 📊 aide statusline
-
-#### aide statusline: live session state in your terminal
-
-A new `aide statusline <agent>` subcommand renders the current aide session
-state as a compact, emoji-based statusline string. Claude Code (and compatible
-agents) can invoke it via the `statusLine.command` setting to display sandbox,
-network, capability, trust, and context state directly in the terminal.
-
-- `aide statusline claude` renders the statusline whether stdin is a pipe
-  (Claude Code invocation path) or a TTY (human preview)
-- `aide statusline claude --install` patches the target context's
-  `settings.json` to set `statusLine.command`; generates a wrapper script if
-  another command is already configured
-- `aide statusline claude --install --context <name>` installs into a specific
-  aide context (profile-based `CLAUDE_CONFIG_DIR` is resolved automatically)
-- `aide statusline claude --remove` clears the `statusLine` key from settings;
-  also accepts `--context <name>` to target a non-default context
-- Render order, per-module icons, and disabled state are all configurable via
-  `statusline:` in `aide.yaml` or `.aide.yaml`
-- `auto_approve` module is always prepended (before the order list) when
-  `AIDE_AUTO_APPROVE=1` is set
-- Modules with no content (`caps`, `context`) are silently hidden
-- `trust` module only appears when `AIDE_TRUST=untrusted`
-
-#### aide statusline: unmanaged state, module filtering, and agent auto-detection
-
-Follow-up to the initial `aide statusline` release above, closing gaps found
-during whole-branch review.
-
-- `sandbox`/`network` modules now distinguish "aide didn't launch this
-  session at all" from "aide launched it with the sandbox/network explicitly
-  off": a new `unmanaged:` value (default `"💀"` for `sandbox`, `"🌫️"` for
-  `network`) renders when the corresponding `AIDE_SANDBOX`/
-  `AIDE_NETWORK_MODE` env var is absent entirely, rather than falling
-  through to the `off`/`unrestricted` state.
-- `aide statusline` (bare, no agent) now auto-detects the agent: `AIDE_AGENT`
-  when set, otherwise the shape of piped stdin JSON identifies Claude Code,
-  otherwise (TTY only) the CWD-matched aide context's configured agent,
-  otherwise `claude`.
-- New repeatable `--module <name>` flag renders only the requested modules
-  (e.g. `aide statusline --module sandbox --module network`), for composing
-  aide's output into a third-party statusline widget. An unrecognized module
-  name is now a hard error listing the valid names, instead of silently
-  producing empty output.
-- An unsupported positional agent (e.g. `aide statusline gemini`, or
-  `--agent gemini`) now errors instead of silently rendering claude's
-  statusline; `claude` remains the only agent with rendering support.
-- TTY mode now renders a real preview instead of printing usage help, and
-  that preview genuinely simulates what a real `aide launch` would set
-  (sandbox, network, capabilities, trust, auto-approve) for the CWD-matched
-  context, instead of reading the real process env (which is empty outside
-  an actual launch). `--context <name>` does the same for an explicitly
-  named context, in both TTY and piped mode, and errors if the name doesn't
-  exist.
-- New `ccstatusline` capability grants read access to
-  `~/.config/ccstatusline/settings.json`, for `aide statusline` invoked from
-  a ccstatusline Custom Command widget. It's the one built-in capability
-  that auto-enables itself: when its settings file exists on disk at
-  context-resolution time, it's added to the effective capability set
-  automatically, both at actual agent launch and in `aide cap
-  list`/`aide cap audit` output, so what those commands report always
-  matches what a real launch grants.
+- The agent-side edit is best-effort: it never fails the aide-side
+  mutation, printing a warning instead if it can't be applied.
+- Both commands gained a `--no-agent-grant` flag to opt out and keep the
+  old aide-only behavior.
+- The new `provision.DirectoryGranter` interface is the extension point;
+  other agent drivers can implement it later to gain the same behavior.
+- `sandbox deny` correctly revokes nested grants (e.g. denying `/repo`
+  after allowing `/repo/sub`), not just exact path matches, without
+  touching unrelated parent grants.
 
 ### 🔒 Security
 
-#### Clipboard access is now its own opt-in capability (fixes copy-out regression)
+#### Go 1.26.9 and patched dependencies resolve twelve vulnerabilities
 
-The mach-lookup allow added to fix Claude Code's Ctrl+V image paste only
-granted `com.apple.pasteboard.1`, one of three Mach services `pbcopy`
-needs. Without the other two (`com.apple.lsd.mapdb` and
-`com.apple.lsd.modifydb`, both Launch Services type lookups needed when
-writing a pasteboard flavor), `pbcopy` exited 0 but silently failed to
-write to the real host pasteboard, breaking any clipboard fallback logic
-that trusted that exit code. Copying text out of the sandbox stopped
-working while paste (a pure read) kept working.
+govulncheck reported twelve vulnerabilities reachable from aide's code
+in the Go standard library and in dependencies, failing the scheduled
+security check. Release binaries and the Nix flake now build with
+patched versions.
 
-Clipboard access is now the `clipboard` capability
-(`internal/capability/builtin.go`), grants all three required Mach
-services, and is available to every agent, not just Claude.
-
-**Breaking change:** clipboard access is opt-in. If you relied on Claude
-Code image paste working automatically, add `clipboard` to your context's
-`capabilities:` list or pass `--with clipboard`.
-
-#### Bump Go toolchain to 1.26.6, resolving seven stdlib CVEs
-
-CI's govulncheck step was failing because the pinned toolchain (1.26.5)
-shipped seven now-patched Go standard library vulnerabilities reachable
-from aide's code, spanning `net/url`, `html/template`, `crypto/tls`,
-`net/http`, `encoding/xml`, and `encoding/asn1`.
-
-- `go.mod`'s `toolchain` directive is bumped to `go1.26.6`.
-- The Nix flake's `nixpkgs` pin is updated so the dev shell also resolves
-  a Go 1.26.6+ toolchain directly, instead of relying on
-  `GOTOOLCHAIN=auto` to silently fetch it over the network.
-
-#### Bump github.com/go-git/go-git/v5 to v5.19.2
-
-Picks up upstream's `[SECURITY]` fixes: a path-traversal guard for git
-reference names in dotgit storage, plus `golang.org/x/crypto`, `x/net`,
-and `x/text` version bumps pulled in transitively.
+- Go toolchain 1.26.6 → 1.26.9 (`crypto/tls`, `net/http`,
+  `html/template`, `net/textproto`). The Nix flake pins Go 1.26.9
+  until nixpkgs ships it.
+- `golang.org/x/net` v0.56.0 → v0.60.0,
+  `go.opentelemetry.io/otel/sdk` v1.44.0 → v1.45.0 and
+  `google.golang.org/grpc` v1.83.1 → v1.83.2.

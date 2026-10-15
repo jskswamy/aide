@@ -157,6 +157,15 @@ the default one. Sync and `aide statusline --install` now target the
 exported directory. A value set in the context's `env:` or `profile:`
 still takes precedence.
 
+#### aide plugin list labels URL-direct sources by type
+
+`aide plugin list` showed `marketplace npm:@x/y` or
+`marketplace file:///...` for plugins declared with a URL-direct
+source, because every unrecognised source fell back to `marketplace`.
+The DECLARED column now names the source type: `npm`, `file`, `url`
+(http/https), `git`, `github` (including bare `owner/repo`) or
+`local`. Plugins installed from a marketplace still show `marketplace`.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

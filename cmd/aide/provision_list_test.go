@@ -188,9 +188,14 @@ func writeStateFile(t *testing.T, homeDir string, plugins, mcps []string) {
 func TestPluginList_DeclaredInstalledManaged(t *testing.T) {
 	fakeProvReset(t)
 	home := setupProvisionConfig(t,
-		[]string{"linear", "github"},
+		[]string{"linear", "github", "npmpkg", "filepkg"},
 		nil,
-		map[string]string{"linear": "linear@1.2", "github": "github"},
+		map[string]string{
+			"linear":  "linear@1.2",
+			"github":  "github",
+			"npmpkg":  "npm:@scope/pkg",
+			"filepkg": "file:///opt/pkg",
+		},
 		nil,
 	)
 	theFakeProv.InstalledPluginList = []provision.Plugin{
@@ -211,7 +216,9 @@ func TestPluginList_DeclaredInstalledManaged(t *testing.T) {
 		"Context: work",
 		"agent: fakeagent",
 		"linear",
-		"marketplace linear@1.2",
+		"github linear@1.2",
+		"npm npm:@scope/pkg",
+		"file file:///opt/pkg",
 		"github",
 		"experimental",
 		"unmanaged",

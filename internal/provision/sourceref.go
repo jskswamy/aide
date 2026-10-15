@@ -3,10 +3,11 @@ package provision
 import "strings"
 
 // SourceRef is the canonical parsed form of a marketplace / plugin
-// source ref. Aide's internal vocabulary covers five transport
-// prefixes — `github:`, `git:`, `https://`, `http://`, and a leading
-// `/` for local paths — plus the bare `owner/repo` shape that
-// defaults to GitHub.
+// source ref. Aide's internal vocabulary covers seven transport
+// prefixes — `github:`, `git:`, `https://`, `http://`, `npm:`,
+// `file://`, and a leading `/` for local paths — plus the bare
+// `owner/repo` shape that defaults to GitHub. `npm:` and `file://`
+// only appear as URL-direct plugin sources (OpenCode, Pi).
 //
 // This file is the single place new transports get added. Callers
 // (`ResolveDesired` and per-agent drivers) must route through
@@ -14,7 +15,8 @@ import "strings"
 // codebase.
 type SourceRef struct {
 	// Transport is the scheme: "github", "git", "https", "http",
-	// "local", or "" for bare repo refs (which default to github).
+	// "npm", "file", "local", or "" for bare repo refs (which default
+	// to github).
 	Transport string
 	// Repo is the part after the transport — e.g. "owner/repo",
 	// "/abs/path", or "host/path".
@@ -36,6 +38,12 @@ func ParseSourceRef(s string) SourceRef {
 	if rest, ok := strings.CutPrefix(s, "http://"); ok {
 		return SourceRef{Transport: "http", Repo: rest}
 	}
+	if rest, ok := strings.CutPrefix(s, "npm:"); ok {
+		return SourceRef{Transport: "npm", Repo: rest}
+	}
+	if rest, ok := strings.CutPrefix(s, "file://"); ok {
+		return SourceRef{Transport: "file", Repo: rest}
+	}
 	if strings.HasPrefix(s, "/") {
 		return SourceRef{Transport: "local", Repo: s}
 	}
@@ -56,6 +64,10 @@ func (r SourceRef) Aide() string {
 		return "https://" + r.Repo
 	case "http":
 		return "http://" + r.Repo
+	case "npm":
+		return "npm:" + r.Repo
+	case "file":
+		return "file://" + r.Repo
 	case "local":
 		return r.Repo
 	}
@@ -75,24 +87,27 @@ func (r SourceRef) Bare() string {
 		return "http://" + r.Repo
 	case "git":
 		return "git:" + r.Repo
+	case "npm":
+		return "npm:" + r.Repo
+	case "file":
+		return "file://" + r.Repo
 	case "local":
 		return r.Repo
 	}
 	return r.Repo
 }
 
-// Classify returns the Plugin.Source label for the URLDirect shape.
-// Compatible with the legacy classifySource semantics: github/bare
-// and unknown both map to "marketplace".
+// Classify returns the Plugin.Source label for the URLDirect shape:
+// "github" (including bare owner/repo), "git", "url" (http/https),
+// "npm", "file" or "local". URL-direct sources never go through a
+// marketplace, so none map to "marketplace".
 func (r SourceRef) Classify() string {
 	switch r.Transport {
-	case "github":
-		return "marketplace"
-	case "git":
-		return "git"
-	case "local":
-		return "local"
+	case "", "github":
+		return "github"
+	case "https", "http":
+		return "url"
 	default:
-		return "marketplace"
+		return r.Transport
 	}
 }

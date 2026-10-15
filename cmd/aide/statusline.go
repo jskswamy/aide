@@ -79,16 +79,14 @@ func runStatuslineInstallRemove(cmd *cobra.Command, agent string, install, _ boo
 		return fmt.Errorf("home dir: %w", err)
 	}
 	cfg, name, cfgCtx, err := resolveContextForMutation(contextName)
-	_ = cfg
 	if err != nil {
 		return err
 	}
 	cwd, _ := os.Getwd()
-	pCtx, err := provision.ResolveContext(name, cfgCtx, homeDir, cwd, resolveContextEnv(cfgCtx, homeDir))
+	pCtx, err := resolveProvisionContext(cfg, name, cfgCtx, homeDir, cwd)
 	if err != nil {
 		return err
 	}
-	inheritProfileEnv(&pCtx)
 	if install {
 		return installStatusline(cmd, pCtx, homeDir, agent)
 	}

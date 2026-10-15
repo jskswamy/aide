@@ -198,6 +198,14 @@ OpenCode and Pi. They are now installed:
 - As with Claude, both also fire when you switch to a new or resumed
   session.
 
+#### aide statusline --install targets the sandboxed Claude config on Linux
+
+On Linux, a sandboxed Claude reads its config from
+`~/.config/aide/claude`, but `aide statusline claude --install` wrote
+the status line into `~/.claude/settings.json`, so it never appeared.
+It now writes to the same directory `aide sync` uses. Unsandboxed
+contexts and macOS still use `~/.claude`.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

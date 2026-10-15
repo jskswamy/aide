@@ -160,3 +160,47 @@ func TestPiWriteHooksAppliesMatcher(t *testing.T) {
 		t.Errorf("want exactly one extension guarded on toolName bash, got %d", guarded)
 	}
 }
+
+// Pi's session_start and session_shutdown carry a reason (types.d.ts in
+// pi 1.1.0); "reload" is an extension reload, not a session boundary.
+func TestPiSessionEventsSkipReload(t *testing.T) {
+	home := t.TempDir()
+	ctx := provision.Context{HomeDir: home}
+	d := pidriver.New(&fakeRunner{})
+
+	hooks := []provision.Hook{
+		{Event: "session_start", Command: "notify start"},
+		{Event: "session_end", Command: "notify end"},
+	}
+	if err := d.WriteHooks(ctx, nil, hooks); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.ReadHooks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := map[string]string{}
+	for _, h := range got {
+		events[h.Command] = h.Event
+	}
+	if events["notify start"] != "session_start" || events["notify end"] != "session_end" {
+		t.Fatalf("ReadHooks = %+v, want both session hooks round-tripped", got)
+	}
+
+	dir := filepath.Join(home, ".pi", "agent", "extensions")
+	entries, _ := os.ReadDir(dir)
+	var scripts strings.Builder
+	for _, e := range entries {
+		data, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		scripts.Write(data)
+	}
+	for _, want := range []string{
+		`pi.on("session_start", async (event) => {`,
+		`pi.on("session_shutdown", async (event) => {`,
+		`if (event.reason === "reload") return;`,
+	} {
+		if !strings.Contains(scripts.String(), want) {
+			t.Errorf("generated extensions missing %q:\n%s", want, scripts.String())
+		}
+	}
+}

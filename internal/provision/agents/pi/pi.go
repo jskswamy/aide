@@ -62,10 +62,7 @@ func (d *Driver) AgentDir(ctx provision.Context) string {
 }
 
 func agentDir(ctx provision.Context) string {
-	if dir, ok := ctx.Env["PI_CODING_AGENT_DIR"]; ok && dir != "" {
-		return dir
-	}
-	return filepath.Join(ctx.HomeDir, ".pi", "agent")
+	return provision.EnvOrHomePath(ctx, "PI_CODING_AGENT_DIR", ".pi", "agent")
 }
 
 // MCPConfigPath returns <AgentDir>/mcp.json, the user-level file Pi's

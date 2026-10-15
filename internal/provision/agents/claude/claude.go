@@ -14,7 +14,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/provision"
@@ -247,10 +246,7 @@ func (d *Driver) RemoveMarketplace(pctx provision.Context, name string) error {
 // For profile-based contexts, CLAUDE_CONFIG_DIR (set by InjectProfileEnv)
 // is used. For the default context, falls back to ~/.claude.
 func (d *Driver) AgentDir(ctx provision.Context) string {
-	if dir, ok := ctx.Env["CLAUDE_CONFIG_DIR"]; ok && dir != "" {
-		return dir
-	}
-	return filepath.Join(ctx.HomeDir, ".claude")
+	return provision.EnvOrHomePath(ctx, "CLAUDE_CONFIG_DIR", ".claude")
 }
 
 // normalizeMarketplaceRef converts aide's internal source representation

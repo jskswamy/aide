@@ -180,16 +180,5 @@ func (d *Driver) UninstallPlugin(ctx provision.Context, name string) error {
 	return writeConfig(path, doc)
 }
 
-// InstalledMarketplaces is inherited from DriverBase: OpenCode has no
-// marketplace concept, only bare npm/git/local-path refs.
-
-// AddMarketplace returns an error: OpenCode plugins are declared as
-// URL-direct string entries, not via marketplaces.
-func (*Driver) AddMarketplace(_ provision.Context, _ provision.Marketplace) error {
-	return fmt.Errorf("opencode does not have marketplaces; declare plugins inline with string values")
-}
-
-// RemoveMarketplace is a no-op for rollback safety.
-func (*Driver) RemoveMarketplace(_ provision.Context, _ string) error {
-	return nil
-}
+// The marketplace methods are inherited from DriverBase: OpenCode has
+// no marketplace concept, only bare npm/git/local-path refs.

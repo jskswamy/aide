@@ -32,6 +32,7 @@ func New(r provision.Runner) *Driver {
 			SourceShapes:    []provision.SourceShape{provision.ShapeURLDirect},
 			SupportsHooks:   true,
 			ProfileEnvKey:   "GEMINI_HOME",
+			PluginNoun:      "extensions",
 		}},
 		runner: r,
 	}
@@ -96,19 +97,5 @@ func (d *Driver) UninstallPlugin(pctx provision.Context, name string) error {
 		provision.DefaultTolerateStderr...)
 }
 
-// InstalledMarketplaces is a no-op: Gemini does not have a marketplace
-// concept. Returns nil, nil.
-func (*Driver) InstalledMarketplaces(_ provision.Context) ([]provision.Marketplace, error) {
-	return nil, nil
-}
-
-// AddMarketplace returns an error: Gemini extensions are declared as
-// URL-direct string entries, not via marketplaces.
-func (*Driver) AddMarketplace(_ provision.Context, _ provision.Marketplace) error {
-	return fmt.Errorf("gemini does not have marketplaces; declare extensions inline with string values")
-}
-
-// RemoveMarketplace is a no-op for rollback safety.
-func (*Driver) RemoveMarketplace(_ provision.Context, _ string) error {
-	return nil
-}
+// The marketplace methods are inherited from DriverBase: Gemini has no
+// marketplace concept, only URL-direct extension sources.

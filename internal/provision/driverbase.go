@@ -1,6 +1,9 @@
 package provision
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // Capabilities is the static capability/identity block every
 // Provisioner driver carries. Drivers populate it once in their
@@ -27,6 +30,9 @@ type Capabilities struct {
 	// URL-direct plugins by install ref (OpenCode, Pi) rather than by a
 	// name matching the config key (Gemini). See InstallRefAddresser.
 	PluginsByInstallRef bool
+	// PluginNoun is what the agent calls its plugins ("extensions",
+	// "packages"), used in user-facing errors. Empty means "plugins".
+	PluginNoun string
 }
 
 // DriverBase is embeddable in per-agent Driver structs. It carries
@@ -85,14 +91,35 @@ func (d DriverBase) InstalledMarketplaces(_ Context) ([]Marketplace, error) {
 	return nil, nil
 }
 
-// AddMarketplace is not supported for stub-only drivers.
+// AddMarketplace is not supported for stub-only drivers. Agents that
+// only take URL-direct sources have no marketplace concept, so for them
+// it is a config error pointing at the inline form.
 func (d DriverBase) AddMarketplace(_ Context, _ Marketplace) error {
+	if d.urlDirectOnly() {
+		noun := d.Caps.PluginNoun
+		if noun == "" {
+			noun = "plugins"
+		}
+		return fmt.Errorf("%s does not have marketplaces; declare %s inline with string values", d.Caps.AgentName, noun)
+	}
 	return d.unsupported("marketplaces")
 }
 
-// RemoveMarketplace is not supported for stub-only drivers.
+// RemoveMarketplace is not supported for stub-only drivers. For agents
+// that only take URL-direct sources it is a no-op, since there is never
+// a marketplace to remove and install rollback must not fail on it.
 func (d DriverBase) RemoveMarketplace(_ Context, _ string) error {
+	if d.urlDirectOnly() {
+		return nil
+	}
 	return d.unsupported("marketplaces")
+}
+
+// urlDirectOnly reports whether the driver accepts URL-direct plugin
+// sources and no marketplace ones.
+func (d DriverBase) urlDirectOnly() bool {
+	return slices.Contains(d.Caps.SourceShapes, ShapeURLDirect) &&
+		!slices.Contains(d.Caps.SourceShapes, ShapeMarketplace)
 }
 
 // unsupported returns an error for unsupported features, using the driver's agent name.

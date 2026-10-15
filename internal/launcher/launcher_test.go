@@ -704,6 +704,29 @@ func TestYoloArgs_Codex(t *testing.T) {
 	}
 }
 
+func TestYoloArgs_OpenCode(t *testing.T) {
+	args, err := YoloArgs("opencode")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(args) != 1 || args[0] != "--auto" {
+		t.Errorf("expected [--auto], got %v", args)
+	}
+}
+
+// Pi has no permission prompts, so yolo is already its only mode: it must
+// launch without error and without extra args (not --approve, which trusts
+// project-local files and is a different decision).
+func TestYoloArgs_PiNeedsNoFlag(t *testing.T) {
+	args, err := YoloArgs("pi")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected no args, got %v", args)
+	}
+}
+
 func TestYoloArgs_AbsolutePath(t *testing.T) {
 	// Agent specified as full path should still match by basename.
 	args, err := YoloArgs("/usr/local/bin/claude")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -60,6 +61,16 @@ func writeStatuslineConfig(t *testing.T, dir, contextName, agent, profile string
 	}
 }
 
+// sandboxedClaudeDir is the config dir a sandboxed Claude reads for a
+// context with no profile: the Linux sandbox redirects it to
+// ~/.config/aide/claude, macOS keeps Claude's default ~/.claude.
+func sandboxedClaudeDir(home string) string {
+	if runtime.GOOS == "linux" {
+		return filepath.Join(home, ".config", "aide", "claude")
+	}
+	return filepath.Join(home, ".claude")
+}
+
 // readSettingsJSON reads settings.json at path and returns the parsed map.
 func readSettingsJSON(t *testing.T, path string) map[string]any {
 	t.Helper()
@@ -74,7 +85,7 @@ func readSettingsJSON(t *testing.T, path string) map[string]any {
 	return m
 }
 
-func TestStatuslineInstall_DefaultContext_WritesToDefaultClaudeDir(t *testing.T) {
+func TestStatuslineInstall_DefaultContext_WritesToSandboxedClaudeDir(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeStatuslineConfig(t, dir, "work", "claude", "")
 
@@ -86,11 +97,28 @@ func TestStatuslineInstall_DefaultContext_WritesToDefaultClaudeDir(t *testing.T)
 		t.Errorf("expected Installed in output, got: %s", out)
 	}
 
-	// Default Claude dir: ~/.claude/settings.json
-	settings := readSettingsJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	// The dir the sandboxed Claude reads, where sync also writes hooks.
+	settings := readSettingsJSON(t, filepath.Join(sandboxedClaudeDir(dir), "settings.json"))
 	sl, _ := settings["statusLine"].(map[string]any)
 	if sl["command"] != "aide statusline claude" {
 		t.Errorf("statusLine.command = %v, want aide statusline claude", sl["command"])
+	}
+}
+
+func TestStatuslineInstall_UnsandboxedContext_WritesToDefaultClaudeDir(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	cfg := "contexts:\n  work:\n    agent: claude\n    sandbox: false\n    match:\n      - path: /never/matches\n"
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, err := runStatuslineInstall(t, "--context", "work"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	settings := readSettingsJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	if _, ok := settings["statusLine"]; !ok {
+		t.Errorf("statusLine not written to ~/.claude for an unsandboxed context")
 	}
 }
 
@@ -663,7 +691,7 @@ func TestRunStatusline_UnknownPositionalAgent_InstallHonorsPositional(t *testing
 	if err != nil {
 		t.Fatalf("expected positional agent to be honored for --install, got error: %v\n%s", err, buf.String())
 	}
-	settings := readSettingsJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	settings := readSettingsJSON(t, filepath.Join(sandboxedClaudeDir(dir), "settings.json"))
 	sl, _ := settings["statusLine"].(map[string]any)
 	if sl["command"] != "aide statusline gemini" {
 		t.Errorf("statusLine.command = %v, want %q", sl["command"], "aide statusline gemini")

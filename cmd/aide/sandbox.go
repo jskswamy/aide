@@ -67,7 +67,9 @@ func sandboxNetworkCmd() *cobra.Command {
 					ensureProjectSandbox(po).Network = &config.NetworkPolicy{Mode: mode}
 					return nil
 				},
-				successGlobal:  func(ctxName string) string { return fmt.Sprintf("Set network mode to %q for context %q (global)", mode, ctxName) },
+				successGlobal: func(ctxName string) string {
+					return fmt.Sprintf("Set network mode to %q for context %q (global)", mode, ctxName)
+				},
 				successProject: func(poPath string) string { return fmt.Sprintf("Set network mode to %q in project (%s)", mode, poPath) },
 			})
 		},
@@ -699,8 +701,12 @@ func sandboxDenyCmd() *cobra.Command {
 					sp.DeniedExtra = append(sp.DeniedExtra, path)
 					return nil
 				},
-				successGlobal:  func(ctxName string) string { return fmt.Sprintf("Added %s to denied_extra for context %q (global)", path, ctxName) },
-				successProject: func(poPath string) string { return fmt.Sprintf("Added %s to denied_extra in project (%s)", path, poPath) },
+				successGlobal: func(ctxName string) string {
+					return fmt.Sprintf("Added %s to denied_extra for context %q (global)", path, ctxName)
+				},
+				successProject: func(poPath string) string {
+					return fmt.Sprintf("Added %s to denied_extra in project (%s)", path, poPath)
+				},
 			}); err != nil {
 				return err
 			}
@@ -748,8 +754,12 @@ func sandboxAllowCmd() *cobra.Command {
 					apply(ensureProjectSandbox(po))
 					return nil
 				},
-				successGlobal:  func(ctxName string) string { return fmt.Sprintf("Added %s to %s for context %q (global)", path, listName, ctxName) },
-				successProject: func(poPath string) string { return fmt.Sprintf("Added %s to %s in project (%s)", path, listName, poPath) },
+				successGlobal: func(ctxName string) string {
+					return fmt.Sprintf("Added %s to %s for context %q (global)", path, listName, ctxName)
+				},
+				successProject: func(poPath string) string {
+					return fmt.Sprintf("Added %s to %s in project (%s)", path, listName, poPath)
+				},
 			}); err != nil {
 				return err
 			}
@@ -824,8 +834,12 @@ func sandboxPortsCmd() *cobra.Command {
 					sp.Network.AllowPorts = ports
 					return nil
 				},
-				successGlobal:  func(ctxName string) string { return fmt.Sprintf("Set allowed ports to %v for context %q (global)", ports, ctxName) },
-				successProject: func(poPath string) string { return fmt.Sprintf("Set allowed ports to %v in project (%s)", ports, poPath) },
+				successGlobal: func(ctxName string) string {
+					return fmt.Sprintf("Set allowed ports to %v for context %q (global)", ports, ctxName)
+				},
+				successProject: func(poPath string) string {
+					return fmt.Sprintf("Set allowed ports to %v in project (%s)", ports, poPath)
+				},
 			})
 		},
 	}

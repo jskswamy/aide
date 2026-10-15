@@ -185,9 +185,9 @@ func runSeccompFDExecHelper() {
 
 	args := []string{os.Args[0], "-test.run=TestSeccompFD_SurvivesSyscallExec"}
 	envv := withHelperEnv(map[string]string{
-		"AIDE_TEST_POLICY_FD_MODE":  "seccomp_reader",
-		"AIDE_TEST_POLICY_FD_NUM":   strconv.Itoa(fdNum),
-		"AIDE_TEST_SECCOMP_EXPECT":  hex.EncodeToString(expectedBytes),
+		"AIDE_TEST_POLICY_FD_MODE": "seccomp_reader",
+		"AIDE_TEST_POLICY_FD_NUM":  strconv.Itoa(fdNum),
+		"AIDE_TEST_SECCOMP_EXPECT": hex.EncodeToString(expectedBytes),
 	})
 	if err := syscall.Exec(os.Args[0], args, envv); err != nil {
 		fmt.Fprintf(os.Stderr, "syscall.Exec: %v\n", err)
@@ -289,7 +289,7 @@ func runPolicyFDExecAfterGCHelper() {
 		"AIDE_TEST_POLICY_FD_MODE": "reader",
 		"AIDE_TEST_POLICY_FD_NUM":  strconv.Itoa(policyFDNum),
 	})
-	cmd = nil //nolint:wastedassign // explicit unreachability so GC can collect
+	cmd = nil     //nolint:wastedassign // explicit unreachability so GC can collect
 	memFile = nil //nolint:wastedassign // explicit unreachability so GC can collect
 
 	// Force the finalizer to run if the *os.File reference is the only thing

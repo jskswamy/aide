@@ -58,7 +58,7 @@ func TestSelect_StateA_FirstTime_PromptsAndGrants(t *testing.T) {
 	p := &fakePrompter{returnedVariants: []string{"uv"}}
 
 	got, prov, err := SelectVariants(SelectInput{
-		Capability: c,
+		Capability:  c,
 		ProjectRoot: dir,
 		Consent:     cstore,
 		Prompter:    p,

@@ -5,11 +5,11 @@ package explain
 
 // ConfigState is a redacted, read-only snapshot of the user's actual config.
 type ConfigState struct {
-	Loaded          bool           `json:"loaded"`
-	DefaultContext  string         `json:"default_context,omitempty"`
-	Contexts        []ContextState `json:"contexts,omitempty"`
-	TopLevelMCP     []MCPState     `json:"top_level_mcp,omitempty"`
-	TopLevelHooks   []string       `json:"top_level_hooks,omitempty"`
+	Loaded         bool           `json:"loaded"`
+	DefaultContext string         `json:"default_context,omitempty"`
+	Contexts       []ContextState `json:"contexts,omitempty"`
+	TopLevelMCP    []MCPState     `json:"top_level_mcp,omitempty"`
+	TopLevelHooks  []string       `json:"top_level_hooks,omitempty"`
 }
 
 // ContextState describes one context with secret values redacted.

@@ -73,8 +73,8 @@ func TestContextAgentForCWD_NoConfigReturnsEmpty(t *testing.T) {
 func unsetAideAgent(t *testing.T) {
 	t.Helper()
 	if orig, ok := os.LookupEnv("AIDE_AGENT"); ok {
-		os.Unsetenv("AIDE_AGENT")
-		t.Cleanup(func() { os.Setenv("AIDE_AGENT", orig) })
+		_ = os.Unsetenv("AIDE_AGENT")
+		t.Cleanup(func() { _ = os.Setenv("AIDE_AGENT", orig) })
 	}
 }
 

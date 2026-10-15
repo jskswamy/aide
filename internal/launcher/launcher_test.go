@@ -1503,7 +1503,7 @@ func TestApplyTrustGate_FailClosedOnReadError(t *testing.T) {
 
 	// Create a config with a ProjectOverride pointing to a non-existent file
 	cfg := &config.Config{
-		Agent: "/usr/local/bin/my-agent",
+		Agent:             "/usr/local/bin/my-agent",
 		ProjectConfigPath: "/nonexistent/path/.aide.yaml",
 		ProjectOverride: &config.ProjectOverride{
 			Agent: "claude",

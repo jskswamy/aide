@@ -32,24 +32,24 @@ func init() {
 				{Contains: ContainsSpec{File: "package.json", Pattern: "@google-cloud"}},
 			},
 			Writable: []string{"~/.config/gcloud"},
-			EnvAllow:    []string{"CLOUDSDK_CONFIG", "GOOGLE_APPLICATION_CREDENTIALS", "GCLOUD_PROJECT"},
+			EnvAllow: []string{"CLOUDSDK_CONFIG", "GOOGLE_APPLICATION_CREDENTIALS", "GCLOUD_PROJECT"},
 		},
 		"azure": {
 			Name:        "azure",
 			Description: "Azure CLI and credentials",
-			Writable: []string{"~/.azure"},
+			Writable:    []string{"~/.azure"},
 			EnvAllow:    []string{"AZURE_CONFIG_DIR", "AZURE_SUBSCRIPTION_ID"},
 		},
 		"digitalocean": {
 			Name:        "digitalocean",
 			Description: "DigitalOcean CLI credentials",
-			Writable: []string{"~/.config/doctl"},
+			Writable:    []string{"~/.config/doctl"},
 			EnvAllow:    []string{"DIGITALOCEAN_ACCESS_TOKEN"},
 		},
 		"oci": {
 			Name:        "oci",
 			Description: "Oracle Cloud CLI credentials",
-			Writable: []string{"~/.oci"},
+			Writable:    []string{"~/.oci"},
 			EnvAllow:    []string{"OCI_CLI_CONFIG_FILE"},
 		},
 
@@ -63,7 +63,7 @@ func init() {
 				{File: "docker-compose.yml"},
 			},
 			Writable: []string{"~/.docker"},
-			EnvAllow:    []string{"DOCKER_CONFIG", "DOCKER_HOST"},
+			EnvAllow: []string{"DOCKER_CONFIG", "DOCKER_HOST"},
 		},
 
 		// Orchestration
@@ -80,7 +80,7 @@ func init() {
 				{GlobContains: GlobContainsSpec{Glob: "*/*.yml", Pattern: "apiVersion:"}},
 			},
 			Writable: []string{"~/.kube"},
-			EnvAllow:    []string{"KUBECONFIG"},
+			EnvAllow: []string{"KUBECONFIG"},
 		},
 		"helm": {
 			Name:        "helm",
@@ -90,7 +90,7 @@ func init() {
 				{File: "helmfile.yaml"},
 			},
 			Writable: []string{"~/.kube", "~/.config/helm", "~/.cache/helm"},
-			EnvAllow:    []string{"HELM_HOME", "KUBECONFIG"},
+			EnvAllow: []string{"HELM_HOME", "KUBECONFIG"},
 		},
 
 		// Infrastructure as Code
@@ -102,7 +102,7 @@ func init() {
 				{GlobPath: "*/*.tf"},
 			},
 			Writable: []string{"~/.terraform.d"},
-			EnvAllow:    []string{"TF_CLI_CONFIG_FILE"},
+			EnvAllow: []string{"TF_CLI_CONFIG_FILE"},
 		},
 		"vault": {
 			Name:        "vault",
@@ -138,8 +138,8 @@ func init() {
 				{File: "go.mod"},
 				{File: "go.sum"},
 			},
-			Writable:    []string{"~/go"},
-			EnvAllow:    []string{"GOPATH", "GOROOT", "GOBIN"},
+			Writable: []string{"~/go"},
+			EnvAllow: []string{"GOPATH", "GOROOT", "GOBIN"},
 		},
 		"rust": {
 			Name:        "rust",
@@ -213,8 +213,8 @@ func init() {
 				{File: "Gemfile"},
 				{GlobPath: "*.gemspec"},
 			},
-			Writable:    []string{"~/.rbenv"},
-			EnvAllow:    []string{"RBENV_ROOT", "GEM_HOME"},
+			Writable: []string{"~/.rbenv"},
+			EnvAllow: []string{"RBENV_ROOT", "GEM_HOME"},
 		},
 		"java": {
 			Name:        "java",
@@ -224,8 +224,8 @@ func init() {
 				{File: "build.gradle"},
 				{File: "build.gradle.kts"},
 			},
-			Writable:    []string{"~/.sdkman", "~/.gradle", "~/.m2"},
-			EnvAllow:    []string{"JAVA_HOME", "SDKMAN_DIR"},
+			Writable: []string{"~/.sdkman", "~/.gradle", "~/.m2"},
+			EnvAllow: []string{"JAVA_HOME", "SDKMAN_DIR"},
 		},
 
 		// Dev tools

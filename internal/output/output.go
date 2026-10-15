@@ -16,6 +16,7 @@ import (
 // Format is a validated output format.
 type Format string
 
+// Supported output formats.
 const (
 	Human Format = "human"
 	JSON  Format = "json"

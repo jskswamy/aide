@@ -25,7 +25,7 @@ func fixtureReport() Report {
 			{Name: "ANTHROPIC_API_KEY", Length: 51},
 		},
 		SecretSourcePaths: []string{"/Users/alice/.config/aide/secrets/secrets.yaml"},
-		AgeKeySource:     "yubikey",
+		AgeKeySource:      "yubikey",
 		Sandbox: SandboxInfo{
 			Variants:   []string{"network-outbound", "code-only"},
 			GuardNames: []string{"network", "filesystem", "toolchain"},

@@ -20,7 +20,6 @@ func renderRules(rules []Rule) string {
 	return b.String()
 }
 
-
 // taggedRule pairs a rule with its source module name for rendering.
 type taggedRule struct {
 	module string

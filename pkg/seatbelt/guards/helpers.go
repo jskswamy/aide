@@ -63,7 +63,6 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
-
 // ResolveSymlink resolves symlinks in a path, returning the original
 // path if resolution fails. Thin wrapper over fsutil.ResolveOrSelf so
 // the symlink-resolution contract has one implementation in the repo.

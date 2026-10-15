@@ -32,9 +32,9 @@ func hookCmd() *cobra.Command {
 func hookListCmd() *cobra.Command {
 	var contextName string
 	cmd := &cobra.Command{
-		Use:           "list",
-		Short:         "Show declared and managed hooks",
-		SilenceUsage:  true,
+		Use:          "list",
+		Short:        "Show declared and managed hooks",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runHookList(cmd, contextName)
 		},
@@ -50,9 +50,9 @@ func hookAddCmd() *cobra.Command {
 	var command string
 
 	cmd := &cobra.Command{
-		Use:           "add",
-		Short:         "Add a hook declaration to config.yaml",
-		SilenceUsage:  true,
+		Use:          "add",
+		Short:        "Add a hook declaration to config.yaml",
+		SilenceUsage: true,
 		Long: `aide hook add adds a hook declaration to config.yaml.
 
 When all flags are provided, the hook is added directly.

@@ -17,8 +17,8 @@ type keychainGuard struct{}
 // KeychainGuard returns a Guard with macOS Keychain sandbox rules.
 func KeychainGuard() seatbelt.Guard { return &keychainGuard{} }
 
-func (g *keychainGuard) Name() string        { return "keychain" }
-func (g *keychainGuard) Type() string        { return "always" }
+func (g *keychainGuard) Name() string { return "keychain" }
+func (g *keychainGuard) Type() string { return "always" }
 func (g *keychainGuard) Description() string {
 	return "macOS Keychain access for authentication and certificates"
 }

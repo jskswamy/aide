@@ -16,9 +16,9 @@ type AgeKeySource int
 // AgeKeySource values identify where an age key was discovered.
 const (
 	SourceYubiKey     AgeKeySource = iota
-	SourceEnvKey                        // SOPS_AGE_KEY
-	SourceEnvKeyFile                    // SOPS_AGE_KEY_FILE
-	SourceDefaultFile                   // XDG default path
+	SourceEnvKey                   // SOPS_AGE_KEY
+	SourceEnvKeyFile               // SOPS_AGE_KEY_FILE
+	SourceDefaultFile              // XDG default path
 )
 
 // AgeIdentity holds a discovered age identity for sops decryption.

@@ -110,12 +110,12 @@ func normalizeMinimal(cfg *Config) *Config {
 		},
 		Contexts: map[string]Context{
 			"default": {
-				Agent:          agentName,
-				Env:            cfg.Env,
-				Secret:         cfg.Secret,
-				MCPServers:  mcpList,
-				Sandbox:        SandboxPolicyToRef(cfg.Sandbox),
-				Yolo:           cfg.Yolo,
+				Agent:      agentName,
+				Env:        cfg.Env,
+				Secret:     cfg.Secret,
+				MCPServers: mcpList,
+				Sandbox:    SandboxPolicyToRef(cfg.Sandbox),
+				Yolo:       cfg.Yolo,
 			},
 		},
 		NeverAllow:     cfg.NeverAllow,

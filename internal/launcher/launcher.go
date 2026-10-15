@@ -143,15 +143,15 @@ var agentYoloFlags = map[string]string{
 
 // Launcher orchestrates the full agent launch flow.
 type Launcher struct {
-	Execer               Execer
-	ConfigDir            string       // override for testing (default: config.Dir())
-	LookPath             LookPathFunc // override for testing (default: exec.LookPath)
-	Yolo                 bool         // inject agent-specific skip-permissions flag
-	NoYolo               bool         // override: disable yolo mode (overrides config and --yolo)
-	Stderr               io.Writer    // override for testing (default: os.Stderr)
-	IgnoreProjectConfig  bool         // skip .aide.yaml entirely
-	UnrestrictedNetwork  bool         // force unrestricted network, clear port rules (-N flag)
-	TrustStore           *trust.Store // override for testing (default: trust.DefaultStore())
+	Execer              Execer
+	ConfigDir           string       // override for testing (default: config.Dir())
+	LookPath            LookPathFunc // override for testing (default: exec.LookPath)
+	Yolo                bool         // inject agent-specific skip-permissions flag
+	NoYolo              bool         // override: disable yolo mode (overrides config and --yolo)
+	Stderr              io.Writer    // override for testing (default: os.Stderr)
+	IgnoreProjectConfig bool         // skip .aide.yaml entirely
+	UnrestrictedNetwork bool         // force unrestricted network, clear port rules (-N flag)
+	TrustStore          *trust.Store // override for testing (default: trust.DefaultStore())
 
 	// Variant selection inputs (optional; zero value disables variant flow).
 	VariantOverrides map[string][]string

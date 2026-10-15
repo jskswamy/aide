@@ -181,8 +181,8 @@ func TestSystemRuntime_BroadSystemReads(t *testing.T) {
 	// Should NOT have the old granular paths
 	oldPaths := []string{
 		`(subpath "/System/Library")`,     // was specific, now just /System
-		`(subpath "/Library/Apple")`,       // was specific, now just /Library
-		`(subpath "/Library/Frameworks")`,  // was specific, now just /Library
+		`(subpath "/Library/Apple")`,      // was specific, now just /Library
+		`(subpath "/Library/Frameworks")`, // was specific, now just /Library
 	}
 	for _, p := range oldPaths {
 		if strings.Contains(output, p) {

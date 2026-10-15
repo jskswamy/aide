@@ -67,7 +67,7 @@ type EnvKeyProvider interface {
 // are silently dropped under Landlock (Seatbelt s-expressions are not parsed
 // by the Linux backend).
 type GuardResult struct {
-	Name      string     // guard name, set by the profile builder from Module.Name()
+	Name      string // guard name, set by the profile builder from Module.Name()
 	Rules     []Rule
 	Protected []string   // paths being denied
 	Allowed   []string   // paths exempted from this guard's deny (opt-outs)
@@ -95,15 +95,15 @@ type Context struct {
 	GOOS        string   // for OS-specific paths ("darwin", "linux")
 
 	// Fields consumed by specific always-guards
-	Network     string   // consumed by network guard: "outbound", "none", "unrestricted", or ""
-	AllowPorts  []int    // consumed by network guard
-	DenyPorts   []int    // consumed by network guard
-	SSHPorts    []int    // consumed by ssh guard (from capabilities.ssh.ports)
-	ExtraDenied   []string // consumed by filesystem guard (user-configured denied: paths)
-	ExtraWritable []string // consumed by filesystem guard (user-configured writable paths)
-	ExtraReadable []string // consumed by filesystem guard (user-configured readable paths)
-	AllowSubprocess bool // consumed by system-runtime guard
-	ExtraAllow    []string // non-filesystem operations to allow (e.g. "mach-lookup", "iokit-open")
+	Network         string   // consumed by network guard: "outbound", "none", "unrestricted", or ""
+	AllowPorts      []int    // consumed by network guard
+	DenyPorts       []int    // consumed by network guard
+	SSHPorts        []int    // consumed by ssh guard (from capabilities.ssh.ports)
+	ExtraDenied     []string // consumed by filesystem guard (user-configured denied: paths)
+	ExtraWritable   []string // consumed by filesystem guard (user-configured writable paths)
+	ExtraReadable   []string // consumed by filesystem guard (user-configured readable paths)
+	AllowSubprocess bool     // consumed by system-runtime guard
+	ExtraAllow      []string // non-filesystem operations to allow (e.g. "mach-lookup", "iokit-open")
 }
 
 // HomePath returns homeDir joined with a relative path.
@@ -148,7 +148,7 @@ const (
 	// Allow is for broad infrastructure + directory allows.
 	Allow RuleIntent = 100
 	// Deny is for narrow specific-file/path denials.
-	Deny  RuleIntent = 200
+	Deny RuleIntent = 200
 )
 
 // Rule represents a Seatbelt rule or comment block.

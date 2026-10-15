@@ -116,7 +116,7 @@ func TestEmit_JSON(t *testing.T) {
 		Name string `json:"name"`
 	}
 	humanCalled := false
-	err := Emit(&buf, JSON, payload{Name: "x"}, func(w io.Writer) error {
+	err := Emit(&buf, JSON, payload{Name: "x"}, func(_ io.Writer) error {
 		humanCalled = true
 		return nil
 	})

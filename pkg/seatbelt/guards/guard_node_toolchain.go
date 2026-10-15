@@ -17,8 +17,8 @@ type nodeToolchainGuard struct{}
 // NodeToolchainGuard returns a Guard with Node.js ecosystem sandbox rules.
 func NodeToolchainGuard() seatbelt.Guard { return &nodeToolchainGuard{} }
 
-func (g *nodeToolchainGuard) Name() string        { return "node-toolchain" }
-func (g *nodeToolchainGuard) Type() string        { return "always" }
+func (g *nodeToolchainGuard) Name() string { return "node-toolchain" }
+func (g *nodeToolchainGuard) Type() string { return "always" }
 func (g *nodeToolchainGuard) Description() string {
 	return "Node.js package managers and build tool access"
 }

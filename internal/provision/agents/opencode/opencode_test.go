@@ -14,7 +14,7 @@ import (
 
 type fakeRunner struct{}
 
-func (fakeRunner) Run(_ context.Context, _ map[string]string, name string, args ...string) (string, string, int, error) {
+func (fakeRunner) Run(_ context.Context, _ map[string]string, _ string, _ ...string) (string, string, int, error) {
 	return "", "", 0, nil
 }
 

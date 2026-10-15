@@ -93,6 +93,17 @@ On Linux the startup banner showed `claude → /path/to/aide` because it
 was rendered after the sandbox rewrote the command into aide's own
 re-exec wrapper. It now shows the agent binary, as on macOS.
 
+#### Agents can write their own config under the Linux sandbox
+
+On Linux, Landlock only grants paths an agent module lists as writable,
+and the shared module behind most agents listed none. Pi, OpenCode,
+Codex, Gemini, Aider, Amp and Goose ran with no write access to their
+own config directory. They now get it, matching macOS.
+
+- Symlinked config dirs resolve to their real targets before being
+  granted, as they already did for Claude and cursor-agent.
+- macOS sandbox profiles are unchanged.
+
 #### aide can now sandbox OpenCode
 
 `aide` gains a `provision.Provisioner` driver for OpenCode

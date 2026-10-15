@@ -206,6 +206,15 @@ the status line into `~/.claude/settings.json`, so it never appeared.
 It now writes to the same directory `aide sync` uses. Unsandboxed
 contexts and macOS still use `~/.claude`.
 
+#### Codex, Copilot and Gemini profiles get their own MCP config and hooks
+
+`aide sync` now writes Codex's `config.toml`, Copilot's
+`mcp-config.json` and Gemini's hook scripts under `CODEX_HOME`,
+`COPILOT_HOME` and `GEMINI_HOME` when the context's `profile:`, `env:`
+or your shell sets them. Before, these files always went to `~/.codex`,
+`~/.copilot` and `~/.gemini`, so an agent running under a profile never
+saw the MCP servers or hooks aide synced for it.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

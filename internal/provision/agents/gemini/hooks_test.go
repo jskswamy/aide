@@ -41,6 +41,23 @@ func TestGeminiWriteHooksThenRead(t *testing.T) {
 	}
 }
 
+func TestGeminiWriteHooksFollowsGeminiHome(t *testing.T) {
+	home := t.TempDir()
+	profile := filepath.Join(home, ".gemini-work")
+	ctx := provision.Context{HomeDir: home, Env: map[string]string{"GEMINI_HOME": profile}}
+	d := gemini.New(&fakeRunner{})
+
+	if err := d.WriteHooks(ctx, nil, []provision.Hook{{Event: "pre_tool", Command: "rtk hook gemini"}}); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(profile, "hooks")); len(entries) == 0 {
+		t.Errorf("expected hook script under %s/hooks", profile)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini")); !os.IsNotExist(err) {
+		t.Errorf("~/.gemini should not be written when GEMINI_HOME is set (stat err: %v)", err)
+	}
+}
+
 func TestGeminiWriteHooksRejectsMetacharacters(t *testing.T) {
 	home := t.TempDir()
 	ctx := provision.Context{HomeDir: home}

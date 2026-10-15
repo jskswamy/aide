@@ -56,9 +56,10 @@ func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
 }
 
-// MCPConfigPath returns ~/.codex/config.toml.
+// MCPConfigPath returns $CODEX_HOME/config.toml, defaulting to
+// ~/.codex/config.toml.
 func (*Driver) MCPConfigPath(ctx provision.Context) string {
-	return filepath.Join(ctx.HomeDir, ".codex", "config.toml")
+	return filepath.Join(provision.EnvOrHomePath(ctx, "CODEX_HOME", ".codex"), "config.toml")
 }
 
 // MCPHandler returns the Codex-TOML handler.

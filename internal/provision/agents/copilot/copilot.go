@@ -42,9 +42,10 @@ func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
 }
 
-// MCPConfigPath returns ~/.copilot/mcp-config.json.
+// MCPConfigPath returns $COPILOT_HOME/mcp-config.json, defaulting to
+// ~/.copilot/mcp-config.json.
 func (*Driver) MCPConfigPath(ctx provision.Context) string {
-	return filepath.Join(ctx.HomeDir, ".copilot", "mcp-config.json")
+	return filepath.Join(provision.EnvOrHomePath(ctx, "COPILOT_HOME", ".copilot"), "mcp-config.json")
 }
 
 // MCPHandler returns the JSON-flat handler (Copilot uses the same

@@ -152,3 +152,59 @@ func TestOpenCodeWriteHooksAppliesMatcher(t *testing.T) {
 		t.Errorf("want exactly one plugin guarded on tool bash, got %d", guarded)
 	}
 }
+
+// Session events were verified against opencode 1.19.0: session.created
+// reaches the generic event hook when a session starts, and the plugin
+// dispose hook runs when opencode exits normally.
+func TestOpenCodeSessionEventsMapToEventAndDispose(t *testing.T) {
+	home := t.TempDir()
+	ctx := provision.Context{HomeDir: home}
+	d := opencode.New(fakeRunner{})
+
+	hooks := []provision.Hook{
+		{Event: "session_start", Command: "notify start"},
+		{Event: "session_end", Command: "notify end"},
+	}
+	if err := d.WriteHooks(ctx, nil, hooks); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.ReadHooks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := map[string]string{}
+	for _, h := range got {
+		events[h.Command] = h.Event
+	}
+	if events["notify start"] != "session_start" || events["notify end"] != "session_end" {
+		t.Fatalf("ReadHooks = %+v, want both session hooks round-tripped", got)
+	}
+
+	scripts := readAll(t, filepath.Join(home, ".config", "opencode", "plugin"))
+	for _, want := range []string{
+		`"event": async ({ event }) => {`,
+		`if (event.type !== "session.created" || event.properties.info?.parentID) return`,
+		`"dispose": async () => {`,
+	} {
+		if !strings.Contains(scripts, want) {
+			t.Errorf("generated plugins missing %q:\n%s", want, scripts)
+		}
+	}
+}
+
+func readAll(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, e := range entries {
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Write(data)
+	}
+	return b.String()
+}

@@ -135,7 +135,7 @@ supported agents.
 - Hooks are installed as generated TypeScript extensions in
   `~/.pi/agent/extensions/` (global scope only), which Pi auto-loads.
   `pre_tool` maps to Pi's `tool_call` event and `post_tool` to
-  `tool_result`; session events are not mapped yet.
+  `tool_result`.
 - Project-local Pi config still needs Pi's one-time project-trust
   approval; `aide` does not grant it on your behalf.
 
@@ -184,6 +184,19 @@ or extension now checks the tool name and only runs the command for the
 matched tool (`shell` maps to `bash` in both). The same command can be
 declared with and without a matcher, or under several matchers, each
 getting its own file. Hooks without a matcher are unchanged.
+
+#### session_start and session_end hooks now work for OpenCode and Pi
+
+`session_start` and `session_end` hooks were silently skipped for
+OpenCode and Pi. They are now installed:
+
+- OpenCode: `session_start` runs when a top-level session is created
+  (subagent sessions are skipped); `session_end` runs when OpenCode
+  exits normally, not when it is killed.
+- Pi: `session_start` and `session_end` map to Pi's `session_start`
+  and `session_shutdown`, skipping extension reloads.
+- As with Claude, both also fire when you switch to a new or resumed
+  session.
 
 ## v2.2.0 (2026-08-28)
 

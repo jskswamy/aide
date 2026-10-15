@@ -9,14 +9,17 @@ import (
 // piEventMap maps aide's normalized hook events to Pi's native
 // extension events, per Pi's bundled docs/extensions.md: "tool_call"
 // fires before a tool executes (the PreToolUse equivalent) and
-// "tool_result" after it (the PostToolUse equivalent). Session events
-// are left unmapped: Pi's "session_shutdown" also fires on session
-// switch, not only on exit, so there is no clean session_end
-// equivalent. WriteHooks skips unmapped events silently rather than
-// guessing.
+// "tool_result" after it (the PostToolUse equivalent).
+// "session_start" and "session_shutdown" also fire when the user
+// switches to a new, resumed or forked session, as Claude's
+// SessionStart and SessionEnd do on /clear and resume; the generated
+// handler skips their "reload" reason, an extension reload that is not
+// a session boundary. WriteHooks skips unmapped events silently.
 var piEventMap = map[string]string{
-	"pre_tool":  "tool_call",
-	"post_tool": "tool_result",
+	"pre_tool":      "tool_call",
+	"post_tool":     "tool_result",
+	"session_start": "session_start",
+	"session_end":   "session_shutdown",
 }
 
 // piMatcherMap maps aide's normalized matchers to Pi's built-in tool
@@ -40,7 +43,11 @@ var piHookCodec = &provision.CommentHookCodec{
 	Matchers: piMatcherMap,
 	Body: func(nativeEvent, toolGuard, command string) string {
 		handler, guard := "async () => {\n", ""
-		if toolGuard != "" {
+		switch {
+		case nativeEvent == "session_start" || nativeEvent == "session_shutdown":
+			handler = "async (event) => {\n"
+			guard = "    if (event.reason === \"reload\") return;\n"
+		case toolGuard != "":
 			handler = "async (event) => {\n"
 			guard = "    if (event.toolName !== " + toolGuard + ") return;\n"
 		}

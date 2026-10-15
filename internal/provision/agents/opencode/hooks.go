@@ -2,22 +2,30 @@ package opencode
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/jskswamy/aide/internal/provision"
 )
 
 // openCodeEventMap maps aide's normalized hook events to OpenCode's
-// native plugin hook names. Confirmed via OpenCode's plugin API docs:
+// native plugin hooks, verified against opencode 1.19.0.
 // tool.execute.before/after are the direct PreToolUse/PostToolUse
-// equivalents. session_start/session_end have no confirmed
-// one-to-one native event (OpenCode's "event" hook fires on a wider
-// range of payloads) — they're intentionally left unmapped for now;
-// WriteHooks skips unmapped events silently rather than guessing at a
-// filter condition that hasn't been verified.
+// equivalents. session_start maps to the session.created bus event,
+// which reaches plugins through the generic "event" hook, so the
+// generated plugin filters for it and skips subagent child sessions.
+// session_end maps to the plugin "dispose" hook, which runs when
+// opencode exits normally (not when it is killed). WriteHooks skips
+// unmapped events silently.
 var openCodeEventMap = map[string]string{
-	"pre_tool":  "tool.execute.before",
-	"post_tool": "tool.execute.after",
+	"pre_tool":      "tool.execute.before",
+	"post_tool":     "tool.execute.after",
+	"session_start": openCodeSessionCreated,
+	"session_end":   "dispose",
 }
+
+// openCodeSessionCreated is the bus event type for a new session. It is
+// not a plugin hook name; the generated plugin listens on "event".
+const openCodeSessionCreated = "session.created"
 
 // openCodeMatcherMap maps aide's normalized matchers to OpenCode's
 // built-in tool ids, as passed in the hook's input.tool (verified
@@ -39,13 +47,17 @@ var openCodeHookCodec = &provision.CommentHookCodec{
 	Events:   openCodeEventMap,
 	Matchers: openCodeMatcherMap,
 	Body: func(nativeEvent, toolGuard, command string) string {
-		handler, guard := "async () => {\n", ""
-		if toolGuard != "" {
+		hook, handler, guard := nativeEvent, "async () => {\n", ""
+		switch {
+		case nativeEvent == openCodeSessionCreated:
+			hook, handler = "event", "async ({ event }) => {\n"
+			guard = "    if (event.type !== \"" + openCodeSessionCreated + "\" || event.properties.info?.parentID) return\n"
+		case toolGuard != "" && strings.HasPrefix(nativeEvent, "tool."):
 			handler = "async (input) => {\n"
 			guard = "    if (input.tool !== " + toolGuard + ") return\n"
 		}
 		return "export const AideHook = async ({ $ }) => ({\n" +
-			"  \"" + nativeEvent + "\": " + handler +
+			"  \"" + hook + "\": " + handler +
 			guard +
 			"    await $`" + command + "`\n" +
 			"  },\n" +

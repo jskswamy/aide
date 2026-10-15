@@ -277,12 +277,17 @@ agent's config file during `aide sync`; the agent runs them, not aide.
 |-------|--------|--------|--------|---------|--------|----------|----|
 | `pre_tool` | `PreToolUse` | `BeforeTool` (script) | `preToolUse` | `PreToolUse` (file) | `pre_tool_call` (plugin) | `tool.execute.before` | `tool_call` |
 | `post_tool` | `PostToolUse` | - | - | - | - | `tool.execute.after` | `tool_result` |
-| `session_start` | `SessionStart` | - | - | - | - | - | - |
-| `session_end` | `SessionEnd` | - | - | - | - | - | - |
+| `session_start` | `SessionStart` | - | - | - | - | `session.created` (event) | `session_start` |
+| `session_end` | `SessionEnd` | - | - | - | - | `dispose` | `session_shutdown` |
 | `notification` | `Notification` | - | - | - | - | - | - |
 | `stop` | `Stop` | - | - | - | - | - | - |
 
 Events not supported by an agent are silently skipped during sync.
+
+OpenCode's `session_start` hook skips subagent sessions, and its
+`session_end` hook runs when OpenCode exits normally, not when it is
+killed. Pi's session hooks skip extension reloads. As with Claude, both
+also fire when you switch to a new or resumed session.
 
 ### Supported matchers
 

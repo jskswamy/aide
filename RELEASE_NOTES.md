@@ -139,6 +139,14 @@ supported agents.
 - Project-local Pi config still needs Pi's one-time project-trust
   approval; `aide` does not grant it on your behalf.
 
+#### aide which reports the real sandbox tier
+
+`aide which` always printed `sandbox: disabled`, even for contexts
+that launch under Landlock or Seatbelt, because only the launch path
+evaluated the isolation tier. It now shows the same tier the launch
+banner does, e.g. `primary (Landlock ABI 4)`, and `--format json`
+includes `isolation_tier`.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

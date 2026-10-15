@@ -40,6 +40,7 @@ func New(r provision.Runner) *Driver {
 			RequiresTTY:         false,
 			SourceShapes:        []provision.SourceShape{provision.ShapeURLDirect},
 			PluginsByInstallRef: true,
+			PluginNoun:          "packages",
 			SupportsHooks:       true,
 			ProfileEnvKey:       "PI_CODING_AGENT_DIR",
 		}},
@@ -164,16 +165,5 @@ func isLocalSource(source string) bool {
 	return strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/")
 }
 
-// InstalledMarketplaces is inherited from DriverBase: Pi has no
+// The marketplace methods are inherited from DriverBase: Pi has no
 // marketplace concept, only bare npm/git/local-path package sources.
-
-// AddMarketplace returns an error: Pi packages are declared as
-// URL-direct string entries, not via marketplaces.
-func (*Driver) AddMarketplace(_ provision.Context, _ provision.Marketplace) error {
-	return fmt.Errorf("pi does not have marketplaces; declare packages inline with string values")
-}
-
-// RemoveMarketplace is a no-op for rollback safety.
-func (*Driver) RemoveMarketplace(_ provision.Context, _ string) error {
-	return nil
-}

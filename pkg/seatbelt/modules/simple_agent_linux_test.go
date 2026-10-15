@@ -37,6 +37,16 @@ func TestSimpleAgentLinux_ConfigDirsAreWritable(t *testing.T) {
 	}
 }
 
+func TestSimpleAgentLinux_NilOrEmptyContextGrantsNothing(t *testing.T) {
+	for _, ctx := range []*seatbelt.Context{nil, {}} {
+		result := &seatbelt.GuardResult{}
+		augmentSimpleAgentLinuxPaths(ctx, []string{"/home/user/.pi"}, result)
+		if len(result.Writable) != 0 {
+			t.Errorf("ctx=%v: Writable = %v, want empty", ctx, result.Writable)
+		}
+	}
+}
+
 func TestSimpleAgentLinux_EnvOverrideIsWritable(t *testing.T) {
 	home := t.TempDir()
 	override := filepath.Join(home, "custom-pi")

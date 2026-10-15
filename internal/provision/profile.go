@@ -135,3 +135,17 @@ func (d DriverBase) Profile(name, override, homeDir string) (envKey, absPath str
 	dirName := fmt.Sprintf(".%s-%s", d.Caps.AgentName, name)
 	return d.Caps.ProfileEnvKey, filepath.Join(homeDir, dirName), nil
 }
+
+// ProfileEnvKeyFor returns the env var that relocates agent's config
+// dir (e.g. CLAUDE_CONFIG_DIR), or "" when the agent has no such var or
+// no registered driver.
+func ProfileEnvKeyFor(agent string) string {
+	drv, ok := ProvisionerFor(agent)
+	if !ok {
+		return ""
+	}
+	if k, ok := drv.(interface{ ProfileEnvKey() string }); ok {
+		return k.ProfileEnvKey()
+	}
+	return ""
+}

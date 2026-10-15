@@ -3,21 +3,11 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
 )
-
-// unsetEnv clears key for the test and restores it afterwards.
-func unsetEnv(t *testing.T, key string) {
-	t.Helper()
-	t.Setenv(key, "")
-	if err := os.Unsetenv(key); err != nil {
-		t.Fatal(err)
-	}
-}
 
 // TestResolveProvisionContext_ClaudeSandboxRedirect pins that sync
 // targets the config dir a sandboxed Claude actually reads on Linux

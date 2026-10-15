@@ -39,6 +39,10 @@ type DriverBase struct {
 // PluginsByInstallRef implements InstallRefAddresser.
 func (d DriverBase) PluginsByInstallRef() bool { return d.Caps.PluginsByInstallRef }
 
+// ProfileEnvKey returns the env var that relocates the agent's config
+// dir, or "" when the agent has none.
+func (d DriverBase) ProfileEnvKey() string { return d.Caps.ProfileEnvKey }
+
 // Name implements Provisioner.
 func (d DriverBase) Name() string { return d.Caps.AgentName }
 

@@ -147,6 +147,16 @@ evaluated the isolation tier. It now shows the same tier the launch
 banner does, e.g. `primary (Landlock ABI 4)`, and `--format json`
 includes `isolation_tier`.
 
+#### aide sync follows an exported agent config dir
+
+If you export `CLAUDE_CONFIG_DIR` (or another agent's config-dir
+variable such as `PI_CODING_AGENT_DIR`, `CODEX_HOME`, `GEMINI_HOME` or
+`COPILOT_HOME`) in your shell rather than through `profile:`, the agent
+reads that directory at launch, but `aide sync` still wrote hooks into
+the default one. Sync and `aide statusline --install` now target the
+exported directory. A value set in the context's `env:` or `profile:`
+still takes precedence.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

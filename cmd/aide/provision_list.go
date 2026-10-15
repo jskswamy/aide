@@ -42,7 +42,31 @@ func resolveContextEnv(ctx config.Context, homeDir string) map[string]string {
 	return out
 }
 
-// resolveProvisionContext wraps provision.ResolveContext and, when the
+// inheritProfileEnv carries an agent config-dir var exported in the
+// shell (e.g. CLAUDE_CONFIG_DIR) into pCtx.Env, since the launched agent
+// inherits it. A value the context already sets, from env: or profile:,
+// wins.
+func inheritProfileEnv(pCtx *provision.Context) {
+	key := provision.ProfileEnvKeyFor(pCtx.Agent)
+	if key == "" {
+		return
+	}
+	v := os.Getenv(key)
+	if v == "" {
+		return
+	}
+	if _, set := pCtx.Env[key]; set {
+		return
+	}
+	pCtx.Env = maps.Clone(pCtx.Env)
+	if pCtx.Env == nil {
+		pCtx.Env = map[string]string{}
+	}
+	pCtx.Env[key] = v
+}
+
+// resolveProvisionContext wraps provision.ResolveContext, inherits an
+// exported agent config-dir var (see inheritProfileEnv) and, when the
 // context launches sandboxed, layers in the agent module's launch-time
 // env overrides (e.g. Claude's CLAUDE_CONFIG_DIR redirect on Linux).
 // Without them, sync and agent grants would write the agent's default
@@ -53,6 +77,7 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 	if err != nil {
 		return pCtx, err
 	}
+	inheritProfileEnv(&pCtx)
 	if _, disabled, err := sandbox.ResolveSandboxRef(ctx.Sandbox, cfg.Sandboxes); err != nil || disabled {
 		return pCtx, nil
 	}

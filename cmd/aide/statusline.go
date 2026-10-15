@@ -88,6 +88,7 @@ func runStatuslineInstallRemove(cmd *cobra.Command, agent string, install, _ boo
 	if err != nil {
 		return err
 	}
+	inheritProfileEnv(&pCtx)
 	if install {
 		return installStatusline(cmd, pCtx, homeDir, agent)
 	}

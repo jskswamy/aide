@@ -280,6 +280,8 @@ func whichCmd() *cobra.Command {
 				tempDir := os.TempDir()
 				policy, pathWarnings, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, sandbox.Paths{ProjectRoot: aidectx.ProjectRoot(cwd), RuntimeDir: "/tmp/aide-preview", HomeDir: homeDir, TempDir: tempDir})
 				if policyErr == nil && policy != nil {
+					tier := sandbox.PlatformIsolationTier(*policy)
+					data.IsolationTier = &tier
 					guardResults := sandbox.EvaluateGuards(policy)
 					availableNames := sandbox.AvailableGuardNames(policy.Guards)
 					si := &ui.SandboxInfo{

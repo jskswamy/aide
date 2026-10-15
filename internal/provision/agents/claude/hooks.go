@@ -36,11 +36,7 @@ func toNativeMatcher(m string) string {
 }
 
 func settingsPath(ctx provision.Context) string {
-	dir := ctx.Env["CLAUDE_CONFIG_DIR"]
-	if dir == "" {
-		dir = filepath.Join(ctx.HomeDir, ".claude")
-	}
-	return filepath.Join(dir, "settings.json")
+	return filepath.Join(provision.EnvOrHomePath(ctx, "CLAUDE_CONFIG_DIR", ".claude"), "settings.json")
 }
 
 // ReadHooks returns all hooks currently in settings.json, including

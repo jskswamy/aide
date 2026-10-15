@@ -7,7 +7,6 @@ package opencode
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/tailscale/hujson"
 
@@ -53,10 +52,7 @@ func init() {
 // config file) if set, otherwise ~/.config/opencode/opencode.jsonc.
 // Unlike claude's AgentDir this is not otherwise profile-aware.
 func configPath(ctx provision.Context) string {
-	if v := ctx.Env["OPENCODE_CONFIG"]; v != "" {
-		return v
-	}
-	return filepath.Join(ctx.HomeDir, ".config", "opencode", "opencode.jsonc")
+	return provision.EnvOrHomePath(ctx, "OPENCODE_CONFIG", ".config", "opencode", "opencode.jsonc")
 }
 
 // MCPConfigPath returns the same file plugins live in — OpenCode

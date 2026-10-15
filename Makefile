@@ -56,7 +56,7 @@ test/race:        ## Run tests with race detector (alias for test/unit)
 
 test/coverage:    ## Run tests with coverage and enforce thresholds
 	go test -race -coverprofile=coverage.out ./...
-	@GOBIN=$(GOBIN) go install github.com/vladopajic/go-test-coverage/v2@latest
+	@GOBIN=$(GOBIN) go install github.com/vladopajic/go-test-coverage/v2@v2.19.0
 	$(GOBIN)/go-test-coverage --config .testcoverage.yml
 
 test/sandbox:     ## Run Linux sandbox unit tests (no integration tag)

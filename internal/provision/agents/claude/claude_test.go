@@ -173,6 +173,28 @@ func TestClaudeInstalledMarketplaces(t *testing.T) {
 	}
 }
 
+func TestClaudeInstalledMarketplacesURLAndDirectory(t *testing.T) {
+	// Real shapes from `claude plugin marketplace list --json` (verified
+	// 2026-10-15, claude 2.1.296): URL marketplaces carry "url" and local
+	// ones "path", never "repo". Key must be that value so it matches the
+	// config key and plugin installs resolve to the canonical name.
+	r := &fakeRunner{stdout: `[
+		{"name":"official","source":"git","url":"https://github.com/anthropics/claude-plugins-official.git","installLocation":"/x/o"},
+		{"name":"aide-e2e-mkt","source":"directory","path":"/abs/mkt","installLocation":"/abs/mkt"}
+	]`}
+	got, err := claude.New(r).InstalledMarketplaces(provision.Context{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []provision.Marketplace{
+		{Key: "https://github.com/anthropics/claude-plugins-official.git", Source: "https://github.com/anthropics/claude-plugins-official.git", Name: "official"},
+		{Key: "/abs/mkt", Source: "/abs/mkt", Name: "aide-e2e-mkt"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
 func TestClaudeAddMarketplace(t *testing.T) {
 	// Claude's `plugin marketplace add` accepts bare owner/repo or a
 	// full URL; it rejects the `github:` shorthand we use internally

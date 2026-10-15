@@ -173,17 +173,20 @@ type claudeMarketplaceEntry struct {
 	Name   string `json:"name"`
 	Source string `json:"source"`
 	Repo   string `json:"repo"`
+	URL    string `json:"url"`
+	Path   string `json:"path"`
 }
 
 // InstalledMarketplaces invokes `claude plugin marketplace list --json`
 // and returns the configured marketplaces. Binary-missing surfaces as
 // (nil, nil) so callers can still render a useful declared-only view.
 //
-// The returned Marketplace.Key is the bare repo path (e.g.
-// "steveyegge/beads") so it matches the desired-side keys derived from
-// raw YAML map keys in the user's config. Marketplace.Source carries
-// the prefixed form ("github:steveyegge/beads") for parity with
-// provision.ResolveDesired's keyAsSource output.
+// The returned Marketplace.Key is what the user would write as the
+// config key, so it matches the desired-side keys derived from raw YAML
+// map keys: the bare repo path (e.g. "steveyegge/beads") for GitHub,
+// the URL for git URLs, and the absolute path for local directories.
+// Marketplace.Source carries the form provision.ResolveDesired derives
+// from that key ("github:steveyegge/beads", or the URL or path as-is).
 func (d *Driver) InstalledMarketplaces(pctx provision.Context) ([]provision.Marketplace, error) {
 	stdout, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "claude", "plugin", "marketplace", "list", "--json")
 	if err != nil {
@@ -198,13 +201,20 @@ func (d *Driver) InstalledMarketplaces(pctx provision.Context) ([]provision.Mark
 	}
 	out := make([]provision.Marketplace, 0, len(entries))
 	for _, e := range entries {
-		// Compose the source ref as <transport>:<repo>. For pure-name
-		// sources (no repo), fall back to using the name as the key.
-		key := e.Repo
-		source := e.Source + ":" + e.Repo
-		if key == "" {
-			key = e.Name
-			source = e.Source
+		// GitHub entries carry repo; compose the source as
+		// <transport>:<repo>. Git URL and directory entries carry url
+		// or path instead, which is both key and source. For pure-name
+		// sources, fall back to using the name as the key.
+		var key, source string
+		switch {
+		case e.Repo != "":
+			key, source = e.Repo, e.Source+":"+e.Repo
+		case e.URL != "":
+			key, source = e.URL, e.URL
+		case e.Path != "":
+			key, source = e.Path, e.Path
+		default:
+			key, source = e.Name, e.Source
 		}
 		out = append(out, provision.Marketplace{
 			Key:    key,

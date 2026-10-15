@@ -166,6 +166,15 @@ The DECLARED column now names the source type: `npm`, `file`, `url`
 (http/https), `git`, `github` (including bare `owner/repo`) or
 `local`. Plugins installed from a marketplace still show `marketplace`.
 
+#### Claude marketplaces keyed by a URL or local path now install their plugins
+
+A Claude marketplace declared by URL or by local path, e.g.
+`/abs/path/to/marketplace: [hello]`, was added but its plugins failed to
+install with `Plugin "hello" not found in marketplace`, and every sync
+tried to add the marketplace again. aide now matches the URL or path to
+the name Claude registered the marketplace under and installs
+`hello@<marketplace name>`.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

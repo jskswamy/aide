@@ -103,8 +103,11 @@ plugins:
   obra/superpowers-marketplace: ~
 ```
 
-For marketplace shape, the **key is a repo path** (`owner/repo` or a
-full URL). For URL-direct shape, the **key is a plugin name** the user
+For marketplace shape, the **key is a repo path** (`owner/repo`, a
+full URL, or an absolute path to a local marketplace directory). aide
+maps the key to the name the agent registers the marketplace under, so
+`/abs/path/to/marketplace: [hello]` installs `hello@<marketplace name>`.
+For URL-direct shape, the **key is a plugin name** the user
 picks for readability.
 
 ## MCP servers schema

@@ -273,24 +273,27 @@ agent's config file during `aide sync`; the agent runs them, not aide.
 
 ### Supported events
 
-| Event | Claude | Gemini | Cursor | Copilot | Hermes |
-|-------|--------|--------|--------|---------|--------|
-| `pre_tool` | `PreToolUse` | `BeforeTool` (script) | `preToolUse` | `PreToolUse` (file) | `pre_tool_call` (plugin) |
-| `post_tool` | `PostToolUse` | - | - | - | - |
-| `session_start` | `SessionStart` | - | - | - | - |
-| `session_end` | `SessionEnd` | - | - | - | - |
-| `notification` | `Notification` | - | - | - | - |
-| `stop` | `Stop` | - | - | - | - |
+| Event | Claude | Gemini | Cursor | Copilot | Hermes | OpenCode | Pi |
+|-------|--------|--------|--------|---------|--------|----------|----|
+| `pre_tool` | `PreToolUse` | `BeforeTool` (script) | `preToolUse` | `PreToolUse` (file) | `pre_tool_call` (plugin) | `tool.execute.before` | `tool_call` |
+| `post_tool` | `PostToolUse` | - | - | - | - | `tool.execute.after` | `tool_result` |
+| `session_start` | `SessionStart` | - | - | - | - | - | - |
+| `session_end` | `SessionEnd` | - | - | - | - | - | - |
+| `notification` | `Notification` | - | - | - | - | - | - |
+| `stop` | `Stop` | - | - | - | - | - | - |
 
 Events not supported by an agent are silently skipped during sync.
 
 ### Supported matchers
 
-| Matcher | Claude | Cursor |
-|---------|--------|--------|
-| `shell` | `Bash` | `Shell` |
+| Matcher | Claude | Cursor | OpenCode | Pi |
+|---------|--------|--------|----------|----|
+| `shell` | `Bash` | `Shell` | `bash` | `bash` |
 
-Matchers not supported by an agent are ignored.
+Matchers not supported by an agent are ignored. Claude, OpenCode and Pi
+pass any other matcher through as a native tool name. OpenCode and Pi
+have no matcher field, so their generated hook scripts check the tool
+name themselves and return early for other tools.
 
 ### Storage formats per agent
 
@@ -299,6 +302,8 @@ Matchers not supported by an agent are ignored.
 - **Cursor** - merged into `~/.cursor/hooks.json`. Ownership is tracked in `managed.json`; user-added entries are never touched.
 - **Copilot** - individual `aide-<hash>.json` files written to `~/.config/copilot/hooks/`. Only `pre_tool` is supported.
 - **Hermes** - Python plugin directories written to `~/.hermes/plugins/aide_<hash>/` (an `__init__.py` + `plugin.yaml` per hook). Only `pre_tool` is supported.
+- **OpenCode** - individual `aide-<hash>.js` plugin files written to `~/.config/opencode/plugin/`.
+- **Pi** - individual `aide-<hash>.ts` extension files written to `~/.pi/agent/extensions/` (or under `$PI_CODING_AGENT_DIR`).
 - **Codex** - no hook support.
 
 ### The `{agent}` template variable

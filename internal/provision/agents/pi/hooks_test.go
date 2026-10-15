@@ -117,3 +117,46 @@ func TestPiWriteHooksSkipsUnsupportedEventSilently(t *testing.T) {
 		t.Errorf("expected no hooks written for an unsupported event, got %+v", got)
 	}
 }
+
+func TestPiWriteHooksAppliesMatcher(t *testing.T) {
+	home := t.TempDir()
+	ctx := provision.Context{HomeDir: home}
+	d := pidriver.New(&fakeRunner{})
+
+	hooks := []provision.Hook{
+		{Event: "pre_tool", Matcher: "shell", Command: "rtk hook pi"},
+		{Event: "pre_tool", Command: "rtk hook pi"},
+	}
+	if err := d.WriteHooks(ctx, nil, hooks); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.ReadHooks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ReadHooks = %+v, want both hooks round-tripped", got)
+	}
+	keys := map[string]bool{}
+	for _, h := range got {
+		keys[provision.HookKey(h.Event, h.Matcher, h.Command)] = true
+	}
+	for _, h := range hooks {
+		if !keys[provision.HookKey(h.Event, h.Matcher, h.Command)] {
+			t.Errorf("hook %+v did not round-trip; got %+v", h, got)
+		}
+	}
+
+	dir := filepath.Join(home, ".pi", "agent", "extensions")
+	entries, _ := os.ReadDir(dir)
+	guarded := 0
+	for _, e := range entries {
+		data, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		if strings.Contains(string(data), `if (event.toolName !== "bash") return;`) {
+			guarded++
+		}
+	}
+	if guarded != 1 {
+		t.Errorf("want exactly one extension guarded on toolName bash, got %d", guarded)
+	}
+}

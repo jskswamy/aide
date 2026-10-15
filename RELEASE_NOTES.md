@@ -175,6 +175,16 @@ tried to add the marketplace again. aide now matches the URL or path to
 the name Claude registered the marketplace under and installs
 `hello@<marketplace name>`.
 
+#### Hook matchers now apply to OpenCode and Pi
+
+A hook scoped with `matcher:` (e.g. `matcher: shell`) fired on every
+tool call under OpenCode and Pi, because neither agent has a matcher
+field and the generated hook scripts ignored it. The generated plugin
+or extension now checks the tool name and only runs the command for the
+matched tool (`shell` maps to `bash` in both). The same command can be
+declared with and without a matcher, or under several matchers, each
+getting its own file. Hooks without a matcher are unchanged.
+
 ## v2.2.0 (2026-08-28)
 
 A statusline for your terminal, hooks that adopt themselves and travel

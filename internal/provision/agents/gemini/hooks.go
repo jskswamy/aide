@@ -15,7 +15,7 @@ var geminiEventMap = map[string]string{
 }
 
 func geminiHooksDir(ctx provision.Context) string {
-	return filepath.Join(ctx.HomeDir, ".gemini", "hooks")
+	return filepath.Join(provision.EnvOrHomePath(ctx, "GEMINI_HOME", ".gemini"), "hooks")
 }
 
 // geminiHookCodec implements provision.HookCodec for gemini's aide_*.sh scripts.

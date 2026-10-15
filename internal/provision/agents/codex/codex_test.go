@@ -153,3 +153,15 @@ func TestCodexMCPConfigPath(t *testing.T) {
 		t.Errorf("path = %q, want %q", got, want)
 	}
 }
+
+func TestCodexMCPConfigPathFollowsCodexHome(t *testing.T) {
+	d := codex.New(stubRunner{})
+	got := d.MCPConfigPath(provision.Context{
+		HomeDir: "/h",
+		Env:     map[string]string{"CODEX_HOME": "/h/.codex-work"},
+	})
+	want := "/h/.codex-work/config.toml"
+	if got != want {
+		t.Errorf("path = %q, want %q", got, want)
+	}
+}

@@ -51,6 +51,18 @@ func TestCopilotMCPConfigPath(t *testing.T) {
 	}
 }
 
+func TestCopilotMCPConfigPathFollowsCopilotHome(t *testing.T) {
+	d := copilot.New(&fakeRunner{})
+	got := d.MCPConfigPath(provision.Context{
+		HomeDir: "/home/u",
+		Env:     map[string]string{"COPILOT_HOME": "/home/u/.copilot-work"},
+	})
+	want := "/home/u/.copilot-work/mcp-config.json"
+	if got != want {
+		t.Errorf("path = %q, want %q", got, want)
+	}
+}
+
 func TestCopilotInstallPluginMarketplace(t *testing.T) {
 	r := &fakeRunner{}
 	d := copilot.New(r)

@@ -19,14 +19,24 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         stable = nixpkgs-stable.legacyPackages.${system};
+        # ponytail: pinned to 1.26.9 for the crypto/tls, net/http,
+        # html/template and net/textproto CVEs; nixpkgs is still on 1.26.8.
+        # Drop this override once pkgs.go_1_26 reaches 1.26.9.
+        go = pkgs.go_1_26.overrideAttrs (_: rec {
+          version = "1.26.9";
+          src = pkgs.fetchurl {
+            url = "https://go.dev/dl/go${version}.src.tar.gz";
+            hash = "sha256-lzXX3Ntls10/pXfwQGRzfAO4nPGitx5uaf4vPG+f1Mo=";
+          };
+        });
       in
       {
-        packages.default = pkgs.buildGoModule.override { go = pkgs.go_1_26; } {
+        packages.default = pkgs.buildGoModule.override { inherit go; } {
           pname = "aide";
           version = self.shortRev or self.dirtyShortRev or "dev";
           src = self;
           subPackages = [ "cmd/aide" ];
-          vendorHash = "sha256-RyWLbNrm9pEMx/TsoGHRGkZEq/cQgAxfhWPYuaadRgM=";
+          vendorHash = "sha256-9fwnio68oYw72T50DOAnZXzLzePlyHuN1eTp+DlokaU=";
 
           # ponytail: tests run via CI/pre-commit; skipping here avoids pulling
           # git+perl+python3 into the build closure just for two git-shelling tests.
@@ -48,7 +58,7 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            pkgs.go_1_26
+            go
             pkgs.gnumake
             pkgs.golangci-lint
             pkgs.gosec
@@ -60,7 +70,7 @@
 
           shellHook = ''
             # Export GOROOT so Go works outside the devshell (e.g. Claude Code sandbox)
-            export GOROOT="${pkgs.go_1_26}/share/go"
+            export GOROOT="${go}/share/go"
 
             # Use project-local GOBIN so Go-installed tools match the devshell Go version
             export GOBIN="$PWD/.gobin"

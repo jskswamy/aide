@@ -30,6 +30,9 @@ func isolatedConfigDir(t *testing.T) string {
 	t.Chdir(dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
 	t.Setenv("HOME", dir)
+	// An exported agent config dir would redirect provisioning away
+	// from the temp HOME.
+	unsetEnv(t, "CLAUDE_CONFIG_DIR")
 	if err := os.MkdirAll(filepath.Join(dir, "xdg", "aide"), 0o755); err != nil {
 		t.Fatal(err)
 	}

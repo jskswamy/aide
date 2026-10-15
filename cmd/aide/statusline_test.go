@@ -94,6 +94,22 @@ func TestStatuslineInstall_DefaultContext_WritesToDefaultClaudeDir(t *testing.T)
 	}
 }
 
+func TestStatuslineInstall_ExportedConfigDir_WritesThere(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeStatuslineConfig(t, dir, "work", "claude", "")
+	exported := filepath.Join(dir, "claude-elsewhere")
+	t.Setenv("CLAUDE_CONFIG_DIR", exported)
+
+	if out, err := runStatuslineInstall(t, "--context", "work"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	settings := readSettingsJSON(t, filepath.Join(exported, "settings.json"))
+	if _, ok := settings["statusLine"]; !ok {
+		t.Errorf("statusLine not written to exported CLAUDE_CONFIG_DIR")
+	}
+}
+
 func TestStatuslineInstall_ProfileContext_WritesToProfileDir(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeStatuslineConfig(t, dir, "work", "claude", "work")

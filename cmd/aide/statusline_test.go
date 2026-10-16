@@ -230,6 +230,33 @@ func TestRenderStatusline_AllModulesDefault(t *testing.T) {
 	}
 }
 
+func TestRenderStatusline_ContextModulePrefersProfile(t *testing.T) {
+	cfg := config.ResolveStatusline(nil, nil)
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"profile and context", map[string]string{"AIDE_PROFILE": "work", "AIDE_CONTEXT": "work"}, "📁 work"},
+		{"profile only", map[string]string{"AIDE_PROFILE": "work"}, "📁 work"},
+		{"context only (older aide)", map[string]string{"AIDE_CONTEXT": "legacy"}, "📁 legacy"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renderModule("context", cfg, tc.env); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEnvForRender_IncludesProfile(t *testing.T) {
+	t.Setenv("AIDE_PROFILE", "work")
+	if got := envForRender()["AIDE_PROFILE"]; got != "work" {
+		t.Errorf("envForRender AIDE_PROFILE = %q, want work", got)
+	}
+}
+
 func TestRenderStatusline_UntrustedShowsTrust(t *testing.T) {
 	cfg := config.ResolveStatusline(nil, nil)
 	env := map[string]string{
@@ -485,6 +512,7 @@ func TestRunStatusline_BareCommandAutoDetectsAndRenders(t *testing.T) {
 	t.Setenv("AIDE_TRUST", "")
 	t.Setenv("AIDE_AUTO_APPROVE", "")
 	t.Setenv("AIDE_CONTEXT", "")
+	t.Setenv("AIDE_PROFILE", "")
 	// No --agent flag is passed, so agent resolution falls through to
 	// AIDE_AGENT (2nd priority in resolveStatuslineAgent) before the
 	// stdin-JSON sniff this test is actually exercising gets a turn — pin
@@ -541,6 +569,7 @@ func TestRunStatusline_JSONFormat(t *testing.T) {
 	t.Setenv("AIDE_TRUST", "")
 	t.Setenv("AIDE_AUTO_APPROVE", "")
 	t.Setenv("AIDE_CONTEXT", "")
+	t.Setenv("AIDE_PROFILE", "")
 	t.Setenv("AIDE_AGENT", "claude")
 	withPipedStdin(t, `{"session_id":"abc"}`)
 
@@ -588,6 +617,7 @@ func TestRunStatusline_ClaudeSubcommandStillWorksUnmodified(t *testing.T) {
 	t.Setenv("AIDE_TRUST", "")
 	t.Setenv("AIDE_AUTO_APPROVE", "")
 	t.Setenv("AIDE_CONTEXT", "")
+	t.Setenv("AIDE_PROFILE", "")
 	withPipedStdin(t, `{}`)
 
 	cmd := statuslineAgentCmd("claude")
@@ -619,6 +649,7 @@ func TestRunStatusline_TTYRendersPreviewInsteadOfHelpText(t *testing.T) {
 	t.Setenv("AIDE_TRUST", "")
 	t.Setenv("AIDE_AUTO_APPROVE", "")
 	t.Setenv("AIDE_CONTEXT", "")
+	t.Setenv("AIDE_PROFILE", "")
 	t.Setenv("AIDE_AGENT", "claude")
 
 	// Actually exercises isTTY == true: runStatuslineRenderWithStdin takes

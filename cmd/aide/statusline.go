@@ -376,7 +376,12 @@ func renderModule(name string, cfg config.StatuslineConfig, env map[string]strin
 		if isModuleDisabled(cfg.Context) || cfg.Context == nil {
 			return ""
 		}
-		ctx := env["AIDE_CONTEXT"]
+		// AIDE_CONTEXT covers sessions launched by releases that
+		// predate AIDE_PROFILE.
+		ctx := env["AIDE_PROFILE"]
+		if ctx == "" {
+			ctx = env["AIDE_CONTEXT"]
+		}
 		if ctx == "" {
 			return ""
 		}
@@ -401,7 +406,7 @@ func envForRender() map[string]string {
 	env := map[string]string{}
 	for _, k := range []string{
 		"AIDE_SANDBOX", "AIDE_NETWORK_MODE", "AIDE_CAPS",
-		"AIDE_TRUST", "AIDE_AUTO_APPROVE", "AIDE_CONTEXT",
+		"AIDE_TRUST", "AIDE_AUTO_APPROVE", "AIDE_CONTEXT", "AIDE_PROFILE",
 	} {
 		if v, ok := os.LookupEnv(k); ok {
 			env[k] = v

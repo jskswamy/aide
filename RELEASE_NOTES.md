@@ -18,6 +18,53 @@ directory now belongs to the agent that actually launches
 - `aide which` and `aide status` accept `--agent` to show what such a
   launch would use.
 
+#### remote_name in match rules now takes effect
+
+A remote rule with `remote_name: upstream` was documented but ignored:
+every remote rule was matched against `origin`. Each rule now matches
+against the remote it names, so `remote_name: upstream` matches only
+the `upstream` remote. Rules without `remote_name` still use `origin`.
+
+#### Context matching is deterministic on ties
+
+When two contexts scored equally for the same directory (for example,
+identical remote rules), the winner could change from one run to the
+next. The context whose name sorts first now always wins.
+
+#### Remote matching normalizes host case, trailing slashes and ports
+
+Remote URLs and remote rules are now compared in a normalized
+`host[:port]/org/repo` form.
+
+- Host names are case-insensitive: `GitHub.com/org/repo` matches a
+  `github.com` remote, including in globs such as `GitHub.com/org/*`.
+- A trailing `/` on a rule or a remote URL no longer prevents a match.
+- **Behavior change:** a non-default port is now part of the identity.
+  A rule `git.example.com/org/repo` no longer matches
+  `ssh://git@git.example.com:2222/org/repo.git`; write the rule as
+  `git.example.com:2222/org/repo` (or as the full URL). The same
+  applies to globs: `git.example.com/*` becomes
+  `git.example.com:2222/*`. A scheme's default port (`:22` for ssh,
+  `:443` for https, `:80` for http, `:9418` for git) is dropped, so
+  `ssh://git@github.com:22/org/repo.git` still matches
+  `github.com/org/repo`.
+- Match reasons in the launch banner, `aide which` and JSON
+  `match_reason` no longer show credentials from a rule saved as a raw
+  URL with a token; the rule is shown normalized.
+- `aide context bind` saves remote rules in the normalized form
+  (`github.com/org/repo`) instead of the raw URL, so tokens or
+  passwords embedded in a remote URL are no longer copied into
+  `config.yaml` or printed. A remote that is a local path (no host) is
+  bound by folder path instead. Rules saved by earlier releases keep
+  matching.
+
+#### AIDE_PROFILE is exported alongside AIDE_CONTEXT
+
+Launched agents and their child processes now see `AIDE_PROFILE` with
+the resolved context name, the same value as `AIDE_CONTEXT`, which is
+kept for existing scripts. `aide statusline` reads `AIDE_PROFILE` and
+falls back to `AIDE_CONTEXT` for sessions started by older releases.
+
 #### Clear error for profiles on agents without profile support
 
 Selecting a context with `profile:` for an agent that cannot isolate a

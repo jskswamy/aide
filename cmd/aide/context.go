@@ -195,9 +195,9 @@ Examples:
 			var desc string
 			switch {
 			case forceRemote:
-				remote := aidectx.DetectRemote(cwd, "origin")
+				remote := aidectx.CurrentRemote(cwd)
 				if remote == "" {
-					return fmt.Errorf("--remote requires the current folder to be a git repo with an 'origin' remote (not a git repo or no origin)")
+					return fmt.Errorf("--remote requires the current folder to be a git repo with an '%[1]s' remote that has a host (not a git repo, no %[1]s, or a local-path %[1]s)", aidectx.DefaultRemoteName)
 				}
 				rule = config.MatchRule{Remote: remote}
 				desc = fmt.Sprintf("by remote %s", remote)
@@ -672,8 +672,7 @@ If no context name is given, the CWD-matched context is used.`,
 			if len(args) > 0 {
 				ctxName = args[0]
 			} else {
-				remoteURL := aidectx.DetectRemote(cwd, "origin")
-				rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+				rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 				if err != nil {
 					return fmt.Errorf("resolving context: %w", err)
 				}

@@ -89,7 +89,7 @@ func injectAideSessionEnv(
 	agentName string,
 	trustInfo *ui.TrustInfo,
 ) []string {
-	add := make(map[string]string, 8)
+	add := make(map[string]string, 9)
 
 	if sbDisabled {
 		add["AIDE_SANDBOX"] = "off"
@@ -123,7 +123,10 @@ func injectAideSessionEnv(
 		add["AIDE_AUTO_APPROVE"] = "1"
 	}
 
+	// AIDE_PROFILE is the current name; AIDE_CONTEXT stays for scripts
+	// and statuslines written against older releases. Same value.
 	if contextName != "" {
+		add["AIDE_PROFILE"] = contextName
 		add["AIDE_CONTEXT"] = contextName
 	}
 
@@ -209,16 +212,16 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// 2. Detect git remote + project root
-	remoteURL := aidectx.DetectRemote(cwd, "origin")
+	remotes := aidectx.GitRemotes(cwd)
 	projectRoot := aidectx.ProjectRoot(cwd)
 
 	// 3. Resolve context
-	rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+	rc, err := aidectx.Resolve(cfg, cwd, remotes)
 	if err != nil {
 		if cfg.DefaultContext != "" || l.EmptyStateActions == nil {
 			return fmt.Errorf("resolving context: %w", err)
 		}
-		rc, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remoteURL)
+		rc, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remotes)
 		if err != nil {
 			return err
 		}
@@ -1024,7 +1027,7 @@ func buildTrustInfo(absPath, homeDir string, po *config.ProjectOverride) *ui.Tru
 func (l *Launcher) handleEmptyStateLaunch(
 	cfg *config.Config,
 	cwd string,
-	remoteURL string,
+	remotes aidectx.RemoteLookup,
 ) (*aidectx.ResolvedContext, *config.Config, error) {
 	isTTY, in := isStdinTTY, io.Reader(os.Stdin)
 	if l.StdinIsTTY != nil {
@@ -1045,7 +1048,7 @@ func (l *Launcher) handleEmptyStateLaunch(
 		if lerr != nil {
 			return nil, cfg, fmt.Errorf("reloading config after empty-state action: %w", lerr)
 		}
-		newRc, rerr := aidectx.Resolve(newCfg, cwd, remoteURL)
+		newRc, rerr := aidectx.Resolve(newCfg, cwd, remotes)
 		if rerr != nil {
 			return nil, cfg, fmt.Errorf("resolving context after empty-state action: %w", rerr)
 		}

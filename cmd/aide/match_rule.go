@@ -9,27 +9,38 @@ import (
 )
 
 // autoDetectMatchRule returns the match rule that best identifies the
-// given folder. If the folder is inside a git repo with an "origin"
-// remote, match by remote URL (durable across worktrees and fresh
-// checkouts). Otherwise match by exact folder path.
+// given folder. If the folder is inside a git repo whose default remote
+// has a host, match by the normalized remote (durable across worktrees and
+// fresh checkouts, and free of any credentials in the URL). Otherwise
+// match by exact folder path.
 //
 // The second return value is a human-readable description suitable for
-// inclusion in user-facing output, e.g. "by remote git@…/foo.git" or
+// inclusion in user-facing output, e.g. "by remote github.com/org/foo" or
 // "by path /Users/x/work/foo".
 func autoDetectMatchRule(cwd string) (config.MatchRule, string) {
-	if remote := aidectx.DetectRemote(cwd, "origin"); remote != "" {
+	if remote := aidectx.CurrentRemote(cwd); remote != "" {
 		return config.MatchRule{Remote: remote}, fmt.Sprintf("by remote %s", remote)
 	}
 	return config.MatchRule{Path: cwd}, fmt.Sprintf("by path %s", cwd)
 }
 
 // rulesCollide reports whether two match rules refer to the same repo or path.
-// Remote URLs are normalized via ParseRemoteHost so http/ssh/git variants match.
+// Remote URLs are normalized via ParseRemoteHost so http/ssh/git variants
+// match; remotes without a host (local paths) are compared verbatim.
 func rulesCollide(a, b config.MatchRule) bool {
 	if a.Remote != "" && b.Remote != "" {
-		return aidectx.ParseRemoteHost(a.Remote) == aidectx.ParseRemoteHost(b.Remote)
+		return remoteIdentity(a.Remote) == remoteIdentity(b.Remote)
 	}
 	return a.Path != "" && a.Path == b.Path
+}
+
+// remoteIdentity is the normalized remote, or the rule text itself when it
+// has no host to normalize.
+func remoteIdentity(remote string) string {
+	if n := aidectx.ParseRemoteHost(remote); n != "" {
+		return n
+	}
+	return remote
 }
 
 type existingBind struct {

@@ -3,6 +3,7 @@ package context
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -21,7 +22,7 @@ func TestResolve_SingleRemoteMatch(t *testing.T) {
 		DefaultContext: "work",
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "github.com/org/repo")
+	rc, err := Resolve(cfg, "/tmp/somedir", originRemote("github.com/org/repo"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestResolve_SpecificRemoteBeatsWildcard(t *testing.T) {
 		DefaultContext: "broad",
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "github.com/jskswamy/aide")
+	rc, err := Resolve(cfg, "/tmp/somedir", originRemote("github.com/jskswamy/aide"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestResolve_PathMatchBeatsRemoteMatch(t *testing.T) {
 		DefaultContext: "remote-ctx",
 	}
 
-	rc, err := Resolve(cfg, cwd, "github.com/org/repo")
+	rc, err := Resolve(cfg, cwd, originRemote("github.com/org/repo"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestResolve_LongerPatternBeatsShort(t *testing.T) {
 		DefaultContext: "short",
 	}
 
-	rc, err := Resolve(cfg, cwd, "")
+	rc, err := Resolve(cfg, cwd, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +146,7 @@ func TestResolve_FallbackToDefault(t *testing.T) {
 		DefaultContext: "personal",
 	}
 
-	rc, err := Resolve(cfg, "/tmp/unmatched", "github.com/unmatched/repo")
+	rc, err := Resolve(cfg, "/tmp/unmatched", originRemote("github.com/unmatched/repo"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -163,7 +164,7 @@ func TestResolve_MinimalConfig(t *testing.T) {
 		Env:   map[string]string{"KEY": "val"},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -195,7 +196,7 @@ func TestResolve_ProjectOverrideMergesEnvAdditively(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "github.com/org/repo")
+	rc, err := Resolve(cfg, "/tmp/somedir", originRemote("github.com/org/repo"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestResolve_ProjectOverrideReplacesAgent(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "github.com/org/repo")
+	rc, err := Resolve(cfg, "/tmp/somedir", originRemote("github.com/org/repo"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +250,7 @@ func TestResolve_NoProjectOverride(t *testing.T) {
 		DefaultContext: "work",
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "github.com/org/repo")
+	rc, err := Resolve(cfg, "/tmp/somedir", originRemote("github.com/org/repo"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -274,7 +275,7 @@ func TestResolve_NoMatchNoDefault(t *testing.T) {
 		// No DefaultContext set
 	}
 
-	_, err := Resolve(cfg, "/tmp/somedir", "github.com/other-org/repo")
+	_, err := Resolve(cfg, "/tmp/somedir", originRemote("github.com/other-org/repo"))
 	if err == nil {
 		t.Fatal("expected error when no match and no default, got nil")
 	}
@@ -302,7 +303,7 @@ func TestResolve_ExactPathBeatsGlobPath(t *testing.T) {
 		DefaultContext: "glob-ctx",
 	}
 
-	rc, err := Resolve(cfg, cwd, "")
+	rc, err := Resolve(cfg, cwd, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -330,7 +331,7 @@ func TestResolve_RemoteExactBeatsRemoteGlob(t *testing.T) {
 		DefaultContext: "glob-ctx",
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "github.com/org/repo")
+	rc, err := Resolve(cfg, "/tmp/somedir", originRemote("github.com/org/repo"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -369,7 +370,7 @@ func TestResolve_ExactRemoteBeatsRecursivePathGlob(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, cwd, remote)
+	rc, err := Resolve(cfg, cwd, originRemote(remote))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -405,7 +406,7 @@ func TestResolve_RemoteURLForms_AllMatchSameCanonicalPattern(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rc, err := Resolve(cfg, "/tmp/somedir", tc.remoteURL)
+			rc, err := Resolve(cfg, "/tmp/somedir", originRemote(tc.remoteURL))
 			if err != nil {
 				t.Fatalf("unexpected error for %q: %v", tc.remoteURL, err)
 			}
@@ -436,7 +437,7 @@ func TestResolve_RemotePatternURLForms_AllMatchCanonicalRemote(t *testing.T) {
 					},
 				},
 			}
-			rc, err := Resolve(cfg, "/tmp/somedir", "git@github.com:tails-mpt/redfish-simulator.git")
+			rc, err := Resolve(cfg, "/tmp/somedir", originRemote("git@github.com:tails-mpt/redfish-simulator.git"))
 			if err != nil {
 				t.Fatalf("unexpected error for pattern %q: %v", pattern, err)
 			}
@@ -466,7 +467,7 @@ func TestResolve_RemoteGlobPattern_MatchesURLForms(t *testing.T) {
 	}
 	for _, remoteURL := range cases {
 		t.Run(remoteURL, func(t *testing.T) {
-			rc, err := Resolve(cfg, "/tmp/somedir", remoteURL)
+			rc, err := Resolve(cfg, "/tmp/somedir", originRemote(remoteURL))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -496,7 +497,7 @@ func TestResolve_TildeExpansion(t *testing.T) {
 		DefaultContext: "tilde-ctx",
 	}
 
-	rc, err := Resolve(cfg, cwd, "")
+	rc, err := Resolve(cfg, cwd, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -525,7 +526,7 @@ func TestResolve_EmptyRemoteGraceful(t *testing.T) {
 		DefaultContext: "remote-ctx",
 	}
 
-	rc, err := Resolve(cfg, cwd, "")
+	rc, err := Resolve(cfg, cwd, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -548,7 +549,7 @@ func TestResolve_ProjectOverrideReplacesMCPServers(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -575,7 +576,7 @@ func TestResolve_ParentWalk_GlobMatchesFromSubdir(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, deep, "")
+	rc, err := Resolve(cfg, deep, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -600,7 +601,7 @@ func TestResolve_ParentWalk_DoubleStarMatchesDeep(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, deep, "")
+	rc, err := Resolve(cfg, deep, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -626,7 +627,7 @@ func TestResolve_ParentWalk_ExactChildMatchFromSubdir(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, subdir, "")
+	rc, err := Resolve(cfg, subdir, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -652,7 +653,7 @@ func TestResolve_ParentWalk_BaseOfGlobMatches(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, parent, "")
+	rc, err := Resolve(cfg, parent, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -676,7 +677,7 @@ func TestResolve_ParentWalk_BaseOfDoubleStarMatches(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, parent, "")
+	rc, err := Resolve(cfg, parent, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -698,7 +699,7 @@ func TestResolve_ParentWalk_DoesNotMatchUnrelatedDir(t *testing.T) {
 		},
 	}
 
-	_, err := Resolve(cfg, "/bar/baz/deep", "")
+	_, err := Resolve(cfg, "/bar/baz/deep", nil)
 	if err == nil {
 		t.Fatal("expected error for unmatched path, got nil")
 	}
@@ -720,7 +721,7 @@ func TestResolve_ParentWalk_DirectMatchStillWorks(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, child, "")
+	rc, err := Resolve(cfg, child, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -756,7 +757,7 @@ func TestResolve_ParentWalk_ExactMatchBeatsParentGlob(t *testing.T) {
 	// - glob-ctx matches child (directly)
 	// Exact should win due to higher specificity tier
 	subdir := filepath.Join(child, "src")
-	rc, err := Resolve(cfg, subdir, "")
+	rc, err := Resolve(cfg, subdir, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -777,7 +778,7 @@ func TestResolve_PreferencesFromGlobal(t *testing.T) {
 		Preferences:    &config.Preferences{InfoStyle: style},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -800,7 +801,7 @@ func TestResolve_PreferencesProjectOverride(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -819,7 +820,7 @@ func TestResolve_PreferencesDefaults(t *testing.T) {
 		DefaultContext: "work",
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -841,7 +842,7 @@ func TestResolve_MinimalConfig_YoloPassedThrough(t *testing.T) {
 		Yolo:  &tr,
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -855,7 +856,7 @@ func TestResolve_MinimalConfig_YoloNilByDefault(t *testing.T) {
 		Agent: "claude",
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -880,7 +881,7 @@ func TestResolve_ProjectOverrideYolo(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -905,7 +906,7 @@ func TestResolve_ProjectOverrideYoloNil_PreservesContext(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -928,7 +929,7 @@ func TestResolve_ProjectOverrideReplacesSecret(t *testing.T) {
 		},
 	}
 
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -952,7 +953,7 @@ func TestResolve_ProjectOverrideCapabilities(t *testing.T) {
 			Capabilities: []string{"k8s", "aws"},
 		},
 	}
-	rc, err := Resolve(cfg, cwd, "")
+	rc, err := Resolve(cfg, cwd, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -976,7 +977,7 @@ func TestResolve_ProjectOverrideCapabilities_Additive(t *testing.T) {
 			Capabilities: []string{"k8s", "aws"},
 		},
 	}
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1005,7 +1006,7 @@ func TestResolve_ProjectOverrideCapabilities_Dedup(t *testing.T) {
 			Capabilities: []string{"k8s", "aws"},
 		},
 	}
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1029,7 +1030,7 @@ func TestResolve_ProjectOverrideDisabledCapabilities(t *testing.T) {
 			DisabledCapabilities: []string{"docker"},
 		},
 	}
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1063,7 +1064,7 @@ func TestResolve_ProjectOverrideSandbox_AdditiveExtra(t *testing.T) {
 			},
 		},
 	}
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1095,7 +1096,7 @@ func TestResolve_ProjectOverrideSandbox_ReplaceBase(t *testing.T) {
 			},
 		},
 	}
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1129,7 +1130,7 @@ func TestResolve_ProjectOverrideSandbox_ProfileExpanded(t *testing.T) {
 			},
 		},
 	}
-	rc, err := Resolve(cfg, "/tmp/somedir", "")
+	rc, err := Resolve(cfg, "/tmp/somedir", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1143,5 +1144,244 @@ func TestResolve_ProjectOverrideSandbox_ProfileExpanded(t *testing.T) {
 	}
 	if len(inline.ReadableExtra) != 1 || inline.ReadableExtra[0] != "/opt/data" {
 		t.Errorf("expected readable_extra merged, got %v", inline.ReadableExtra)
+	}
+}
+
+func TestResolve_EqualScoresPickLexicallyFirstName(t *testing.T) {
+	// Two contexts with identical rules score equally; the winner must not
+	// depend on map iteration order.
+	rule := []config.MatchRule{{Remote: "github.com/org/repo"}}
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"zeta":  {Match: rule, Agent: "z"},
+			"alpha": {Match: rule, Agent: "a"},
+			"mid":   {Match: rule, Agent: "m"},
+			"beta":  {Match: rule, Agent: "b"},
+		},
+	}
+	for i := 0; i < 50; i++ {
+		rc, err := Resolve(cfg, "/tmp/somedir", originRemote("git@github.com:org/repo.git"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rc.Name != "alpha" {
+			t.Fatalf("iteration %d: tie resolved to %q, want lexically first %q", i, rc.Name, "alpha")
+		}
+	}
+}
+
+func TestResolve_RemoteRuleNormalization(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		remote  string
+	}{
+		{"uppercase host in rule", "GitHub.com/org/repo", "git@github.com:org/repo.git"},
+		{"uppercase host in remote", "github.com/org/repo", "https://GitHub.com/org/repo.git"},
+		{"trailing slash in rule", "github.com/org/repo/", "git@github.com:org/repo.git"},
+		{"trailing slash in remote", "github.com/org/repo", "https://github.com/org/repo/"},
+		{"uppercase host glob", "GitHub.com/org/*", "https://github.com/org/repo.git"},
+		{"port rule in URL form", "ssh://git@git.example.com:2222/org/repo.git", "ssh://git@git.example.com:2222/org/repo.git"},
+		{"port rule in normalized form", "git.example.com:2222/org/repo", "ssh://git@git.example.com:2222/org/repo.git"},
+		{"credentials in remote", "github.com/org/repo", "https://user:s3cret@github.com/org/repo.git"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Contexts: map[string]config.Context{
+					"work": {Match: []config.MatchRule{{Remote: tc.pattern}}},
+				},
+			}
+			rc, err := Resolve(cfg, "/tmp/somedir", originRemote(tc.remote))
+			if err != nil {
+				t.Fatalf("rule %q did not match remote %q: %v", tc.pattern, tc.remote, err)
+			}
+			if rc.Name != "work" {
+				t.Errorf("got %q, want work", rc.Name)
+			}
+		})
+	}
+}
+
+func TestResolve_PortDistinguishesRepositories(t *testing.T) {
+	// A host-only rule no longer matches the same path served on another port.
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {Match: []config.MatchRule{{Remote: "git.example.com/org/repo"}}},
+		},
+	}
+	if rc, err := Resolve(cfg, "/tmp/somedir", originRemote("ssh://git@git.example.com:2222/org/repo.git")); err == nil {
+		t.Errorf("expected no match across ports, got %q", rc.Name)
+	}
+}
+
+func TestResolve_NoMatchErrorOmitsCredentials(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {Match: []config.MatchRule{{Remote: "github.com/other/*"}}},
+		},
+	}
+	_, err := Resolve(cfg, "/tmp/somedir", originRemote("https://user:s3cret@github.com/org/repo.git"))
+	if err == nil {
+		t.Fatal("expected no-match error")
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Errorf("error leaks credentials: %v", err)
+	}
+	if !strings.Contains(err.Error(), "github.com/org/repo") {
+		t.Errorf("error should name the normalized remote: %v", err)
+	}
+}
+
+// originRemote returns a RemoteLookup whose only remote is the default one.
+func originRemote(url string) RemoteLookup {
+	return staticRemotes(map[string]string{DefaultRemoteName: url})
+}
+
+// staticRemotes returns a RemoteLookup backed by a fixed name→URL map.
+func staticRemotes(urls map[string]string) RemoteLookup {
+	return func(name string) string {
+		if name == "" {
+			name = DefaultRemoteName
+		}
+		return urls[name]
+	}
+}
+
+func TestResolve_RemoteNameSelectsRemote(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"upstream-work": {Match: []config.MatchRule{
+				{Remote: "github.com/upstream/repo", RemoteName: "upstream"},
+			}},
+		},
+		DefaultContext: "fallback",
+	}
+	cfg.Contexts["fallback"] = config.Context{}
+
+	cases := []struct {
+		name    string
+		remotes map[string]string
+		want    string
+	}{
+		{"matches upstream remote", map[string]string{
+			"origin":   "git@github.com:me/repo.git",
+			"upstream": "https://github.com/upstream/repo.git",
+		}, "upstream-work"},
+		{"ignores origin with the same URL", map[string]string{
+			"origin": "https://github.com/upstream/repo.git",
+		}, "fallback"},
+		{"ignores other remotes", map[string]string{
+			"origin":   "https://github.com/upstream/repo.git",
+			"upstream": "https://github.com/someone-else/repo.git",
+		}, "fallback"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rc, err := Resolve(cfg, "/tmp/somedir", staticRemotes(tc.remotes))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if rc.Name != tc.want {
+				t.Errorf("got %q, want %q", rc.Name, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolve_RulesWithoutRemoteNameUseOrigin(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {Match: []config.MatchRule{{Remote: "github.com/org/repo"}}},
+		},
+	}
+	var asked []string
+	lookup := func(name string) string {
+		asked = append(asked, name)
+		if name == DefaultRemoteName {
+			return "git@github.com:org/repo.git"
+		}
+		return ""
+	}
+	rc, err := Resolve(cfg, "/tmp/somedir", lookup)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "work" {
+		t.Errorf("got %q, want work", rc.Name)
+	}
+	for _, name := range asked {
+		if name != DefaultRemoteName {
+			t.Errorf("looked up remote %q, want only %q", name, DefaultRemoteName)
+		}
+	}
+}
+
+func TestResolve_PathRulesDoNotQueryRemotes(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {Match: []config.MatchRule{{Path: "/tmp/somedir"}}},
+		},
+	}
+	lookup := func(name string) string {
+		t.Errorf("unexpected remote lookup %q for a path-only config", name)
+		return ""
+	}
+	if _, err := Resolve(cfg, "/tmp/somedir", lookup); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolve_MatchReasonOmitsCredentials(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		remote  string
+		want    string
+	}{
+		{"exact https rule with token", "https://ghp_TOKEN@github.com/org/repo.git",
+			"git@github.com:org/repo.git", "exact remote match: github.com/org/repo"},
+		{"exact scp rule with password", "user:s3cret@github.com:org/repo.git",
+			"git@github.com:org/repo.git", "exact remote match: github.com/org/repo"},
+		{"glob rule with token", "https://ghp_TOKEN@github.com/org/*",
+			"https://ghp_TOKEN@github.com/org/repo", "remote match: https://github.com/org/*"},
+		{"plain glob unchanged", "github.com/org/*",
+			"git@github.com:org/repo.git", "remote match: github.com/org/*"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Contexts: map[string]config.Context{
+					"work": {Match: []config.MatchRule{{Remote: tc.pattern}}},
+				},
+			}
+			rc, err := Resolve(cfg, "/tmp/somedir", originRemote(tc.remote))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if rc.MatchReason != tc.want {
+				t.Errorf("MatchReason = %q, want %q", rc.MatchReason, tc.want)
+			}
+			for _, secret := range []string{"ghp_TOKEN", "s3cret"} {
+				if strings.Contains(rc.MatchReason, secret) {
+					t.Errorf("MatchReason leaks %q: %q", secret, rc.MatchReason)
+				}
+			}
+		})
+	}
+}
+
+func TestResolve_HostGlobDoesNotMatchOtherPort(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {Match: []config.MatchRule{{Remote: "git.example.com/*"}}},
+		},
+	}
+	if rc, err := Resolve(cfg, "/tmp/somedir", originRemote("ssh://git@git.example.com:2222/org/repo.git")); err == nil {
+		t.Errorf("host glob matched a non-default port, got %q", rc.Name)
+	}
+	cfg.Contexts["work"] = config.Context{Match: []config.MatchRule{{Remote: "git.example.com:2222/*"}}}
+	if _, err := Resolve(cfg, "/tmp/somedir", originRemote("ssh://git@git.example.com:2222/org/repo.git")); err != nil {
+		t.Errorf("host:port glob should match: %v", err)
 	}
 }

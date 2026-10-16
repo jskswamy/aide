@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -26,11 +27,34 @@ func TestAutoDetectMatchRule_GitRepoWithRemote_RemoteRule(t *testing.T) {
 	mustRun(t, dir, "git", "init")
 	mustRun(t, dir, "git", "remote", "add", "origin", "git@example.com:foo/bar.git")
 	rule, _ := autoDetectMatchRule(dir)
-	if rule.Remote != "git@example.com:foo/bar.git" {
-		t.Errorf("git repo with remote: got %+v, want Remote=git@example.com:foo/bar.git", rule)
+	if rule.Remote != "example.com/foo/bar" {
+		t.Errorf("git repo with remote: got %+v, want Remote=example.com/foo/bar", rule)
 	}
 	if rule.Path != "" {
 		t.Errorf("git repo with remote should not set Path: got %q", rule.Path)
+	}
+}
+
+func TestAutoDetectMatchRule_RemoteWithCredentials_PersistsNormalizedForm(t *testing.T) {
+	dir := t.TempDir()
+	mustRun(t, dir, "git", "init")
+	mustRun(t, dir, "git", "remote", "add", "origin", "https://user:s3cret@GitHub.com/org/repo.git")
+	rule, desc := autoDetectMatchRule(dir)
+	if rule.Remote != "github.com/org/repo" {
+		t.Errorf("got %+v, want Remote=github.com/org/repo", rule)
+	}
+	if strings.Contains(desc, "s3cret") || strings.Contains(rule.Remote, "s3cret") {
+		t.Errorf("credentials leaked: rule=%+v desc=%q", rule, desc)
+	}
+}
+
+func TestAutoDetectMatchRule_LocalPathRemote_PathRule(t *testing.T) {
+	dir := t.TempDir()
+	mustRun(t, dir, "git", "init")
+	mustRun(t, dir, "git", "remote", "add", "origin", "/srv/git/repo.git")
+	rule, _ := autoDetectMatchRule(dir)
+	if rule.Path != dir || rule.Remote != "" {
+		t.Errorf("host-less remote: got %+v, want Path=%s", rule, dir)
 	}
 }
 
@@ -66,6 +90,10 @@ func TestRulesCollide_RemoteVariants(t *testing.T) {
 		{"https://github.com/org/repo", "https://github.com/org/repo.git", true},
 		{"git@github.com:org/repo.git", "git@github.com:org/other.git", false},
 		{"git@github.com:org/repo.git", "git@gitlab.com:org/repo.git", false},
+		{"github.com/org/repo", "git@GitHub.com:org/repo.git", true},
+		{"github.com/org/repo", "github.com/org/other", false},
+		{"/srv/git/a.git", "/srv/git/b.git", false},
+		{"/srv/git/a.git", "/srv/git/a.git", true},
 	}
 	for _, tc := range cases {
 		a := config.MatchRule{Remote: tc.a}

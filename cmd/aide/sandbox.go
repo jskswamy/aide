@@ -117,8 +117,7 @@ func sandboxShowCmd() *cobra.Command {
 			cfg := env.Config()
 
 			// Resolve context
-			remoteURL := aidectx.DetectRemote(cwd, "origin")
-			rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 			if err != nil {
 				return fmt.Errorf("resolving context: %w", err)
 			}
@@ -265,8 +264,7 @@ func sandboxTestCmd() *cobra.Command {
 			cfg := env.Config()
 
 			// Resolve context
-			remoteURL := aidectx.DetectRemote(cwd, "origin")
-			rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 			if err != nil {
 				return fmt.Errorf("resolving context: %w", err)
 			}

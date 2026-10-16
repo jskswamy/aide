@@ -128,8 +128,7 @@ Examples:
 					return fmt.Errorf("context %q not found", targetName)
 				}
 			} else {
-				remoteURL := aidectx.DetectRemote(cwd, "origin")
-				resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
+				resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 				if err != nil {
 					return err
 				}
@@ -280,8 +279,7 @@ func envListCmd() *cobra.Command {
 				}
 				envMap = ctx.Env
 			} else {
-				remoteURL := aidectx.DetectRemote(cwd, "origin")
-				resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
+				resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 				if err != nil {
 					return err
 				}

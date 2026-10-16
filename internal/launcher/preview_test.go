@@ -28,6 +28,9 @@ agent: /usr/local/bin/my-agent
 	if env["AIDE_CONTEXT"] != "default" {
 		t.Errorf("AIDE_CONTEXT = %q, want default", env["AIDE_CONTEXT"])
 	}
+	if env["AIDE_PROFILE"] != "default" {
+		t.Errorf("AIDE_PROFILE = %q, want default", env["AIDE_PROFILE"])
+	}
 	if env["AIDE_SANDBOX"] != "on" {
 		t.Errorf("AIDE_SANDBOX = %q, want on (default policy)", env["AIDE_SANDBOX"])
 	}
@@ -66,6 +69,9 @@ contexts:
 	}
 	if env["AIDE_CONTEXT"] != "work" {
 		t.Errorf("AIDE_CONTEXT = %q, want work", env["AIDE_CONTEXT"])
+	}
+	if env["AIDE_PROFILE"] != "work" {
+		t.Errorf("AIDE_PROFILE = %q, want work", env["AIDE_PROFILE"])
 	}
 }
 

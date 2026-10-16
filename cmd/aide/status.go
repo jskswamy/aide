@@ -204,8 +204,7 @@ func whichCmd() *cobra.Command {
 			cwd := env.CWD()
 			cfg := env.Config()
 
-			remoteURL := aidectx.DetectRemote(cwd, "origin")
-			resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
+			resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 			if err != nil {
 				return err
 			}
@@ -1188,8 +1187,7 @@ func statusCmd() *cobra.Command {
 			cwd := env.CWD()
 			cfg := env.Config()
 
-			remoteURL := aidectx.DetectRemote(cwd, "origin")
-			resolved, err := aidectx.Resolve(cfg, cwd, remoteURL)
+			resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 			if err != nil {
 				return err
 			}

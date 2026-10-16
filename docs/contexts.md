@@ -39,7 +39,7 @@ match:
   - path: ~/clients/**    # recursive glob
 ```
 
-**Remote rules** match the git remote URL. Override the default remote name (`origin`) with `remote_name`.
+**Remote rules** match the git remote URL. Each rule is checked against the `origin` remote unless `remote_name` selects another one; a rule with `remote_name: upstream` matches only the `upstream` remote.
 
 ```yaml
 match:
@@ -48,6 +48,8 @@ match:
   - remote: "*.internal.corp/*"
     remote_name: upstream
 ```
+
+Remote URLs and non-glob rules are normalized to `host[:port]/org/repo` before comparison, so SSH (`git@host:org/repo.git`), `ssh://` and `https://` forms all match the same rule. The host is lowercased, a trailing `.git` or `/` is dropped, a port is kept unless it is the scheme's default (`ssh://git@git.example.com:2222/org/repo.git` becomes `git.example.com:2222/org/repo`, while `ssh://git@github.com:22/org/repo.git` becomes `github.com/org/repo`), and user names, passwords or tokens embedded in the URL are discarded. Match reasons shown by `aide which`, `aide status` and the launch banner never include those credentials either. `aide context bind` saves remote rules in this normalized form.
 
 ## Resolution Order
 
@@ -60,7 +62,7 @@ aide scores every match rule and picks the highest-scoring context:
 | Glob path    | 200 | + pattern length |
 | Glob remote  | 100 | + pattern length |
 
-An exact remote match (`remote: "github.com/acme/api"`) deliberately outranks a glob path match - it's more specific even though it's not a path rule. Longer patterns beat shorter patterns within the same tier. If no rule matches, `default_context` is the fallback.
+An exact remote match (`remote: "github.com/acme/api"`) deliberately outranks a glob path match - it's more specific even though it's not a path rule. Longer patterns beat shorter patterns within the same tier. When two contexts still score equally, the one whose name sorts first wins. If no rule matches, `default_context` is the fallback.
 
 `.aide.yaml` does not add a fifth scoring tier - it's a field-by-field override merged on top of whichever context wins the scoring above (some fields, like `env`, merge additively; others replace only if set). See [Per-Project Override](#per-project-override) below.
 

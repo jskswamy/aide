@@ -129,3 +129,43 @@ func TestLoadStateRejectsNewerVersion(t *testing.T) {
 		t.Errorf("newer state file was modified: %s", data)
 	}
 }
+
+// Rewriting config.yaml for a migration changes its bytes; profiles
+// synced against the old bytes move to the new hash, while a profile
+// that had already drifted keeps its stale hash and stays drifted.
+func TestRehashConfigMovesOnlyInSyncProfiles(t *testing.T) {
+	path := writeState(t, `{"version": 1, "contexts": {
+  "work": {"config_hash": "sha256:old", "plugins": {"p@m": {}}},
+  "stale": {"config_hash": "sha256:older"}}}`)
+	n, err := provision.RehashConfig(path, "sha256:old", "sha256:new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("rehashed %d profiles, want 1", n)
+	}
+	st, err := provision.LoadState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Contexts["work"].ConfigHash; got != "sha256:new" {
+		t.Errorf("work hash = %q", got)
+	}
+	if _, ok := st.Contexts["work"].Plugins["p@m"]; !ok {
+		t.Error("ownership lost while rehashing")
+	}
+	if got := st.Contexts["stale"].ConfigHash; got != "sha256:older" {
+		t.Errorf("drifted profile rehashed: %q", got)
+	}
+}
+
+func TestRehashConfigWithoutStateWritesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "managed.json")
+	n, err := provision.RehashConfig(path, "sha256:old", "sha256:new")
+	if err != nil || n != 0 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("state file created: %v", err)
+	}
+}

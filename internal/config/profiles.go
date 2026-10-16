@@ -209,6 +209,9 @@ func presentKeys(keys []string, want ...string) []string {
 }
 
 func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil {
+		return nil
+	}
 	if node.Kind == yaml.DocumentNode && len(node.Content) == 1 {
 		node = node.Content[0]
 	}

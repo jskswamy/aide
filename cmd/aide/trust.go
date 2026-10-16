@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
@@ -130,25 +129,35 @@ func validateCmd() *cobra.Command {
 	}
 }
 
+// trustTarget is the .aide.yaml a trust command acts on: the path
+// argument when given, else .aide.yaml in the current directory.
+func trustTarget(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	return config.ProjectConfigFileName
+}
+
 func trustCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "trust",
-		Short:        "Trust the .aide.yaml in the current directory",
+		Use:   "trust [path]",
+		Short: "Trust a .aide.yaml (default: the one in the current directory)",
+		Long: `Trust a .aide.yaml at its current contents. Trust is recorded per file,
+keyed on the symlink-resolved path and the contents: changing the file
+withdraws the approval. In a linked git worktree, the main checkout's
+.aide.yaml is a separate file with its own approval; pass its path.`,
+		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			absPath, err := filepath.Abs(".aide.yaml")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target := trustTarget(args)
+			fc, err := trust.DefaultStore().CheckFile(target)
 			if err != nil {
+				return fmt.Errorf("%s not found: %w", target, err)
+			}
+			if err := trust.DefaultStore().Trust(fc.Path, fc.Contents); err != nil {
 				return err
 			}
-			contents, err := os.ReadFile(absPath)
-			if err != nil {
-				return fmt.Errorf(".aide.yaml not found in current directory")
-			}
-			store := trust.DefaultStore()
-			if err := store.Trust(absPath, contents); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Trusted: %s\n", absPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Trusted: %s\n", fc.Path)
 			return nil
 		},
 	}
@@ -156,19 +165,18 @@ func trustCmd() *cobra.Command {
 
 func denyCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "deny",
-		Short:        "Deny the .aide.yaml in the current directory",
+		Use:          "deny [path]",
+		Short:        "Deny a .aide.yaml (default: the one in the current directory)",
+		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			absPath, err := filepath.Abs(".aide.yaml")
-			if err != nil {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// A missing file can still be denied ahead of time; it is
+			// recorded at its absolute path.
+			path, _ := trust.CanonicalPath(trustTarget(args))
+			if err := trust.DefaultStore().Deny(path); err != nil {
 				return err
 			}
-			store := trust.DefaultStore()
-			if err := store.Deny(absPath); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Denied: %s\n", absPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Denied: %s\n", path)
 			return nil
 		},
 	}
@@ -176,23 +184,20 @@ func denyCmd() *cobra.Command {
 
 func untrustCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "untrust",
-		Short:        "Remove trust for .aide.yaml without denying",
+		Use:          "untrust [path]",
+		Short:        "Remove trust for a .aide.yaml without denying",
+		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			absPath, err := filepath.Abs(".aide.yaml")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target := trustTarget(args)
+			fc, err := trust.DefaultStore().CheckFile(target)
 			if err != nil {
+				return fmt.Errorf("%s not found: %w", target, err)
+			}
+			if err := trust.DefaultStore().Untrust(fc.Path, fc.Contents); err != nil {
 				return err
 			}
-			contents, err := os.ReadFile(absPath)
-			if err != nil {
-				return fmt.Errorf(".aide.yaml not found in current directory")
-			}
-			store := trust.DefaultStore()
-			if err := store.Untrust(absPath, contents); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Untrusted: %s\n", absPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Untrusted: %s\n", fc.Path)
 			return nil
 		},
 	}

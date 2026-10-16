@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/jskswamy/aide/internal/testutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,7 +106,7 @@ func TestFindProjectConfigForWrite_FallbackToCwd(t *testing.T) {
 }
 
 func TestWriteProjectOverrideWithTrust_AutoReTrust(t *testing.T) {
-	dir := t.TempDir()
+	dir := testutil.CanonicalTempDir(t)
 	trustDir := t.TempDir()
 	store := trust.NewStore(trustDir)
 

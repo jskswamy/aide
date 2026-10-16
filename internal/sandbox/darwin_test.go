@@ -535,6 +535,15 @@ func TestSeatbeltProfile_CustomClaudeConfigDir(t *testing.T) {
 	if !strings.Contains(profile, ".cache/claude") {
 		t.Error("profile should still contain .cache/claude runtime path")
 	}
+
+	// The profile's own refresh lock replaces the global account state.
+	if !strings.Contains(profile, `(literal "/Users/testuser/.claude-work.lock")`) {
+		t.Error("profile should grant the config dir's own lock")
+	}
+	globalState := `(prefix "` + filepath.Join(policy.HomeDir, ".claude.json") + `")`
+	if strings.Contains(profile, globalState) {
+		t.Errorf("profile should not grant the global ~/.claude.json with CLAUDE_CONFIG_DIR set")
+	}
 }
 
 func TestDarwinSandbox_Apply_CleanEnv(t *testing.T) {

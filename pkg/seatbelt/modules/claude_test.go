@@ -60,7 +60,8 @@ func TestClaudeAgent_DefaultConfigDirs(t *testing.T) {
 }
 
 func TestClaudeAgent_NonConfigPathsAlwaysPresent(t *testing.T) {
-	// Even with env override, non-config paths must still appear.
+	// Even with env override, install and managed-config paths must
+	// still appear: they hold no login state.
 	ctx := &seatbelt.Context{
 		HomeDir: "/home/user",
 		Env:     []string{"CLAUDE_CONFIG_DIR=/custom/claude"},
@@ -68,12 +69,9 @@ func TestClaudeAgent_NonConfigPathsAlwaysPresent(t *testing.T) {
 	result := ClaudeAgent().Rules(ctx)
 	got := rulesToString(result.Rules)
 
-	// Non-config paths that should always be present (runtime data + managed config).
 	nonConfig := []string{
 		".local/bin/claude",
 		".cache/claude",
-		".claude.json",
-		".claude.lock",
 		".local/state/claude",
 		".local/share/claude",
 		".mcp.json",
@@ -91,5 +89,66 @@ func TestClaudeAgent_Name(t *testing.T) {
 	name := ClaudeAgent().Name()
 	if name != "Claude Agent" {
 		t.Errorf("expected 'Claude Agent', got %q", name)
+	}
+}
+
+// With CLAUDE_CONFIG_DIR set, Claude keeps .claude.json (account and
+// project state) inside that dir, so a profile launch must not reach
+// the global ~/.claude.json, ~/.claude or another profile's dir. The
+// profile's own refresh lock (<dir>.lock, a sibling of the dir) is
+// granted instead of ~/.claude.lock.
+func TestClaudeAgent_ProfileDirReplacesGlobalAccountState(t *testing.T) {
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CLAUDE_CONFIG_DIR=/home/user/.claude-work"},
+	}
+	got := rulesToString(ClaudeAgent().Rules(ctx).Rules)
+
+	for _, forbidden := range []string{
+		`"/home/user/.claude.json`,
+		`"/home/user/.claude.lock"`,
+		`"/home/user/.claude"`,
+		`"/home/user/.claude-personal`,
+		`.config/anthropic`,
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Errorf("profile launch grants %s:\n%s", forbidden, got)
+		}
+	}
+	for _, want := range []string{
+		`(subpath "/home/user/.claude-work")`,
+		`(literal "/home/user/.claude-work.lock")`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("profile launch is missing %s:\n%s", want, got)
+		}
+	}
+}
+
+func TestClaudeAgent_TildeProfileDirLockIsAbsolute(t *testing.T) {
+	ctx := &seatbelt.Context{
+		HomeDir: "/home/user",
+		Env:     []string{"CLAUDE_CONFIG_DIR=~/.claude-work"},
+	}
+	got := rulesToString(ClaudeAgent().Rules(ctx).Rules)
+	if !strings.Contains(got, `(literal "/home/user/.claude-work.lock")`) {
+		t.Errorf("lock grant not tilde-expanded:\n%s", got)
+	}
+}
+
+// Without CLAUDE_CONFIG_DIR, Claude uses ~/.claude and ~/.claude.json;
+// both stay granted.
+func TestClaudeAgent_DefaultKeepsGlobalAccountState(t *testing.T) {
+	got := rulesToString(ClaudeAgent().Rules(&seatbelt.Context{HomeDir: "/home/user"}).Rules)
+	for _, want := range []string{
+		`(prefix "/home/user/.claude.json")`,
+		`(literal "/home/user/.claude.lock")`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("default launch is missing %s:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, ".config/anthropic") {
+		t.Errorf("default launch grants ~/.config/anthropic:\n%s", got)
 	}
 }

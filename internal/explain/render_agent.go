@@ -29,10 +29,10 @@ func RenderAgent(doc Document) string {
 		return b.String()
 	}
 	if st.DefaultContext != "" {
-		fmt.Fprintf(&b, "- default_context: %s\n", st.DefaultContext)
+		fmt.Fprintf(&b, "- default_profile: %s\n", st.DefaultContext)
 	}
 	for _, c := range st.Contexts {
-		fmt.Fprintf(&b, "- context `%s`:", c.Name)
+		fmt.Fprintf(&b, "- profile `%s`:", c.Name)
 		if c.Agent != "" {
 			fmt.Fprintf(&b, " agent=%s", c.Agent)
 		}

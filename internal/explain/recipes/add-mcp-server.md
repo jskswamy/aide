@@ -1,11 +1,15 @@
 # Add an MCP server
 
-Top-level `mcp_servers` are included in **every** context by default.
-To restrict a server to one context, define it inside that context's
+If your config still uses the legacy `contexts:` key, put these entries
+under `contexts:` instead (same fields); a file cannot mix the two.
+`aide profile migrate` converts it.
+
+Top-level `mcp_servers` are included in **every** profile by default.
+To restrict a server to one profile, define it inside that profile's
 `extra` block instead. `env:` values support `{{ .secrets.<name> }}`
 templating; prefer that over inline literal tokens.
 
-## Add to all contexts (top-level)
+## Add to all profiles (top-level)
 
     mcp_servers:
       github:
@@ -14,9 +18,9 @@ templating; prefer that over inline literal tokens.
         env:
           GITHUB_PERSONAL_ACCESS_TOKEN: "{{ .secrets.github_token }}"
 
-## Add to one context only (context-scoped extra)
+## Add to one profile only (profile-scoped extra)
 
-    contexts:
+    profiles:
       work:
         mcp_servers:
           extra:
@@ -26,7 +30,7 @@ templating; prefer that over inline literal tokens.
               env:
                 GITHUB_PERSONAL_ACCESS_TOKEN: "{{ .secrets.github_token }}"
 
-## Add top-level but exclude from some contexts
+## Add top-level but exclude from some profiles
 
     mcp_servers:
       github:
@@ -35,7 +39,7 @@ templating; prefer that over inline literal tokens.
         env:
           GITHUB_PERSONAL_ACCESS_TOKEN: "{{ .secrets.github_token }}"
 
-    contexts:
+    profiles:
       personal:
         mcp_servers:
           exclude: [github]

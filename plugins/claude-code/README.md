@@ -41,6 +41,7 @@ For projects using aide, add to `.claude/settings.json`:
 | `/aide doctor` | Full diagnostic - validates config, sandbox, profile, secrets |
 | `/aide sandbox` | Sandbox diagnostics - policy review, guard management, path tuning |
 | `/aide profile` | Profile management - match resolution, add/modify/rename profiles |
+| `/aide context` | Deprecated alias of `/aide profile` |
 | `/aide secrets` | Secret management - list, create, edit, rotate encrypted secrets |
 | `/aide env` | Environment variables - list, set, wire from secrets |
 | `/aide config` | Config review - validation, hardening suggestions, optimization tips |

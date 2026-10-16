@@ -140,7 +140,7 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 	if contextName == "" {
 		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 		if err != nil {
-			return nil, "", config.Context{}, fmt.Errorf("resolving context: %w", err)
+			return nil, "", config.Context{}, fmt.Errorf("resolving profile: %w", err)
 		}
 		contextName = rc.Name
 	}
@@ -176,7 +176,7 @@ func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName, homeDir 
 	if contextName == "" {
 		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 		if err != nil {
-			return "", nil, fmt.Errorf("resolving context: %w", err)
+			return "", nil, fmt.Errorf("resolving profile: %w", err)
 		}
 		return rc.Name, capability.AutoIncludeCcstatusline(rc.Context.Capabilities, nil, homeDir), nil
 	}

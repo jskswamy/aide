@@ -42,7 +42,7 @@ func statuslineCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&modules, "module", nil, "Render only these modules (repeatable)")
 	cmd.Flags().BoolVar(&install, "install", false, "Install aide statusline")
 	cmd.Flags().BoolVar(&remove, "remove", false, "Remove aide statusline")
-	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Profile name (default: matched by CWD)")
 	addProfileFlag(cmd, &contextName)
 	cmd.AddCommand(statuslineAgentCmd("claude"))
 	return cmd
@@ -65,7 +65,7 @@ func statuslineAgentCmd(agent string) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&install, "install", false, fmt.Sprintf("Install aide statusline for %s", agent))
 	cmd.Flags().BoolVar(&remove, "remove", false, "Remove aide statusline")
-	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Profile name (default: matched by CWD)")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringSliceVar(&modules, "module", nil, "Render only these modules (repeatable)")
 	return cmd

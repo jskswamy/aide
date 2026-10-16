@@ -235,7 +235,7 @@ func capListCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().StringVar(&contextName, "context", "", "target profile name")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -737,7 +737,7 @@ func capEnableCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -798,7 +798,7 @@ func capDisableCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -1004,7 +1004,7 @@ func capAuditCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().StringVar(&contextName, "context", "", "target profile name")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }

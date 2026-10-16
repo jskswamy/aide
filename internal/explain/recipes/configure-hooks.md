@@ -1,21 +1,25 @@
 # Configure hooks
 
+If your config still uses the legacy `contexts:` key, put these entries
+under `contexts:` instead (same fields); a file cannot mix the two.
+`aide profile migrate` converts it.
+
 Hooks run shell commands at agent lifecycle events. Supported events:
 `pre_tool`, `post_tool`, `session_start`, `session_end`, `stop`.
 
-Top-level hooks apply to every context. Per-context overrides can add
+Top-level hooks apply to every profile. Per-profile overrides can add
 extras or exclude inherited events.
 
-## Add a hook to all contexts
+## Add a hook to all profiles
 
     hooks:
       pre_tool:
         - command: my-guard-script
           matcher: shell
 
-## Add a hook to one context only
+## Add a hook to one profile only
 
-    contexts:
+    profiles:
       work:
         hooks:
           extra:
@@ -23,13 +27,13 @@ extras or exclude inherited events.
               - command: work-audit-hook
                 matcher: shell
 
-## Exclude a top-level hook in one context
+## Exclude a top-level hook in one profile
 
     hooks:
       pre_tool:
         - command: global-guard
 
-    contexts:
+    profiles:
       personal:
         hooks:
           exclude: [pre_tool]
@@ -37,7 +41,7 @@ extras or exclude inherited events.
 ## Exclude a specific hook by name
 
 Add a `name:` field to individual hooks, then use `exclude_hooks:` in a
-context to suppress only those hooks by name. Unnamed hooks are never
+profile to suppress only those hooks by name. Unnamed hooks are never
 affected by `exclude_hooks`.
 
     hooks:
@@ -48,11 +52,11 @@ affected by `exclude_hooks`.
         - command: audit-log
           name: audit
 
-    contexts:
+    profiles:
       personal:
         hooks:
           exclude_hooks:
             pre_tool: [guard]
 
-The `personal` context inherits `audit-log` but not `global-guard`.
+The `personal` profile inherits `audit-log` but not `global-guard`.
 The existing `exclude: [event]` form still drops an entire event type.

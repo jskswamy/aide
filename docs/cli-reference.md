@@ -528,12 +528,13 @@ it prints the converted file and a summary; nothing is written. With
 `--write` it keeps the original as `config.yaml.bak` (or
 `config.yaml.bak-<timestamp>` when that exists), writes the new file
 atomically and updates provisioning state so the rewrite is not reported
-as drift. `.aide.yaml` is never changed.
+as drift. `.aide.yaml` is never changed. A `contexts:` section using YAML anchors, aliases or merge keys is
+refused; expand it by hand first.
 
 | Flag | Description |
 |------|-------------|
 | `--write` | Write the migrated config (default: preview only) |
-| `--adopt <profile>` | Keep this profile on its agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}`; repeatable, but two profiles cannot adopt the same dir |
+| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}`. Under `--agent <other agent>` the profile then uses a fresh `~/.<agent>-<profile>` dir with its own login; the preview lists them. Repeatable, but two profiles cannot adopt the same dir |
 
 See [Profiles § Migrating from contexts](profiles.md#migrating-from-contexts).
 

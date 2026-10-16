@@ -119,7 +119,7 @@ func TestProfileMigrate_PreviewWritesNothing(t *testing.T) {
 		t.Fatalf("migrate: %v\n%s", err, out)
 	}
 	for _, want := range []string{"profiles:", "default_profile: personal", "config_dir_name: work",
-		"credentials:", "nothing written", "--write", "personal", "~/.claude", "--adopt personal"} {
+		"credentials:", "nothing written", "--write", "personal", "~/.claude", "--adopt <profile> (one of: personal)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("preview missing %q:\n%s", want, out)
 		}
@@ -197,6 +197,21 @@ func TestProfileMigrate_AdoptPinsGlobalLogin(t *testing.T) {
 	written, _ := os.ReadFile(cfgPath)
 	if !strings.Contains(string(written), "claude: ~/.claude") {
 		t.Errorf("personal not pinned to the global dir:\n%s", written)
+	}
+}
+
+// The preview spells out that adopting moves the profile's other
+// harnesses off their global logins.
+func TestProfileMigrate_AdoptPreviewNamesOtherHarnessDirs(t *testing.T) {
+	migrateFixture(t)
+	out, _, err := execProfileMigrate(t, "--adopt", "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"under --agent <other harness>", "codex ~/.codex-personal", "pi ~/.pi-personal", "its own login"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("preview missing %q:\n%s", want, out)
+		}
 	}
 }
 

@@ -103,7 +103,8 @@ scrubbed.
   keys are unchanged (see below). The statusline module keeps its name,
   `context`.
 - The Claude Code plugin's `/aide context` command is now `/aide
-  profile`; the docs and plugin text say "profile" throughout, and
+  profile` (`/aide context` stays as a deprecated alias that says so);
+  the docs and plugin text say "profile" throughout, and
   `docs/contexts.md` is now `docs/profiles.md`.
 
 #### aide profile migrate converts config.yaml to profiles:
@@ -121,17 +122,31 @@ and writes the new file atomically.
 - Provider keys in `env:` templated from the profile's own store
   (`ANTHROPIC_API_KEY: "{{ .secrets.anthropic_key }}"`) become
   `credentials:` bindings selected by `default_credentials:`. Custom
-  names are limited to the profile's agent with `harnesses:`. Values
-  are never read or printed. A key that cannot be translated stops the
-  migration with the replacement block to write.
+  names are limited to the profile's agent with `harnesses:` (a
+  profile whose agent is not a known harness stops with a message to
+  move that key by hand). Values are never read or printed. A key that
+  cannot be translated stops the migration with the replacement block
+  to write.
 - Comments and unrelated keys are kept; blank lines and indentation are
-  normalized. The result is checked as a config before it is written.
+  normalized. The result is checked as a config, and every profile's
+  `env:` must match the original except the moved keys, before it is
+  written.
+- A `contexts:`/`profiles:` section that uses YAML anchors, aliases or
+  merge keys (`&name`, `*name`, `<<:`) stops with `cannot migrate
+  shared YAML nodes`, since editing a shared node would change other
+  profiles too; expand it by hand and re-run.
+- The preview prints the whole config, including literal `env:`
+  values.
 - Profiles that use an agent's global login (no config dir of their
   own, so they run from e.g. `~/.claude` and share one login) are
   listed and left unchanged. `--adopt <profile>` keeps the global login
-  for that profile by adding `config_dir_name: <profile>` and
-  `config_dirs: {<agent>: <default dir>}`; adopting two profiles onto
-  the same dir is refused. No login dir is copied.
+  of that profile's own agent by adding `config_dir_name: <profile>`
+  and `config_dirs: {<agent>: <default dir>}`. Because of the
+  `config_dir_name:`, launching that profile under another agent
+  (`--agent codex`, ...) then uses a fresh `~/.<agent>-<profile>` dir
+  that needs its own login, not that agent's global login; the preview
+  lists those dirs. Adopting two profiles onto the same dir is refused.
+  No login dir is copied.
 - `--write` also updates provisioning state for profiles synced against
   the old file, so the rewrite is not reported as drift and nothing aide
   installed is treated as new. Profiles that had already drifted still

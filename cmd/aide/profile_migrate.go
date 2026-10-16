@@ -37,10 +37,16 @@ the new file is written atomically.
 Comments, unrelated keys and native config dirs are kept, so no login
 moves. Profiles that run a harness from its global default dir (such
 as ~/.claude) share that login; they are listed and left unchanged
-unless named with --adopt, which keeps the global login for that one
-profile by pinning config_dirs to the default dir. No login dir is
-copied. .aide.yaml files are never changed, and launching aide never
-rewrites the config.`,
+unless named with --adopt. --adopt keeps that profile on the global
+login of its own harness by pinning config_dirs to the default dir; it
+also sets config_dir_name: <profile>, so launching the profile under
+another harness (--agent codex, ...) then uses a fresh
+~/.<harness>-<profile> dir with its own login instead of that harness's
+global login. No login dir is copied. .aide.yaml files are never
+changed, and launching aide never rewrites the config.
+
+The preview prints your whole config, including literal env: values;
+review it before pasting it anywhere.`,
 		Example: `  aide profile migrate                     # preview
   aide profile migrate --write             # apply
   aide profile migrate --write --adopt personal`,
@@ -56,7 +62,7 @@ rewrites the config.`,
 	}
 	cmd.Flags().BoolVar(&write, "write", false, "Write the migrated config (default: preview only)")
 	cmd.Flags().StringArrayVar(&adopt, "adopt", nil,
-		"Keep this profile on its harness's global login by pinning config_dirs to the default dir (repeatable)")
+		"Keep this profile on its own harness's global login by pinning config_dirs to the default dir; other harnesses get fresh ~/.<harness>-<profile> dirs (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("adopt", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return profileNamesForCompletion(), cobra.ShellCompDirectiveNoFileComp
 	})
@@ -110,7 +116,8 @@ func runProfileMigrate(out io.Writer, cfgPath, statePath, home string, adopt []s
 	printMigrationSummary(out, m)
 	n, err := provision.RehashConfig(statePath, oldHash, newHash)
 	if err != nil {
-		return fmt.Errorf("config migrated, but updating provisioning state failed (aide will report drift until `aide sync`): %w", err)
+		return fmt.Errorf("config migrated (original kept as %s), but updating provisioning state failed, so aide may report drift "+
+			"until the state file is readable and `aide sync` runs: %w", backup, err)
 	}
 	if n > 0 {
 		fmt.Fprintf(out, "Updated provisioning state for %d profile(s), so the rewrite is not reported as drift.\n", n)
@@ -165,9 +172,17 @@ func printGlobalLogins(out io.Writer, logins []config.GlobalLogin) {
 			pending = append(pending, g.Profile)
 		}
 		fmt.Fprintf(out, "  %s: %s %s (%s)\n", g.Profile, g.Harness, g.Dir, state)
+		if g.Adopted && len(g.OtherDirs) > 0 {
+			others := make([]string, 0, len(g.OtherDirs))
+			for _, o := range g.OtherDirs {
+				others = append(others, fmt.Sprintf("%s %s", o.Harness, o.Dir))
+			}
+			fmt.Fprintf(out, "    note: adopting adds config_dir_name: %s, so under --agent <other harness> this profile now uses "+
+				"a fresh dir that needs its own login instead of that harness's global login: %s\n", g.Profile, strings.Join(others, ", "))
+		}
 	}
 	if len(pending) > 0 {
-		fmt.Fprintf(out, "To keep the global login for one profile, re-run with --adopt %s; give the others their own "+
-			"config_dir_name: and log in there. No login dir is copied.\n", pending[0])
+		fmt.Fprintf(out, "To keep the global login of its own harness for one profile, re-run with --adopt <profile> (one of: %s); "+
+			"give the others their own config_dir_name: and log in there. No login dir is copied.\n", strings.Join(pending, ", "))
 	}
 }

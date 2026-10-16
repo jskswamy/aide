@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 )
 
@@ -15,7 +16,7 @@ import (
 // wrappers preserve the sentinel so rewording the user-facing
 // message doesn't break tests.
 var (
-	// ErrProfileNotSupported: agent driver has no ProfileEnvKey.
+	// ErrProfileNotSupported: the harness has no ProfileEnvKey.
 	ErrProfileNotSupported = errors.New("profile not supported by agent")
 
 	// ErrProfileNameInvalid: profile value fails charset/length rules
@@ -58,18 +59,7 @@ func ValidateProfile(ctx config.Context, homeDir string, fromProjectOverride boo
 		return fmt.Errorf("%w: %q (allowed: [a-zA-Z0-9_-]+, max 64 chars)",
 			ErrProfileNameInvalid, ctx.Profile)
 	}
-	drv, ok := ProvisionerFor(ctx.Agent)
-	if !ok {
-		return fmt.Errorf("no provisioner registered for agent %q", ctx.Agent)
-	}
-	type profileResolver interface {
-		Profile(name, override, homeDir string) (string, string, error)
-	}
-	pr, ok := drv.(profileResolver)
-	if !ok {
-		return fmt.Errorf("%w: %q (driver lacks Profile method)", ErrProfileNotSupported, ctx.Agent)
-	}
-	envKey, absPath, err := pr.Profile(ctx.Profile, ctx.ProfileDir, homeDir)
+	envKey, absPath, err := harnessProfile(ctx.Agent, ctx.Profile, ctx.ProfileDir, homeDir)
 	if err != nil {
 		return err
 	}
@@ -89,7 +79,7 @@ func ValidateProfile(ctx config.Context, homeDir string, fromProjectOverride boo
 // ctx.Profile is empty. Caller is responsible for passing a writable
 // (or nil) env map — when nil, a new map is returned only if profile
 // is set, otherwise nil is returned. Errors propagate from
-// ValidateProfile or the driver's Profile method.
+// ValidateProfile or the harness table.
 func InjectProfileEnv(ctx config.Context, env map[string]string, homeDir string) (map[string]string, error) {
 	if ctx.Profile == "" && ctx.ProfileDir == "" {
 		return env, nil
@@ -97,17 +87,7 @@ func InjectProfileEnv(ctx config.Context, env map[string]string, homeDir string)
 	if err := ValidateProfile(ctx, homeDir, false); err != nil {
 		return env, err
 	}
-	drv, ok := ProvisionerFor(ctx.Agent)
-	if !ok {
-		return env, fmt.Errorf("no provisioner registered for agent %q", ctx.Agent)
-	}
-	pr, ok := drv.(interface {
-		Profile(name, override, homeDir string) (string, string, error)
-	})
-	if !ok {
-		return env, fmt.Errorf("%w: %q (driver lacks Profile method)", ErrProfileNotSupported, ctx.Agent)
-	}
-	envKey, absPath, err := pr.Profile(ctx.Profile, ctx.ProfileDir, homeDir)
+	envKey, absPath, err := harnessProfile(ctx.Agent, ctx.Profile, ctx.ProfileDir, homeDir)
 	if err != nil {
 		return env, err
 	}
@@ -142,6 +122,36 @@ func WithAgent(ctx config.Context, agent string) config.Context {
 	return ctx
 }
 
+// profileUnsupportedError is the user-facing error for a profile
+// requested on a harness without profile support. It unwraps to
+// ErrProfileNotSupported.
+type profileUnsupportedError struct{ harness string }
+
+func (e *profileUnsupportedError) Error() string {
+	return fmt.Sprintf("Profiles are not supported for harness %q", e.harness)
+}
+
+func (e *profileUnsupportedError) Unwrap() error { return ErrProfileNotSupported }
+
+// harnessProfile resolves the env var and absolute config-dir path
+// for profile name on agent from the harness table. Agents with no
+// descriptor or no profile support get a profileUnsupportedError.
+func harnessProfile(agent, name, override, homeDir string) (envKey, absPath string, err error) {
+	d, ok := harness.Lookup(agent)
+	if !ok || !d.SupportsProfiles() {
+		return "", "", &profileUnsupportedError{harness: agent}
+	}
+	return d.ProfileEnvKey, profileDir(d.Name, name, override, homeDir), nil
+}
+
+// profileDir is override tilde-expanded, or ~/.<agent>-<name>.
+func profileDir(agent, name, override, homeDir string) string {
+	if override != "" {
+		return homepath.Expand(override, homeDir)
+	}
+	return filepath.Join(homeDir, fmt.Sprintf(".%s-%s", agent, name))
+}
+
 // Profile resolves the env var and absolute config-dir path for a
 // profile name. override is non-empty when the user supplied
 // profile_dir. Returns ErrProfileNotSupported (wrapped) when the
@@ -153,23 +163,13 @@ func (d DriverBase) Profile(name, override, homeDir string) (envKey, absPath str
 			ErrProfileNotSupported, d.Caps.AgentName,
 		)
 	}
-	if override != "" {
-		return d.Caps.ProfileEnvKey, homepath.Expand(override, homeDir), nil
-	}
-	dirName := fmt.Sprintf(".%s-%s", d.Caps.AgentName, name)
-	return d.Caps.ProfileEnvKey, filepath.Join(homeDir, dirName), nil
+	return d.Caps.ProfileEnvKey, profileDir(d.Caps.AgentName, name, override, homeDir), nil
 }
 
 // ProfileEnvKeyFor returns the env var that relocates agent's config
-// dir (e.g. CLAUDE_CONFIG_DIR), or "" when the agent has no such var or
-// no registered driver.
+// dir (e.g. CLAUDE_CONFIG_DIR), or "" when the harness has no profile
+// support or is unknown.
 func ProfileEnvKeyFor(agent string) string {
-	drv, ok := ProvisionerFor(agent)
-	if !ok {
-		return ""
-	}
-	if k, ok := drv.(interface{ ProfileEnvKey() string }); ok {
-		return k.ProfileEnvKey()
-	}
-	return ""
+	d, _ := harness.Lookup(agent)
+	return d.ProfileEnvKey
 }

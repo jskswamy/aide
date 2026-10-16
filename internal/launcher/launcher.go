@@ -20,6 +20,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/diag"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
@@ -131,20 +132,6 @@ func injectAideSessionEnv(
 	}
 
 	return mergeEnv(env, add)
-}
-
-// agentYoloFlags maps agent names to their "skip all permissions" flags.
-// An empty flag means the agent never prompts for permissions, so yolo is
-// already its only mode and nothing needs adding.
-var agentYoloFlags = map[string]string{
-	"claude":   "--dangerously-skip-permissions",
-	"codex":    "--full-auto",
-	"gemini":   "--yolo",
-	"copilot":  "--yolo",
-	"opencode": "--auto",
-	// Pi's --approve trusts project-local files, a separate decision aide
-	// leaves to the user; it is not a permissions bypass.
-	"pi": "",
 }
 
 // Launcher orchestrates the full agent launch flow.
@@ -613,16 +600,16 @@ func resolveAgentBinary(cfg *config.Config, agentName string) (string, error) {
 // Returns an error if the agent does not support yolo mode.
 func YoloArgs(agentName string) ([]string, error) {
 	// Normalize: strip path prefix to match by binary basename.
-	base := filepath.Base(agentName)
-	if flag, ok := agentYoloFlags[base]; ok {
-		if flag == "" {
-			return nil, nil
+	if d, ok := launchableHarness(agentName); ok {
+		if args, ok := d.YoloArgs(); ok {
+			return args, nil
 		}
-		return []string{flag}, nil
 	}
-	supported := make([]string, 0, len(agentYoloFlags))
-	for k := range agentYoloFlags {
-		supported = append(supported, k)
+	var supported []string
+	for _, d := range harness.All() {
+		if _, ok := d.YoloArgs(); ok && d.Launchable() {
+			supported = append(supported, d.Name)
+		}
 	}
 	return nil, fmt.Errorf(
 		"--yolo not supported for agent %q. Supported agents: %s",

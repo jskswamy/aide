@@ -42,7 +42,7 @@ func New(r provision.Runner) *Driver {
 			PluginsByInstallRef: true,
 			PluginNoun:          "packages",
 			SupportsHooks:       true,
-			ProfileEnvKey:       "PI_CODING_AGENT_DIR",
+			ProfileEnvKey:       provision.ProfileEnvKeyFor(agentName),
 		}},
 		runner: r,
 	}

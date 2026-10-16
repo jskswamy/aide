@@ -5,31 +5,30 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/pkg/seatbelt"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
-// agentModuleResolvers maps agent base names to their seatbelt module factory.
-var agentModuleResolvers = map[string]func() seatbelt.Module{
-	"aider":        modules.AiderAgent,
-	"amp":          modules.AmpAgent,
-	"claude":       modules.ClaudeAgent,
-	"codex":        modules.CodexAgent,
-	"copilot":      modules.CopilotAgent,
-	"cursor-agent": modules.CursorAgent,
-	"gemini":       modules.GeminiAgent,
-	"goose":        modules.GooseAgent,
-	"opencode":     modules.OpenCodeAgent,
-	"pi":           modules.PiAgent,
+// ResolveAgentModule returns the seatbelt module for the named agent, or nil.
+// The agent is matched by binary base name against canonical harness
+// names only; aliases never select a sandbox module.
+func ResolveAgentModule(agentName string) seatbelt.Module {
+	d, ok := launchableHarness(agentName)
+	if !ok {
+		return nil
+	}
+	return d.Sandbox()
 }
 
-// ResolveAgentModule returns the seatbelt module for the named agent, or nil.
-func ResolveAgentModule(agentName string) seatbelt.Module {
+// launchableHarness returns the launchable harness whose canonical name
+// is agentName's base name.
+func launchableHarness(agentName string) (harness.Descriptor, bool) {
 	base := filepath.Base(agentName)
-	if factory, ok := agentModuleResolvers[base]; ok {
-		return factory()
+	d, ok := harness.Lookup(base)
+	if !ok || d.Name != base || !d.Launchable() {
+		return harness.Descriptor{}, false
 	}
-	return nil
+	return d, true
 }
 
 // SandboxAgentEnv returns the env overrides the named agent's sandbox

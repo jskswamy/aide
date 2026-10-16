@@ -55,6 +55,31 @@ all eight (as `aws` and `gcp` re-admit theirs), so a profile with
 `capabilities: [azure]` keeps an exported service principal; without it
 they are removed.
 
+#### Pi's provider variables are scrubbed
+
+The credential-clean environment now covers every provider variable
+in Pi's provider docs. Removed from your shell's environment and, in a
+profile, settable only through `credentials:`: `ANTHROPIC_OAUTH_TOKEN`,
+`GOOGLE_CLOUD_API_KEY`, `CLOUDFLARE_API_KEY`, `COPILOT_GITHUB_TOKEN`,
+`HF_TOKEN`, `AI_GATEWAY_API_KEY`, `ANT_LING_API_KEY`, `NVIDIA_API_KEY`,
+`CEREBRAS_API_KEY`, `ZAI_API_KEY`, `ZAI_CODING_CN_API_KEY`,
+`OPENCODE_API_KEY`, `RADIUS_API_KEY`, `TYPESAFE_API_KEY`,
+`FIREWORKS_API_KEY`, `TOGETHER_API_KEY`, `BASETEN_API_KEY`,
+`KIMI_API_KEY`, `META_API_KEY`, `MINIMAX_API_KEY`,
+`MINIMAX_CN_API_KEY`, `MOONSHOT_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`,
+`QWEN_TOKEN_PLAN_CN_API_KEY`, `XIAOMI_API_KEY` and the three
+`XIAOMI_TOKEN_PLAN_*_API_KEY` names. Removed from the shell but
+settable in a profile's `env:`: `AZURE_OPENAI_BASE_URL`,
+`AZURE_OPENAI_RESOURCE_NAME`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`,
+`AZURE_OPENAI_API_VERSION`, `CLOUDFLARE_ACCOUNT_ID`,
+`CLOUDFLARE_GATEWAY_ID` and `GOOGLE_CLOUD_LOCATION`. This applies to
+every harness: if another tool the agent runs needed an exported
+`HF_TOKEN` or `CLOUDFLARE_API_KEY`, bind it with `credentials:`.
+
+A profile launch that selects its own config dir also drops an
+exported `PI_CODING_AGENT_SESSION_DIR`, which would otherwise put
+every Pi profile's sessions in one shared dir.
+
 #### Profile dirs differing only by case are refused on macOS and Windows
 
 Two profiles whose config dirs differ only by letter case (for example
@@ -435,6 +460,22 @@ aide: note: ~/.claude-work/settings.json sets apiKeyHelper: Claude Code uses the
 The path is shown absolute; the helper's command is never printed. The
 launch continues. See "Credential-clean environment" in
 `docs/configuration.md` for this limit and for `~/.config/anthropic`.
+
+#### Pi profile launches flag a stored login that outranks the selected key
+
+Pi uses a provider's entry in its `auth.json` ahead of the
+environment, so a key injected from `credentials:` is ignored for a
+provider the Pi profile has logged in to. When a Pi profile launch
+injects a binding and the profile's `auth.json` holds an entry for
+that provider, it prints:
+
+```text
+aide: note: ~/.pi-work/auth.json has a stored Pi login for anthropic: Pi uses it ahead of the selected API key (remove it with /logout in Pi, or launch with --auth login)
+```
+
+The path is shown absolute. Only provider names are read and printed,
+never stored values. The launch continues. See "Credential-clean
+environment" in `docs/configuration.md`.
 
 #### aide sandbox test shows the profile's own config dir
 

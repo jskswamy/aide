@@ -31,6 +31,8 @@ import (
 // Claude Code names follow https://code.claude.com/docs/en/env-vars,
 // https://code.claude.com/docs/en/authentication and
 // https://platform.claude.com/docs/en/manage-claude/wif-reference.
+// Pi names follow https://pi.dev/docs/latest/providers (Pi's
+// docs/providers.md).
 var providerSecretNames = []string{
 	// Anthropic / Claude Code
 	"ANTHROPIC_API_KEY",
@@ -62,6 +64,35 @@ var providerSecretNames = []string{
 	"GROQ_API_KEY",
 	"XAI_API_KEY",
 	"DEEPSEEK_API_KEY",
+	// Pi's remaining providers
+	"ANTHROPIC_OAUTH_TOKEN",
+	"ANT_LING_API_KEY",
+	"NVIDIA_API_KEY",
+	"GOOGLE_CLOUD_API_KEY",
+	"COPILOT_GITHUB_TOKEN",
+	"CEREBRAS_API_KEY",
+	"CLOUDFLARE_API_KEY",
+	"AI_GATEWAY_API_KEY",
+	"ZAI_API_KEY",
+	"ZAI_CODING_CN_API_KEY",
+	"OPENCODE_API_KEY",
+	"RADIUS_API_KEY",
+	"TYPESAFE_API_KEY",
+	"HF_TOKEN",
+	"FIREWORKS_API_KEY",
+	"TOGETHER_API_KEY",
+	"BASETEN_API_KEY",
+	"KIMI_API_KEY",
+	"META_API_KEY",
+	"MINIMAX_API_KEY",
+	"MINIMAX_CN_API_KEY",
+	"MOONSHOT_API_KEY",
+	"QWEN_TOKEN_PLAN_API_KEY",
+	"QWEN_TOKEN_PLAN_CN_API_KEY",
+	"XIAOMI_API_KEY",
+	"XIAOMI_TOKEN_PLAN_CN_API_KEY",
+	"XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+	"XIAOMI_TOKEN_PLAN_SGP_API_KEY",
 }
 
 // providerSelectorNames are non-secret provider selectors, endpoints and
@@ -101,6 +132,14 @@ var providerSelectorNames = []string{
 	"OPENAI_API_BASE",
 	"AZURE_OPENAI_ENDPOINT",
 	"GOOGLE_GEMINI_BASE_URL",
+	// Pi's provider endpoints and selectors
+	"AZURE_OPENAI_BASE_URL",
+	"AZURE_OPENAI_RESOURCE_NAME",
+	"AZURE_OPENAI_DEPLOYMENT_NAME_MAP",
+	"AZURE_OPENAI_API_VERSION",
+	"CLOUDFLARE_ACCOUNT_ID",
+	"CLOUDFLARE_GATEWAY_ID",
+	"GOOGLE_CLOUD_LOCATION",
 }
 
 // cloudNames are ambient cloud credentials and selectors. A trailing

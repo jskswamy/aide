@@ -336,6 +336,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 	l.printLegacyCredentialHints(profileLabel(cfg, rc.Name), legacyCreds)
+	if notice := selectedKeyNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, credPlan); notice != "" {
+		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
+	}
 	if len(credPlan.Ignored) > 0 {
 		fmt.Fprintf(l.stderr(), "aide: note: native login: not injecting credentials %s\n", strings.Join(credPlan.Ignored, ", "))
 	}

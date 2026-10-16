@@ -55,6 +55,13 @@ aide auto-detects known agent config directories and adds them to the writable l
 | Cursor       | `CURSOR_CONFIG_DIR` | `~/.cursor` (also `$XDG_CONFIG_HOME/cursor` on Linux when set) |
 | Gemini       | `GEMINI_HOME`       | `~/.gemini`                           |
 | Goose        | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
+| Pi           | `PI_CODING_AGENT_DIR` | `~/.pi`                             |
+
+With the env override set (every profile launch sets it to the
+profile's own dir), only that dir is granted, on macOS and Linux: not
+the default dir, Pi's `~/.pi` parent, or another profile's dir. A Pi
+profile's `auth.json` (logins and saved keys) is therefore reachable
+only from that profile.
 
 ### Claude Code's files outside the config dir
 

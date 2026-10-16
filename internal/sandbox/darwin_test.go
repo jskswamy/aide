@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
@@ -634,5 +635,38 @@ func TestGenerateSeatbeltProfile_BroadSystemReads(t *testing.T) {
 		if strings.Contains(profile, p) {
 			t.Errorf("profile should NOT contain old granular path %s (replaced by broad reads)", p)
 		}
+	}
+}
+
+// A Pi profile launch's Seatbelt profile grants the selected
+// profile dir and not the default dir, Pi's ~/.pi parent or another
+// profile's dir.
+func TestSeatbeltProfile_PiAndCodexProfileDirsOnly(t *testing.T) {
+	for name, tc := range map[string]struct {
+		module func() seatbelt.Module
+		env    string
+		work   string
+		others []string
+	}{
+		"pi": {modules.PiAgent, "PI_CODING_AGENT_DIR", "/Users/testuser/.pi-work", []string{"/Users/testuser/.pi", "/Users/testuser/.pi-personal"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp", HomeDir: "/Users/testuser"},
+				[]string{tc.env + "=" + tc.work})
+			policy.AgentModule = tc.module()
+
+			profile, err := generateSeatbeltProfile(policy)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(profile, `(subpath "`+tc.work+`")`) {
+				t.Errorf("profile should grant %s", tc.work)
+			}
+			for _, other := range tc.others {
+				if strings.Contains(profile, `"`+other+`"`) {
+					t.Errorf("profile grants %s", other)
+				}
+			}
+		})
 	}
 }

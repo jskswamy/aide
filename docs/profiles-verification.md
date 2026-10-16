@@ -18,7 +18,7 @@ be updated.
 | Harness | Section | Status |
 | --- | --- | --- |
 | Claude Code | [Claude Code](#claude-code) | Pending verification |
-| Pi | Added by the Pi admission task | Not written yet |
+| Pi | [Pi](#pi) | Pending verification |
 | Codex | Added by the Codex admission task | Not written yet |
 
 ## How to record results
@@ -604,6 +604,364 @@ rm -f ~/.config/aide/secrets/verify.enc.yaml   # the C5 store, if you created on
 Then run the shared cleanup (S4).
 
 ### Claude summary
+
+```text
+Ran by:                 Date:
+macOS: all steps PASS? yes / no     Linux: all steps PASS? yes / no
+Findings to carry into the spec:
+```
+
+---
+
+## Pi
+
+Pi selects its state with `PI_CODING_AGENT_DIR` (default
+`~/.pi/agent`). Logins and API keys saved with `/login` live in that
+dir's `auth.json`, which Pi locks while it refreshes an OAuth token.
+Per Pi's provider docs (https://pi.dev/docs/latest/providers), a
+provider's credential is resolved in this order: `--api-key`, the
+`auth.json` entry, the environment variable, then `models.json`. So a
+key aide injects from `credentials:` loses to a stored entry for the
+same provider; aide prints a note when that happens. Sessions can be
+moved with `PI_CODING_AGENT_SESSION_DIR`, which aide drops from the
+shell for profile launches.
+
+You need two logins for one provider that Pi signs in to with OAuth
+(account A and account B; for example two GitHub Copilot accounts, or
+two ChatGPT accounts through the `openai-codex` provider), plus an
+OpenAI API key for P5. This checklist does not cover signing in to an
+Anthropic subscription through Pi; do not use one here. `<p>` below is
+the provider id you chose (`github-copilot`, `openai-codex`, ...).
+
+aide passes arguments after `--` to Pi, so `aide --profile verify-a
+--auth login -- auth check --provider <p> --json` runs Pi's own
+credential check inside the profile's sandbox without starting a
+session.
+
+Record the Pi version:
+
+```sh
+pi --version
+```
+
+```text
+Pi version (macOS):           (Linux):
+```
+
+### P0. Switch the test profiles to Pi
+
+Replace the two S3 entries with:
+
+```yaml
+  verify-a:
+    agent: pi
+    config_dir_name: verify-a      # contexts: users write  profile: verify-a
+  verify-b:
+    agent: pi
+    config_dir_name: verify-b      # contexts: users write  profile: verify-b
+```
+
+Note the state of the default Pi dir so you can tell later whether a
+profile touched it:
+
+```sh
+ls -la ~/.pi/agent 2>&1 | tee /tmp/pi-global-before.txt
+shasum -a 256 ~/.pi/agent/auth.json 2>/dev/null | tee -a /tmp/pi-global-before.txt
+```
+
+Expected: `aide which --profile verify-a` shows
+`PI_CODING_AGENT_DIR = <home>/.pi-verify-a`.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P1. Each profile gets its own config dir
+
+```sh
+aide which --profile verify-b
+aide sandbox test --profile verify-a > /tmp/verify-a.sb
+grep -c 'pi-verify-a' /tmp/verify-a.sb     # expect 1 or more
+grep -c 'pi-verify-b' /tmp/verify-a.sb     # expect 0
+grep -cE '/\.pi(/agent)?("|$)' /tmp/verify-a.sb   # expect 0: no ~/.pi or ~/.pi/agent grant
+```
+
+Expected: verify-b shows `<home>/.pi-verify-b`; the sandbox profile
+for verify-a grants `~/.pi-verify-a` only.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P2. Separate native logins
+
+```sh
+aide --profile verify-a --auth login    # /login, provider <p>, account A; then exit Pi
+aide --profile verify-b --auth login    # /login, provider <p>, account B; then exit Pi
+```
+
+Then:
+
+```sh
+ls -la ~/.pi-verify-a/auth.json ~/.pi-verify-b/auth.json       # expect both, mode -rw-------
+jq -r 'keys[]' ~/.pi-verify-a/auth.json ~/.pi-verify-b/auth.json
+for p in verify-a verify-b; do jq -r '."<p>".refresh' ~/.pi-$p/auth.json | shasum -a 256; done   # expect two different hashes
+aide --profile verify-a --auth login -- auth check --provider <p> --json   # expect "status":"ready"
+aide --profile verify-b --auth login -- auth check --provider <p> --json   # expect "status":"ready"
+ls -la ~/.pi/agent; shasum -a 256 ~/.pi/agent/auth.json 2>/dev/null       # compare with /tmp/pi-global-before.txt
+```
+
+Expected: each profile's `auth.json` holds its own `<p>` entry; the
+default `~/.pi/agent/auth.json` is unchanged (or still absent).
+Relaunch each profile and confirm it is still signed in (a prompt
+works without `/login`).
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P3. Concurrent runs
+
+Open two terminals in `~/aide-verify`:
+
+```sh
+aide --profile verify-a     # terminal 1
+aide --profile verify-b     # terminal 2
+```
+
+Send a short prompt in each (`say hi`), a second one in each while
+both stay open, then exit both and relaunch each once.
+
+Expected: both keep working with their own login; neither asks to
+sign in again.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P4. Token refresh and the auth.json lock
+
+Force a refresh in verify-a by marking its token expired, then let
+Pi's credential check refresh it (it refreshes expired OAuth
+credentials by default):
+
+```sh
+for p in verify-a verify-b; do shasum -a 256 ~/.pi-$p/auth.json; done
+cp -f ~/.pi-verify-a/auth.json /tmp/verify-a-auth.bak
+jq '."<p>".expires = 0' /tmp/verify-a-auth.bak > ~/.pi-verify-a/auth.json
+chmod 600 ~/.pi-verify-a/auth.json
+aide --profile verify-a --auth login -- auth check --provider <p> --json   # expect "status":"ready"
+jq '."<p>".expires' ~/.pi-verify-a/auth.json                               # expect a future timestamp (ms)
+for p in verify-a verify-b; do shasum -a 256 ~/.pi-$p/auth.json; done      # only verify-a's changes
+```
+
+Then refresh verify-a from two processes at once, to exercise the
+lock:
+
+```sh
+jq '."<p>".expires = 0' ~/.pi-verify-a/auth.json > /tmp/verify-a-auth.exp && \
+  cp -f /tmp/verify-a-auth.exp ~/.pi-verify-a/auth.json && chmod 600 ~/.pi-verify-a/auth.json
+for i in 1 2; do aide --profile verify-a --auth login -- auth check --provider <p> --json & done; wait
+jq empty ~/.pi-verify-a/auth.json && echo valid-json
+ls -la ~/.pi-verify-a | grep -c 'auth.json.lock'                           # expect 0 once both exit
+```
+
+If your entry has no `expires` field, record its fields
+(`jq '."<p>" | keys'`) instead and skip the forced refresh.
+
+Expected:
+
+- The refresh succeeds without `/login`, and only verify-a's
+  `auth.json` changes; verify-b's and `~/.pi/agent/auth.json` do not.
+- Both concurrent checks report `ready`; `auth.json` is still valid
+  JSON and no `auth.json.lock` is left behind.
+- No sandbox denial for the lock (on macOS run once with
+  `aide --profile verify-a --diagnose-trace` if a check fails).
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P5. API key versus stored login precedence
+
+Store an OpenAI API key and bind it to verify-a (see
+`docs/secrets.md`; reuse the C5 store if you have it):
+
+```sh
+aide secrets create verify --age-key <your age1... recipient>   # skip if it exists
+aide secrets edit verify        # add: openai_api_key: <key>
+```
+
+```yaml
+  verify-a:
+    agent: pi
+    config_dir_name: verify-a
+    credentials:
+      openai: {backend: age, store: verify, key: openai_api_key}
+    default_credentials: [openai]
+```
+
+Now save a fake OpenAI key as a stored entry in verify-a: run
+`aide --profile verify-a --auth login`, then `/login`, choose OpenAI
+and enter `sk-not-real-stored-a` as the API key, then quit.
+
+Run each case. `print-api-key` prints the key Pi would use; the
+`grep -c` keeps your real key off the screen (1 means the stored fake
+key won, 0 means the bound key won):
+
+| Case | Command | Expected aide note | Expected `grep -c` |
+| --- | --- | --- | --- |
+| a | `aide --profile verify-a -- auth print-api-key --provider openai \| grep -c not-real-stored` | `<home>/.pi-verify-a/auth.json has a stored Pi login for openai: Pi uses it ahead of the selected API key ...` | 1 |
+| b | `aide --profile verify-a --auth login -- auth print-api-key --provider openai \| grep -c not-real-stored` | `native login: not injecting credentials openai`, no stored-login note | 1 |
+| c | in `aide --profile verify-a --auth login`, run `/logout` for OpenAI; then case a again | no stored-login note | 0 |
+| d | `OPENAI_API_KEY=sk-not-real-shell aide --profile verify-b --auth login -- auth print-api-key --provider openai` | none | Pi reports no OpenAI credential (the shell key was scrubbed) |
+
+Expected also: the aide note names only the provider; it never shows
+`sk-not-real-stored-a` or your real key.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P6. Vertex and gcloud application-default credentials
+
+Optional: needs a Google Cloud project with Vertex AI and
+`gcloud auth application-default login` done once. Find Pi's Vertex
+provider id with `pi --list-models vertex`.
+
+```yaml
+  verify-a:
+    agent: pi
+    config_dir_name: verify-a
+    capabilities: [gcp]
+    env:
+      GOOGLE_CLOUD_LOCATION: us-central1
+```
+
+Add `GOOGLE_CLOUD_PROJECT: <project>` under that `env:` (aide warns
+that it is a scrubbed cloud name set in `env:`, which is expected),
+and give verify-b the same `capabilities: [gcp]` and `env:` entries.
+
+```sh
+aide --profile verify-a -- auth check --provider <vertex id> --json
+aide --profile verify-b -- auth check --provider <vertex id> --json
+```
+
+Then remove `capabilities: [gcp]` from verify-b and repeat its check.
+
+Expected (documented limit): with `gcp`, both profiles use the same
+`~/.config/gcloud` login; aide does not isolate it. Without `gcp`,
+verify-b cannot read it (not ready, or a permission error). Restore
+the plain entries from P0 afterwards.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P7. Sandbox keeps other profiles out of reach
+
+Pi has no shell escape of its own that runs before a model replies,
+so this step swaps in a small script named `pi` that probes the
+sandbox the way Pi would run.
+
+```sh
+mkdir -p ~/aide-verify/bin
+cat > ~/aide-verify/bin/pi <<'SH'
+#!/bin/sh
+echo "PI_CODING_AGENT_DIR=$PI_CODING_AGENT_DIR"
+echo "PI_CODING_AGENT_SESSION_DIR=${PI_CODING_AGENT_SESSION_DIR:-unset}"
+for f in "$PI_CODING_AGENT_DIR/auth.json" "$HOME/.pi-verify-b/auth.json" "$HOME/.pi/agent/auth.json"; do
+  if cat "$f" >/dev/null 2>&1; then echo "READ OK: $f"; else echo "READ DENIED: $f"; fi
+done
+touch "$PI_CODING_AGENT_DIR/probe" && echo "WRITE OK: own dir" && rm -f "$PI_CODING_AGENT_DIR/probe"
+SH
+chmod +x ~/aide-verify/bin/pi
+```
+
+Add to the config, at the top level (next to `profiles:` or
+`contexts:`; merge into an existing `agents:` mapping if you have one).
+The path must be absolute (`~` is not expanded there); print it with
+`echo "$HOME/aide-verify/bin/pi"`:
+
+```yaml
+agents:
+  pi:
+    binary: /Users/<you>/aide-verify/bin/pi    # Linux: /home/<you>/...
+```
+
+```sh
+cd ~/aide-verify
+PI_CODING_AGENT_SESSION_DIR=/tmp/shared-pi-sessions aide --profile verify-a
+```
+
+Expected:
+
+```text
+PI_CODING_AGENT_DIR=<home>/.pi-verify-a
+PI_CODING_AGENT_SESSION_DIR=unset
+READ OK: <home>/.pi-verify-a/auth.json
+READ DENIED: <home>/.pi-verify-b/auth.json
+READ DENIED: <home>/.pi/agent/auth.json
+WRITE OK: own dir
+```
+
+(`READ DENIED` for a file that does not exist also passes; create it
+first if you want a stronger check.) Remove the `agents: pi` entry
+afterwards.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P8. Shared paths
+
+These are not login stores, but profiles share them:
+
+- Project-local `.pi/settings.json` and `.pi/mcp.json` in a repository
+  are read by every profile once trusted. The trust decision itself is
+  recorded in each profile's own `trust.json`, so each profile asks
+  once.
+- Installed packages under `PI_PACKAGE_DIR` (Nix and Guix installs)
+  are shared and read-only.
+
+Check the trust prompt in a scratch repo:
+
+```sh
+mkdir -p ~/aide-verify/repo/.pi && cd ~/aide-verify/repo && git init -q
+echo '{}' > .pi/settings.json
+aide --profile verify-a      # expect a trust prompt; accept, then exit Pi
+aide --profile verify-b      # expect a trust prompt again
+ls ~/.pi-verify-a/trust.json ~/.pi-verify-b/trust.json
+```
+
+Expected: each profile asks once and records the decision in its own
+dir; `~/.pi/agent/trust.json` is unchanged.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### P9. Pi cleanup
+
+```sh
+aide --profile verify-a --auth login    # /logout for each provider, then exit Pi
+aide --profile verify-b --auth login    # /logout, then exit Pi
+rm -rf ~/.pi-verify-a ~/.pi-verify-b ~/aide-verify/bin ~/aide-verify/repo
+```
+
+Remove the `openai_api_key` entry from the verify store (or the store
+itself) if you created it for P5. Then run the shared cleanup (S4).
+
+### Pi summary
 
 ```text
 Ran by:                 Date:

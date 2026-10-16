@@ -154,6 +154,7 @@ func TestLauncher_ConfigDirRedirectsScrubbedWithProfile(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "/global/claude")
 	t.Setenv("CODEX_HOME", "/global/codex")
 	t.Setenv("PI_CODING_AGENT_DIR", "/global/pi")
+	t.Setenv("PI_CODING_AGENT_SESSION_DIR", "/global/pi-sessions")
 
 	env, _ := launchCapturingEnvAndStderr(t, `
 agents:
@@ -169,7 +170,7 @@ default_profile: work
 	if v, _ := envValue(env, "CLAUDE_CONFIG_DIR"); v != filepath.Join(home, ".claude-work") {
 		t.Errorf("CLAUDE_CONFIG_DIR = %q, want the profile dir", v)
 	}
-	for _, k := range []string{"CODEX_HOME", "PI_CODING_AGENT_DIR"} {
+	for _, k := range []string{"CODEX_HOME", "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"} {
 		if v, ok := envValue(env, k); ok {
 			t.Errorf("shell %s reached a profile launch: %q", k, v)
 		}

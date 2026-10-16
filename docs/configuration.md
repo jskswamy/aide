@@ -205,6 +205,16 @@ not `--clean-env` is set:
   the workload-identity federation IDs, `ANTHROPIC_CUSTOM_HEADERS`,
   the mTLS client certificate and key (`CLAUDE_CODE_CLIENT_*`), and every
   `CLAUDE_CODE_USE_*` / `CLAUDE_CODE_SKIP_*_AUTH` provider switch;
+- Pi's provider keys and endpoints (every variable in Pi's provider
+  docs): `ANTHROPIC_OAUTH_TOKEN`, `AZURE_OPENAI_API_KEY`,
+  `GOOGLE_CLOUD_API_KEY`, `CLOUDFLARE_API_KEY`, `COPILOT_GITHUB_TOKEN`,
+  `HF_TOKEN`, `AI_GATEWAY_API_KEY`, the `*_API_KEY` of DeepSeek,
+  NVIDIA, Cerebras, ZAI, OpenCode, Radius, TypeSafe, Fireworks,
+  Together, Baseten, Kimi, Meta, MiniMax, Moonshot, Qwen and Xiaomi
+  (secret-bearing), and `AZURE_OPENAI_BASE_URL`,
+  `AZURE_OPENAI_RESOURCE_NAME`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`,
+  `AZURE_OPENAI_API_VERSION`, `CLOUDFLARE_ACCOUNT_ID`,
+  `CLOUDFLARE_GATEWAY_ID`, `GOOGLE_CLOUD_LOCATION` (selectors);
 - ambient cloud credentials: `AWS_*`, `CLOUDSDK_*`,
   `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
   `GCLOUD_PROJECT`, and the Azure default-credential variables
@@ -215,7 +225,8 @@ not `--clean-env` is set:
 - when the profile selects its own config dir (`profile:`,
   `config_dir_name:`, `config_dir:` or `config_dirs:`), every harness
   config-dir redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
-  `PI_CODING_AGENT_DIR`, `COPILOT_HOME`, `OPENCODE_CONFIG`, ...).
+  `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `COPILOT_HOME`,
+  `OPENCODE_CONFIG`, ...).
   Without one, a redirect you export is kept as your global choice.
 
 The full list lives in `internal/envscrub`. What still reaches the
@@ -262,6 +273,25 @@ reaches:
   that can read it shares them. The sandbox does not grant that dir.
   To keep them per profile, set `ANTHROPIC_CONFIG_DIR` in the
   profile's `env:` to a dir inside its config dir.
+
+Pi keeps logins and saved API keys in `auth.json` inside its config
+dir (`PI_CODING_AGENT_DIR`, so one per profile), and uses a stored
+entry ahead of the environment for that provider. A selected
+`credentials:` binding therefore does not win in Pi for a provider the
+profile has logged in to. A Pi profile launch that injects a binding
+reads the profile's `auth.json` (provider names only, never the stored
+values) and prints `aide: note: <dir>/auth.json has a stored Pi login
+for <provider>: Pi uses it ahead of the selected API key ...`. The
+launch continues; run `/logout` for that provider in Pi to use the
+key, or launch with `--auth login` to use the login. Providers whose
+`auth.json` id Pi does not document (Bedrock, Vertex, custom names)
+are not checked. Pi's Vertex provider without `GOOGLE_CLOUD_API_KEY` uses gcloud
+application-default credentials
+(`~/.config/gcloud/application_default_credentials.json`). That file
+is one per user, not per profile: aide does not isolate it. The
+sandbox grants `~/.config/gcloud` only with the `gcp` capability, so
+every Pi profile with `gcp` (or launched without the sandbox) shares
+the same Google login.
 
 The no-config passthrough (`aide` with no `config.yaml`) only removes
 `SOPS_AGE_KEY` and `SOPS_AGE_KEY_FILE`; shell API keys still reach the

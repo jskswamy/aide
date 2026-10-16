@@ -270,3 +270,55 @@ func TestClaudeCodeAuthNamesClassified(t *testing.T) {
 		}
 	}
 }
+
+// piSecretNames are Pi's provider keys and tokens, from Pi's provider
+// docs (pi.dev/docs/latest/providers; earendil-works/pi
+// packages/coding-agent/docs/providers.md).
+var piSecretNames = []string{
+	"ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_IDENTITY_TOKEN_FILE",
+	"ANT_LING_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "DEEPSEEK_API_KEY", "NVIDIA_API_KEY",
+	"GEMINI_API_KEY", "GOOGLE_CLOUD_API_KEY", "COPILOT_GITHUB_TOKEN", "MISTRAL_API_KEY", "GROQ_API_KEY",
+	"CEREBRAS_API_KEY", "CLOUDFLARE_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY",
+	"ZAI_API_KEY", "ZAI_CODING_CN_API_KEY", "OPENCODE_API_KEY", "RADIUS_API_KEY", "TYPESAFE_API_KEY",
+	"HF_TOKEN", "FIREWORKS_API_KEY", "TOGETHER_API_KEY", "BASETEN_API_KEY", "KIMI_API_KEY", "META_API_KEY",
+	"MINIMAX_API_KEY", "MINIMAX_CN_API_KEY", "MOONSHOT_API_KEY", "QWEN_TOKEN_PLAN_API_KEY",
+	"QWEN_TOKEN_PLAN_CN_API_KEY", "XIAOMI_API_KEY", "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+	"XIAOMI_TOKEN_PLAN_AMS_API_KEY", "XIAOMI_TOKEN_PLAN_SGP_API_KEY", "AWS_BEARER_TOKEN_BEDROCK",
+}
+
+// piSelectorNames are Pi's non-secret provider endpoints and selectors.
+var piSelectorNames = []string{
+	"AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_RESOURCE_NAME", "AZURE_OPENAI_DEPLOYMENT_NAME_MAP",
+	"AZURE_OPENAI_API_VERSION", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_GATEWAY_ID", "GOOGLE_CLOUD_LOCATION",
+	"ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "ANTHROPIC_SERVICE_ACCOUNT_ID",
+	"ANTHROPIC_WORKSPACE_ID",
+}
+
+func TestPiProviderNamesClassified(t *testing.T) {
+	reg := envscrub.Credentials()
+	for _, n := range piSecretNames {
+		if !envscrub.IsProviderSecretName(n) || envscrub.IsProviderSelectorName(n) {
+			t.Errorf("%s should be a secret-bearing provider name", n)
+		}
+		if !reg.Permit(n).Matches(n) {
+			t.Errorf("%s is not pinned in the scrub registry", n)
+		}
+	}
+	for _, n := range piSelectorNames {
+		if !envscrub.IsProviderSelectorName(n) || envscrub.IsProviderSecretName(n) {
+			t.Errorf("%s should be a provider selector", n)
+		}
+		if !reg.Permit(n).Matches(n) {
+			t.Errorf("%s is not pinned in the scrub registry", n)
+		}
+	}
+	// Bedrock's and Vertex's ambient credentials stay cloud names that
+	// the aws/gcp capabilities can re-admit.
+	for _, n := range []string{"AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+		"AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_WEB_IDENTITY_TOKEN_FILE",
+		"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT"} {
+		if envscrub.IsProviderName(n) || !reg.Matches(n) || reg.Permit(n).Matches(n) {
+			t.Errorf("%s should be a scrubbed, re-admittable cloud name", n)
+		}
+	}
+}

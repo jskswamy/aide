@@ -1,0 +1,47 @@
+package modules
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
+
+// With a profile dir selected, the Pi module' Seatbelt rules
+// (the macOS backend) grant that dir only: not the default dir, Pi's
+// ~/.pi parent, or another profile's dir, even when they exist.
+func TestProfileDirRulesGrantOnlySelectedDir(t *testing.T) {
+	for name, tc := range map[string]struct {
+		module func() seatbelt.Module
+		envKey string
+		work   string
+		others []string
+	}{
+		"pi": {PiAgent, "PI_CODING_AGENT_DIR", ".pi-work", []string{".pi", ".pi/agent", ".pi-personal"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			for _, d := range append([]string{tc.work}, tc.others...) {
+				if err := os.MkdirAll(filepath.Join(home, d), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			work := filepath.Join(home, tc.work)
+			ctx := &seatbelt.Context{HomeDir: home, Env: []string{tc.envKey + "=" + work}}
+
+			got := rulesToString(tc.module().Rules(ctx).Rules)
+
+			if !strings.Contains(got, `(subpath "`+work+`")`) {
+				t.Errorf("rules do not grant the profile dir %s:\n%s", work, got)
+			}
+			for _, rel := range tc.others {
+				other := filepath.Join(home, rel)
+				if strings.Contains(got, `"`+other+`"`) {
+					t.Errorf("rules grant %s:\n%s", other, got)
+				}
+			}
+		})
+	}
+}

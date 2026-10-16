@@ -210,7 +210,14 @@ func launchCredentials(t *testing.T, configYAML string, auth AuthMode, resolve b
 // launchCredentialsAs is launchCredentials with an --agent override.
 func launchCredentialsAs(t *testing.T, configYAML, agentOverride string, auth AuthMode, resolve bool) ([]string, string, error) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	return launchCredentialsIn(t, t.TempDir(), configYAML, agentOverride, auth, resolve)
+}
+
+// launchCredentialsIn is launchCredentialsAs with HOME set to home, so
+// a test can seed native config dirs first.
+func launchCredentialsIn(t *testing.T, home, configYAML, agentOverride string, auth AuthMode, resolve bool) ([]string, string, error) {
+	t.Helper()
+	t.Setenv("HOME", home)
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 	writeMinimalConfig(t, configDir, configYAML)

@@ -167,11 +167,14 @@ var descriptors = []Descriptor{
 	{
 		// Pi's --approve trusts project-local files, a separate decision
 		// aide leaves to the user; it is not a permissions bypass.
+		// PI_CODING_AGENT_SESSION_DIR moves sessions out of the config
+		// dir (`pi --help`), so a shell export would share them across
+		// profiles.
 		Name:             "pi",
 		Binary:           "pi",
 		ProfileEnvKey:    "PI_CODING_AGENT_DIR",
 		DefaultConfigDir: ".pi/agent",
-		ConfigEnvKeys:    []string{"PI_CODING_AGENT_DIR"},
+		ConfigEnvKeys:    []string{"PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"},
 		Sandbox:          modules.PiAgent,
 		YoloSupported:    true,
 		Icon:             "🥧",

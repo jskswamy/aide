@@ -310,6 +310,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("profile %q: %w", rc.Name, perr)
 	}
 	rc.Context.Env = mergedEnv
+	if notice := nativeAuthNotice(rc.Context, homeDir); notice != "" {
+		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
+	}
 
 	// 5. Look up agent binary
 	agentName := rc.Context.Agent

@@ -184,6 +184,11 @@ Alongside `AIDE_SANDBOX`, `AIDE_NETWORK_MODE`, and `AIDE_INFO_STYLE` (used
 elsewhere in this doc to detect or override aide's runtime state), aide
 also honors:
 
+- `AIDE_PROFILE` and `AIDE_CONTEXT` (set by aide; read only by
+  `aide statusline`) - The name of
+  the resolved context, exported to the agent and its child processes.
+  Both carry the same value; `AIDE_CONTEXT` remains for scripts written
+  against earlier releases.
 - `AIDE_FORMAT` - Sets the default output format (`human` or `json`) for
   read/query commands (`aide which`, `aide cap list`, `aide status`,
   etc.) when `--format` isn't passed explicitly. Precedence: explicit
@@ -193,7 +198,7 @@ also honors:
 
 ## Context Fields
 
-- `match:`: list of path or remote rules that activate the context. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against git remote URL). `remote_name:` defaults to `origin`.
+- `match:`: list of path or remote rules that activate the context. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against the normalized git remote URL). `remote_name:` picks the remote a rule matches against and defaults to `origin`.
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.

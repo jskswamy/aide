@@ -2,7 +2,9 @@ package context
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gobwas/glob"
@@ -32,61 +34,84 @@ const (
 	specificityPathExact   = 300
 )
 
-// Resolve picks the best matching context from cfg for the given cwd and remoteURL.
+// Resolve picks the best matching context from cfg for the given cwd.
+// remotes supplies git remote URLs: each remote rule is scored against the
+// remote its remote_name selects (DefaultRemoteName when unset). A nil
+// remotes means the directory has no remotes.
 //
 // If cfg.IsMinimal(), it returns a normalized "default" context built from the
 // flat config fields.
 //
 // For each context, each match rule is scored:
-//   - exact path match: 300 + len(pattern)
-//   - glob path match:  200 + len(pattern)
-//   - remote match:     100 + len(pattern)
+//   - exact path match:   300 + len(pattern)
+//   - exact remote match: 250 + len(pattern)
+//   - glob path match:    200 + len(pattern)
+//   - glob remote match:  100 + len(pattern)
 //
-// The highest-scoring context wins. If nothing matches, falls back to
-// cfg.DefaultContext. If that is also unset, returns an error.
+// The highest-scoring context wins; on equal scores the lexically first
+// context name wins. If nothing matches, falls back to cfg.DefaultContext.
+// If that is also unset, returns an error.
 //
 // If cfg.ProjectOverride is set, it is merged on top of the matched context:
 // env merges additively (override wins on conflict), agent/secret/mcp_servers/sandbox
 // replace if set.
-func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext, error) {
-	// Handle minimal config: build a synthetic default context
+func Resolve(cfg *config.Config, cwd string, remotes RemoteLookup) (*ResolvedContext, error) {
 	if cfg.IsMinimal() {
-		// Materialise the legacy list-of-names from a polymorphic
-		// MCPServerMap whose entries are zero-valued (the unmarshaller
-		// uses that shape to represent `mcp_servers: [a, b]`).
-		var mcpList []string
-		for k, v := range cfg.MCPServers {
-			if v.Command == "" && v.URL == "" {
-				mcpList = append(mcpList, k)
-			}
+		return finishResolved(cfg, minimalContext(cfg)), nil
+	}
+
+	rc := bestMatch(cfg, cwd, remotes)
+	if rc == nil {
+		rc = defaultContext(cfg)
+	}
+	if rc == nil {
+		return nil, fmt.Errorf(
+			"no context matched for cwd=%s remote=%s and no default_context configured",
+			cwd, ParseRemoteHost(lookupRemote(remotes, DefaultRemoteName)),
+		)
+	}
+	return finishResolved(cfg, rc), nil
+}
+
+// minimalContext builds the synthetic "default" context of a minimal
+// (flat) config.
+func minimalContext(cfg *config.Config) *ResolvedContext {
+	// Materialise the legacy list-of-names from a polymorphic
+	// MCPServerMap whose entries are zero-valued (the unmarshaller
+	// uses that shape to represent `mcp_servers: [a, b]`).
+	var mcpList []string
+	for k, v := range cfg.MCPServers {
+		if v.Command == "" && v.URL == "" {
+			mcpList = append(mcpList, k)
 		}
-		ctx := config.Context{
+	}
+	return &ResolvedContext{
+		Name:        "default",
+		MatchReason: "minimal config (default)",
+		Context: config.Context{
 			Agent:      cfg.Agent,
 			Env:        cfg.Env,
 			Secret:     cfg.Secret,
 			MCPServers: mcpList,
 			Sandbox:    config.SandboxPolicyToRef(cfg.Sandbox),
 			Yolo:       cfg.Yolo,
-		}
-		rc := &ResolvedContext{
-			Name:        "default",
-			MatchReason: "minimal config (default)",
-			Context:     ctx,
-		}
-		rc.Preferences = config.ResolvePreferences(cfg.Preferences, nil)
-		applyProjectOverride(rc, cfg.ProjectOverride, cfg.Sandboxes)
-		return rc, nil
+		},
 	}
+}
 
-	// Score all contexts to find the best match
+// bestMatch returns the highest-scoring context, or nil if no rule
+// matches. Contexts are visited in name order and only a strictly higher
+// score replaces the leader, so ties go to the lexically first name.
+func bestMatch(cfg *config.Config, cwd string, remotes RemoteLookup) *ResolvedContext {
 	var bestName string
 	var bestRule *config.MatchRule
 	var bestScore int
 
-	for name, ctx := range cfg.Contexts {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
+		ctx := cfg.Contexts[name]
 		for i := range ctx.Match {
 			rule := &ctx.Match[i]
-			score := scoreRule(rule, cwd, remoteURL)
+			score := scoreRule(rule, cwd, remotes)
 			if score > 0 && score > bestScore {
 				bestName = name
 				bestRule = rule
@@ -94,36 +119,51 @@ func Resolve(cfg *config.Config, cwd string, remoteURL string) (*ResolvedContext
 			}
 		}
 	}
-
-	var rc *ResolvedContext
-
-	if bestName != "" {
-		ctx := cfg.Contexts[bestName]
-		rc = &ResolvedContext{
-			Name:        bestName,
-			MatchReason: describeMatch(bestRule, bestScore),
-			Context:     ctx,
-		}
-	} else if cfg.DefaultContext != "" {
-		if ctx, ok := cfg.Contexts[cfg.DefaultContext]; ok {
-			rc = &ResolvedContext{
-				Name:        cfg.DefaultContext,
-				MatchReason: fmt.Sprintf("default_context (%s)", cfg.DefaultContext),
-				Context:     ctx,
-			}
-		}
+	if bestName == "" {
+		return nil
 	}
-
-	if rc == nil {
-		return nil, fmt.Errorf(
-			"no context matched for cwd=%s remote=%s and no default_context configured",
-			cwd, remoteURL,
-		)
+	return &ResolvedContext{
+		Name:        bestName,
+		MatchReason: describeMatch(bestRule, bestScore),
+		Context:     cfg.Contexts[bestName],
 	}
+}
 
+// defaultContext returns cfg.DefaultContext when it names an existing
+// context, or nil.
+func defaultContext(cfg *config.Config) *ResolvedContext {
+	if cfg.DefaultContext == "" {
+		return nil
+	}
+	ctx, ok := cfg.Contexts[cfg.DefaultContext]
+	if !ok {
+		return nil
+	}
+	return &ResolvedContext{
+		Name:        cfg.DefaultContext,
+		MatchReason: fmt.Sprintf("default_context (%s)", cfg.DefaultContext),
+		Context:     ctx,
+	}
+}
+
+// finishResolved applies preferences and the project override to a
+// selected context. Every way of selecting a context ends here.
+func finishResolved(cfg *config.Config, rc *ResolvedContext) *ResolvedContext {
 	rc.Preferences = config.ResolvePreferences(cfg.Preferences, nil)
 	applyProjectOverride(rc, cfg.ProjectOverride, cfg.Sandboxes)
-	return rc, nil
+	return rc
+}
+
+// lookupRemote returns the URL of the named remote (DefaultRemoteName when
+// name is empty), or "" when remotes is nil.
+func lookupRemote(remotes RemoteLookup, name string) string {
+	if remotes == nil {
+		return ""
+	}
+	if name == "" {
+		name = DefaultRemoteName
+	}
+	return remotes(name)
 }
 
 // applyProjectOverride merges a ProjectOverride on top of the resolved context.
@@ -231,12 +271,12 @@ func subtractStrings(a, b []string) []string {
 
 // scoreRule returns a specificity score for a single match rule, or 0 if it
 // does not match.
-func scoreRule(rule *config.MatchRule, cwd string, remoteURL string) int {
+func scoreRule(rule *config.MatchRule, cwd string, remotes RemoteLookup) int {
 	if rule.Path != "" {
 		return scorePathRule(rule.Path, cwd)
 	}
 	if rule.Remote != "" {
-		return scoreRemoteRule(rule.Remote, remoteURL)
+		return scoreRemoteRule(rule.Remote, lookupRemote(remotes, rule.RemoteName))
 	}
 	return 0
 }
@@ -368,18 +408,43 @@ func canonicalizeRemotePattern(s string) string {
 		return s
 	}
 	if strings.ContainsAny(s, "*?[{") {
-		return s
-	}
-	hasScheme := strings.Contains(s, "://")
-	// scp-style: contains ':' but no scheme, and doesn't start with '/'.
-	isSCP := !hasScheme && strings.Contains(s, ":") && !strings.HasPrefix(s, "/")
-	if !hasScheme && !isSCP {
-		return s
+		return canonicalizeRemoteGlob(s)
 	}
 	if c := ParseRemoteHost(s); c != "" {
 		return c
 	}
 	return s
+}
+
+// canonicalizeRemoteGlob lowercases the host segment of a glob written in
+// "host/org/..." form and trims a trailing slash, matching what
+// ParseRemoteHost does to the remote it is compared against. Character
+// classes in the host are lowercased too, which is harmless because hosts
+// are compared lowercased. Globs written in URL form are left alone; they
+// match the raw remote instead.
+func canonicalizeRemoteGlob(s string) string {
+	if strings.Contains(s, "://") || strings.Contains(s, "@") {
+		return s
+	}
+	s = strings.TrimRight(s, "/")
+	host, rest, found := strings.Cut(s, "/")
+	if !found {
+		return strings.ToLower(s)
+	}
+	return strings.ToLower(host) + "/" + rest
+}
+
+// displayRemoteRule renders a remote rule for the banner, `aide which` and
+// JSON match_reason. Rules saved by older releases may be raw URLs with
+// embedded tokens: non-glob rules show their normalized form, and globs
+// show with userinfo removed.
+func displayRemoteRule(pattern string) string {
+	if !strings.ContainsAny(pattern, "*?[{") {
+		if n := ParseRemoteHost(pattern); n != "" {
+			return n
+		}
+	}
+	return stripRemoteUserinfo(pattern)
 }
 
 // describeMatch produces a human-readable description of why a rule matched.
@@ -395,9 +460,9 @@ func describeMatch(rule *config.MatchRule, score int) string {
 	}
 	if rule.Remote != "" {
 		if score >= specificityRemoteExact {
-			return fmt.Sprintf("exact remote match: %s", rule.Remote)
+			return fmt.Sprintf("exact remote match: %s", displayRemoteRule(rule.Remote))
 		}
-		return fmt.Sprintf("remote match: %s", rule.Remote)
+		return fmt.Sprintf("remote match: %s", displayRemoteRule(rule.Remote))
 	}
 	return "unknown"
 }

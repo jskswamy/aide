@@ -136,8 +136,7 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 		return nil, "", config.Context{}, fmt.Errorf("loading config: %w", err)
 	}
 	if contextName == "" {
-		remoteURL := aidectx.DetectRemote(cwd, "origin")
-		rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 		if err != nil {
 			return nil, "", config.Context{}, fmt.Errorf("resolving context: %w", err)
 		}
@@ -173,8 +172,7 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 // home directory, matching internal/capability's ccstatusline tests.
 func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName, homeDir string) (name string, caps []string, err error) {
 	if contextName == "" {
-		remoteURL := aidectx.DetectRemote(cwd, "origin")
-		rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 		if err != nil {
 			return "", nil, fmt.Errorf("resolving context: %w", err)
 		}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1740,5 +1741,61 @@ default_context: work
 	}
 	if v, ok := envValue(capturedEnv, "CLAUDE_CONFIG_DIR"); ok {
 		t.Errorf("CLAUDE_CONFIG_DIR leaked into pi launch: %q", v)
+	}
+}
+
+// TestLauncher_RemoteNameRuleSetsProfileEnv launches in a repository with
+// two remotes: only the rule whose remote_name selects "upstream" matches,
+// and the child sees the resolved name in both AIDE_PROFILE and
+// AIDE_CONTEXT.
+func TestLauncher_RemoteNameRuleSetsProfileEnv(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found on PATH")
+	}
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+	for _, args := range [][]string{
+		{"init"},
+		{"remote", "add", "origin", "git@github.com:me/repo.git"},
+		{"remote", "add", "upstream", "https://github.com/upstream/repo.git"},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", cwd}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	writeMinimalConfig(t, configDir, `
+contexts:
+  origin-rule:
+    agent: /usr/local/bin/my-agent
+    match:
+      - remote: github.com/upstream/repo
+  upstream-rule:
+    agent: /usr/local/bin/my-agent
+    match:
+      - remote: github.com/upstream/repo
+        remote_name: upstream
+`)
+
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, _ []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
+	l := &Launcher{Execer: mockExec, ConfigDir: configDir}
+
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+	for _, key := range []string{"AIDE_PROFILE", "AIDE_CONTEXT"} {
+		if got, ok := envValue(capturedEnv, key); !ok || got != "upstream-rule" {
+			t.Errorf("%s = %q (present=%v), want upstream-rule", key, got, ok)
+		}
 	}
 }

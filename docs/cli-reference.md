@@ -389,8 +389,10 @@ aide context bind <name>
 ```
 
 Attach the current folder to an existing context. Auto-detects the match rule
-(git remote URL when the folder is a git repo with an origin remote; exact
-folder path otherwise). Override with `--path` or `--remote`.
+(the normalized `origin` remote, e.g. `github.com/org/repo`, when the folder
+is a git repo whose origin has a host; exact folder path otherwise). Override
+with `--path` or `--remote`. Credentials embedded in the remote URL are never
+saved.
 
 | Flag | Description |
 |------|-------------|

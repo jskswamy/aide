@@ -43,8 +43,7 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 		if cfg.ProjectOverride != nil && cfg.ProjectConfigPath != "" {
 			trustInfo = (&Launcher{}).applyTrustGate(cfg)
 		}
-		remoteURL := aidectx.DetectRemote(cwd, "origin")
-		rc, err := aidectx.Resolve(cfg, cwd, remoteURL)
+		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 		if err != nil {
 			return nil, fmt.Errorf("resolving context: %w", err)
 		}

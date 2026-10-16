@@ -102,6 +102,18 @@ func TestInjectAideSessionEnv_ContextName(t *testing.T) {
 	if result["AIDE_CONTEXT"] != "my-proj" {
 		t.Errorf("AIDE_CONTEXT = %q, want my-proj", result["AIDE_CONTEXT"])
 	}
+	if result["AIDE_PROFILE"] != "my-proj" {
+		t.Errorf("AIDE_PROFILE = %q, want my-proj (same value as AIDE_CONTEXT)", result["AIDE_PROFILE"])
+	}
+}
+
+func TestInjectAideSessionEnv_NoProfileVarsWithoutName(t *testing.T) {
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	for _, k := range []string{"AIDE_CONTEXT", "AIDE_PROFILE"} {
+		if _, ok := result[k]; ok {
+			t.Errorf("%s should be absent when no profile is resolved", k)
+		}
+	}
 }
 
 func TestInjectAideSessionEnv_AgentName(t *testing.T) {

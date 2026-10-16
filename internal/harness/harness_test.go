@@ -115,3 +115,13 @@ func TestAllReturnsACopy(t *testing.T) {
 		t.Error("All() exposes the registry for mutation")
 	}
 }
+
+func TestProfileConfigDir(t *testing.T) {
+	home := "/home/u"
+	if got := harness.ProfileConfigDir("claude", "work", "", home); got != "/home/u/.claude-work" {
+		t.Errorf("derived dir = %q", got)
+	}
+	if got := harness.ProfileConfigDir("claude", "work", "~/x/y", home); got != "/home/u/x/y" {
+		t.Errorf("override dir = %q", got)
+	}
+}

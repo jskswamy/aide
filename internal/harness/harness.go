@@ -9,9 +9,12 @@
 package harness
 
 import (
+	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
@@ -208,4 +211,14 @@ func Lookup(name string) (Descriptor, bool) {
 		}
 	}
 	return Descriptor{}, false
+}
+
+// ProfileConfigDir is the native config dir harness uses under profile
+// name: override tilde-expanded against home when set, otherwise
+// ~/.<harness>-<name>.
+func ProfileConfigDir(harness, name, override, home string) string {
+	if override != "" {
+		return homepath.Expand(override, home)
+	}
+	return filepath.Join(home, fmt.Sprintf(".%s-%s", harness, name))
 }

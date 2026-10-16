@@ -1,9 +1,12 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -311,5 +314,23 @@ func TestWriteConfig(t *testing.T) {
 	path := FilePath()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Errorf("config file not created at %s", path)
+	}
+}
+
+func TestWriteConfig_RefusesConfigThatFailedToLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	orig := []byte("contexts:\n  work:\n    agent: claude\n")
+	if err := os.WriteFile(path, orig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := FailedLoad(errors.New("boom"))
+	cfg.Agents = map[string]AgentDef{"foo": {Binary: "foo"}}
+	err := WriteConfigTo(cfg, path)
+	if !errors.Is(err, ErrConfigNotLoaded) || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("WriteConfigTo() error = %v, want ErrConfigNotLoaded wrapping the load error", err)
+	}
+	got, _ := os.ReadFile(path)
+	if !bytes.Equal(got, orig) {
+		t.Errorf("config.yaml changed:\n%s", got)
 	}
 }

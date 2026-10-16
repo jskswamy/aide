@@ -9,7 +9,6 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/harness"
-	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // Profile-related sentinel errors. Callers branch via errors.Is() —
@@ -31,9 +30,11 @@ var (
 	// declared in env:.
 	ErrProfileConflict = errors.New("profile and explicit env var both declared")
 
-	// ErrProfileNotProjectScoped: profile / profile_dir declared in
-	// .aide.yaml (project override). profile is a user-side decision.
-	ErrProfileNotProjectScoped = errors.New("profile not allowed in project override")
+	// ErrProfileNotProjectScoped: .aide.yaml (project override) tried
+	// to define a profile or its native config dir. Project scope may
+	// only reference an existing profile by name; the loader enforces
+	// this structurally, so the sentinel lives in config.
+	ErrProfileNotProjectScoped = config.ErrProfileNotProjectScoped
 )
 
 // validProfileName matches the allowed charset/length for a profile
@@ -41,10 +42,12 @@ var (
 var validProfileName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 // ValidateProfile runs all profile-related checks for a single
-// resolved context. fromProjectOverride is true when the context's
-// profile/profile_dir came from a .aide.yaml (project override) —
-// such cases are rejected unconditionally because profile is a
-// user-side decision.
+// resolved context. ctx.Profile/ProfileDir here are the native config
+// dir selector (config_dir_name/config_dir under profiles:), not the
+// outer profile name. fromProjectOverride is true when that selector
+// came from a .aide.yaml; it is rejected unconditionally. (The loader
+// already refuses .aide.yaml keys that define a profile or its dir;
+// a top-level profile: there is a legal reference by name.)
 func ValidateProfile(ctx config.Context, homeDir string, fromProjectOverride bool) error {
 	if fromProjectOverride && (ctx.Profile != "" || ctx.ProfileDir != "") {
 		return fmt.Errorf("%w: .aide.yaml may not set profile/profile_dir", ErrProfileNotProjectScoped)
@@ -141,15 +144,7 @@ func harnessProfile(agent, name, override, homeDir string) (envKey, absPath stri
 	if !ok || !d.SupportsProfiles() {
 		return "", "", &profileUnsupportedError{harness: agent}
 	}
-	return d.ProfileEnvKey, profileDir(d.Name, name, override, homeDir), nil
-}
-
-// profileDir is override tilde-expanded, or ~/.<agent>-<name>.
-func profileDir(agent, name, override, homeDir string) string {
-	if override != "" {
-		return homepath.Expand(override, homeDir)
-	}
-	return filepath.Join(homeDir, fmt.Sprintf(".%s-%s", agent, name))
+	return d.ProfileEnvKey, harness.ProfileConfigDir(d.Name, name, override, homeDir), nil
 }
 
 // Profile resolves the env var and absolute config-dir path for a
@@ -163,7 +158,7 @@ func (d DriverBase) Profile(name, override, homeDir string) (envKey, absPath str
 			ErrProfileNotSupported, d.Caps.AgentName,
 		)
 	}
-	return d.Caps.ProfileEnvKey, profileDir(d.Caps.AgentName, name, override, homeDir), nil
+	return d.Caps.ProfileEnvKey, harness.ProfileConfigDir(d.Caps.AgentName, name, override, homeDir), nil
 }
 
 // ProfileEnvKeyFor returns the env var that relocates agent's config

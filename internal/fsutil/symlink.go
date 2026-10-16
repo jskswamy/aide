@@ -70,3 +70,29 @@ func IsSymlinkCycle(err error) bool {
 	// src/path/filepath/symlink.go "EvalSymlinks: too many links".
 	return strings.Contains(err.Error(), "too many links")
 }
+
+// ResolveNearest is ResolveOrSelf for paths that may not exist yet: it
+// resolves the nearest existing ancestor of the cleaned path and
+// re-attaches the missing tail, so two spellings of a directory that
+// will be created later compare equal when an ancestor is a symlink.
+// When no ancestor resolves, the cleaned path is returned.
+//
+// Like ResolveOrSelf, a dangling symlink counts as missing, so its own
+// name is kept in the tail rather than followed; and the path is
+// cleaned lexically first, so "link/../x" means "x", not the parent of
+// link's target.
+func ResolveNearest(path string) string {
+	path = filepath.Clean(path)
+	tail := ""
+	for cur := path; ; {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(resolved, tail)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return path
+		}
+		tail = filepath.Join(filepath.Base(cur), tail)
+		cur = parent
+	}
+}

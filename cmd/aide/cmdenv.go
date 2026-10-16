@@ -29,16 +29,18 @@ type Env struct {
 }
 
 // cmdEnv resolves the working directory and loads the aide config.
-// On filesystem failure (e.g. os.Getwd errors) Env.Config() still
-// returns a non-nil empty Config so callers can proceed safely.
+// On any failure Env.Config() is a non-nil empty config.FailedLoad
+// placeholder: best-effort callers can read it, but config.WriteConfig
+// refuses it, so ignoring the error can never overwrite the user's
+// config.yaml with an empty one.
 func cmdEnv(cmd *cobra.Command) (*Env, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return &Env{cmd: cmd, cfg: &config.Config{}}, err
+		return &Env{cmd: cmd, cfg: config.FailedLoad(err)}, err
 	}
 	cfg, loadErr := config.Load(config.Dir(), cwd)
 	if cfg == nil {
-		cfg = &config.Config{}
+		cfg = config.FailedLoad(loadErr)
 	}
 	return &Env{cmd: cmd, cwd: cwd, cfg: cfg}, loadErr
 }
@@ -47,7 +49,7 @@ func cmdEnv(cmd *cobra.Command) (*Env, error) {
 func (e *Env) CWD() string { return e.cwd }
 
 // Config returns the loaded config. Never nil; on load failure it is
-// an empty Config{} so best-effort callers can proceed.
+// an empty, unwritable config.FailedLoad placeholder.
 func (e *Env) Config() *config.Config { return e.cfg }
 
 // Registry returns the merged capability registry (built-ins plus

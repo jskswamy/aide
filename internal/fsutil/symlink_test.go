@@ -121,3 +121,26 @@ func TestResolveOrSelf_Symlink(t *testing.T) {
 		t.Errorf("ResolveOrSelf(%q) = %q, want %q", link, got, canonTarget)
 	}
 }
+
+func TestResolveNearest(t *testing.T) {
+	root := fsutil.ResolveOrSelf(t.TempDir())
+	target := filepath.Join(root, "target")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		link:                                target,
+		filepath.Join(link, "a", "b"):       filepath.Join(target, "a", "b"),
+		filepath.Join(root, "missing", "x"): filepath.Join(root, "missing", "x"),
+		target + "/./sub/../sub":            filepath.Join(target, "sub"),
+	}
+	for in, want := range cases {
+		if got := fsutil.ResolveNearest(in); got != want {
+			t.Errorf("ResolveNearest(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -91,3 +91,37 @@ func TestAgentsList_JSONFormat_Empty(t *testing.T) {
 		t.Errorf("expected empty, got %+v", got)
 	}
 }
+
+func TestAgentsAdd_FailedLoadLeavesConfigUntouched(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("HOME", t.TempDir())
+	cfgDir := filepath.Join(xdg, "aide")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Two contexts sharing a native config dir: valid YAML that now
+	// fails Load.
+	orig := []byte("contexts:\n  a:\n    agent: claude\n    profile: shared\n  b:\n    agent: claude\n    profile: shared\n")
+	path := filepath.Join(cfgDir, "config.yaml")
+	if err := os.WriteFile(path, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+
+	cmd := agentsCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"add", "foo"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("agents add succeeded on a config that failed to load")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, orig) {
+		t.Errorf("config.yaml was rewritten:\n%s", got)
+	}
+}

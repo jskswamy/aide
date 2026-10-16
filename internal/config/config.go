@@ -50,6 +50,13 @@ func Load(configDir, projectDir string) (*Config, error) {
 		cfg.ProjectConfigPath = projectConfigPath
 	}
 
+	cfg.warnUnknownProjectProfile()
+	if home, ok := userHome(); ok {
+		if err := cfg.validateProfileDirs(home); err != nil {
+			return nil, fmt.Errorf("config: %w", err)
+		}
+	}
+
 	if err := cfg.ValidatePlugins(); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
@@ -123,6 +130,7 @@ func normalizeMinimal(cfg *Config) *Config {
 		MCPServers:     cfg.MCPServers,
 		DefaultContext: "default",
 		Preferences:    cfg.Preferences,
+		ProfileSchema:  cfg.ProfileSchema,
 	}
 }
 

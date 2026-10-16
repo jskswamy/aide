@@ -146,6 +146,29 @@ change saved preferences.
   suggests `aide --profile <name>` for a one-off launch (it suggested
   `aide use`, which saves a match rule).
 
+#### aide project saves a repository's harness and credentials
+
+`aide project set --agent pi --credential openrouter` saves this
+repository's default harness and credential selection under the
+current profile (or `--profile <name>`). `aide project clear [--agent]
+[--credential]` removes them and `aide project show [--format json]`
+prints them.
+
+- Preferences are user-local, in `~/.local/state/aide/preferences.json`,
+  keyed by profile and the normalized `origin` remote, so worktrees and
+  clones share them under one profile but not across profiles. They
+  hold names only, never secret values or models, and never change
+  `.aide.yaml` or `config.yaml`.
+- `set` changes only the fields given and refuses a harness or
+  credential the profile cannot launch. `--no-credentials` saves an
+  explicit empty selection (native login); `clear --credential` unsets
+  the selection so `default_credentials:` applies again.
+- Outside a git repository, or without an `origin` remote, `set` and
+  `clear` refuse with `no repository identity`.
+- A preferences file written by a newer aide stops `aide project` and
+  launches with `unsupported preferences file version` instead of being
+  overwritten.
+
 ### 🧰 CLI
 
 #### --agent now gets its own profile directory

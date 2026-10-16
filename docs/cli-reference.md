@@ -22,7 +22,10 @@ sandbox policy.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--agent <name>` | | Override which agent to launch |
+| `--agent <name>` | | Override which agent (harness) to launch, for this run only |
+| `--profile <name>` | | Use this profile instead of the one matched for the directory |
+| `--credential <name>` | | Inject this credential binding (repeatable); replaces the saved and default selection for this run. `--credential=` selects none |
+| `--auth <mode>` | api | `api` injects the selected credentials; `login` injects none so the harness uses its native login |
 | `--with <caps>` | | Activate capabilities for this session (e.g., `--with k8s,docker`) |
 | `--without <caps>` | | Disable context capabilities for this session |
 | `--auto-approve` | false | Run agent without permission checks (replaces `--yolo`) |
@@ -40,6 +43,17 @@ sandbox policy.
 ```
 aide -- --no-permissions
 ```
+
+One-time flags never change saved preferences. Precedence:
+
+- Profile: `--profile`, else match rules, else `default_profile`.
+  `.aide.yaml` `profile:` never selects a profile; a mismatch prints a
+  note suggesting `--profile`.
+- Harness: `--agent`, else the repository preference saved with
+  `aide project set`, else a trusted `.aide.yaml` `agent:`, else the
+  profile's `agent:`.
+- Credentials: `--credential` / `--auth login`, else the saved
+  selection, else `default_credentials:`.
 
 ---
 
@@ -81,6 +95,41 @@ aide status
 ```
 
 `--agent <name>` works as for `aide which`.
+
+`aide which` and `aide status` also accept `--profile`, `--credential`
+and `--auth`, and report where each choice came from
+(`profile_source`, `harness_source`, `credential_source` and
+`credential_selection` in `--format json`).
+
+---
+
+## aide project
+
+User-local preferences for the current repository, keyed by profile
+and the normalized `origin` remote, stored in
+`~/.local/state/aide/preferences.json`. Worktrees and clones of the
+same repository share them under the same profile. They hold names
+only, never secret values, and never touch `.aide.yaml` or
+`config.yaml`. In a directory without an `origin` remote, `set` and
+`clear` refuse; launches use the profile defaults.
+
+```
+aide project set [--profile <name>] [--agent <harness>] [--credential <name>]... [--no-credentials]
+aide project clear [--profile <name>] [--agent] [--credential]
+aide project show [--profile <name>] [--format json]
+```
+
+- `set` changes only the fields it names and checks them the way a
+  launch would (harness known and supported by the profile's config
+  dir, credentials defined in the profile and allowed for the
+  harness). `--no-credentials` saves an explicit empty selection, for
+  native-login launches.
+- `clear` with `--agent` or `--credential` clears that field; with
+  neither, both. Cleared fields fall back to `.aide.yaml` and the
+  profile defaults.
+- `show --format json` prints `profile`, `repository`, `harness`,
+  `credentials` (`null` when unset, `[]` for an explicit empty
+  selection) and `file`.
 
 ---
 

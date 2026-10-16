@@ -465,7 +465,7 @@ func ResolveContext(name string, ctx config.Context, homeDir, projectRoot string
 		ProjectRoot: projectRoot,
 		Env:         env,
 	}
-	if ctx.Profile == "" && ctx.ProfileDir == "" {
+	if !ctx.SelectsConfigDir() {
 		return out, nil
 	}
 	// Clone env before mutating so the caller's map is not modified.

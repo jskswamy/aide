@@ -113,16 +113,26 @@ that save the config write back whichever form the file used.
   agent, every agent is checked: `work-claude` (agent claude) and
   `work-codex` (agent codex) both with `profile: work` collide on
   `~/.claude-work`. The error explains why and how to keep both
-  logins: merge the two into one profile, or pin each to the dir it
-  uses today (`profile_dir: ~/.claude-work` on one,
-  `profile_dir: ~/.codex-work` on the other).
+  logins: merge the two into one profile, or separate them with
+  `config_dirs` (for example `profile: work-codex` plus
+  `config_dirs: {codex: ~/.codex-work}` on `work-codex`, and
+  `config_dirs: {codex: ~/.codex-work-claude}` on `work-claude`).
+- New `config_dirs:` map on a profile (or context) sets the config dir
+  for individual agents, e.g. `config_dirs: {claude: ~/.claude-work,
+  codex: ~/.codex-acme}`. For each agent aide uses its `config_dirs`
+  entry if present, else the single `config_dir:`/`profile_dir:` (which
+  still applies to every agent), else `~/.<agent>-<config_dir_name>`.
+  Keys must be agents with profile support (claude, codex, copilot,
+  gemini, pi), paths must be under `$HOME`, and the profile must also
+  set `config_dir_name:` (`profile:` under `contexts:`); otherwise
+  loading stops with `invalid config_dirs`.
 - `.aide.yaml` may name an existing profile with `profile: <name>`. A
-  name your config does not define prints a warning naming the file
-  and the profile, and aide carries on. Selecting that profile from
+  name your config does not define prints a warning (once per run)
+  naming the file and the profile, and aide carries on. Selecting that profile from
   `.aide.yaml` is not wired in yet.
 - `.aide.yaml` can never define a profile: `profiles:`, `contexts:`,
   `default_profile:`, `default_context:`, `config_dir_name:`,
-  `config_dir:`, `profile_dir:`, `match:`, `credentials:` and
+  `config_dir:`, `config_dirs:`, `profile_dir:`, `match:`, `credentials:` and
   `default_credentials:` stop with `profile not allowed in project
   override: <key>: defines a profile`, whether or not the file is
   trusted.

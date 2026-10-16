@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -46,7 +47,7 @@ var profileDirKeys = [][2]string{
 // rather than reference one.
 var projectDefiningKeys = []string{
 	keyProfiles, keyDefaultProfile, keyContexts, keyDefaultContext,
-	"config_dir_name", "config_dir", "profile_dir",
+	"config_dir_name", "config_dir", "config_dirs", "profile_dir",
 	"match", "credentials", "default_credentials",
 }
 
@@ -187,6 +188,10 @@ func (p *ProjectOverride) UnmarshalYAML(node *yaml.Node) error {
 // warnOut receives load-time warnings.
 var warnOut io.Writer = os.Stderr
 
+// warnedProjectProfiles records (file, profile) pairs already warned
+// about, so commands that load the config repeatedly warn once.
+var warnedProjectProfiles sync.Map
+
 // warnUnknownProjectProfile warns when .aide.yaml references a profile
 // the user config does not define. It is not fatal: .aide.yaml is
 // shared while profile names are personal, so a teammate's reference
@@ -197,6 +202,9 @@ func (c *Config) warnUnknownProjectProfile() {
 	}
 	name := c.ProjectOverride.Profile
 	if _, ok := c.Contexts[name]; ok {
+		return
+	}
+	if _, done := warnedProjectProfiles.LoadOrStore(c.ProjectConfigPath+"\x00"+name, true); done {
 		return
 	}
 	defined := strings.Join(sortedKeys(c.Contexts), ", ")

@@ -115,3 +115,51 @@ func TestEnvSet_SecretKey_NoStoreBound_Errors(t *testing.T) {
 		t.Errorf("expected no-store-bound error, got: %v", err)
 	}
 }
+
+func TestEnvSet_RefusesProviderSecretNames(t *testing.T) {
+	for name, args := range map[string][]string{
+		"project literal": {"ANTHROPIC_API_KEY", "sk-ant-xxx"},
+		"global secret":   {"OPENAI_API_KEY", "--secret-key", "k", "--global"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := projectTempDir(t)
+			out, err := runEnvSet(t, args...)
+			if err == nil {
+				t.Fatalf("expected refusal, got success: %s", out)
+			}
+			for _, w := range []string{args[0], "credentials:"} {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("error %q lacks %q", err, w)
+				}
+			}
+			if strings.Contains(err.Error(), "sk-ant-xxx") {
+				t.Error("error echoed the value")
+			}
+			if _, statErr := os.Stat(filepath.Join(dir, ".aide.yaml")); statErr == nil {
+				t.Error("refused command still wrote .aide.yaml")
+			}
+		})
+	}
+}
+
+func TestEnvSet_ProviderSelectorsOnlyInUserConfig(t *testing.T) {
+	dir := projectTempDir(t)
+	_, err := runEnvSet(t, "CLAUDE_CODE_USE_BEDROCK", "1")
+	if err == nil || !strings.Contains(err.Error(), "--global") {
+		t.Fatalf("project-level selector error = %v, want a refusal pointing to --global", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, ".aide.yaml")); statErr == nil {
+		t.Error("refused command still wrote .aide.yaml")
+	}
+
+	cfgDir := filepath.Join(dir, "xdg", "aide")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("contexts:\n  work:\n    agent: claude\ndefault_context: work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runEnvSet(t, "CLAUDE_CODE_USE_BEDROCK", "1", "--global"); err != nil {
+		t.Fatalf("global selector refused: %v\n%s", err, out)
+	}
+}

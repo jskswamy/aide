@@ -78,16 +78,21 @@ type TrustWants struct {
 
 // BannerData holds all information needed to render an aide banner.
 type BannerData struct {
-	ContextName   string              `json:"context_name"`
-	MatchReason   string              `json:"match_reason,omitempty"`
-	AgentName     string              `json:"agent_name"`
-	AgentPath     string              `json:"agent_path,omitempty"`
-	SecretName    string              `json:"secret_name,omitempty"`
-	SecretKeys    []string            `json:"secret_keys,omitempty"`  // nil = normal (show count), populated = detailed (list names)
-	ContextIcon   string              `json:"context_icon,omitempty"` // resolved context icon from config; empty if not set
-	AgentIcon     string              `json:"agent_icon,omitempty"`   // resolved agent icon (config or built-in default); empty if none
-	EnvItems      []EnvItem           `json:"env_items,omitempty"`    // replaces Env + EnvResolved + CredWarnings
-	Trust         *TrustInfo          `json:"trust,omitempty"`        // nil when trusted or no project config
+	ContextName string    `json:"context_name"`
+	MatchReason string    `json:"match_reason,omitempty"`
+	AgentName   string    `json:"agent_name"`
+	AgentPath   string    `json:"agent_path,omitempty"`
+	SecretName  string    `json:"secret_name,omitempty"`
+	SecretKeys  []string  `json:"secret_keys,omitempty"`  // nil = normal (show count), populated = detailed (list names)
+	ContextIcon string    `json:"context_icon,omitempty"` // resolved context icon from config; empty if not set
+	AgentIcon   string    `json:"agent_icon,omitempty"`   // resolved agent icon (config or built-in default); empty if none
+	EnvItems    []EnvItem `json:"env_items,omitempty"`    // replaces Env + EnvResolved + CredWarnings
+	// Credentials are the credential bindings the launch injects, by
+	// name and env var name only; never values. AuthMode is "api" or
+	// "login" (native login, nothing injected); empty when unresolved.
+	Credentials   []CredentialInfo    `json:"credentials,omitempty"`
+	AuthMode      string              `json:"auth_mode,omitempty"`
+	Trust         *TrustInfo          `json:"trust,omitempty"` // nil when trusted or no project config
 	Sandbox       *SandboxInfo        `json:"sandbox,omitempty"`
 	Yolo          bool                `json:"yolo,omitempty"`
 	Warnings      []string            `json:"warnings,omitempty"`
@@ -106,6 +111,13 @@ type BannerData struct {
 	// Nil means sandbox: false (user explicitly disabled sandboxing).
 	// On macOS always primary; on Linux varies by kernel and policy.
 	IsolationTier *sandbox.IsolationTier `json:"isolation_tier,omitempty"`
+}
+
+// CredentialInfo names one injected credential binding and the env
+// vars it sets. It never carries a value.
+type CredentialInfo struct {
+	Name string   `json:"name"`
+	Env  []string `json:"env"`
 }
 
 // SandboxInfo describes sandbox configuration for display.

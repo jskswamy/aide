@@ -6,6 +6,9 @@
 {{- if .SecretName}}
    🔐 secret: {{secretDisplay .}}
 {{- end}}
+{{- with credentialDisplay .}}
+   🔑 credentials: {{.}}
+{{- end}}
 {{- if hasTrust .}}
 
 {{red (trustStatusLine .)}}

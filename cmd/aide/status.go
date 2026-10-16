@@ -216,6 +216,11 @@ func whichCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			prefs := resolved.Preferences
 
+			// Credentials by binding and env var name; translated legacy
+			// env: credentials leave the env listing.
+			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, "")
+			resolved.Context = credCtx
+
 			// Build BannerData
 			agentPath, lookErr := exec.LookPath(resolved.Context.Agent)
 			if lookErr != nil {
@@ -228,6 +233,11 @@ func whichCmd() *cobra.Command {
 				AgentName:   resolved.Context.Agent,
 				AgentPath:   agentPath,
 				SecretName:  resolved.Context.Secret,
+			}
+
+			launcher.SetBannerCredentials(data, credPlan)
+			if credErr != nil {
+				data.Warnings = append(data.Warnings, credErr.Error())
 			}
 
 			// Add context and agent icons
@@ -1170,6 +1180,10 @@ type statusResult struct {
 	SandboxTier         string           `json:"sandbox_tier"`
 	SandboxGuardCount   int              `json:"sandbox_guard_count"`
 	AutoApprove         bool             `json:"auto_approve"`
+	// Credentials names the bindings a launch injects (never values).
+	Credentials     []ui.CredentialInfo `json:"credentials,omitempty"`
+	AuthMode        string              `json:"auth_mode,omitempty"`
+	CredentialError string              `json:"credential_error,omitempty"`
 }
 
 func statusCmd() *cobra.Command {
@@ -1194,6 +1208,15 @@ func statusCmd() *cobra.Command {
 			homeDir, _ := os.UserHomeDir()
 			if err := applyLaunchAgent(cfg, resolved, agentOverride, homeDir); err != nil {
 				return err
+			}
+
+			var credData ui.BannerData
+			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, "")
+			resolved.Context = credCtx
+			launcher.SetBannerCredentials(&credData, credPlan)
+			credError := ""
+			if credErr != nil {
+				credError = credErr.Error()
 			}
 
 			// Resolve agent path
@@ -1334,6 +1357,9 @@ func statusCmd() *cobra.Command {
 				SandboxTier:         sandboxTierLine,
 				SandboxGuardCount:   guardCount,
 				AutoApprove:         autoApprove,
+				Credentials:         credData.Credentials,
+				AuthMode:            credData.AuthMode,
+				CredentialError:     credError,
 			}
 
 			format, ferr := output.FromCmd(cmd)
@@ -1354,6 +1380,10 @@ func statusCmd() *cobra.Command {
 					} else {
 						fmt.Fprintf(w, "Secret:       %s\n", result.Secret)
 					}
+				}
+
+				if line := statusCredentialLine(result); line != "" {
+					fmt.Fprintf(w, "Credentials:  %s\n", line)
 				}
 
 				if len(result.Capabilities) > 0 {
@@ -1438,4 +1468,13 @@ func formatIsolationTierStatus(tier sandbox.IsolationTier) string {
 	default:
 		return tier.Tier
 	}
+}
+
+// statusCredentialLine renders the credential bindings for aide status,
+// by name and env var name only.
+func statusCredentialLine(r statusResult) string {
+	if r.CredentialError != "" {
+		return "error: " + r.CredentialError
+	}
+	return ui.CredentialSummary(r.Credentials, r.AuthMode)
 }

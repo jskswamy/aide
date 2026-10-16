@@ -9,6 +9,9 @@
 {{- if .SecretName}}
 │ 🔐 {{cyan "Secret    "}}{{secretDisplay .}}
 {{- end}}
+{{- with credentialDisplay .}}
+│ 🔑 {{cyan "Auth      "}}{{.}}
+{{- end}}
 {{- if hasTrust .}}
 │
 │ {{red (trustStatusLine .)}}

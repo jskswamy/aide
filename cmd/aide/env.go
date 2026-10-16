@@ -15,6 +15,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
@@ -62,12 +63,17 @@ func envSetCmd() *cobra.Command {
 		Short: "Set an environment variable (project-level by default)",
 		Long: `Set an environment variable on a context.
 
+Provider API keys and tokens (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
+are refused: declare them as credentials: bindings on the profile.
+Provider selectors and endpoints such as CLAUDE_CODE_USE_BEDROCK or
+ANTHROPIC_BASE_URL are ordinary env, but only with --global.
+
 Examples:
-  aide env set ANTHROPIC_API_KEY sk-ant-xxx                              # literal value
-  aide env set ANTHROPIC_API_KEY --secret-key api_key --global           # key in bound store
-  aide env set ANTHROPIC_API_KEY --secret-store firmus --secret-key api_key --global
-  aide env set ANTHROPIC_API_KEY --pick --global                         # interactive picker
-  aide env set OPENAI_API_KEY --secret-key key --context work --global`,
+  aide env set CLAUDE_CODE_USE_BEDROCK 1 --global                        # literal value
+  aide env set GITHUB_TOKEN --secret-key github_token --global           # key in bound store
+  aide env set GITHUB_TOKEN --secret-store firmus --secret-key gh --global
+  aide env set GITHUB_TOKEN --pick --global                              # interactive picker
+  aide env set SENTRY_DSN --secret-key sentry --context work --global`,
 		Args:         cobra.RangeArgs(1, 2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -77,6 +83,13 @@ Examples:
 			reader := bufio.NewReader(os.Stdin)
 
 			useSecret := secretKey != "" || pick || secretStore != ""
+			if envscrub.IsProviderSecretName(key) {
+				return providerSecretEnvError(key)
+			}
+			if !global && envscrub.IsProviderSelectorName(key) {
+				return fmt.Errorf("%s is a provider selector or endpoint, which repository config (.aide.yaml) cannot set; "+
+					"set it on your profile with --global", key)
+			}
 
 			// Mutual-exclusion checks.
 			if hasValueArg && useSecret {
@@ -375,4 +388,13 @@ func envRemoveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context (requires --global)")
 	return cmd
+}
+
+// providerSecretEnvError refuses a provider credential in env: and
+// shows the credentials: binding to declare instead.
+func providerSecretEnvError(key string) error {
+	return fmt.Errorf("%s is a provider credential and cannot be set with aide env set; "+
+		"store it in an age secret store (aide secrets edit <store>) and declare a binding on the profile "+
+		"in your aide config:\n    credentials:\n      <name>:\n        backend: age\n        store: <store>\n        key: <key>\n"+
+		"        env: [%s]\n        harnesses: [<agent>]\n    default_credentials: [<name>]", key, key)
 }

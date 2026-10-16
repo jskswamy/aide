@@ -109,6 +109,11 @@ type Context struct {
 	// canonical harness name; it wins over ProfileDir for that harness.
 	// See NativeConfigDir for the resolution order.
 	ConfigDirs map[string]string `yaml:"config_dirs,omitempty"`
+	// Credentials are the profile's named provider credential bindings;
+	// DefaultCredentials names the ones a launch injects when nothing
+	// else selects. See credentials.go.
+	Credentials        map[string]CredentialBinding `yaml:"credentials,omitempty"`
+	DefaultCredentials []string                     `yaml:"default_credentials,omitempty"`
 	// MCPServers retains the v1 list-of-names form for the per-context
 	// selection of which MCP servers (declared at the top level) are
 	// enabled in this context. The v2 ContextOverride[MCPServer]
@@ -156,6 +161,12 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	}
 	if len(c.ConfigDirs) > 0 {
 		out["config_dirs"] = c.ConfigDirs
+	}
+	if len(c.Credentials) > 0 {
+		out["credentials"] = c.Credentials
+	}
+	if len(c.DefaultCredentials) > 0 {
+		out["default_credentials"] = c.DefaultCredentials
 	}
 	if c.Sandbox != nil {
 		out["sandbox"] = c.Sandbox

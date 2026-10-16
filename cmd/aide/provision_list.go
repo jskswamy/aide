@@ -76,7 +76,7 @@ func inheritProfileEnv(pCtx *provision.Context) {
 func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context, homeDir, projectRoot string) (provision.Context, error) {
 	// Every provisioning entry point resolves its context here, so this
 	// is where the user's scrub_env: reaches provisioning subprocesses.
-	provision.SetScrubEnv(cfg.ScrubEnv)
+	provision.SetScrubEnv(cfg.CredentialScrubNames())
 	pCtx, err := provision.ResolveContext(name, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
 	if err != nil {
 		return pCtx, err
@@ -92,7 +92,7 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 	for k, v := range pCtx.Env {
 		env = append(env, k+"="+v)
 	}
-	env = append(env, envscrub.ScrubCredentials(os.Environ(), envscrub.Credentials(), cfg.ScrubEnv)...)
+	env = append(env, envscrub.ScrubCredentials(os.Environ(), envscrub.Credentials(), cfg.CredentialScrubNames())...)
 	overrides := launcher.SandboxAgentEnv(ctx.Agent, homeDir, env)
 	if len(overrides) == 0 {
 		return pCtx, nil

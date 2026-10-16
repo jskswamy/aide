@@ -68,6 +68,25 @@ func secretDisplay(data *BannerData) string {
 	return data.SecretName
 }
 
+// credentialDisplay names the injected credential bindings and their
+// env vars, or the native-login mode. Values are never shown.
+func credentialDisplay(data *BannerData) string {
+	return CredentialSummary(data.Credentials, data.AuthMode)
+}
+
+// CredentialSummary renders credential bindings as "name (ENV, ...)",
+// or the native-login mode. It never includes values.
+func CredentialSummary(creds []CredentialInfo, authMode string) string {
+	if authMode == "login" {
+		return "native login (no API keys)"
+	}
+	parts := make([]string, 0, len(creds))
+	for _, c := range creds {
+		parts = append(parts, fmt.Sprintf("%s (%s)", c.Name, strings.Join(c.Env, ", ")))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // envItemLines returns formatted env variable lines from EnvItems.
 // Credential warnings render inline as "⚠ credential".
 // Blocked items render as "⊘ KEY  never-allow".

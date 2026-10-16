@@ -50,7 +50,10 @@ profile's `env:`). The Azure default-credential variables
 (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`,
 `AZURE_CLIENT_CERTIFICATE_PATH`, `AZURE_CLIENT_CERTIFICATE_PASSWORD`,
 `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_USERNAME`, `AZURE_PASSWORD`) are
-scrubbed like `AWS_*`; a capability's `env_allow` can re-admit them.
+scrubbed like `AWS_*`. The built-in `azure` capability now re-admits
+all eight (as `aws` and `gcp` re-admit theirs), so a profile with
+`capabilities: [azure]` keeps an exported service principal; without it
+they are removed.
 
 #### Provider keys in a profile's env: stop the launch unless translatable
 

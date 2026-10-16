@@ -288,3 +288,42 @@ default_context: work
 		})
 	}
 }
+
+// The azure capability re-admits the Azure default-credential variables
+// it would otherwise lose to the scrub, as aws and gcp do theirs.
+func TestLauncher_AzureCapabilityReadmitsServicePrincipal(t *testing.T) {
+	sp := map[string]string{
+		"AZURE_CLIENT_ID":                   "cid",
+		"AZURE_TENANT_ID":                   "tid",
+		"AZURE_CLIENT_SECRET":               "secret",
+		"AZURE_CLIENT_CERTIFICATE_PATH":     "/cert.pem",
+		"AZURE_CLIENT_CERTIFICATE_PASSWORD": "pw",
+		"AZURE_FEDERATED_TOKEN_FILE":        "/token",
+		"AZURE_USERNAME":                    "user",
+		"AZURE_PASSWORD":                    "pass",
+	}
+	for _, tc := range []struct {
+		caps string
+		want bool
+	}{{"\n    capabilities: [azure]", true}, {"", false}} {
+		t.Setenv("HOME", t.TempDir())
+		for k, v := range sp {
+			t.Setenv(k, v)
+		}
+		env, _ := launchCapturingEnvAndStderr(t, `
+agents:
+  claude:
+    binary: claude
+contexts:
+  work:
+    agent: claude`+tc.caps+`
+default_context: work
+`, "")
+		for k, v := range sp {
+			got, ok := envValue(env, k)
+			if ok != tc.want || (ok && got != v) {
+				t.Errorf("capabilities %q: %s present=%v (%q), want present=%v", tc.caps, k, ok, got, tc.want)
+			}
+		}
+	}
+}

@@ -29,7 +29,7 @@ func TestHookListEmpty(t *testing.T) {
 	cmd := hookListCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work"})
+	cmd.SetArgs([]string{"--profile", "work"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\n%s", err, buf.String())
 	}
@@ -67,7 +67,7 @@ hooks:
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	cmd.SetArgs([]string{"--profile", "work", "--format", "json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
 	}
@@ -150,13 +150,13 @@ func TestHookAddRejectsDuplicate(t *testing.T) {
 	}
 
 	cmd1 := hookAddCmd()
-	cmd1.SetArgs([]string{"--context", "work", "--event", "pre_tool", "--command", "rtk hook fakeagent"})
+	cmd1.SetArgs([]string{"--profile", "work", "--event", "pre_tool", "--command", "rtk hook fakeagent"})
 	if err := cmd1.Execute(); err != nil {
 		t.Fatalf("first add failed: %v", err)
 	}
 
 	cmd2 := hookAddCmd()
-	cmd2.SetArgs([]string{"--context", "work", "--event", "pre_tool", "--command", "rtk hook fakeagent"})
+	cmd2.SetArgs([]string{"--profile", "work", "--event", "pre_tool", "--command", "rtk hook fakeagent"})
 	if err := cmd2.Execute(); err == nil {
 		t.Error("expected error on duplicate hook add, got nil")
 	}

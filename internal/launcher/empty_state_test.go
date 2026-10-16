@@ -36,10 +36,10 @@ func TestHandleEmptyState_NonTTY_Errors_WithFourHints(t *testing.T) {
 		t.Fatal("expected error in non-TTY mode")
 	}
 	for _, want := range []string{
-		"aide context bind",
-		"aide context create",
+		"aide profile bind",
+		"aide profile create",
 		"aide --profile <name>",
-		"aide context set-default",
+		"aide profile set-default",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("non-TTY error must mention %q, got: %v", want, err)

@@ -67,7 +67,7 @@ func TestContextBind_ExistingContext_AppendsMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `Bound this folder to context "work"`) {
+	if !strings.Contains(out, `Bound this folder to profile "work"`) {
 		t.Errorf("expected success message, got: %s", out)
 	}
 }
@@ -79,7 +79,7 @@ func TestContextBind_MissingContext_NonTTY_Errors(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, `not found`) || !strings.Contains(msg, "aide context create ghost") {
+	if !strings.Contains(msg, `not found`) || !strings.Contains(msg, "aide profile create ghost") {
 		t.Errorf("expected not-found error pointing at create, got: %v", err)
 	}
 }

@@ -471,7 +471,7 @@ contexts:
 		t.Fatal(err)
 	}
 
-	out := runCapCmdInPlace(t, "list", "--context", "work")
+	out := runCapCmdInPlace(t, "list", "--profile", "work")
 
 	lines := strings.Split(out, "\n")
 	for _, l := range lines {

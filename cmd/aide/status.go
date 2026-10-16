@@ -175,7 +175,7 @@ func initCmd() *cobra.Command {
 			fmt.Fprintln(out)
 			fmt.Fprintln(out, "Next steps:")
 			fmt.Fprintf(out, "  aide                     Launch %s\n", agentName)
-			fmt.Fprintln(out, "  aide context bind <name> Attach this folder to an existing context")
+			fmt.Fprintln(out, "  aide profile bind <name> Attach this folder to an existing profile")
 			fmt.Fprintln(out, "  aide secrets create      Set up encrypted secrets")
 			fmt.Fprintln(out, "  aide agents add <name>   Register another agent")
 
@@ -530,6 +530,7 @@ Examples:
 
 	cmd.Flags().StringVar(&matchPattern, "match", "", "Glob pattern to match instead of CWD")
 	cmd.Flags().StringVar(&contextName, "context", "", "Add match rule to an existing context")
+	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringVar(&secretFlag, "secret", "", "Secret name (e.g. work)")
 	cmd.Flags().StringVar(&sandboxProfile, "sandbox", "", "Sandbox profile name (e.g. strict, none, default)")
 	return cmd

@@ -31,7 +31,7 @@ func TestSync_PlanOnly_NoMutation(t *testing.T) {
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
 	)
-	out, err := runSyncCmd(t, "", "--context", "work", "--plan")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--plan")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -51,7 +51,7 @@ func TestSync_Yes_AppliesAndUpdatesState(t *testing.T) {
 		map[string]string{"linear": "linear@1.2"},
 		map[string]string{"shared": "shared-mcp"},
 	)
-	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -105,7 +105,7 @@ func TestSync_UnmanagedDoesNotBlockInteractive(t *testing.T) {
 		{Key: "stranger", Name: "stranger@x"},
 	}
 	// Answer "y" at the prompt to actually apply.
-	out, err := runSyncCmd(t, "y\n", "--context", "work")
+	out, err := runSyncCmd(t, "y\n", "--profile", "work")
 	if err != nil {
 		t.Fatalf("execute should not error on unmanaged items, got: %v\n%s", err, out)
 	}
@@ -127,7 +127,7 @@ func TestSync_RequiresTTY_BlocksYes(t *testing.T) {
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
 	)
-	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	_, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err == nil || !strings.Contains(err.Error(), "TTY") {
 		t.Errorf("expected TTY error, got %v", err)
 	}
@@ -143,7 +143,7 @@ func TestSync_CapabilityMismatch(t *testing.T) {
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
 	)
-	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Errorf("sync should warn and continue, not error; got %v", err)
 	}
@@ -175,7 +175,7 @@ func TestSync_ApplyFailure_StateNotUpdated(t *testing.T) {
 	// Simpler: declare the plugin but flip InstalledPlugins to error.
 	theFakeProv.PluginsErr = errors.New("listing failed")
 
-	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	_, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err == nil {
 		t.Fatal("expected failure")
 	}
@@ -221,7 +221,7 @@ contexts:
 		t.Fatal(err)
 	}
 
-	out, err := runSyncCmd(t, "", "--context", "work", "--plan")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--plan")
 	if err == nil {
 		t.Fatalf("sync expected to fail (MCP env references secret but no secrets file configured); got nil error and out: %s", out)
 	}
@@ -294,7 +294,7 @@ contexts:
 		t.Fatal(err)
 	}
 
-	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -323,7 +323,7 @@ func TestSync_NoSecretContextHasEmptySecretsHash(t *testing.T) {
 		[]string{"linear"}, nil,
 		map[string]string{"linear": "linear@1.2"}, nil,
 	)
-	if _, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+	if _, err := runSyncCmd(t, "", "--profile", "work", "--yes"); err != nil {
 		t.Fatal(err)
 	}
 	st, err := provision.LoadState(provision.DefaultStatePath(home))
@@ -344,7 +344,7 @@ func TestSync_ForceSecretsFlagAccepted(t *testing.T) {
 	)
 	// No secret configured, so --force-secrets is a no-op here — this
 	// test only pins that the flag exists and parses without error.
-	out, err := runSyncCmd(t, "", "--context", "work", "--yes", "--force-secrets")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--yes", "--force-secrets")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -430,7 +430,7 @@ contexts:
 func TestSync_SkipsDecryptWhenNothingChanged(t *testing.T) {
 	setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "already-correct-token", true)
 
-	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("expected sync to succeed without decrypting (no age key available), got: %v\n%s", err, out)
 	}
@@ -446,7 +446,7 @@ func TestSync_DecryptsWhenSecretsFileChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	_, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err == nil {
 		t.Fatal("expected sync to attempt decryption (secrets file changed) and fail with no age key available")
 	}
@@ -468,7 +468,7 @@ func TestSync_DecryptsWhenConfigChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = runSyncCmd(t, "", "--context", "work", "--yes")
+	_, err = runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err == nil {
 		t.Fatal("expected sync to attempt decryption (config.yaml changed) and fail with no age key available")
 	}
@@ -480,7 +480,7 @@ func TestSync_DecryptsWhenConfigChanged(t *testing.T) {
 func TestSync_ForceSecretsBypassesGate(t *testing.T) {
 	setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "already-correct-token", true)
 
-	_, err := runSyncCmd(t, "", "--context", "work", "--yes", "--force-secrets")
+	_, err := runSyncCmd(t, "", "--profile", "work", "--yes", "--force-secrets")
 	if err == nil {
 		t.Fatal("expected --force-secrets to force a decrypt attempt and fail with no age key available")
 	}
@@ -496,7 +496,7 @@ func TestSync_FallsBackToDecryptWhenInstalledMissingKey(t *testing.T) {
 	// leaving the template unresolved.
 	setupSecretGateFixture(t, []byte("dummy-ciphertext-v1"), "", false)
 
-	_, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	_, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err == nil {
 		t.Fatal("expected fallback to decrypt (installed missing templated key) and fail with no age key available")
 	}
@@ -517,11 +517,11 @@ func TestSync_AgentDirChangeReinstallsManagedMCP(t *testing.T) {
 	theFakeProv.RequireTTY = false
 	theFakeProv.agentDirVal = "/agent/old"
 	setupProvisionConfig(t, nil, []string{"shared"}, nil, map[string]string{"shared": "shared-mcp"})
-	if out, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+	if out, err := runSyncCmd(t, "", "--profile", "work", "--yes"); err != nil {
 		t.Fatalf("initial sync: %v\n%s", err, out)
 	}
 
-	out, err := runSyncCmd(t, "", "--context", "work", "--plan")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--plan")
 	if err != nil {
 		t.Fatalf("plan: %v\n%s", err, out)
 	}
@@ -530,7 +530,7 @@ func TestSync_AgentDirChangeReinstallsManagedMCP(t *testing.T) {
 	}
 
 	theFakeProv.agentDirVal = "/agent/new"
-	out, err = runSyncCmd(t, "", "--context", "work", "--plan")
+	out, err = runSyncCmd(t, "", "--profile", "work", "--plan")
 	if err != nil {
 		t.Fatalf("plan: %v\n%s", err, out)
 	}
@@ -550,12 +550,12 @@ func TestSync_URLDirectPluginMatchedByInstallRef(t *testing.T) {
 	theFakeProv.RequireTTY = false
 	theFakeProv.ByInstallRef = true
 	home := setupProvisionConfig(t, nil, nil, map[string]string{"hello": "npm:@acme/hello"}, nil)
-	if out, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+	if out, err := runSyncCmd(t, "", "--profile", "work", "--yes"); err != nil {
 		t.Fatalf("initial sync: %v\n%s", err, out)
 	}
 
 	theFakeProv.InstalledPluginList = []provision.Plugin{{Key: "npm:@acme/hello", Name: "npm:@acme/hello"}}
-	out, err := runSyncCmd(t, "", "--context", "work", "--plan")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--plan")
 	if err != nil {
 		t.Fatalf("plan: %v\n%s", err, out)
 	}
@@ -568,7 +568,7 @@ func TestSync_URLDirectPluginMatchedByInstallRef(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "xdg", "aide", "config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := runSyncCmd(t, "", "--context", "work", "--yes"); err != nil {
+	if out, err := runSyncCmd(t, "", "--profile", "work", "--yes"); err != nil {
 		t.Fatalf("removal sync: %v\n%s", err, out)
 	}
 	if len(theFakeProv.UninstallCall) != 1 || theFakeProv.UninstallCall[0] != "npm:@acme/hello" {

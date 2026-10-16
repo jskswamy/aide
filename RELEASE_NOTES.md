@@ -73,6 +73,62 @@ scrubbed.
 
 ### ✨ New
 
+#### aide profile manages profiles; aide context is a deprecated alias
+
+`aide profile` has the subcommands `aide context` had: `list`, `bind`,
+`create`, `rename`, `remove`, `set-secret`, `remove-secret` and
+`set-default`. Its messages say "profile" (`Created profile "work"`,
+`profile "ghost" not found`).
+
+- `aide context ...` still works, with a one-line notice on stderr
+  (`aide context is deprecated; use aide profile (same subcommands)`);
+  stdout, including `--format json`, is unchanged. It is hidden from
+  `aide --help`.
+- Every command that took `--context` now takes `--profile` for the
+  same selection. `--context` still works, is hidden from help and
+  prints `--context is deprecated; use --profile` to stderr; passing
+  both with different names stops with `name different profiles`.
+- `aide profile set-default --profile <name>` names the profile to make
+  the default (the positional argument still works).
+- Shell completion offers profile names for `--profile`, `--adopt` and
+  the profile argument of `bind`, `rename`, `remove` and `set-default`.
+- Hints that pointed at `aide context ...` now point at `aide profile
+  ...`; the `set-secret` hint no longer suggests a `--global` flag that
+  command never had.
+
+#### aide profile migrate converts config.yaml to profiles:
+
+`aide profile migrate` prints your `config.yaml` converted to the
+`profiles:` schema and what changes; nothing is written.
+`aide profile migrate --write` keeps the original as
+`config.yaml.bak` (or `config.yaml.bak-<timestamp>` if that exists)
+and writes the new file atomically.
+
+- Converts `contexts:` to `profiles:`, `default_context:` to
+  `default_profile:`, and in each profile `profile:` to
+  `config_dir_name:` and `profile_dir:` to `config_dir:`, so every
+  native login dir stays where it is.
+- Provider keys in `env:` templated from the profile's own store
+  (`ANTHROPIC_API_KEY: "{{ .secrets.anthropic_key }}"`) become
+  `credentials:` bindings selected by `default_credentials:`. Custom
+  names are limited to the profile's agent with `harnesses:`. Values
+  are never read or printed. A key that cannot be translated stops the
+  migration with the replacement block to write.
+- Comments and unrelated keys are kept; blank lines and indentation are
+  normalized. The result is checked as a config before it is written.
+- Profiles that use an agent's global login (no config dir of their
+  own, so they run from e.g. `~/.claude` and share one login) are
+  listed and left unchanged. `--adopt <profile>` keeps the global login
+  for that profile by adding `config_dir_name: <profile>` and
+  `config_dirs: {<agent>: <default dir>}`; adopting two profiles onto
+  the same dir is refused. No login dir is copied.
+- `--write` also updates provisioning state for profiles synced against
+  the old file, so the rewrite is not reported as drift and nothing aide
+  installed is treated as new. Profiles that had already drifted still
+  report it.
+- `.aide.yaml` files are never changed, and launching aide never
+  rewrites the config.
+
 #### Credential bindings select provider API keys per profile
 
 A profile can name its provider API keys under `credentials:` and pick

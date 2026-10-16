@@ -63,13 +63,13 @@ func TestHookSyncLifecycle(t *testing.T) {
 
 	// 1. Add a hook.
 	cmd := hookAddCmd()
-	cmd.SetArgs([]string{"--context", "work", "--event", "pre_tool", "--command", "rtk hook {agent}"})
+	cmd.SetArgs([]string{"--profile", "work", "--event", "pre_tool", "--command", "rtk hook {agent}"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("hook add: %v", err)
 	}
 
 	// 2. Sync — should install the hook.
-	out, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	out, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("first sync: %v\n%s", err, out)
 	}
@@ -89,7 +89,7 @@ func TestHookSyncLifecycle(t *testing.T) {
 	var listBuf bytes.Buffer
 	listCmd := hookListCmd()
 	listCmd.SetOut(&listBuf)
-	listCmd.SetArgs([]string{"--context", "work"})
+	listCmd.SetArgs([]string{"--profile", "work"})
 	if err := listCmd.Execute(); err != nil {
 		t.Fatalf("hook list: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestHookSyncLifecycle(t *testing.T) {
 	}
 
 	// 4. Second sync — no-op.
-	out2, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	out2, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("second sync: %v\n%s", err, out2)
 	}
@@ -111,13 +111,13 @@ func TestHookSyncLifecycle(t *testing.T) {
 
 	// 5. Remove the hook using the resolved command form.
 	rmCmd := hookRemoveCmd()
-	rmCmd.SetArgs([]string{"--context", "work", "--event", "pre_tool", "--command", "rtk hook fakehookagent"})
+	rmCmd.SetArgs([]string{"--profile", "work", "--event", "pre_tool", "--command", "rtk hook fakehookagent"})
 	if err := rmCmd.Execute(); err != nil {
 		t.Fatalf("hook remove (resolved form): %v", err)
 	}
 
 	// 6. Sync — should uninstall the hook.
-	out3, err := runSyncCmd(t, "", "--context", "work", "--yes")
+	out3, err := runSyncCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("uninstall sync: %v\n%s", err, out3)
 	}
@@ -156,13 +156,13 @@ func TestHookRemoveAcceptsBothRawAndResolvedCommand(t *testing.T) {
 			writeHookConfig(t, dir)
 
 			add := hookAddCmd()
-			add.SetArgs([]string{"--context", "work", "--event", "pre_tool", "--command", "rtk hook {agent}"})
+			add.SetArgs([]string{"--profile", "work", "--event", "pre_tool", "--command", "rtk hook {agent}"})
 			if err := add.Execute(); err != nil {
 				t.Fatalf("add: %v", err)
 			}
 
 			rm := hookRemoveCmd()
-			rm.SetArgs([]string{"--context", "work", "--event", "pre_tool", "--command", tc.rmCmd})
+			rm.SetArgs([]string{"--profile", "work", "--event", "pre_tool", "--command", tc.rmCmd})
 			if err := rm.Execute(); err != nil {
 				t.Fatalf("remove with %q: %v", tc.rmCmd, err)
 			}
@@ -185,7 +185,7 @@ func TestHookRemoveByMatcherRemovesCorrectEntry(t *testing.T) {
 
 	for _, matcher := range []string{"", "shell"} {
 		add := hookAddCmd()
-		add.SetArgs([]string{"--context", "work", "--event", "pre_tool",
+		add.SetArgs([]string{"--profile", "work", "--event", "pre_tool",
 			"--matcher", matcher, "--command", "multi-hook"})
 		if err := add.Execute(); err != nil {
 			t.Fatalf("add matcher=%q: %v", matcher, err)
@@ -194,7 +194,7 @@ func TestHookRemoveByMatcherRemovesCorrectEntry(t *testing.T) {
 
 	// Remove only the "shell" matcher entry.
 	rm := hookRemoveCmd()
-	rm.SetArgs([]string{"--context", "work", "--event", "pre_tool",
+	rm.SetArgs([]string{"--profile", "work", "--event", "pre_tool",
 		"--matcher", "shell", "--command", "multi-hook"})
 	if err := rm.Execute(); err != nil {
 		t.Fatalf("remove: %v", err)
@@ -204,7 +204,7 @@ func TestHookRemoveByMatcherRemovesCorrectEntry(t *testing.T) {
 	var listBuf bytes.Buffer
 	lc := hookListCmd()
 	lc.SetOut(&listBuf)
-	lc.SetArgs([]string{"--context", "work"})
+	lc.SetArgs([]string{"--profile", "work"})
 	_ = lc.Execute()
 	out := listBuf.String()
 	lines := strings.Count(out, "multi-hook")

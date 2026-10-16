@@ -24,7 +24,7 @@ func TestValidateContextScope(t *testing.T) {
 				if err == nil {
 					t.Fatalf("validateContextScope(%v, %q) = nil, want error", tc.global, tc.contextName)
 				}
-				if !strings.Contains(err.Error(), "--context") || !strings.Contains(err.Error(), "--global") {
+				if !strings.Contains(err.Error(), "--profile") || !strings.Contains(err.Error(), "--global") {
 					t.Errorf("error %q should mention both flags", err)
 				}
 				return

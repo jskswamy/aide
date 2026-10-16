@@ -57,12 +57,12 @@ func handleEmptyState(
 ) (*aidectx.ResolvedContext, error) {
 	if !tty {
 		return nil, fmt.Errorf(
-			"aide: no context matches this folder, and no default_context is configured.\n\n" +
+			"aide: no profile matches this folder, and no default profile is configured.\n\n" +
 				"To proceed, run one of:\n" +
-				"  aide context bind <name>            # attach this folder to existing context\n" +
-				"  aide context create [name]          # create a new context for this folder\n" +
+				"  aide profile bind <name>            # attach this folder to an existing profile\n" +
+				"  aide profile create [name]          # create a new profile for this folder\n" +
 				"  aide --profile <name>               # launch once with a profile, without saving\n" +
-				"  aide context set-default <name>     # use a fallback for unmatched folders",
+				"  aide profile set-default <name>     # use a fallback for unmatched folders",
 		)
 	}
 
@@ -122,7 +122,7 @@ func handleEmptyState(
 // and returns the chosen name.
 func pickContextForLaunchOnce(cfg *config.Config, reader *bufio.Reader, out io.Writer) (string, error) {
 	if len(cfg.Contexts) == 0 {
-		return "", fmt.Errorf("no contexts configured. Run: aide context create <name>")
+		return "", fmt.Errorf("no profiles configured. Run: aide profile create <name>")
 	}
 	names := make([]string, 0, len(cfg.Contexts))
 	for n := range cfg.Contexts {

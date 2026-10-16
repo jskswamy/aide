@@ -116,6 +116,7 @@ only, never secret values, and never touch `.aide.yaml` or
 ```
 aide project set [--profile <name>] [--agent <harness>] [--credential <name>]... [--no-credentials]
 aide project clear [--profile <name>] [--agent] [--credential]
+aide project clear --reset
 aide project show [--profile <name>] [--format json]
 ```
 
@@ -127,6 +128,9 @@ aide project show [--profile <name>] [--format json]
 - `clear` with `--agent` or `--credential` clears that field; with
   neither, both. Cleared fields fall back to `.aide.yaml` and the
   profile defaults.
+- `clear --reset` moves the whole preferences file aside to
+  `<file>.corrupt-<timestamp>` (nothing is deleted) and starts empty;
+  use it when aide reports the file unreadable.
 - `show --format json` prints `profile`, `repository`, `harness`,
   `credentials` (`null` when unset, `[]` for an explicit empty
   selection) and `file`.

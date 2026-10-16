@@ -201,3 +201,45 @@ func TestProjectShow_HumanWithoutRepository(t *testing.T) {
 		t.Errorf("show should explain the missing identity:\n%s", out)
 	}
 }
+
+func TestProjectClearReset_RecoversCorruptFile(t *testing.T) {
+	path := selectionEnv(t, selectionTestConfig)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runProject(t, "clear"); err == nil || !strings.Contains(err.Error(), "--reset") {
+		t.Fatalf("clear on a corrupt file: err = %v, want the --reset remedy", err)
+	}
+	out, err := runProject(t, "clear", "--reset")
+	if err != nil {
+		t.Fatalf("clear --reset: %v\n%s", err, out)
+	}
+	matches, _ := filepath.Glob(path + ".corrupt-*")
+	if len(matches) != 1 || !strings.Contains(out, matches[0]) {
+		t.Errorf("clear --reset should move the file aside and say where (%v):\n%s", matches, out)
+	}
+	if out, err := runProject(t, "set", "--agent", "pi"); err != nil {
+		t.Fatalf("set after reset: %v\n%s", err, out)
+	}
+}
+
+func TestProjectClearReset_ConflictsWithFieldFlags(t *testing.T) {
+	selectionEnv(t, selectionTestConfig)
+	if _, err := runProject(t, "clear", "--reset", "--agent"); err == nil {
+		t.Error("--reset with --agent should be refused")
+	}
+}
+
+func TestProjectClear_NothingSavedWritesNothing(t *testing.T) {
+	path := selectionEnv(t, selectionTestConfig)
+	out, err := runProject(t, "clear")
+	if err != nil || !strings.Contains(out, "Nothing saved") {
+		t.Fatalf("clear: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("clear with nothing saved created the preferences file")
+	}
+}

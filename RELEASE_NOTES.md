@@ -267,6 +267,15 @@ prints them.
   or denied file contributes nothing to what they report or check.
   `aide statusline --profile <name>` also shows the saved harness.
 
+#### aide trust, deny and untrust take a path
+
+`aide trust [path]`, `aide deny [path]` and `aide untrust [path]` act
+on the named `.aide.yaml` (default: the one in the current directory).
+Approvals are keyed on the symlink-resolved path and the file's
+contents, so a file reached through a symlinked directory shares one
+approval. Approvals recorded through a symlinked path before this
+release are asked for again once.
+
 ### 🧰 CLI
 
 #### --format json adds profile keys beside context keys

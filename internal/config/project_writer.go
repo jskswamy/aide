@@ -27,14 +27,9 @@ func WriteProjectOverride(path string, po *ProjectOverride) error {
 // If the file was externally modified after the last trust, the pre-modification
 // content won't match any trust hash, so we skip auto-re-trust.
 func WriteProjectOverrideWithTrust(path string, po *ProjectOverride, store *trust.Store) error {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		absPath = path
-	}
-
 	// Check pre-modification trust status.
-	oldContents, readErr := os.ReadFile(absPath)
-	wasTrusted := readErr == nil && store.Check(absPath, oldContents) == trust.Trusted
+	before, readErr := store.CheckFile(path)
+	wasTrusted := readErr == nil && before.Status == trust.Trusted
 
 	// Write the new content using existing write function.
 	if err := WriteProjectOverride(path, po); err != nil {
@@ -43,9 +38,8 @@ func WriteProjectOverrideWithTrust(path string, po *ProjectOverride, store *trus
 
 	// Auto-re-trust if previously trusted.
 	if wasTrusted {
-		newContents, err := os.ReadFile(absPath)
-		if err == nil {
-			_ = store.Trust(absPath, newContents)
+		if after, err := store.CheckFile(path); err == nil {
+			_ = store.Trust(after.Path, after.Contents)
 		}
 	}
 

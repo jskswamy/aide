@@ -39,15 +39,8 @@ func Load(configDir, projectDir string) (*Config, error) {
 		cfg = normalizeMinimal(cfg)
 	}
 
-	// Walk up from projectDir looking for .aide.yaml
-	projectConfigPath := findProjectConfig(projectDir)
-	if projectConfigPath != "" {
-		override, err := loadProjectOverride(projectConfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("loading project config %s: %w", projectConfigPath, err)
-		}
-		cfg.ProjectOverride = override
-		cfg.ProjectConfigPath = projectConfigPath
+	if err := cfg.loadProjectConfig(projectDir); err != nil {
+		return nil, err
 	}
 
 	if home, ok := userHome(); ok {
@@ -85,17 +78,60 @@ func loadFile(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// loadProjectOverride reads a .aide.yaml file and returns a ProjectOverride.
-func loadProjectOverride(path string) (*ProjectOverride, error) {
-	data, err := os.ReadFile(path)
+// LoadProjectOverrideFile reads one .aide.yaml as written, with no
+// path rewriting or layering. Writers edit this form. A missing file
+// is an empty override.
+func LoadProjectOverrideFile(path string) (*ProjectOverride, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- the user's own .aide.yaml
+	if errors.Is(err, os.ErrNotExist) {
+		return &ProjectOverride{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
+	return parseProjectOverride(path, data)
+}
+
+func parseProjectOverride(path string, data []byte) (*ProjectOverride, error) {
 	var override ProjectOverride
 	if err := yaml.Unmarshal(data, &override); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return &override, nil
+}
+
+// loadProjectConfig discovers and loads the .aide.yaml layers that
+// apply in projectDir and merges them into ProjectOverride. Every
+// layer is checked structurally (it may name a profile, never define
+// one) before any trust decision.
+func (c *Config) loadProjectConfig(projectDir string) error {
+	d := DiscoverProject(projectDir)
+	c.ProjectConfigErr = d.Err
+	for _, l := range []struct{ source, path, root string }{
+		{LayerInherited, d.MainPath, d.MainCheckoutRoot},
+		{LayerLocal, d.LocalPath, d.localRewriteRoot()},
+	} {
+		if l.path == "" {
+			continue
+		}
+		data, err := os.ReadFile(l.path) // #nosec G304 -- discovered .aide.yaml
+		if err != nil && l.source == LayerInherited {
+			c.ProjectConfigErr = mainUnavailable(d.CheckoutRoot, l.path, err)
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("loading project config %s: %w", l.path, err)
+		}
+		po, err := parseProjectOverride(l.path, data)
+		if err != nil {
+			return fmt.Errorf("loading project config %s: %w", l.path, err)
+		}
+		rewriteRelativePaths(po, l.root)
+		c.ProjectLayers = append(c.ProjectLayers, ProjectLayer{Source: l.source, Path: l.path, Contents: data, Override: po})
+		c.ProjectConfigPath = l.path
+	}
+	c.ProjectOverride = MergeProjectLayers(c.ProjectLayers)
+	return nil
 }
 
 // normalizeMinimal converts a flat (minimal) config into the full
@@ -150,33 +186,4 @@ func SandboxPolicyToRef(sp *SandboxPolicy) *SandboxRef {
 		return &SandboxRef{Disabled: true}
 	}
 	return &SandboxRef{Inline: sp}
-}
-
-// findProjectConfig walks up from startDir looking for .aide.yaml.
-// It stops at the git root (directory containing .git) or the filesystem root.
-// Returns the path to .aide.yaml if found, or empty string if not found.
-func findProjectConfig(startDir string) string {
-	dir := startDir
-	for {
-		candidate := filepath.Join(dir, ProjectConfigFileName)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-
-		// Check if we've reached a git root — if so, stop after checking this dir
-		gitDir := filepath.Join(dir, ".git")
-		if _, err := os.Stat(gitDir); err == nil {
-			// We're at the git root and didn't find .aide.yaml here (already checked above)
-			// Actually we did check this dir already, so stop
-			return ""
-		}
-
-		// Move to parent directory
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			// Reached filesystem root
-			return ""
-		}
-		dir = parent
-	}
 }

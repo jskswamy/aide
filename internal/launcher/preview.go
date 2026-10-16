@@ -44,7 +44,11 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 		ctx = c
 		name = contextName
 	} else {
-		trustInfo = GateProjectConfig(cfg)
+		gate, err := GateProjectConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		trustInfo = gate.Primary()
 		rc, err := aidectx.Resolve(cfg, cwd, remotes)
 		if err != nil {
 			return nil, fmt.Errorf("resolving profile: %w", err)

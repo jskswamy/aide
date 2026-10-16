@@ -64,6 +64,17 @@ type TrustInfo struct {
 	Status string     `json:"status"` // "untrusted" | "denied"
 	Path   string     `json:"path"`   // display path of .aide.yaml (tilde-contracted)
 	Wants  TrustWants `json:"wants"`  // what the untrusted config is requesting
+	// Source is "inherited" for a linked worktree's main checkout
+	// file and "local" for the checkout's own; empty when unknown.
+	Source string `json:"source,omitempty"`
+}
+
+// InheritedGrant is a security-sensitive grant a linked worktree
+// receives from its main checkout's trusted .aide.yaml.
+type InheritedGrant struct {
+	Kind   string `json:"kind"`   // "writable", "readable", "network", "unguard", "capability", "sandbox", "auto_approve"
+	Value  string `json:"value"`  // path, mode, guard or capability name
+	Source string `json:"source"` // display path of the declaring file
 }
 
 // TrustWants describes what an untrusted .aide.yaml is requesting.
@@ -96,20 +107,26 @@ type BannerData struct {
 	// selection were chosen ("flag", "match", "default", "preference",
 	// "repository", "profile", "auth"). CredentialSelection is the
 	// selected binding names, never values; empty when none.
-	ProfileSource       string              `json:"profile_source,omitempty"`
-	HarnessSource       string              `json:"harness_source,omitempty"`
-	CredentialSource    string              `json:"credential_source,omitempty"`
-	CredentialSelection []string            `json:"credential_selection,omitempty"`
-	Trust               *TrustInfo          `json:"trust,omitempty"` // nil when trusted or no project config
-	Sandbox             *SandboxInfo        `json:"sandbox,omitempty"`
-	Yolo                bool                `json:"yolo,omitempty"`
-	Warnings            []string            `json:"warnings,omitempty"`
-	Capabilities        []CapabilityDisplay `json:"capabilities,omitempty"`
-	DisabledCaps        []CapabilityDisplay `json:"disabled_caps,omitempty"`  // --without caps
-	SuggestedCaps       []CapabilityDisplay `json:"suggested_caps,omitempty"` // detected but not enabled
-	NeverAllow          []string            `json:"never_allow,omitempty"`
-	CompWarnings        []string            `json:"comp_warnings,omitempty"` // composition warnings
-	AutoApprove         bool                `json:"auto_approve,omitempty"`  // replaces Yolo for new banner display
+	ProfileSource       string     `json:"profile_source,omitempty"`
+	HarnessSource       string     `json:"harness_source,omitempty"`
+	CredentialSource    string     `json:"credential_source,omitempty"`
+	CredentialSelection []string   `json:"credential_selection,omitempty"`
+	Trust               *TrustInfo `json:"trust,omitempty"` // first untrusted/denied file; nil when all trusted or no project config
+	// TrustFiles lists every untrusted or denied .aide.yaml (a linked
+	// worktree can have two); Trust is its first entry.
+	TrustFiles []TrustInfo `json:"trust_files,omitempty"`
+	// InheritedGrants are security-sensitive grants applied from a
+	// linked worktree's main checkout .aide.yaml.
+	InheritedGrants []InheritedGrant    `json:"inherited_grants,omitempty"`
+	Sandbox         *SandboxInfo        `json:"sandbox,omitempty"`
+	Yolo            bool                `json:"yolo,omitempty"`
+	Warnings        []string            `json:"warnings,omitempty"`
+	Capabilities    []CapabilityDisplay `json:"capabilities,omitempty"`
+	DisabledCaps    []CapabilityDisplay `json:"disabled_caps,omitempty"`  // --without caps
+	SuggestedCaps   []CapabilityDisplay `json:"suggested_caps,omitempty"` // detected but not enabled
+	NeverAllow      []string            `json:"never_allow,omitempty"`
+	CompWarnings    []string            `json:"comp_warnings,omitempty"` // composition warnings
+	AutoApprove     bool                `json:"auto_approve,omitempty"`  // replaces Yolo for new banner display
 	// Extra sandbox paths from config (not from capabilities)
 	ExtraWritable []string `json:"extra_writable,omitempty"`
 	ExtraReadable []string `json:"extra_readable,omitempty"`

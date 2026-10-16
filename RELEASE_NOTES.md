@@ -267,6 +267,39 @@ prints them.
   or denied file contributes nothing to what they report or check.
   `aide statusline --profile <name>` also shows the saved harness.
 
+#### Linked git worktrees inherit the main checkout's .aide.yaml
+
+A linked worktree (`git worktree add`) now applies the main checkout's
+`.aide.yaml`, then its own on top. aide finds the main checkout through
+git, never by looking in parent directories. A main checkout, plain
+clone, worktree of a bare repository or submodule applies only its own
+file, once. See "Linked git worktrees" in `docs/configuration.md`.
+
+- The worktree's scalars win; `capabilities` are a stable union and the
+  worktree's `disabled_capabilities` may remove inherited ones; `env:`
+  merges key by key (provider credentials, selectors and endpoints stay
+  forbidden in both files); sandbox `_extra` lists combine.
+- Each file is trusted on its own. An untrusted or denied file
+  contributes nothing while the other still applies, and changing the
+  main checkout's file withdraws its approval. The banner, `aide which`
+  and `aide status` list each untrusted file separately (`trust_files`
+  in `aide which --format json`, `project_trust` in `aide status`),
+  name the command that approves an inherited file, and list grants
+  inherited from the main checkout (capabilities, writable and readable
+  paths, network, removed guards, auto-approve) labeled with that file
+  (`inherited_grants`). `aide prompt` uses the same per-file check.
+- A worktree whose main checkout is deleted, moved or unreadable stops
+  the launch with `main checkout unavailable`, naming the missing path
+  and the remedies (restore it, `git worktree repair` / `git worktree
+  prune`, or `--ignore-project-config`).
+- Relative sandbox paths in any `.aide.yaml` now mean paths under the
+  root of the checkout holding that file, not the directory you launch
+  from.
+- `aide cap enable|disable` and `aide env set|remove` in a worktree
+  edit the worktree's own `.aide.yaml` (created if absent); `--main`
+  edits the main checkout's. Project edits now keep a file as written
+  instead of saving load-time changes into it.
+
 #### aide trust, deny and untrust take a path
 
 `aide trust [path]`, `aide deny [path]` and `aide untrust [path]` act

@@ -52,9 +52,9 @@ func TestWriteProjectOverride_Atomic(t *testing.T) {
 		t.Fatalf("update write error = %v", err)
 	}
 
-	loaded, err := loadProjectOverride(path)
+	loaded, err := LoadProjectOverrideFile(path)
 	if err != nil {
-		t.Fatalf("loadProjectOverride() error = %v", err)
+		t.Fatalf("LoadProjectOverrideFile() error = %v", err)
 	}
 	if len(loaded.Capabilities) != 2 {
 		t.Errorf("expected 2 capabilities after update, got %v", loaded.Capabilities)

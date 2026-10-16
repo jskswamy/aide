@@ -46,8 +46,17 @@ type Config struct {
 	// --- Project override (populated by loader, not from YAML) ---
 	// Holds .aide.yaml data to be merged on top of the matched context at
 	// resolution time. Not serialized to YAML.
+	// ProjectOverride is the merge of ProjectLayers; the trust gate
+	// re-merges it from the layers it keeps.
 	ProjectOverride   *ProjectOverride `yaml:"-"`
-	ProjectConfigPath string           `yaml:"-"` // absolute path to .aide.yaml, if found
+	ProjectConfigPath string           `yaml:"-"` // nearest .aide.yaml (local, else inherited), if found
+	// ProjectLayers are the .aide.yaml files that apply, inherited
+	// (a linked worktree's main checkout) first, then local.
+	ProjectLayers []ProjectLayer `yaml:"-"`
+	// ProjectConfigErr is set when a linked worktree's main checkout
+	// cannot be read (ErrMainCheckoutUnavailable). The trust gate
+	// reports it; launches stop unless project config is ignored.
+	ProjectConfigErr error `yaml:"-"`
 
 	// ProfileSchema is true when the file declared profiles: /
 	// default_profile: rather than the legacy contexts: /

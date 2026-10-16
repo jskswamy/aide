@@ -1686,7 +1686,8 @@ func TestApplyTrustGate_FailClosedOnReadError(t *testing.T) {
 	}
 
 	// Call applyTrustGate
-	trustInfo := l.applyTrustGate(cfg)
+	gate, _ := l.applyTrustGate(cfg)
+	trustInfo := gate.Primary()
 
 	// Verify ProjectOverride was nil'd
 	if cfg.ProjectOverride != nil {

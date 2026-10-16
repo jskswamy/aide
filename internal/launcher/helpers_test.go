@@ -166,7 +166,8 @@ func TestApplyTrustGate(t *testing.T) {
 			ProjectOverride:   po,
 		}
 		l := &Launcher{TrustStore: store}
-		trustInfo := l.applyTrustGate(cfg)
+		gate, _ := l.applyTrustGate(cfg)
+		trustInfo := gate.Primary()
 
 		if cfg.ProjectOverride == nil {
 			t.Error("trusted file should keep ProjectOverride")
@@ -188,7 +189,8 @@ func TestApplyTrustGate(t *testing.T) {
 			ProjectOverride:   po,
 		}
 		l := &Launcher{TrustStore: store}
-		trustInfo := l.applyTrustGate(cfg)
+		gate, _ := l.applyTrustGate(cfg)
+		trustInfo := gate.Primary()
 
 		if cfg.ProjectOverride != nil {
 			t.Error("denied file should nil out ProjectOverride")
@@ -211,7 +213,8 @@ func TestApplyTrustGate(t *testing.T) {
 			ProjectOverride:   po,
 		}
 		l := &Launcher{TrustStore: store}
-		trustInfo := l.applyTrustGate(cfg)
+		gate, _ := l.applyTrustGate(cfg)
+		trustInfo := gate.Primary()
 
 		if cfg.ProjectOverride != nil {
 			t.Error("untrusted file should nil out ProjectOverride")
@@ -229,15 +232,10 @@ func TestApplyTrustGate(t *testing.T) {
 }
 
 func TestBuildTrustInfo(t *testing.T) {
-	homeDir := "/home/user"
-
 	t.Run("with agent only", func(t *testing.T) {
 		po := &config.ProjectOverride{Agent: "claude"}
-		info := buildTrustInfo("/path/to/.aide.yaml", homeDir, po)
+		info := buildTrustInfo("/path/to/.aide.yaml", config.LayerLocal, po)
 
-		if info == nil {
-			t.Fatalf("expected TrustInfo, got nil")
-		}
 		if info.Status != "untrusted" {
 			t.Errorf("expected status 'untrusted', got %q", info.Status)
 		}
@@ -252,11 +250,8 @@ func TestBuildTrustInfo(t *testing.T) {
 			Capabilities: []string{"network", "filesystem"},
 			Env:          map[string]string{"FOO": "bar", "BAZ": "qux"},
 		}
-		info := buildTrustInfo("/tmp/.aide.yaml", homeDir, po)
+		info := buildTrustInfo("/tmp/.aide.yaml", config.LayerLocal, po)
 
-		if info == nil {
-			t.Fatalf("expected TrustInfo, got nil")
-		}
 		if info.Status != "untrusted" {
 			t.Errorf("expected status 'untrusted', got %q", info.Status)
 		}
@@ -279,22 +274,16 @@ func TestBuildTrustInfo(t *testing.T) {
 				WritableExtra: []string{"/tmp", "/var/tmp"},
 			},
 		}
-		info := buildTrustInfo("/path/.aide.yaml", homeDir, po)
+		info := buildTrustInfo("/path/.aide.yaml", config.LayerLocal, po)
 
-		if info == nil {
-			t.Fatalf("expected TrustInfo, got nil")
-		}
 		if len(info.Wants.Writable) != 2 {
 			t.Errorf("expected 2 writable paths, got %d", len(info.Wants.Writable))
 		}
 	})
 
 	t.Run("with nil ProjectOverride", func(t *testing.T) {
-		info := buildTrustInfo("/path/.aide.yaml", homeDir, nil)
+		info := buildTrustInfo("/path/.aide.yaml", config.LayerLocal, nil)
 
-		if info == nil {
-			t.Fatalf("expected TrustInfo, got nil")
-		}
 		if info.Status != "untrusted" {
 			t.Errorf("expected status 'untrusted', got %q", info.Status)
 		}

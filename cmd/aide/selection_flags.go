@@ -150,44 +150,57 @@ func credentialNamesForCompletion(cmd *cobra.Command) []string {
 	return slices.Sorted(maps.Keys(rc.Context.Credentials))
 }
 
+// selectionPreview is what a launch from cwd would select.
+type selectionPreview struct {
+	rc      *aidectx.ResolvedContext
+	inputs  launcher.SelectionInputs
+	sel     launcher.Selection
+	notices []string
+	// gate is the .aide.yaml trust gate's outcome: untrusted files and
+	// grants inherited from a main checkout.
+	gate launcher.ProjectGate
+}
+
 // previewSelection resolves what a launch from cwd would select with
-// f, after the same .aide.yaml trust gate (it mutates cfg): the profile, the saved preference, the final harness and its
-// profile env. It returns notices a launch would print. Credentials
-// are left to launcher.PreviewCredentials.
-func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir string, f *selectionFlags) (*aidectx.ResolvedContext, launcher.SelectionInputs, launcher.Selection, []string, error) {
-	in, err := f.inputs(cmd)
-	if err != nil {
-		return nil, in, launcher.Selection{}, nil, err
+// f, after the same .aide.yaml trust gate (it mutates cfg): the
+// profile, the saved preference, the final harness and its profile
+// env. It returns notices a launch would print. Credentials are left
+// to launcher.PreviewCredentials.
+func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir string, f *selectionFlags) (selectionPreview, error) {
+	var p selectionPreview
+	var err error
+	if p.inputs, err = f.inputs(cmd); err != nil {
+		return p, err
 	}
-	launcher.GateProjectConfig(cfg)
+	if p.gate, err = launcher.GateProjectConfig(cfg); err != nil {
+		return p, err
+	}
 	remotes := aidectx.GitRemotes(cwd)
-	rc, err := aidectx.ResolveSelected(cfg, cwd, remotes, f.profile)
-	if err != nil {
-		return nil, in, launcher.Selection{}, nil, err
+	if p.rc, err = aidectx.ResolveSelected(cfg, cwd, remotes, f.profile); err != nil {
+		return p, err
 	}
-	var notices []string
-	if n := launcher.ProjectProfileNotice(cfg, rc); n != "" {
-		notices = append(notices, n)
+	if n := launcher.ProjectProfileNotice(cfg, p.rc); n != "" {
+		p.notices = append(p.notices, n)
 	}
 	if homeDir != "" {
-		in.Saved, err = launcher.SavedPreference(prefs.DefaultPath(homeDir), rc.Name, remotes)
-		if err != nil {
-			return nil, in, launcher.Selection{}, nil, err
+		if p.inputs.Saved, err = launcher.SavedPreference(prefs.DefaultPath(homeDir), p.rc.Name, remotes); err != nil {
+			return p, err
 		}
 	}
-	sel, notice, err := launcher.SelectHarness(cfg, rc, in, exec.LookPath)
+	sel, notice, err := launcher.SelectHarness(cfg, p.rc, p.inputs, exec.LookPath)
+	p.sel = sel
 	if err != nil {
-		return nil, in, sel, nil, err
+		return p, err
 	}
 	if notice != "" {
-		notices = append(notices, notice)
+		p.notices = append(p.notices, notice)
 	}
-	mergedEnv, err := provision.InjectProfileEnv(rc.Context, rc.Context.Env, homeDir)
+	mergedEnv, err := provision.InjectProfileEnv(p.rc.Context, p.rc.Context.Env, homeDir)
 	if err != nil {
-		return nil, in, sel, nil, fmt.Errorf("context %q: %w", rc.Name, err)
+		return p, fmt.Errorf("context %q: %w", p.rc.Name, err)
 	}
-	rc.Context.Env = mergedEnv
-	return rc, in, sel, notices, nil
+	p.rc.Context.Env = mergedEnv
+	return p, nil
 }
 
 // contextFlagDeprecation is printed to stderr when --context is used.

@@ -12,12 +12,19 @@
 {{- with credentialDisplay .}}
 │ 🔑 {{cyan "Auth      "}}{{.}}
 {{- end}}
-{{- if hasTrust .}}
+{{- range trustEntries .}}
 │
-│ {{red (trustStatusLine .)}}
-{{- with trustWantsLine .}}
+│ {{red (trustFileStatus .)}}
+{{- with trustFileWants .}}
 │    {{yellow .}}
 │    {{dim "aide trust · aide deny · aide --ignore-project-config"}}
+{{- end}}
+{{- end}}
+{{- with inheritedGrantLines .}}
+│
+│ 🔗 {{cyan "Inherited from main checkout"}}
+{{- range .}}
+│    {{.}}
 {{- end}}
 {{- end}}
 {{- $lines := envItemLines . -}}

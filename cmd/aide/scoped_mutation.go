@@ -52,7 +52,7 @@ func runScopedMutation(out io.Writer, global bool, contextName string, m scopedM
 		fmt.Fprintln(out, m.successGlobal(ctxName))
 		return nil
 	}
-	_, po, poPath, err := resolveProjectOverrideForMutation()
+	_, po, poPath, err := resolveProjectOverrideForMutation(false)
 	if err != nil {
 		return err
 	}

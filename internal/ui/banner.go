@@ -121,7 +121,33 @@ func envItemLines(data *BannerData) []string {
 
 // hasTrust reports whether BannerData has a trust warning to display.
 func hasTrust(data *BannerData) bool {
-	return data.Trust != nil
+	return len(trustEntries(data)) > 0
+}
+
+// trustEntries is every untrusted or denied file to display: TrustFiles,
+// or Trust alone when only it is set.
+func trustEntries(data *BannerData) []*TrustInfo {
+	if len(data.TrustFiles) > 0 {
+		out := make([]*TrustInfo, len(data.TrustFiles))
+		for i := range data.TrustFiles {
+			out[i] = &data.TrustFiles[i]
+		}
+		return out
+	}
+	if data.Trust != nil {
+		return []*TrustInfo{data.Trust}
+	}
+	return nil
+}
+
+// inheritedGrantLines renders InheritedGrants, each labeled with the
+// file it comes from.
+func inheritedGrantLines(data *BannerData) []string {
+	lines := make([]string, 0, len(data.InheritedGrants))
+	for _, g := range data.InheritedGrants {
+		lines = append(lines, fmt.Sprintf("%-12s %s  ← %s", g.Kind, g.Value, g.Source))
+	}
+	return lines
 }
 
 // SanitizeIcon removes Unicode control characters (category C) from an icon
@@ -141,25 +167,43 @@ func SanitizeIcon(s string) string {
 	return s
 }
 
-// trustStatusLine returns the single-line trust status for compact mode.
+// trustStatusLine returns the single-line trust status for data.Trust.
 func trustStatusLine(data *BannerData) string {
-	if data.Trust == nil {
+	return trustFileStatusLine(data.Trust)
+}
+
+// trustFileStatusLine returns the status line for one untrusted or
+// denied file; an inherited file says so and names the command that
+// approves it from the worktree.
+func trustFileStatusLine(ti *TrustInfo) string {
+	if ti == nil {
 		return ""
 	}
-	switch data.Trust.Status {
+	origin := ""
+	trustCmd := "aide trust"
+	if ti.Source == "inherited" {
+		origin = " (inherited from main checkout)"
+		trustCmd = "aide trust " + ti.Path
+	}
+	switch ti.Status {
 	case "denied":
-		return fmt.Sprintf("🚫 .aide.yaml denied at %s — run aide deny --remove to undo", data.Trust.Path)
+		return fmt.Sprintf("🚫 .aide.yaml%s denied at %s — run %s to undo", origin, ti.Path, trustCmd)
 	default:
-		return fmt.Sprintf("🚨 UNTRUSTED: %s — run aide trust to approve", data.Trust.Path)
+		return fmt.Sprintf("🚨 UNTRUSTED%s: %s — run %s to approve", origin, ti.Path, trustCmd)
 	}
 }
 
-// trustWantsLine returns a compact summary of what the untrusted config wants.
+// trustWantsLine returns a compact summary of what data.Trust wants.
 func trustWantsLine(data *BannerData) string {
-	if data.Trust == nil || data.Trust.Status == "denied" {
+	return trustFileWantsLine(data.Trust)
+}
+
+// trustFileWantsLine summarizes what one untrusted file requests.
+func trustFileWantsLine(ti *TrustInfo) string {
+	if ti == nil || ti.Status == "denied" {
 		return ""
 	}
-	w := data.Trust.Wants
+	w := ti.Wants
 	var parts []string
 	if w.Agent != "" {
 		parts = append(parts, w.Agent+" agent")

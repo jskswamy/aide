@@ -25,17 +25,21 @@ func colorFuncMap() template.FuncMap {
 		"cyan":      func(s string) string { return color.New(color.FgCyan).Sprint(s) },
 
 		// Data helpers (wrapping existing functions)
-		"agentDisplay":       agentDisplay,
-		"secretDisplay":      secretDisplay,
-		"credentialDisplay":  credentialDisplay,
-		"envItemLines":       envItemLines,
-		"hasTrust":           hasTrust,
-		"trustStatusLine":    trustStatusLine,
-		"trustWantsLine":     trustWantsLine,
-		"contextIconDisplay": contextIconDisplay,
-		"agentIconPrefix":    agentIconPrefix,
-		"networkLabel":       sandboxNetworkLabel,
-		"truncate":           truncateList,
+		"agentDisplay":        agentDisplay,
+		"secretDisplay":       secretDisplay,
+		"credentialDisplay":   credentialDisplay,
+		"envItemLines":        envItemLines,
+		"hasTrust":            hasTrust,
+		"trustStatusLine":     trustStatusLine,
+		"trustWantsLine":      trustWantsLine,
+		"trustEntries":        trustEntries,
+		"trustFileStatus":     trustFileStatusLine,
+		"trustFileWants":      trustFileWantsLine,
+		"inheritedGrantLines": inheritedGrantLines,
+		"contextIconDisplay":  contextIconDisplay,
+		"agentIconPrefix":     agentIconPrefix,
+		"networkLabel":        sandboxNetworkLabel,
+		"truncate":            truncateList,
 		"capPaths": func(cd CapabilityDisplay) string {
 			var parts []string
 			parts = append(parts, cd.WritablePaths...)

@@ -214,6 +214,10 @@ The same pattern extends to N accounts (client-x, oss, ...) - just
 add more profile blocks. Two profiles that would resolve to the same
 config dir stop with `profiles share a native config dir`.
 
+Per-profile login isolation for each harness is being verified by hand
+on macOS and Linux; the steps and their status are in
+[profiles-verification.md](profiles-verification.md).
+
 ## Migrating from contexts
 
 `aide profile migrate` prints your config converted to the `profiles:`

@@ -188,6 +188,21 @@ prints them.
 
 ### 🧰 CLI
 
+#### Provisioning state records ownership per profile
+
+`managed.json` (aide's record of the plugins, MCP servers,
+marketplaces and hooks it installed) now stores them under
+`profiles` and is written as version 2. Files written by earlier
+releases, keyed under `contexts`, are read as before and converted on
+the next successful `aide sync` or `aide adopt`: nothing aide manages
+is treated as new and no drift is reported by the conversion.
+
+- A state file with a newer version stops `aide sync` with
+  `unsupported provisioning state version` and tells you to upgrade
+  aide; the file is left unchanged.
+- Going back to an earlier aide after a sync is not supported: it
+  ignores the `profiles` key and sees nothing as managed.
+
 #### aide's state files honor XDG_STATE_HOME
 
 Provisioning ownership (`managed.json`) and repository preferences

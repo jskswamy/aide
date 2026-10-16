@@ -236,6 +236,7 @@ func capListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 
@@ -1002,6 +1003,7 @@ func capAuditCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 

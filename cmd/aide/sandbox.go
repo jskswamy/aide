@@ -241,6 +241,7 @@ func sandboxShowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "show policy for a specific context")
+	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
 	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
 	return cmd
@@ -349,6 +350,7 @@ func sandboxTestCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "generate profile for a specific context")
+	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
 	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
 	return cmd

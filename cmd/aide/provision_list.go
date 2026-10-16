@@ -140,6 +140,7 @@ func pluginListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 
@@ -153,6 +154,7 @@ func mcpListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 

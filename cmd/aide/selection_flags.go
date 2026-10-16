@@ -187,3 +187,26 @@ func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir strin
 	rc.Context.Env = mergedEnv
 	return rc, in, sel, notices, nil
 }
+
+// addProfileFlag gives a command that already takes --context a
+// --profile flag selecting the same thing: --profile fills target
+// (the --context variable) before RunE, and the two must agree when
+// both are given.
+func addProfileFlag(cmd *cobra.Command, target *string) {
+	var profile string
+	cmd.Flags().StringVar(&profile, "profile", "", "Profile name (same as --context)")
+	registerSelectionCompletions(cmd)
+	next := cmd.PreRunE
+	cmd.PreRunE = func(c *cobra.Command, args []string) error {
+		if profile != "" {
+			if *target != "" && *target != profile {
+				return fmt.Errorf("--profile %q and --context %q name different profiles; pass one", profile, *target)
+			}
+			*target = profile
+		}
+		if next != nil {
+			return next(c, args)
+		}
+		return nil
+	}
+}

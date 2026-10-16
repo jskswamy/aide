@@ -33,6 +33,7 @@ state file so future syncs reconcile them.`,
 		},
 	}
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&yes, "yes", false, "Adopt all unmanaged items without prompting")
 	return cmd
 }

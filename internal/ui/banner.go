@@ -183,6 +183,9 @@ func trustFileStatusLine(ti *TrustInfo) string {
 	if ti.Source == "inherited" {
 		origin = " (inherited from main checkout)"
 	}
+	if ti.Target != "" {
+		origin += " (symlink to " + ti.Target + ")"
+	}
 	// Name the file: a bare aide trust acts on ./.aide.yaml, which is
 	// the wrong file from a subdirectory or for an inherited one.
 	trustCmd := "aide trust " + ti.Path

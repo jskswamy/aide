@@ -723,7 +723,7 @@ aide secrets rotate personal --add-key age1new... --remove-key age1old...
 aide trust [path]
 ```
 
-Trusts a `.aide.yaml` (default: the one in the current directory). The approval is keyed on the symlink-resolved path and the file's contents, so any modification resets trust. In a linked git worktree the main checkout's file is approved separately; pass its path.
+Trusts a `.aide.yaml` (default: the one in the current directory). The approval is keyed on the file's location (parent directories symlink-resolved; a symlinked `.aide.yaml` is approved as itself, never via its target) and its contents, so any modification resets trust. In a linked git worktree the main checkout's file is approved separately; pass its path.
 
 ```
 aide trust

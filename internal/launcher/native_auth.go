@@ -7,21 +7,18 @@ import (
 	"path/filepath"
 
 	"github.com/jskswamy/aide/internal/config"
-	"github.com/jskswamy/aide/internal/harness"
 )
 
 // nativeAuthNotice describes an authentication source in the selected
 // profile's native config that aide cannot scrub, or "" when there is
-// none. Only launches that select their own config dir are checked.
-func nativeAuthNotice(ctx config.Context, home string) string {
-	if !ctx.SelectsConfigDir() {
+// none. harnessName is the canonical harness the launch runs
+// (config.HarnessOf, so agent aliases count). Only launches that select
+// their own config dir are checked.
+func nativeAuthNotice(harnessName string, ctx config.Context, home string) string {
+	if !ctx.SelectsConfigDir() || harnessName != "claude" {
 		return ""
 	}
-	d, ok := harness.Lookup(ctx.Agent)
-	if !ok || d.Name != "claude" {
-		return ""
-	}
-	return claudeAPIKeyHelperNotice(ctx.NativeConfigDir(d.Name, home))
+	return claudeAPIKeyHelperNotice(ctx.NativeConfigDir(harnessName, home))
 }
 
 // claudeAPIKeyHelperNotice reports an apiKeyHelper in dir/settings.json

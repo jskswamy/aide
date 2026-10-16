@@ -13,6 +13,7 @@ import (
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/spf13/cobra"
 )
 
@@ -174,6 +175,11 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 // home directory, matching internal/capability's ccstatusline tests.
 func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName, homeDir string) (name string, caps []string, err error) {
 	if contextName == "" {
+		// What a launch applies: untrusted .aide.yaml files contribute
+		// nothing (this also gates cfg for the caller).
+		if _, err := launcher.GateProjectConfig(cfg); err != nil {
+			return "", nil, err
+		}
 		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 		if err != nil {
 			return "", nil, fmt.Errorf("resolving profile: %w", err)

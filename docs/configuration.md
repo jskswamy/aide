@@ -412,7 +412,9 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
 Relative sandbox paths (`writable`, `readable`, `denied` and their
 `_extra` forms) are interpreted against the root of the checkout that
-contains the declaring `.aide.yaml`, not the directory you launch from.
+contains the declaring `.aide.yaml`, not the directory you launch from
+(and not the file's own directory when the file sits in a
+subdirectory of the checkout).
 Paths starting with `/`, `~`, `$` or `{{` are left as written.
 
 ### Trust gate
@@ -460,9 +462,17 @@ inherited file from a worktree, run `aide trust <main checkout>/.aide.yaml`
 The launch banner, `aide which` and `aide status` list each untrusted or
 denied file separately, and list the security-sensitive grants that come
 from the main checkout's file (capabilities, writable and readable paths,
-network mode, removed guards, a disabled sandbox, auto-approve) labeled
+replaced guard or deny lists, extra `allow` rules, network mode,
+removed guards, `allow_subprocess`, `clean_env: false`, MCP servers, a
+disabled sandbox, auto-approve) labeled
 with that file. In `--format json` these are `trust_files` and
 `inherited_grants` (`aide status`: `project_trust`, `inherited_grants`).
+
+aide inherits only when the repository itself records the checkout as
+one of its worktrees (the worktree's administrative directory lies in
+the repository's `worktrees/`, points back at this checkout, and `git
+worktree list` names it). A directory whose `.git` file merely claims
+to belong to another repository inherits nothing, with a warning.
 
 A missing main checkout `.aide.yaml` is normal. If the main checkout
 itself is gone or unreadable (deleted or moved), aide stops with a

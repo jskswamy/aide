@@ -175,6 +175,7 @@ func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir strin
 	if p.gate, err = launcher.GateProjectConfig(cfg); err != nil {
 		return p, err
 	}
+	p.notices = append(p.notices, p.gate.Warnings...)
 	remotes := aidectx.GitRemotes(cwd)
 	if p.rc, err = aidectx.ResolveSelected(cfg, cwd, remotes, f.profile); err != nil {
 		return p, err

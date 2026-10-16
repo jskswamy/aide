@@ -151,6 +151,12 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 
 	cwd, _ := os.Getwd()
 	cfg, cfgErr := config.Load(config.Dir(), cwd)
+	if cfgErr == nil {
+		// An untrusted .aide.yaml must not restyle (or hide) the
+		// statusline, including its own untrusted indicator. A gate
+		// error drops project config; the statusline stays quiet.
+		_, _ = launcher.GateProjectConfig(cfg)
+	}
 
 	var agent string
 	var env map[string]string

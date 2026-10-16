@@ -140,6 +140,13 @@ change saved preferences.
   line.
 - `--profile`, `--agent` and `--credential` complete profile, harness
   and credential names in shells; `--auth` completes `api`/`login`.
+- Read-only commands that take `--context` also take `--profile` for
+  the same selection: `aide cap list`, `aide cap audit`, `aide env
+  list`, `aide hook list`, `aide plugin list`, `aide mcp list`,
+  `aide sandbox show`, `aide sandbox test`, `aide sync`, `aide adopt`
+  and `aide statusline`. Giving both with different names is an error.
+- `aide prompt` and `aide statusline` show the harness saved for the
+  repository, as a launch would run it.
 - Without a `config.yaml`, `--profile` and `--credential` stop with a
   pointer to `aide init`.
 - When no profile matches and none is the default, the error now

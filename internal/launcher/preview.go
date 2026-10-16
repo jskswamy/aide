@@ -6,6 +6,7 @@ import (
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/ui"
 )
@@ -26,7 +27,9 @@ import (
 // fully-resolved set in edge cases — good enough for a statusline preview,
 // not a byte-exact simulation.
 //
-// A non-empty agent stands in for `--agent`, replacing the context's agent.
+// A non-empty agent stands in for `--agent`, replacing the context's
+// agent; otherwise a harness saved for the repository (aide project
+// set) does, as at launch.
 func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent string) (map[string]string, error) {
 	var ctx config.Context
 	var name string
@@ -43,12 +46,17 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 		if cfg.ProjectOverride != nil && cfg.ProjectConfigPath != "" {
 			trustInfo = (&Launcher{}).applyTrustGate(cfg)
 		}
-		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
+		remotes := aidectx.GitRemotes(cwd)
+		rc, err := aidectx.Resolve(cfg, cwd, remotes)
 		if err != nil {
 			return nil, fmt.Errorf("resolving context: %w", err)
 		}
 		ctx = rc.Context
 		name = rc.Name
+		// A harness saved for this repository is what a launch runs.
+		if saved, err := SavedPreference(prefs.DefaultPath(homeDir), name, remotes); err == nil && saved.Harness != "" {
+			ctx.Agent = saved.Harness
+		}
 	}
 	if agent != "" {
 		ctx.Agent = agent

@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/prefs"
 )
@@ -153,5 +154,70 @@ func TestSelectionFlags_RejectUnknownAuth(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "login") {
 		t.Fatalf("error = %v, want --auth guidance", err)
+	}
+}
+
+func TestPrompt_ShowsSavedHarness(t *testing.T) {
+	path := selectionEnv(t, selectionTestConfig)
+	if err := prefs.Update(path, func(f *prefs.File) error {
+		f.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: "pi"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := runSelectionJSON(t, promptCmd())
+	line, _ := got["line"].(string)
+	if pi := launcher.ResolveAgentIcon("pi", nil); pi == "" || !strings.Contains(line, pi) {
+		t.Errorf("prompt %q should show pi's icon %q", line, pi)
+	}
+}
+
+func TestProfileScopedCommandsAcceptProfile(t *testing.T) {
+	for name, cmd := range map[string]*cobra.Command{
+		"cap list":          capListCmd(),
+		"cap audit":         capAuditCmd(),
+		"env list":          envListCmd(),
+		"hook list":         hookListCmd(),
+		"plugin list":       pluginListCmd(),
+		"mcp list":          mcpListCmd(),
+		"sandbox show":      sandboxShowCmd(),
+		"sandbox test":      sandboxTestCmd(),
+		"sync":              syncCmd(),
+		"adopt":             adoptCmd(),
+		"statusline":        statuslineCmd(),
+		"statusline claude": statuslineAgentCmd("claude"),
+	} {
+		if cmd.Flags().Lookup("profile") == nil {
+			t.Errorf("%s has no --profile", name)
+		}
+	}
+}
+
+func TestEnvList_ProfileSelectsLikeContext(t *testing.T) {
+	selectionEnv(t, `
+profiles:
+  work: {agent: claude, env: {WORK_ONLY: "1"}}
+  personal: {agent: claude, env: {PERSONAL_ONLY: "1"}}
+default_profile: work
+`)
+	run := func(args ...string) (string, error) {
+		cmd := envListCmd()
+		output.RegisterFlag(cmd)
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		return out.String(), err
+	}
+	out, err := run("--profile", "personal")
+	if err != nil || !strings.Contains(out, "PERSONAL_ONLY") || strings.Contains(out, "WORK_ONLY") {
+		t.Errorf("env list --profile personal: %v\n%s", err, out)
+	}
+	if _, err := run("--profile", "personal", "--context", "work"); err == nil {
+		t.Error("--profile and --context naming different profiles should conflict")
+	}
+	if out, err := run("--profile", "personal", "--context", "personal"); err != nil {
+		t.Errorf("agreeing --profile and --context: %v\n%s", err, out)
 	}
 }

@@ -444,3 +444,21 @@ func trustedStore(t *testing.T, path string, content []byte) *trust.Store {
 	}
 	return store
 }
+
+func TestPreviewSessionEnv_UsesSavedHarness(t *testing.T) {
+	configDir, cwd, homeDir := t.TempDir(), t.TempDir(), t.TempDir()
+	gitRepo(t, cwd, "git@github.com:org/repo.git")
+	writeMinimalConfig(t, configDir, selectionConfig)
+	savePreference(t, prefs.DefaultPath(homeDir), prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: "pi"})
+	cfg, err := config.Load(configDir, cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := PreviewSessionEnv(cfg, cwd, "", homeDir, "")
+	if err != nil {
+		t.Fatalf("PreviewSessionEnv: %v", err)
+	}
+	if env["AIDE_AGENT"] != "pi" {
+		t.Errorf("AIDE_AGENT = %q, want the saved harness pi a launch would use", env["AIDE_AGENT"])
+	}
+}

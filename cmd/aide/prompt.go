@@ -10,6 +10,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
+	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/ui"
 	"github.com/spf13/cobra"
@@ -50,10 +51,18 @@ func promptCmd() *cobra.Command {
 			cwd := env.CWD()
 			cfg := env.Config()
 
-			resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
+			remotes := aidectx.GitRemotes(cwd)
+			resolved, err := aidectx.Resolve(cfg, cwd, remotes)
 			if err != nil {
 				// No context matched — Starship hides the module on non-zero exit.
 				return err
+			}
+			// Show the harness a launch would run: a harness saved for
+			// this repository wins over the profile's.
+			if home, herr := os.UserHomeDir(); herr == nil {
+				if saved, perr := launcher.SavedPreference(prefs.DefaultPath(home), resolved.Name, remotes); perr == nil && saved.Harness != "" {
+					resolved.Context.Agent = saved.Harness
+				}
 			}
 
 			trustStatus := promptTrustStatus(cfg)

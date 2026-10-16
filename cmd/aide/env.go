@@ -337,6 +337,7 @@ func envListCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 

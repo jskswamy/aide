@@ -24,6 +24,7 @@ import (
 	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
@@ -157,6 +158,16 @@ type Launcher struct {
 	// Auth selects API credential injection (default) or native login,
 	// which injects no provider credentials.
 	Auth AuthMode
+	// Profile is --profile: select this profile instead of matching.
+	Profile string
+	// Credentials is --credential; CredentialsSet reports the flag was
+	// given, so an empty selection is explicit. It replaces the saved
+	// and profile-default selection for this launch only.
+	Credentials    []string
+	CredentialsSet bool
+	// PrefsPath overrides the repository preferences file (default:
+	// prefs.DefaultPath under HOME). Launches only read it.
+	PrefsPath string
 
 	// Variant selection inputs (optional; zero value disables variant flow).
 	VariantOverrides map[string][]string
@@ -193,6 +204,14 @@ func (l *Launcher) stderr() io.Writer {
 	return os.Stderr
 }
 
+// prefsPath returns the effective repository preferences file.
+func (l *Launcher) prefsPath(homeDir string) string {
+	if l.PrefsPath != "" {
+		return l.PrefsPath
+	}
+	return prefs.DefaultPath(homeDir)
+}
+
 // configDir returns the effective config directory.
 func (l *Launcher) configDir() string {
 	if l.ConfigDir != "" {
@@ -222,16 +241,19 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	remotes := aidectx.GitRemotes(cwd)
 	projectRoot := aidectx.ProjectRoot(cwd)
 
-	// 3. Resolve context
-	rc, err := aidectx.Resolve(cfg, cwd, remotes)
+	// 3. Resolve the profile: --profile, else match rules, else default.
+	rc, err := aidectx.ResolveSelected(cfg, cwd, remotes, l.Profile)
 	if err != nil {
-		if cfg.DefaultContext != "" || l.EmptyStateActions == nil {
+		if l.Profile != "" || cfg.DefaultContext != "" || l.EmptyStateActions == nil {
 			return fmt.Errorf("resolving context: %w", err)
 		}
 		rc, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remotes)
 		if err != nil {
 			return err
 		}
+	}
+	if notice := ProjectProfileNotice(cfg, rc); notice != "" {
+		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
 
 	// Resolve the user's home directory once. Every downstream caller
@@ -244,14 +266,29 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving home directory: %w", err)
 	}
 
-	// 3b. If agentOverride is set, validate and override context's agent.
-	// This must precede profile injection so the profile directory is
-	// the final agent's, not the context's original one.
-	if agentOverride != "" {
-		if err := ValidateAgentOverride(cfg, agentOverride, l.lookPath()); err != nil {
-			return err
-		}
-		rc.Context = provision.WithAgent(rc.Context, agentOverride)
+	// 3a. Repository preferences saved for this profile and origin
+	// remote. Launches only read them.
+	saved, err := SavedPreference(l.prefsPath(homeDir), rc.Name, remotes)
+	if err != nil {
+		return err
+	}
+	inputs := SelectionInputs{
+		Agent:          agentOverride,
+		Credentials:    l.Credentials,
+		CredentialsSet: l.CredentialsSet,
+		Auth:           l.Auth,
+		Saved:          saved,
+	}
+
+	// 3b. Decide the final harness. This must precede profile injection
+	// so the profile directory is the final harness's, not the
+	// profile's original one.
+	sel, notice, err := SelectHarness(cfg, rc, inputs, l.lookPath())
+	if err != nil {
+		return err
+	}
+	if notice != "" {
+		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
 
 	// 4. Validate + inject per-profile env (CLAUDE_CONFIG_DIR etc.)
@@ -281,7 +318,8 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 	rc.Context = profileCtx
-	credPlan, err := PlanCredentials(rc.Name, rc.Context, cfg.HarnessOf(rc.Context.Agent), rc.Context.DefaultCredentials, l.Auth)
+	sel.SelectCredentials(inputs, rc.Context.DefaultCredentials)
+	credPlan, err := sel.PlanCredentials(rc.Name, rc.Context, cfg.HarnessOf(rc.Context.Agent), l.Auth)
 	if err != nil {
 		return err
 	}
@@ -548,6 +586,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		bannerData := l.buildBannerData(rc, agentName, agentBinary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra, trustInfo)
 		bannerData.Yolo = effectiveYolo
 		SetBannerCredentials(bannerData, credPlan)
+		SetBannerSelection(bannerData, sel)
 		bannerData.AutoApprove = effectiveYolo
 		style := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
 		if err := ui.RenderBanner(l.stderr(), style, bannerData); err != nil {

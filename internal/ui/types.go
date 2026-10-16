@@ -90,18 +90,26 @@ type BannerData struct {
 	// Credentials are the credential bindings the launch injects, by
 	// name and env var name only; never values. AuthMode is "api" or
 	// "login" (native login, nothing injected); empty when unresolved.
-	Credentials   []CredentialInfo    `json:"credentials,omitempty"`
-	AuthMode      string              `json:"auth_mode,omitempty"`
-	Trust         *TrustInfo          `json:"trust,omitempty"` // nil when trusted or no project config
-	Sandbox       *SandboxInfo        `json:"sandbox,omitempty"`
-	Yolo          bool                `json:"yolo,omitempty"`
-	Warnings      []string            `json:"warnings,omitempty"`
-	Capabilities  []CapabilityDisplay `json:"capabilities,omitempty"`
-	DisabledCaps  []CapabilityDisplay `json:"disabled_caps,omitempty"`  // --without caps
-	SuggestedCaps []CapabilityDisplay `json:"suggested_caps,omitempty"` // detected but not enabled
-	NeverAllow    []string            `json:"never_allow,omitempty"`
-	CompWarnings  []string            `json:"comp_warnings,omitempty"` // composition warnings
-	AutoApprove   bool                `json:"auto_approve,omitempty"`  // replaces Yolo for new banner display
+	Credentials []CredentialInfo `json:"credentials,omitempty"`
+	AuthMode    string           `json:"auth_mode,omitempty"`
+	// Selection sources: how the profile, harness and credential
+	// selection were chosen ("flag", "match", "default", "preference",
+	// "repository", "profile", "auth"). CredentialSelection is the
+	// selected binding names, never values; empty when none.
+	ProfileSource       string              `json:"profile_source,omitempty"`
+	HarnessSource       string              `json:"harness_source,omitempty"`
+	CredentialSource    string              `json:"credential_source,omitempty"`
+	CredentialSelection []string            `json:"credential_selection,omitempty"`
+	Trust               *TrustInfo          `json:"trust,omitempty"` // nil when trusted or no project config
+	Sandbox             *SandboxInfo        `json:"sandbox,omitempty"`
+	Yolo                bool                `json:"yolo,omitempty"`
+	Warnings            []string            `json:"warnings,omitempty"`
+	Capabilities        []CapabilityDisplay `json:"capabilities,omitempty"`
+	DisabledCaps        []CapabilityDisplay `json:"disabled_caps,omitempty"`  // --without caps
+	SuggestedCaps       []CapabilityDisplay `json:"suggested_caps,omitempty"` // detected but not enabled
+	NeverAllow          []string            `json:"never_allow,omitempty"`
+	CompWarnings        []string            `json:"comp_warnings,omitempty"` // composition warnings
+	AutoApprove         bool                `json:"auto_approve,omitempty"`  // replaces Yolo for new banner display
 	// Extra sandbox paths from config (not from capabilities)
 	ExtraWritable []string `json:"extra_writable,omitempty"`
 	ExtraReadable []string `json:"extra_readable,omitempty"`

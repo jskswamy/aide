@@ -50,7 +50,6 @@ func Load(configDir, projectDir string) (*Config, error) {
 		cfg.ProjectConfigPath = projectConfigPath
 	}
 
-	cfg.warnUnknownProjectProfile()
 	if home, ok := userHome(); ok {
 		if err := cfg.validateConfigDirs(home); err != nil {
 			return nil, fmt.Errorf("config: %w", err)

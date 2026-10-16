@@ -21,7 +21,7 @@ var (
 )
 
 func main() {
-	var agentFlag string
+	var sf selectionFlags
 	var cleanEnv bool
 	var yolo bool
 	var noYolo bool
@@ -62,6 +62,10 @@ capture sandbox-deny events from the failed run.`,
 			if verr != nil {
 				return verr
 			}
+			sel, serr := sf.inputs(cmd)
+			if serr != nil {
+				return serr
+			}
 
 			l := &launcher.Launcher{
 				Execer:              &launcher.SyscallExecer{},
@@ -79,6 +83,10 @@ capture sandbox-deny events from the failed run.`,
 				Version:             version,
 				Commit:              commit,
 				BuildDate:           date,
+				Profile:             sf.profile,
+				Credentials:         sel.Credentials,
+				CredentialsSet:      sel.CredentialsSet,
+				Auth:                sel.Auth,
 			}
 			if l.Interactive {
 				l.Prompter = ui.NewTTYPrompter(os.Stdin, os.Stderr)
@@ -87,17 +95,20 @@ capture sandbox-deny events from the failed run.`,
 			// Check if a config file exists.
 			configFile := config.FilePath()
 			if _, err := os.Stat(configFile); os.IsNotExist(err) {
-				return l.Passthrough(cwd, agentFlag, args)
+				if sf.profile != "" || sel.CredentialsSet {
+					return fmt.Errorf("--profile and --credential need profiles in %s; none exists yet (create one with: aide init)", configFile)
+				}
+				return l.Passthrough(cwd, sf.agent, args)
 			}
 
 			// Config exists — use full launcher flow.
-			return l.Launch(cwd, agentFlag, args, cleanEnv, resolve, withCaps, withoutCaps)
+			return l.Launch(cwd, sf.agent, args, cleanEnv, resolve, withCaps, withoutCaps)
 		},
 	}
 
 	rootCmd.SetVersionTemplate("aide " + version + " (commit: " + commit + ", built: " + date + ")\n")
 
-	rootCmd.Flags().StringVar(&agentFlag, "agent", "", "Override which agent to launch")
+	sf.register(rootCmd, "Override which agent (harness) to launch, for this run only")
 	rootCmd.Flags().BoolVar(&cleanEnv, "clean-env", false, "Start agent with only essential environment variables")
 	rootCmd.Flags().BoolVar(&yolo, "yolo", false, "Launch agent with skip-permissions (agent-specific, sandbox still applies)")
 	rootCmd.Flags().BoolVar(&noYolo, "no-yolo", false, "Disable yolo mode (overrides config and --yolo flag)")

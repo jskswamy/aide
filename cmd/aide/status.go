@@ -189,7 +189,7 @@ func initCmd() *cobra.Command {
 }
 
 func whichCmd() *cobra.Command {
-	var agentOverride string
+	var sf selectionFlags
 	cmd := &cobra.Command{
 		Use:          "which",
 		Short:        "Show which context matches the current directory",
@@ -204,12 +204,9 @@ func whichCmd() *cobra.Command {
 			cwd := env.CWD()
 			cfg := env.Config()
 
-			resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
-			if err != nil {
-				return err
-			}
 			homeDir, _ := os.UserHomeDir()
-			if err := applyLaunchAgent(cfg, resolved, agentOverride, homeDir); err != nil {
+			resolved, inputs, sel, notices, err := previewSelection(cmd, cfg, cwd, homeDir, &sf)
+			if err != nil {
 				return err
 			}
 
@@ -218,7 +215,7 @@ func whichCmd() *cobra.Command {
 
 			// Credentials by binding and env var name; translated legacy
 			// env: credentials leave the env listing.
-			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, "")
+			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
 			resolved.Context = credCtx
 
 			// Build BannerData
@@ -236,6 +233,8 @@ func whichCmd() *cobra.Command {
 			}
 
 			launcher.SetBannerCredentials(data, credPlan)
+			launcher.SetBannerSelection(data, sel)
+			data.Warnings = append(data.Warnings, notices...)
 			if credErr != nil {
 				data.Warnings = append(data.Warnings, credErr.Error())
 			}
@@ -364,28 +363,11 @@ func whichCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&agentOverride, "agent", "", agentFlagUsage)
+	sf.register(cmd, agentFlagUsage)
 	return cmd
 }
 
 const agentFlagUsage = "Report as if launched with --agent (agent and profile directory)"
-
-// applyLaunchAgent resolves the final agent and its profile env the way
-// a launch does: --agent first, then profile injection for that agent.
-func applyLaunchAgent(cfg *config.Config, resolved *aidectx.ResolvedContext, agentOverride, homeDir string) error {
-	if agentOverride != "" {
-		if err := launcher.ValidateAgentOverride(cfg, agentOverride, exec.LookPath); err != nil {
-			return err
-		}
-		resolved.Context = provision.WithAgent(resolved.Context, agentOverride)
-	}
-	mergedEnv, err := provision.InjectProfileEnv(resolved.Context, resolved.Context.Env, homeDir)
-	if err != nil {
-		return fmt.Errorf("context %q: %w", resolved.Name, err)
-	}
-	resolved.Context.Env = mergedEnv
-	return nil
-}
 
 func useCmd() *cobra.Command {
 	var matchPattern string
@@ -1184,10 +1166,17 @@ type statusResult struct {
 	Credentials     []ui.CredentialInfo `json:"credentials,omitempty"`
 	AuthMode        string              `json:"auth_mode,omitempty"`
 	CredentialError string              `json:"credential_error,omitempty"`
+	// Selection sources and the selected credential names (never
+	// values); see ui.BannerData.
+	ProfileSource       string   `json:"profile_source,omitempty"`
+	HarnessSource       string   `json:"harness_source,omitempty"`
+	CredentialSource    string   `json:"credential_source,omitempty"`
+	CredentialSelection []string `json:"credential_selection,omitempty"`
+	Notices             []string `json:"notices,omitempty"`
 }
 
 func statusCmd() *cobra.Command {
-	var agentOverride string
+	var sf selectionFlags
 	cmd := &cobra.Command{
 		Use:          "status",
 		Short:        "Show detailed view of current context and capabilities",
@@ -1201,19 +1190,17 @@ func statusCmd() *cobra.Command {
 			cwd := env.CWD()
 			cfg := env.Config()
 
-			resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
-			if err != nil {
-				return err
-			}
 			homeDir, _ := os.UserHomeDir()
-			if err := applyLaunchAgent(cfg, resolved, agentOverride, homeDir); err != nil {
+			resolved, inputs, sel, notices, err := previewSelection(cmd, cfg, cwd, homeDir, &sf)
+			if err != nil {
 				return err
 			}
 
 			var credData ui.BannerData
-			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, "")
+			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
 			resolved.Context = credCtx
 			launcher.SetBannerCredentials(&credData, credPlan)
+			launcher.SetBannerSelection(&credData, sel)
 			credError := ""
 			if credErr != nil {
 				credError = credErr.Error()
@@ -1360,6 +1347,11 @@ func statusCmd() *cobra.Command {
 				Credentials:         credData.Credentials,
 				AuthMode:            credData.AuthMode,
 				CredentialError:     credError,
+				ProfileSource:       credData.ProfileSource,
+				HarnessSource:       credData.HarnessSource,
+				CredentialSource:    credData.CredentialSource,
+				CredentialSelection: credData.CredentialSelection,
+				Notices:             notices,
 			}
 
 			format, ferr := output.FromCmd(cmd)
@@ -1373,6 +1365,12 @@ func statusCmd() *cobra.Command {
 				fmt.Fprintf(w, "Context:      %s\n", result.Context)
 				fmt.Fprintf(w, "Agent:        %s \u2192 %s\n", result.Agent, result.AgentPath)
 				fmt.Fprintf(w, "Matched:      %s\n", result.Matched)
+				if line := statusSelectionLine(result); line != "" {
+					fmt.Fprintf(w, "Selected by:  %s\n", line)
+				}
+				for _, n := range result.Notices {
+					fmt.Fprintf(w, "Note:         %s\n", n)
+				}
 
 				if result.Secret != "" {
 					if result.SecretKeyCount > 0 {
@@ -1446,8 +1444,24 @@ func statusCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&agentOverride, "agent", "", agentFlagUsage)
+	sf.register(cmd, agentFlagUsage)
 	return cmd
+}
+
+// statusSelectionLine says where the profile, harness and credential
+// selection came from.
+func statusSelectionLine(r statusResult) string {
+	var parts []string
+	for _, p := range []struct{ what, source string }{
+		{"profile", r.ProfileSource},
+		{"harness", r.HarnessSource},
+		{"credentials", r.CredentialSource},
+	} {
+		if p.source != "" {
+			parts = append(parts, p.what+" from "+p.source)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func formatIsolationTierStatus(tier sandbox.IsolationTier) string {

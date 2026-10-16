@@ -38,7 +38,7 @@ func TestHandleEmptyState_NonTTY_Errors_WithFourHints(t *testing.T) {
 	for _, want := range []string{
 		"aide context bind",
 		"aide context create",
-		"aide use",
+		"aide --profile <name>",
 		"aide context set-default",
 	} {
 		if !strings.Contains(err.Error(), want) {

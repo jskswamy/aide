@@ -3,12 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -183,37 +180,6 @@ func (p *ProjectOverride) UnmarshalYAML(node *yaml.Node) error {
 	}
 	type plain ProjectOverride
 	return node.Decode((*plain)(p))
-}
-
-// warnOut receives load-time warnings.
-var warnOut io.Writer = os.Stderr
-
-// warnedProjectProfiles records (file, profile) pairs already warned
-// about, so commands that load the config repeatedly warn once.
-var warnedProjectProfiles sync.Map
-
-// warnUnknownProjectProfile warns when .aide.yaml references a profile
-// the user config does not define. It is not fatal: .aide.yaml is
-// shared while profile names are personal, so a teammate's reference
-// must not block aide for everyone else in the repo.
-func (c *Config) warnUnknownProjectProfile() {
-	if c.ProjectOverride == nil || c.ProjectOverride.Profile == "" {
-		return
-	}
-	name := c.ProjectOverride.Profile
-	if _, ok := c.Contexts[name]; ok {
-		return
-	}
-	if _, done := warnedProjectProfiles.LoadOrStore(c.ProjectConfigPath+"\x00"+name, true); done {
-		return
-	}
-	defined := strings.Join(sortedKeys(c.Contexts), ", ")
-	if defined == "" {
-		defined = "none"
-	}
-	_, _ = fmt.Fprintf(warnOut, "aide: warning: %s references profile %q, which your config does not define "+
-		"(defined: %s); define it under profiles: in your aide config, or change or remove profile: in %s\n",
-		c.ProjectConfigPath, name, defined, c.ProjectConfigPath)
 }
 
 func mappingKeys(node *yaml.Node) []string {

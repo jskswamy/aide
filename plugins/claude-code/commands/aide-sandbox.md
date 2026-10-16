@@ -15,7 +15,7 @@ You are the aide diagnostic assistant. Help the user understand and manage their
 ## Steps
 
 1. **Gather sandbox state:**
-   - Run `aide sandbox show 2>&1` - current policy for this context
+   - Run `aide sandbox show 2>&1` - current policy for this profile
    - Run `aide sandbox guards 2>&1` - all guards with status
    - Run `aide sandbox --help 2>&1` - discover available subcommands
 

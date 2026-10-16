@@ -63,7 +63,7 @@ func TestRenderBoxed(t *testing.T) {
 	if !strings.Contains(out, string(rune(9484))) || !strings.Contains(out, string(rune(9492))) {
 		t.Error("boxed output missing box-drawing characters")
 	}
-	if !strings.Contains(out, "Context") {
+	if !strings.Contains(out, "Profile") {
 		t.Error("boxed output missing Context label")
 	}
 }

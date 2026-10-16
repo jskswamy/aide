@@ -1,16 +1,16 @@
 # Environment Variables
 
-## Env Vars Live on Contexts
+## Env Vars Live on Profiles
 
 Agent definitions are binary-only. All env vars, secrets, and settings belong on
-the context. The same `claude` binary uses different API keys in different contexts:
+the profile. The same `claude` binary uses different API keys in different profiles:
 
 ```yaml
 agents:
   claude:
     binary: claude
 
-contexts:
+profiles:
   personal:
     agent: claude
     env:
@@ -42,7 +42,7 @@ Three variables are available inside `{{ }}` expressions:
 Example using all three:
 
 ```yaml
-contexts:
+profiles:
   work:
     agent: claude
     secret: work
@@ -54,29 +54,29 @@ contexts:
 
 ## Setting Env Vars
 
-`aide env set KEY VALUE` writes a literal value to the CWD-matched context:
+`aide env set KEY VALUE` writes a literal value to the CWD-matched profile:
 
 ```sh
 aide env set CLAUDE_CODE_USE_BEDROCK 1
 aide env set AWS_REGION us-east-1
-aide env set CONTEXT_VAR value --context work
+aide env set CONTEXT_VAR value --profile work
 ```
 
 ## Referencing Secrets in Env Vars
 
 Use `--secret-key` to write a template expression that references a key in the
-context's secret store, rather than a raw value. `--global` is required because
-secrets are context-scoped:
+profile's secret store, rather than a raw value. `--global` is required because
+secrets are profile-scoped:
 
 ```sh
 aide env set ANTHROPIC_API_KEY --secret-key anthropic_key --global
-aide env set ANTHROPIC_API_KEY --secret-key anthropic_key --context work --global
+aide env set ANTHROPIC_API_KEY --secret-key anthropic_key --profile work --global
 aide env set ANTHROPIC_API_KEY --pick --global
 ```
 
-The context must already have a secret store bound (via
-`aide context set-secret <name>`) before using `--secret-key` or `--pick`. To
-read from a different store without changing the context binding, pass
+The profile must already have a secret store bound (via
+`aide profile set-secret <name>`) before using `--secret-key` or `--pick`. To
+read from a different store without changing the profile binding, pass
 `--secret-store <name>` explicitly alongside `--secret-key` or `--pick`.
 
 Pass `--pick` instead of `--secret-key` to open an interactive picker. aide
@@ -84,29 +84,29 @@ decrypts the secrets file and presents available keys to choose from.
 
 ## Listing Env Vars
 
-`aide env list` shows all env vars for the CWD-matched context with source annotations:
+`aide env list` shows all env vars for the CWD-matched profile with source annotations:
 
 ```
-Context: work
+Profile: work
   ANTHROPIC_API_KEY   ← secrets.anthropic_key
   AWS_REGION          = us-east-1
   PROJECT_ROOT        ← project_root
   AGENT_TMPDIR        ← runtime_dir
 ```
 
-Use `--context` to target a specific context:
+Use `--profile` to target a specific profile:
 
 ```sh
-aide env list --context work
+aide env list --profile work
 ```
 
 ## Removing Env Vars
 
-`aide env remove KEY` deletes an env var from the CWD-matched context:
+`aide env remove KEY` deletes an env var from the CWD-matched profile:
 
 ```sh
 aide env remove ANTHROPIC_API_KEY
-aide env remove AWS_REGION --context work
+aide env remove AWS_REGION --profile work
 ```
 
 ## Clean Env Mode
@@ -117,7 +117,7 @@ The agent starts with only aide-injected vars. aide preserves standard vars (`PA
 all other inherited shell environment:
 
 ```yaml
-contexts:
+profiles:
   work:
     agent: claude
     sandbox:

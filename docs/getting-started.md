@@ -25,11 +25,11 @@ To skip the agent's built-in permission prompts while keeping the OS sandbox act
 $ aide --auto-approve
 ```
 
-This injects the agent-specific skip flag (e.g. `--dangerously-skip-permissions` for Claude). `--yolo` is kept as an alias. You can also set `auto_approve: true` (or `yolo: true`) in config for specific contexts. Use `--no-auto-approve` (or `--no-yolo`) to override config-level settings.
+This injects the agent-specific skip flag (e.g. `--dangerously-skip-permissions` for Claude). `--yolo` is kept as an alias. You can also set `auto_approve: true` (or `yolo: true`) in config for specific profiles. Use `--no-auto-approve` (or `--no-yolo`) to override config-level settings.
 
 ## First-Time Setup
 
-`aide setup` runs a guided wizard for the current directory. It detects agents on PATH, optionally creates an encrypted secrets file, and writes a context to `~/.config/aide/config.yaml`.
+`aide setup` runs a guided wizard for the current directory. It detects agents on PATH, optionally creates an encrypted secrets file, and writes a profile to `~/.config/aide/config.yaml`.
 
 ```
 $ cd ~/work/myproject
@@ -39,7 +39,7 @@ Setting up aide for /home/user/work/myproject
 
 Detected agents on PATH: claude, codex, copilot
 Agent (default: claude):
-Context name (default: myproject):
+Profile name (default: myproject):
 Match rule (path glob or remote URL)?
   [1] This folder (/home/user/work/myproject)
   [2] A folder path or pattern
@@ -54,7 +54,7 @@ Created secrets/work.enc.yaml
 Created /home/user/.config/aide/config.yaml
 ```
 
-The wizard asks for: the agent binary to launch, a context name (defaults to the directory name), a match rule (path or remote pattern), and optionally an age public key and secrets file name.
+The wizard asks for: the agent binary to launch, a profile name (defaults to the directory name), a match rule (path or remote pattern), and optionally an age public key and secrets file name.
 
 ## Using Capabilities
 
@@ -66,10 +66,10 @@ For session-scoped capabilities, use `--with`:
 $ aide --with k8s docker
 ```
 
-For persistent capabilities, add them to a context in config:
+For persistent capabilities, add them to a profile in config:
 
 ```yaml
-contexts:
+profiles:
   infra:
     agent: claude
     capabilities: [docker, k8s, aws]
@@ -97,98 +97,98 @@ The resulting file contains a single line:
 agent: claude
 ```
 
-Add secrets, environment variables, and contexts by editing the file directly.
+Add secrets, environment variables, and profiles by editing the file directly.
 
 ## Empty-State Experience
 
-The first time you run `aide` in a folder that has no matching context configured,
+The first time you run `aide` in a folder that has no matching profile configured,
 aide detects the gap and guides you through fixing it rather than failing silently.
 
 In a TTY you see:
 
 ```
-aide: no context matches this folder.
+aide: no profile matches this folder.
 
 What do you want to do?
-  [1] Bind this folder to an existing context
-  [2] Create a new context for this folder
-  [3] Launch once with an existing context (don't save)
+  [1] Bind this folder to an existing profile
+  [2] Create a new profile for this folder
+  [3] Launch once with an existing profile (don't save)
   [c] Cancel
 
 Choose [1]:
 ```
 
-Pick `[2]` to create a new context - aide walks you through naming it, picking
+Pick `[2]` to create a new profile - aide walks you through naming it, picking
 an agent (auto-detected if you have only one supported agent on PATH), optionally
 binding a secret store, and attaching the current folder.
 
-If you already have a context (say `work`) and want this folder to also resolve
+If you already have a profile (say `work`) and want this folder to also resolve
 to it, pick `[1]`, or run directly:
 
 ```
-aide context bind work
+aide profile bind work
 ```
 
 By default `bind` matches by git remote URL when the folder is a git repo with
-an `origin` remote - so the same context resolves correctly for any worktree
+an `origin` remote - so the same profile resolves correctly for any worktree
 or fresh checkout of the same repo.
 
 In non-interactive mode (CI, scripts) aide prints concrete next-command hints:
 
 ```
-aide: no context matches this folder, and no default_context is configured.
+aide: no profile matches this folder, and no default_profile is configured.
 
 To proceed, run one of:
-  aide context bind <name>            # attach this folder to existing context
-  aide context create [name]          # create a new context for this folder
+  aide profile bind <name>            # attach this folder to existing profile
+  aide profile create [name]          # create a new profile for this folder
   aide use <name> -- <agent-args>     # launch once without persisting
-  aide context set-default <name>     # use a fallback for unmatched folders
+  aide profile set-default <name>     # use a fallback for unmatched folders
 ```
 
-## Creating a Context
+## Creating a Profile
 
-`aide context create` creates a new context with an interactive wizard (TTY) or
+`aide profile create` creates a new profile with an interactive wizard (TTY) or
 fully scripted flags (non-TTY):
 
 ```
 # Interactive wizard
-$ aide context create
+$ aide profile create
 
 # Non-interactive - name, agent, and cwd binding all specified
-$ aide context create work --agent claude --here
+$ aide profile create work --agent claude --here
 
 # Non-interactive - skip binding the current folder
-$ aide context create work --agent claude --no-here
+$ aide profile create work --agent claude --no-here
 ```
 
-The first context created automatically becomes the `default_context`.
+The first profile created automatically becomes the `default_profile`.
 
-## Binding a Directory to an Existing Context
+## Binding a Directory to an Existing Profile
 
-`aide context bind` attaches the current folder to a context that already exists:
+`aide profile bind` attaches the current folder to a profile that already exists:
 
 ```
 $ cd ~/work/myproject
-$ aide context bind work
-Bound this folder to context "work" (matched by remote git@github.com:…/myproject.git)
+$ aide profile bind work
+Bound this folder to profile "work" (matched by remote git@github.com:…/myproject.git)
 ```
 
 Use `--path` to force an exact folder path match instead of a git remote match:
 
 ```
-$ aide context bind work --path
-Bound this folder to context "work" (matched by path /home/user/work/myproject)
+$ aide profile bind work --path
+Bound this folder to profile "work" (matched by path /home/user/work/myproject)
 ```
 
 ## Binding a Directory (legacy aide use)
 
-`aide use <agent>` creates or updates a context that matches the current directory.
-For new setups, `aide context create` and `aide context bind` are preferred.
+`aide use <agent>` creates or updates a profile that matches the current directory.
+For new setups, `aide profile create` and `aide profile bind` are preferred.
 
 ```
 $ cd ~/work/myproject
 $ aide use claude
-Created context "myproject":
+Created profile "myproject":
   agent: claude
   match: /home/user/work/myproject
 ```
@@ -201,39 +201,39 @@ Available flags:
 --sandbox strict       Apply a sandbox profile
 ```
 
-## Your First Multi-Context Setup
+## Your First Multi-Profile Setup
 
-Two contexts: work uses AWS Bedrock, personal uses a direct API key.
+Two profiles: work uses AWS Bedrock, personal uses a direct API key.
 
 ```
-# Work context: bind ~/work/* to claude with Bedrock credentials
+# Work profile: bind ~/work/* to claude with Bedrock credentials
 $ aide secrets create work --age-key age1abc...
 Created secrets/work.enc.yaml
 
 $ aide use claude --match "~/work/*" --secret work
-Created context "work":
+Created profile "work":
   agent: claude
   match: ~/work/*
   secret: work
 
-# Personal context: bind ~/oss/* to claude with Anthropic API key
+# Personal profile: bind ~/oss/* to claude with Anthropic API key
 $ aide secrets create personal --age-key age1abc...
 Created secrets/personal.enc.yaml
 
 $ aide use claude --match "~/oss/*" --secret personal
-Created context "oss":
+Created profile "oss":
   agent: claude
   match: ~/oss/*
   secret: personal
 
 # Set default for unmatched directories
-$ aide context set-default oss
+$ aide profile set-default oss
 ```
 
 Edit `~/.config/aide/config.yaml` to add env var templates that pull values from secrets:
 
 ```yaml
-contexts:
+profiles:
   work:
     agent: claude
     secret: work
@@ -251,17 +251,17 @@ contexts:
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 
-default_context: oss
+default_profile: oss
 ```
 
 ## Verifying
 
-`aide which` shows which context matched and why:
+`aide which` shows which profile matched and why:
 
 ```
 $ cd ~/work/myproject
 $ aide which
-Context:  work
+Profile:  work
 Matched:  path glob match: ~/work/*
 Agent:    claude (/usr/local/bin/claude)
 Secret:   work
@@ -274,14 +274,14 @@ Env:
 
 ```
 $ aide validate
-OK (2 contexts, 1 agents, 2 secrets)
+OK (2 profiles, 1 agents, 2 secrets)
 ```
 
 Validation reports specific failures:
 
 ```
 Errors:
-  - context "work" references secret "work" which does not exist
+  - profile "work" references secret "work" which does not exist
 
 1 errors, 0 warnings
 ```

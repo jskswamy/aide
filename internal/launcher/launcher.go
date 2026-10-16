@@ -245,7 +245,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	rc, err := aidectx.ResolveSelected(cfg, cwd, remotes, l.Profile)
 	if err != nil {
 		if l.Profile != "" || cfg.DefaultContext != "" || l.EmptyStateActions == nil {
-			return fmt.Errorf("resolving context: %w", err)
+			return fmt.Errorf("resolving profile: %w", err)
 		}
 		rc, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remotes)
 		if err != nil {
@@ -298,7 +298,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// fixes.
 	mergedEnv, perr := provision.InjectProfileEnv(rc.Context, rc.Context.Env, homeDir)
 	if perr != nil {
-		return fmt.Errorf("context %q: %w", rc.Name, perr)
+		return fmt.Errorf("profile %q: %w", rc.Name, perr)
 	}
 	rc.Context.Env = mergedEnv
 
@@ -662,7 +662,7 @@ func ageKeySourceLabel(id *secrets.AgeIdentity) string {
 // resolveAgentBinary determines the binary path from config and agent name.
 func resolveAgentBinary(cfg *config.Config, agentName string) (string, error) {
 	if agentName == "" {
-		return "", fmt.Errorf("no agent specified in context")
+		return "", fmt.Errorf("no agent specified in profile")
 	}
 
 	// Look up in agents map
@@ -707,13 +707,13 @@ func wrapTemplateError(err error, contextName string, secret string) error {
 	if strings.Contains(msg, "map has no entry for key") {
 		if secret == "" {
 			return fmt.Errorf(
-				"context %q references secrets in env vars but has no secret configured.\n\n"+
+				"profile %q references secrets in env vars but has no secret configured.\n\n"+
 					"Fix with: aide profile set-secret <name> --profile %s",
 				contextName, contextName,
 			)
 		}
 		return fmt.Errorf(
-			"context %q: secret key not found in %s.\n\n"+
+			"profile %q: secret key not found in %s.\n\n"+
 				"Available keys: aide secrets keys %s\n"+
 				"Re-wire:        aide env set <KEY> --secret-key <KEY_NAME> --global",
 			contextName, secret, secret,
@@ -722,13 +722,13 @@ func wrapTemplateError(err error, contextName string, secret string) error {
 
 	if strings.Contains(msg, "nil pointer") || strings.Contains(msg, "can't evaluate field") {
 		return fmt.Errorf(
-			"context %q references secrets but has no secret configured.\n\n"+
+			"profile %q references secrets but has no secret configured.\n\n"+
 				"Fix with: aide profile set-secret <name> --profile %s",
 			contextName, contextName,
 		)
 	}
 
-	return fmt.Errorf("context %q: %w", contextName, err)
+	return fmt.Errorf("profile %q: %w", contextName, err)
 }
 
 // launchScrubRegistry is the credential registry for a configured
@@ -1178,7 +1178,7 @@ func (l *Launcher) handleEmptyStateLaunch(
 		}
 		newRc, rerr := aidectx.Resolve(newCfg, cwd, remotes)
 		if rerr != nil {
-			return nil, cfg, fmt.Errorf("resolving context after empty-state action: %w", rerr)
+			return nil, cfg, fmt.Errorf("resolving profile after empty-state action: %w", rerr)
 		}
 		return newRc, newCfg, nil
 	}

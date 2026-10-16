@@ -37,8 +37,8 @@ func TestHookListEmpty(t *testing.T) {
 	if !strings.Contains(out, "(no hooks declared)") {
 		t.Errorf("missing '(no hooks declared)' in output:\n%s", out)
 	}
-	if !strings.Contains(out, "Context: work") {
-		t.Errorf("missing 'Context: work' in output:\n%s", out)
+	if !strings.Contains(out, "Profile: work") {
+		t.Errorf("missing 'Profile: work' in output:\n%s", out)
 	}
 }
 

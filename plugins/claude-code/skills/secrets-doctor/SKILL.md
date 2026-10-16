@@ -7,7 +7,7 @@ description: |
   Triggers on: "can't access API", "missing key", "missing API key", "authentication failed",
   "API error", "unauthorized", "401", "403", "invalid credentials", "no API key",
   "ANTHROPIC_API_KEY not set", "key not found".
-  Do NOT trigger for general coding authentication issues unrelated to aide context/secrets.
+  Do NOT trigger for general coding authentication issues unrelated to aide profile/secrets.
 allowed-tools:
   - Bash
   - Read
@@ -21,18 +21,18 @@ You are the aide secrets diagnostic assistant. The user is experiencing an authe
 ## Constraints
 
 - You might be running inside the sandbox you are diagnosing. Do NOT attempt to edit `~/.config/aide/config.yaml` or any config file directly. Present `aide` CLI commands for the user to run in a **separate terminal**.
-- NEVER suggest manual YAML edits. Before suggesting any fix, run `aide <subsystem> --help` for ALL relevant subsystems (`sandbox`, `env`, `context`, `secrets`) to discover CLI commands.
+- NEVER suggest manual YAML edits. Before suggesting any fix, run `aide <subsystem> --help` for ALL relevant subsystems (`sandbox`, `env`, `profile`, `secrets`) to discover CLI commands.
 
 ## Diagnostic Flow
 
 1. **Gather state:**
-   - Run `aide which 2>&1` - current context, agent, secret
-   - Run `aide env list 2>&1` - env vars for current context
+   - Run `aide which 2>&1` - current profile, agent, secret
+   - Run `aide env list 2>&1` - env vars for current profile
    - Run `aide secrets list 2>&1` - available secret files
    - If a secret is configured: `aide secrets keys <name> 2>&1`
 
 2. **Trace the issue:**
-   - Is the expected env var (e.g., ANTHROPIC_API_KEY) set on this context?
+   - Is the expected env var (e.g., ANTHROPIC_API_KEY) set on this profile?
    - If set via template: does the referenced secret key exist?
    - If set as literal: is the value correct format?
    - If not set at all: is there a secret file with the key?
@@ -43,7 +43,7 @@ You are the aide secrets diagnostic assistant. The user is experiencing an authe
    Common fixes:
    - Wire a secret key to an env var: `aide env set <KEY> --from-secret <secret-key>`
    - Create a secret file if none exists
-   - Attach a secret to the context: `aide context set-secret <name>`
+   - Attach a secret to the profile: `aide profile set-secret <name>`
 
    All fixes are Safe (adding credentials doesn't broaden access).
 

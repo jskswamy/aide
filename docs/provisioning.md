@@ -1,6 +1,6 @@
 # Provisioning
 
-aide can declare which plugins and MCP servers a context expects, then
+aide can declare which plugins and MCP servers a profile expects, then
 reconcile that declaration against what is actually installed in the
 agent. The model is the same Terraform-style "describe the desired
 end state, then plan and apply": you write a config, run `aide sync
@@ -13,7 +13,7 @@ new laptop means reinstalling everything by hand and hoping you didn't
 miss one, a new teammate gets a setup README instead of a source of
 truth, and a client project sharing an agent binary with a personal
 project means uninstalling and reinstalling plugins as you switch - or
-polluting every context with every plugin you've ever needed.
+polluting every profile with every plugin you've ever needed.
 
 Declarative provisioning fixes this by treating plugins/MCP the way
 Terraform treats infrastructure: declared in version-controlled config,
@@ -21,7 +21,7 @@ reconciled with a planned diff, recorded as state on disk. One command
 brings any machine - yours, a teammate's, a fresh container - to the
 exact state your config says it should be in.
 
-## Why per-context profiles matter
+## Why per-profile config dirs matter
 
 Every coding agent reads from one fixed config dir by default
 (`~/.claude`, `~/.gemini`, `~/.copilot`, etc.), holding plugins, MCP
@@ -39,24 +39,25 @@ some agents don't expand themselves, and wiring the env var into your
 shell init, your launch script, and the sandbox rules that grant access
 to the custom dir - three places, three chances to drift.
 
-aide's `profile: <name>` field collapses all of that. You write:
+aide's `config_dir_name: <name>` field (`profile:` under legacy
+`contexts:`) collapses all of that. You write:
 
 ```yaml
-contexts:
+profiles:
   work:
     agent: claude
-    profile: work
+    config_dir_name: work
 ```
 
 and the driver does the rest: derives `~/.claude-work`, sets
 `CLAUDE_CONFIG_DIR` at launch, propagates the env through
 `aide sync` / `aide adopt` / `aide plugin list` so they all
 target the right directory, and emits the seatbelt rule
-that grants read/write access to the profile dir. Switch context
-and a different profile takes over.
+that grants read/write access to the profile dir. Switch profile
+and a different config dir takes over.
 
 This is what makes the provisioning workflow above actually safe:
-each context's `aide sync` writes into the right config dir
+each profile's `aide sync` writes into the right config dir
 without your having to think about which env var that agent
 happens to use this week.
 
@@ -67,8 +68,8 @@ Two top-level config blocks:
 - **`plugins:`** - agent plugins or marketplaces (one shape per entry)
 - **`mcp_servers:`** - MCP server definitions
 
-Both live alongside `agents:` and `contexts:` in your
-`~/.config/aide/config.yaml`. Contexts opt in to specific entries via
+Both live alongside `agents:` and `profiles:` in your
+`~/.config/aide/config.yaml`. Profiles opt in to specific entries via
 overrides.
 
 The reconciler walks four state sources:
@@ -129,20 +130,20 @@ mcp_servers:
 Each entry has either `command`+`args` (stdio MCP) or `url` (HTTP MCP).
 `env:` per-server is also supported.
 
-## Per-context overrides
+## Per-profile overrides
 
-By default every context sees the full top-level set. To customise
-per-context, use three delta keywords with deterministic composition:
+By default every profile sees the full top-level set. To customise
+per-profile, use three delta keywords with deterministic composition:
 
 ```yaml
-contexts:
+profiles:
   default:
     agent: claude
     # inherits everything declared at the top level
 
   work:
     agent: claude
-    profile: work
+    config_dir_name: work
     plugins:
       exclude:
         - obra/superpowers-marketplace/double-shot-latte
@@ -152,7 +153,7 @@ contexts:
 
   oss:
     agent: claude
-    profile: oss
+    config_dir_name: oss
     plugins:
       only:
         - jskswamy/claude-plugins: [commit-tools, refactor]
@@ -167,10 +168,10 @@ Three keywords:
 - **`extra:`** - add on top of inherited entries.
 - **`only:`** - replace the inherited set entirely with this list.
 
-The same three keywords apply to `mcp_servers:` blocks per-context.
+The same three keywords apply to `mcp_servers:` blocks per-profile.
 Entries use the full inline-table form (just like the top-level schema),
 and `env:` values support `{{ .secrets.<name> }}` templating resolved
-from the context's `secret:` store at sync time.
+from the profile's `secret:` store at sync time.
 
 `aide sync` only actually decrypts the secrets store and re-resolves
 these templates when something relevant changed since the last
@@ -185,10 +186,10 @@ automatically on the next run the way it used to. Run `aide sync
 repair drift like that on demand.
 
 ```yaml
-contexts:
+profiles:
   work:
     agent: claude
-    profile: work
+    config_dir_name: work
     secret: work
     mcp_servers:
       # add GitHub + Jira on top of the inherited set
@@ -207,7 +208,7 @@ contexts:
 
   oss:
     agent: claude
-    profile: oss
+    config_dir_name: oss
     mcp_servers:
       # OSS work only needs GitHub - replace the inherited set
       only: [github]
@@ -229,7 +230,7 @@ Plan-then-apply reconciliation.
 aide sync                  # interactive: shows plan, asks for confirmation
 aide sync --plan           # plan-only; never mutates state
 aide sync --yes            # non-interactive (CI / scripts)
-aide sync --context oss    # operate on a specific context (default: matched-by-CWD)
+aide sync --profile oss    # operate on a specific profile (default: matched-by-CWD)
 ```
 
 Marketplace adds are sequenced before plugin installs. Each successful
@@ -241,7 +242,7 @@ the failing op and a retry hint. State is persisted to
 Sample plan output:
 
 ```
-Plan for context work (agent: claude):
+Plan for profile work (agent: claude):
 
   + install marketplace jskswamy/claude-plugins
   + install plugin commit-tools (from jskswamy/claude-plugins)
@@ -260,7 +261,7 @@ Promote agent-installed but undeclared items into `config.yaml`.
 ```
 aide adopt                 # interactive: prompts per item
 aide adopt --yes           # accept everything
-aide adopt --context work
+aide adopt --profile work
 ```
 
 For marketplace-class agents, adopted plugins land under the right
@@ -274,11 +275,11 @@ subsequent `aide sync` runs treat them as known.
 
 ### `aide plugin list`
 
-Three-column view (declared / installed / managed) per context.
+Three-column view (declared / installed / managed) per profile.
 
 ```
-aide plugin list                # current context
-aide plugin list --context work
+aide plugin list                # current profile
+aide plugin list --profile work
 ```
 
 For marketplace agents the output includes a MARKETPLACES section
@@ -292,18 +293,19 @@ Same shape as `aide plugin list` but for MCP servers.
 
 ```
 aide mcp list
-aide mcp list --context work
+aide mcp list --profile work
 ```
 
 ## State file
 
-aide records what it manages in `~/.local/state/aide/managed.json`.
+aide records what it manages in `managed.json` in its state directory
+(`$XDG_STATE_HOME/aide`, default `~/.local/state/aide`).
 Schema (abbreviated):
 
 ```json
 {
-  "version": 1,
-  "contexts": {
+  "version": 2,
+  "profiles": {
     "default": {
       "config_hash": "sha256:...",
       "synced_at": "2026-05-18T...",
@@ -317,19 +319,26 @@ Schema (abbreviated):
 }
 ```
 
-`config_hash` and `synced_at` are **per-context** - a successful
-sync of one context never silences drift signals for another. The
+Version 1 files keyed the same entries under `contexts`; aide still reads
+them and writes version 2 on the next sync. `aide profile migrate --write`
+updates `config_hash` for profiles synced against the old `config.yaml`,
+so converting the file is not reported as drift. A file from a newer
+aide stops with `unsupported provisioning state version` and is left
+alone.
+
+`config_hash` and `synced_at` are **per-profile** - a successful
+sync of one profile never silences drift signals for another. The
 file is written atomically (rename-into-place) and only after a
 sync completes end-to-end.
 
 ## Drift detection
 
-`aide which` shows a one-line banner under the active context when
-the context is out of sync. Two cheap signals fire it:
+`aide which` shows a one-line banner under the active profile when
+the profile is out of sync. Two cheap signals fire it:
 
-1. The context's recorded `config_hash` differs from the current
+1. The profile's recorded `config_hash` differs from the current
    `config.yaml` hash (someone edited the config).
-2. The desired set computed for the context has items not yet
+2. The desired set computed for the profile has items not yet
    recorded as managed in `managed.json` (sync never ran, or new
    declarations were added).
 
@@ -356,24 +365,24 @@ For `cursor-agent`, MCP lives at `~/.cursor/mcp.json` globally and
 tracked separately (the agent has no plugin/marketplace CLI surface;
 project-scope MCP handling lands with the project-override work).
 
-If a context declares a shape the driver doesn't support (e.g.
+If a profile declares a shape the driver doesn't support (e.g.
 URL-direct plugins for `claude`), `aide sync --plan` reports a
 capability mismatch and aborts before any installation.
 
 ## Profile interaction
 
-When a context declares `profile: <name>`, the driver injects its
+When a profile declares `config_dir_name: <name>`, the driver injects its
 config-dir env var (`CLAUDE_CONFIG_DIR=~/.claude-<name>` for claude,
 `GEMINI_HOME=~/.gemini-<name>` for gemini, etc.) into the resolved
-context env. The agent CLI shelled out by `aide sync` then writes to
+profile env. The agent CLI shelled out by `aide sync` then writes to
 that profile-specific config dir.
 
-This is why multi-profile contexts work end-to-end: `aide sync
---context work` writes Claude plugins to `~/.claude-work/` while
-`aide sync --context oss` writes to `~/.claude-oss/`, even though
-both contexts use `agent: claude`.
+This is why profiles with their own config dirs work end-to-end: `aide sync
+--profile work` writes Claude plugins to `~/.claude-work/` while
+`aide sync --profile oss` writes to `~/.claude-oss/`, even though
+both profiles use `agent: claude`.
 
-See [Contexts](contexts.md) for the `profile` field details.
+See [Profiles](profiles.md) for the `config_dir_name` field details.
 
 ## Trust boundary
 
@@ -397,7 +406,7 @@ sync is tracked separately.
 
 ## Examples
 
-### Minimal: one context, three plugins
+### Minimal: one profile, three plugins
 
 ```yaml
 agents:
@@ -407,7 +416,7 @@ agents:
 plugins:
   jskswamy/claude-plugins: [commit-tools, craft, refactor]
 
-contexts:
+profiles:
   default:
     agent: claude
 ```
@@ -421,21 +430,21 @@ plugins:
   jskswamy/claude-plugins: [commit-tools, craft, jot, refactor]
   steveyegge/beads: [beads]
 
-contexts:
+profiles:
   work:
     agent: claude
-    profile: work
+    config_dir_name: work
     # → CLAUDE_CONFIG_DIR=~/.claude-work
-    # `aide sync --context work` installs the four plugins there
+    # `aide sync --profile work` installs the four plugins there
 
   oss:
     agent: claude
-    profile: oss
+    config_dir_name: oss
     plugins:
       exclude:
         - jskswamy/claude-plugins/refactor  # no refactor on OSS
     # → CLAUDE_CONFIG_DIR=~/.claude-oss
-    # `aide sync --context oss` installs three plugins there
+    # `aide sync --profile oss` installs three plugins there
 ```
 
 ### Adoption: bring an existing setup under management

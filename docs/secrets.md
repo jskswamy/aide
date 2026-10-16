@@ -6,7 +6,7 @@ aide stores API keys and other credentials as YAML files encrypted with [sops](h
 
 When aide launches, it decrypts the required secret file in-process using the sops Go library. aide does not require the sops CLI at runtime.
 
-Reference a secret from a context config using the `secret` field:
+Reference a secret from a profile config using the `secret` field:
 
 ```yaml
 secret: personal
@@ -96,7 +96,7 @@ anthropic_api_key: sk-ant-XXXXXXXX
 Save and close. aide encrypts the file to
 `~/.config/aide/secrets/personal.enc.yaml`.
 
-**3. Wire it into a context.** Two steps from the CLI: bind the
+**3. Wire it into a profile.** Two steps from the CLI: bind the
 directory to the `claude` agent + secret store, then attach an env
 variable that pulls from the store.
 
@@ -108,13 +108,13 @@ aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --global
 What each command does:
 
 - `aide use claude --secret personal` - binds the current working
-  directory to a context that runs `claude` and decrypts
+  directory to a profile that runs `claude` and decrypts
   `personal.enc.yaml` at launch.
 - `aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --global`
-  - adds an env variable on the active context whose value comes from
+  - adds an env variable on the active profile whose value comes from
   the `anthropic_api_key` field inside the bound secret. `--global`
   writes the entry to user-level config (`~/.config/aide/config.yaml`)
-  so it applies wherever this context matches; drop `--global` to keep
+  so it applies wherever this profile matches; drop `--global` to keep
   the entry in the project-local config.
 
 If you forget which fields exist in your secret, run `aide env set
@@ -126,7 +126,7 @@ write into `~/.config/aide/config.yaml`. If you prefer hand-editing,
 the resulting block looks like this:
 
 ```yaml
-contexts:
+profiles:
   personal:
     agent: claude
     secret: personal
@@ -151,9 +151,9 @@ that launch.
 
 > **Tip - multiple accounts.** To keep separate Claude Code states for
 > personal and work API keys (separate auth, MCP servers, history),
-> pair this Quick Start with a per-context `CLAUDE_CONFIG_DIR`. See
-> [Multi-Account Setups](contexts.md#multi-account-setups) in the
-> contexts doc for the worked example.
+> pair this Quick Start with a per-profile `CLAUDE_CONFIG_DIR`. See
+> [Multi-Account Setups](profiles.md#multi-account-setups) in the
+> profiles doc for the worked example.
 
 ## Age Key Discovery
 
@@ -214,7 +214,7 @@ aide decrypts the secret to a temporary file, opens `$EDITOR`, and re-encrypts t
 
 ## Listing and Inspecting
 
-List all secrets with their recipients and the contexts that reference each one:
+List all secrets with their recipients and the profiles that reference each one:
 
 ```sh
 aide secrets list

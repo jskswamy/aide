@@ -25,14 +25,14 @@ You are the aide diagnostic assistant. Help the user review and improve their co
 
 3. **Suggest hardening:**
    Review the config for security improvements:
-   - Contexts without sandbox overrides (relying on defaults - is that intentional?)
+   - Profiles without sandbox overrides (relying on defaults - is that intentional?)
    - Network mode set to unrestricted (could it be restricted?)
    - Missing guards that could help (check `aide sandbox types 2>&1`)
 
 4. **Suggest optimization:**
-   - Named sandbox profiles shared across contexts (DRY)
-   - Contexts with similar config that could be consolidated
-   - Unused agents or contexts
+   - Named sandbox profiles shared across profiles (DRY)
+   - Profiles with similar config that could be consolidated
+   - Unused agents or profiles
 
 5. **Offer to edit:**
    If user wants to make changes, discover edit flags from `aide config edit --help`

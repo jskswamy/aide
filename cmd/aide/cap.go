@@ -980,7 +980,7 @@ func capAuditCmd() *cobra.Command {
 			}
 
 			if len(caps) == 0 {
-				fmt.Fprintf(out, "Context %q has no capabilities enabled.\n", ctxName)
+				fmt.Fprintf(out, "Profile %q has no capabilities enabled.\n", ctxName)
 				return nil
 			}
 
@@ -998,7 +998,7 @@ func capAuditCmd() *cobra.Command {
 				return ferr
 			}
 			return output.Emit(out, format, result, func(w io.Writer) error {
-				fmt.Fprintf(w, "Context: %s\n\n", ctxName)
+				fmt.Fprintf(w, "Profile: %s\n\n", ctxName)
 				renderCapReportHuman(w, result)
 				return nil
 			})
@@ -1102,7 +1102,7 @@ func buildCapReportResult(set *capability.Set, context string) capReportResult {
 }
 
 // renderCapReportHuman renders r exactly as printCapabilityReport used
-// to. Does not print r.Context — callers that need a "Context: %s\n\n"
+// to. Does not print r.Context — callers that need a "Profile: %s\n\n"
 // header (capAuditCmd) print it themselves before calling this.
 func renderCapReportHuman(out io.Writer, r capReportResult) {
 	fmt.Fprintln(out, "Capabilities:")

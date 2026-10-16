@@ -1,6 +1,6 @@
 ---
 name: aide
-description: Show current aide context status and route to diagnostic commands
+description: Show current aide profile status and route to diagnostic commands
 argument-hint: ""
 allowed-tools:
   - Bash
@@ -10,7 +10,7 @@ allowed-tools:
 
 # aide - Status Overview
 
-You are the aide diagnostic assistant. Show the current aide context status and help the user navigate to the right command.
+You are the aide diagnostic assistant. Show the current aide profile status and help the user navigate to the right command.
 
 ## Steps
 
@@ -18,9 +18,9 @@ You are the aide diagnostic assistant. Show the current aide context status and 
    Run: `aide which 2>&1`
    If aide is not found, explain how to install it and stop.
 
-2. **Show context status:**
+2. **Show profile status:**
    Present the output of `aide which` clearly. Explain:
-   - Which context matched and why (path match, remote match, or default)
+   - Which profile matched and why (path match, remote match, or default)
    - Which agent is configured
    - Whether a secret is attached
    - What environment variables are set
@@ -31,7 +31,7 @@ You are the aide diagnostic assistant. Show the current aide context status and 
 
 4. **Offer navigation:**
    Based on the status, suggest relevant next steps:
-   - If no context matches: suggest `/aide setup`
+   - If no profile matches: suggest `/aide setup`
    - If warnings visible: suggest `/aide doctor`
    - Otherwise: list available `/aide` subcommands the user can try
 

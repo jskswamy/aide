@@ -318,7 +318,7 @@ func envListCmd() *cobra.Command {
 				return ferr
 			}
 			return output.Emit(out, format, result, func(w io.Writer) error {
-				fmt.Fprintf(w, "Context: %s\n", result.Context)
+				fmt.Fprintf(w, "Profile: %s\n", result.Context)
 				if len(result.Vars) == 0 {
 					fmt.Fprintln(w, "  (no env vars)")
 					return nil

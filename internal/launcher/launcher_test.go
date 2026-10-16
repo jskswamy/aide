@@ -578,7 +578,7 @@ contexts:
 	if err == nil {
 		t.Fatal("expected error when no context matches, got nil")
 	}
-	if !strings.Contains(err.Error(), "resolving context") {
+	if !strings.Contains(err.Error(), "resolving profile") {
 		t.Errorf("expected context resolution error, got: %v", err)
 	}
 }

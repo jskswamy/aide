@@ -12,7 +12,7 @@ To override settings for a specific project, place a `.aide.yaml` file in the pr
 
 ## Minimal Format
 
-A flat file with no `agents:` or `contexts:` keys. aide treats it as a single default context.
+A flat file with no `agents:`, `profiles:` or (legacy) `contexts:` keys. aide treats it as a single default profile.
 
 ```yaml
 agent: claude
@@ -31,6 +31,12 @@ aide registers the agent binary automatically using the name provided. Credentia
 
 Use the full format for multiple projects with different agents or credentials.
 
+Earlier releases called profiles contexts. `contexts:`/`default_context:`
+still load (with `profile:`/`profile_dir:` inside each entry); a file
+must use one form or the other. `aide profile migrate` previews the
+conversion and `aide profile migrate --write` applies it (see
+[Profiles § Migrating from contexts](profiles.md#migrating-from-contexts)).
+
 ```yaml
 agents:
   claude:
@@ -39,7 +45,7 @@ agents:
   aider:
     binary: aider
 
-contexts:
+profiles:
   work:
     match:
       - remote: "github.com/acme/*"
@@ -81,7 +87,7 @@ contexts:
     capabilities: [docker, k8s]
     auto_approve: true
 
-default_context: personal
+default_profile: personal
 
 preferences:
   show_info: true
@@ -93,7 +99,7 @@ preferences:
 
 ## Agent Definitions
 
-The `agents:` block maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only. Credentials and environment variables belong on contexts.
+The `agents:` block maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only. Credentials and environment variables belong on profiles.
 
 Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aider`, `goose`, `amp`, `gemini`, `copilot`, `cursor-agent`.
 
@@ -112,7 +118,7 @@ The `icon` field (optional) sets a Unicode symbol displayed alongside the agent 
 
 ## Top-Level Config Fields
 
-In addition to `agents:`, `contexts:`, `default_context:`, and `preferences:`, the following top-level fields are available:
+In addition to `agents:`, `profiles:`, `default_profile:`, and `preferences:`, the following top-level fields are available:
 
 - `capabilities:` (map) - User-defined capability definitions. Each key is a capability name mapping to a `CapabilityDef`. Example:
 
@@ -139,7 +145,7 @@ hooks:
       timeout: 30      # optional: seconds; 0 = driver default
 ```
 
-The `{agent}` template variable is replaced with the resolved agent name for each context. Reconciled by `aide sync`. See [Hooks](#hooks) below.
+The `{agent}` template variable is replaced with the resolved agent name for each profile. Reconciled by `aide sync`. See [Hooks](#hooks) below.
 
 - `plugins:` (map) - Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
 - `mcp_servers:` (map) - Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
@@ -160,7 +166,7 @@ statusline:
     icon: "⚡"        # prefix; value is comma-joined capability list
   trust:
     untrusted: "⚠️"  # only shown when .aide.yaml is untrusted
-  context:
+  context:            # the matched profile's name (module keeps its name)
     icon: "📁"
   auto_approve:
     value: "🚨"       # always shown when active; disabled: true has no effect
@@ -175,7 +181,7 @@ didn't launch this session at all" from "aide launched it with the sandbox
 explicitly disabled." Defaults to `"💀"` for `sandbox` and `"🌫️"` for
 `network`.
 
-- `sandboxes:` (map) - Named sandbox profiles referenced from contexts (`sandbox: <name>`).
+- `sandboxes:` (map) - Named sandbox profiles referenced from profiles (`sandbox: <name>`).
 - `custom_guards:` and `guard_types:` (advanced) - Define custom seatbelt guard modules. Most users should not need these.
 
 ---
@@ -183,7 +189,7 @@ explicitly disabled." Defaults to `"💀"` for `sandbox` and `"🌫️"` for
 ## Credential-clean environment
 
 A configured launch (any `config.yaml`) does not hand the agent the
-credentials exported in your shell. Before the context/profile `env:`
+credentials exported in your shell. Before the profile's `env:`
 is applied, aide removes from the inherited environment, whether or
 not `--clean-env` is set:
 
@@ -199,7 +205,7 @@ not `--clean-env` is set:
   `GCLOUD_PROJECT`;
 - aide's own secret material: `SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`;
 - names you list in `scrub_env:`;
-- when the context selects its own config dir (`profile:`,
+- when the profile selects its own config dir (`profile:`,
   `config_dir_name:`, `config_dir:` or `config_dirs:`), every harness
   config-dir redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
   `PI_CODING_AGENT_DIR`, `COPILOT_HOME`, `OPENCODE_CONFIG`, ...).
@@ -210,7 +216,7 @@ agent:
 
 - the profile's selected `credentials:` bindings (see "Credential
   bindings" below);
-- values the context sets in `env:`. A provider API key or token there
+- values the profile sets in `env:`. A provider API key or token there
   is no longer passed through `env:`: see "Legacy credentials in
   `env:`" below. Provider selectors and endpoints
   (`CLAUDE_CODE_USE_BEDROCK`, `ANTHROPIC_VERTEX_PROJECT_ID`,
@@ -335,7 +341,7 @@ also honors:
 
 - `AIDE_PROFILE` and `AIDE_CONTEXT` (set by aide; read only by
   `aide statusline`) - The name of
-  the resolved context, exported to the agent and its child processes.
+  the resolved profile, exported to the agent and its child processes.
   Both carry the same value; `AIDE_CONTEXT` remains for scripts written
   against earlier releases.
 - `AIDE_FORMAT` - Sets the default output format (`human` or `json`) for
@@ -345,21 +351,22 @@ also honors:
 
 ---
 
-## Context Fields
+## Profile Fields
 
-- `match:`: list of path or remote rules that activate the context. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against the normalized git remote URL). `remote_name:` picks the remote a rule matches against and defaults to `origin`.
+- `match:`: list of path or remote rules that activate the profile. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against the normalized git remote URL). `remote_name:` picks the remote a rule matches against and defaults to `origin`.
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
 - `credentials:` / `default_credentials:`: named provider API key bindings and the ones injected by default. See [Credential bindings](#credential-bindings).
-- `icon:` (string, optional): Unicode symbol displayed alongside the context name in the banner and `aide prompt` output.
-- `profile:` (string, optional): per-context agent profile name. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Contexts](contexts.md).
-- `profile_dir:` (string, optional): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path. Requires `profile:` to also be set.
-- `plugins:` / `mcp_servers:` (per-context overrides, optional): mapping with `extra:` / `exclude:` / `only:` deltas applied on top of the top-level set. See [Provisioning](provisioning.md).
-- `hooks:` (per-context override, optional): delta applied on top of the top-level `hooks:` map.
+- `icon:` (string, optional): Unicode symbol displayed alongside the profile name in the banner and `aide prompt` output.
+- `config_dir_name:` (string, optional; `profile:` under legacy `contexts:`): names the profile's native agent config dirs. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Profiles](profiles.md).
+- `config_dir:` (string, optional; `profile_dir:` under legacy `contexts:`): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path for every agent.
+- `config_dirs:` (map, optional): per-agent config dir, e.g. `{claude: ~/.claude-work}`; needs `config_dir_name:` as well.
+- `plugins:` / `mcp_servers:` (per-profile overrides, optional): mapping with `extra:` / `exclude:` / `only:` deltas applied on top of the top-level set. See [Provisioning](provisioning.md).
+- `hooks:` (per-profile override, optional): delta applied on top of the top-level `hooks:` map.
 
 ```yaml
-contexts:
+profiles:
   work:
     hooks:
       exclude: [session_start]   # drop a top-level event entirely
@@ -367,8 +374,8 @@ contexts:
         pre_tool:
           - command: "notify work-hook {agent}"
 ```
-- `capabilities:` (list) - Capability names to activate for this context (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
-- `yolo:` (bool, optional): skip agent permission checks for this context. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
+- `capabilities:` (list) - Capability names to activate for this profile (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
+- `yolo:` (bool, optional): skip agent permission checks for this profile. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
 - `sandbox:`: accepts `false` (disable), a string profile name (e.g. `strict`), or an inline policy mapping:
 
 ```yaml
@@ -388,7 +395,7 @@ The top-level `preferences:` block controls the startup display.
 - `show_info:` (bool, default `true`). Show the startup banner before launching the agent.
 - `info_style:` (`compact` | `boxed` | `clean`, default `compact`). Banner style.
 - `info_detail:` (`normal` | `detailed`, default `normal`). Banner verbosity.
-- `yolo:` (bool, optional). Global default for yolo mode. Context-level and project-level `yolo:` override this.
+- `yolo:` (bool, optional). Global default for yolo mode. Profile-level and project-level `yolo:` override this.
 
 Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
@@ -396,10 +403,10 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
 ## Per-Project Override
 
-`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`, `capabilities`, `disabled_capabilities`, `statusline`, `mcp_servers`, `capability_variants`. aide merges it on top of the matched global context.
+`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`, `capabilities`, `disabled_capabilities`, `statusline`, `mcp_servers`, `capability_variants`. aide merges it on top of the matched global profile.
 
 - `env:` merges additively; project values win on key conflicts.
-- All other fields replace the matched context value entirely.
+- All other fields replace the matched profile value entirely.
 
 ### Trust gate
 
@@ -411,11 +418,11 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
 `aide validate` checks:
 
-- Agent names in contexts exist in `agents:`.
+- Agent names in profiles exist in `agents:`.
 - Secret files exist on disk.
 - Sandbox profile names are defined in `sandboxes:`.
 - Template syntax in `env:` values is valid.
-- `env:` values referencing `.secrets.*` have a `secret:` configured on that context.
+- `env:` values referencing `.secrets.*` have a `secret:` configured on that profile.
 
 Warnings print separately from hard errors. The command exits non-zero on any error.
 
@@ -468,7 +475,7 @@ name themselves and return early for other tools.
 
 ### The `{agent}` template variable
 
-The command field supports `{agent}`, replaced with the context's resolved
+The command field supports `{agent}`, replaced with the profile's resolved
 agent name at sync time:
 
 ```yaml
@@ -477,8 +484,8 @@ hooks:
     - command: "rtk hook {agent}"
 ```
 
-This lets a single top-level hook declaration work across all your contexts
-without per-context duplication.
+This lets a single top-level hook declaration work across all your profiles
+without per-profile duplication.
 
 ### Management
 

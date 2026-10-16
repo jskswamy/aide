@@ -12,14 +12,14 @@ This shows what capabilities are active, which sandbox guards are enforcing them
 
 aide separates **what** the agent can access from **how** that access is enforced:
 
-- **Capabilities** handle WHAT the agent can access - network, filesystem paths, cloud credentials, toolchains, and more. You configure capabilities in your context config and aide translates them into the right set of guards. See [docs/capabilities.md](capabilities.md) for the full capability reference.
+- **Capabilities** handle WHAT the agent can access - network, filesystem paths, cloud credentials, toolchains, and more. You configure capabilities in your profile config and aide translates them into the right set of guards. See [docs/capabilities.md](capabilities.md) for the full capability reference.
 
 - **The sandbox** handles HOW it is enforced - on macOS, aide generates a Seatbelt profile at launch that locks the agent process to exactly the permissions its capabilities describe.
 
 A practical example:
 
 ```yaml
-contexts:
+profiles:
   work:
     capabilities:
       - docker
@@ -33,7 +33,7 @@ aide reads those capabilities and produces a sandbox profile that grants Docker 
 
 If no `sandbox:` block appears in your config, aide applies a default policy automatically. With 11 guards active out of the box (see [Guard inventory](#guard-inventory) below for the full list), the sandbox covers filesystem, network, credentials, cloud providers, toolchains, and common development tools.
 
-Run `aide status` to see what is active for the current context.
+Run `aide status` to see what is active for the current profile.
 
 The table below covers the two settings you can tune directly at the top level; everything else (filesystem, credentials, cloud provider, toolchain access) is controlled by which guards and capabilities are active.
 
@@ -56,12 +56,12 @@ aide auto-detects known agent config directories and adds them to the writable l
 | Gemini       | `GEMINI_HOME`       | `~/.gemini`                           |
 | Goose        | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
 
-## Customizing Per-Context
+## Customizing Per-Profile
 
-The preferred way to customize is through capabilities in your context config. For fine-grained control, you can also work with guards directly:
+The preferred way to customize is through capabilities in your profile config. For fine-grained control, you can also work with guards directly:
 
 ```yaml
-contexts:
+profiles:
   work:
     sandbox:
       denied_extra: ["~/sensitive-data"]  # deny additional paths
@@ -103,7 +103,7 @@ sandbox:
 
 ## Named Profiles
 
-Named profiles let you define a sandbox policy once and reference it by name across multiple contexts.
+Named sandbox profiles let you define a sandbox policy once and reference it by name across multiple aide profiles.
 
 **Manage profiles**
 
@@ -119,12 +119,12 @@ aide sandbox list
 **Reference a profile in config**
 
 ```yaml
-contexts:
+profiles:
   secure:
     sandbox: strict
 ```
 
-aide loads the `strict` profile and applies it to the `secure` context.
+aide loads the `strict` sandbox profile and applies it to the `secure` aide profile.
 
 ## Yolo Mode and Sandbox
 
@@ -134,10 +134,10 @@ Use `--no-yolo` to override config-based yolo and restore agent permission check
 
 ## Disabling Sandbox
 
-Set `sandbox: false` in your config to disable sandboxing entirely for that context. The agent runs with full filesystem and network access, subject only to OS-level user permissions.
+Set `sandbox: false` in your config to disable sandboxing entirely for that profile. The agent runs with full filesystem and network access, subject only to OS-level user permissions.
 
 ```yaml
-contexts:
+profiles:
   local-dev:
     sandbox: false
 ```
@@ -200,7 +200,7 @@ aide sandbox types                     # List guard types
 aide sandbox test                      # Preview generated sandbox profile
 ```
 
-All commands accept `--context <name>` to target a specific context.
+All commands accept `--profile <name>` to target a specific profile.
 
 ### Quick CLI adjustments
 
@@ -216,7 +216,7 @@ aide sandbox network outbound
 aide sandbox network none
 aide sandbox network unrestricted
 
-# Revert sandbox config for the context to defaults
+# Revert sandbox config for the profile to defaults
 aide sandbox reset
 ```
 
@@ -247,21 +247,21 @@ When neither is available, aide logs `aide: warning: OS-level sandboxing unavail
 
 - **Filesystem**: macOS Seatbelt enforces per-subpath rules including glob patterns. Landlock enforces directory-level rules (no per-file glob inside a writable directory) - it cannot deny one file nested inside an already-granted directory; bubblewrap can. See the `never_allow` platform note in [docs/capabilities.md](capabilities.md#never_allow-the-hard-ceiling).
 - **Network**: Both enforce mode (outbound / none / unrestricted). Port allow/deny lists require Landlock ABI ≥ 4 on Linux; all ports apply on earlier kernels.
-- **Subprocess containment**: macOS Seatbelt denies `process-exec` directly in the profile. Linux additionally layers seccomp BPF plus a PID namespace to block subprocess spawning (`clone`/`fork`/`vfork`/`clone3`) when a context doesn't allow subprocesses.
+- **Subprocess containment**: macOS Seatbelt denies `process-exec` directly in the profile. Linux additionally layers seccomp BPF plus a PID namespace to block subprocess spawning (`clone`/`fork`/`vfork`/`clone3`) when a profile doesn't allow subprocesses.
 - **Diagnostics**: `aide sandbox test` on Linux prints a human-readable profile; on macOS it prints the raw `.sb` file.
 
 ## Debugging
 
-Inspect the effective policy or validate the generated platform profile for a context.
+Inspect the effective policy or validate the generated platform sandbox profile for an aide profile.
 
 ```sh
 # Print the effective sandbox policy as aide resolves it
 aide sandbox show
-aide sandbox show --context myproject
+aide sandbox show --profile myproject
 
 # Generate and display the platform-specific sandbox profile
 aide sandbox test
-aide sandbox test --context myproject
+aide sandbox test --profile myproject
 ```
 
 `aide sandbox show` prints the merged policy including the **Isolation tier** and **Backend** lines on Linux, so you can confirm whether you are running primary (Landlock), degraded (bwrap), or unavailable.
@@ -292,7 +292,7 @@ If `dmesg | grep -i landlock` shows nothing but `/sys/kernel/security/lsm` lists
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `cursor-agent: permission denied` on `~/.cursor/` writes | Config dir not in writable set | Confirm `CURSOR_CONFIG_DIR` is unset or points to the correct dir; run `aide sandbox show` (add `--context <name>` if you have multiple contexts) to inspect granted paths. |
+| `cursor-agent: permission denied` on `~/.cursor/` writes | Config dir not in writable set | Confirm `CURSOR_CONFIG_DIR` is unset or points to the correct dir; run `aide sandbox show` (add `--profile <name>` if you have multiple profiles) to inspect granted paths. |
 | `agent update` fails inside aide | Auto-update writes to `~/.local/share/cursor-agent/versions/` which is not writable inside the sandbox | Run `cursor-agent update` outside of aide (this is by design). |
 | `aide` does not detect cursor-agent | `cursor-agent` not on PATH | Confirm `which cursor-agent` resolves; the shorter `agent` symlink is not registered - use `cursor-agent` explicitly. |
 

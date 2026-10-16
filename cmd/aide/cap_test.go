@@ -345,7 +345,7 @@ contexts:
 	if strings.Contains(out, "ssh") {
 		t.Errorf("expected ssh to be excluded by project override disabled_capabilities, got:\n%s", out)
 	}
-	if !strings.Contains(out, `Context "work" has no capabilities enabled.`) {
+	if !strings.Contains(out, `Profile "work" has no capabilities enabled.`) {
 		t.Errorf("expected 'no capabilities enabled' message once ssh is disabled, got:\n%s", out)
 	}
 }

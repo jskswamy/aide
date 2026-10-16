@@ -16,9 +16,9 @@ func RenderHuman(doc Document) string {
 		b.WriteString("No config found. Run `aide init` to create one.\n\n")
 	} else {
 		if st.DefaultContext != "" {
-			fmt.Fprintf(&b, "Default context: %s\n", st.DefaultContext)
+			fmt.Fprintf(&b, "Default profile: %s\n", st.DefaultContext)
 		}
-		fmt.Fprintf(&b, "Contexts: %d\n\n", len(st.Contexts))
+		fmt.Fprintf(&b, "Profiles: %d\n\n", len(st.Contexts))
 		for _, c := range st.Contexts {
 			fmt.Fprintf(&b, "  %s\n", c.Name)
 			if c.Agent != "" {

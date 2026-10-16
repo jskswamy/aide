@@ -38,7 +38,7 @@ func validateCmd() *cobra.Command {
 				if ctx.Agent != "" && len(cfg.Agents) > 0 {
 					if _, ok := cfg.Agents[ctx.Agent]; !ok {
 						errors = append(errors, fmt.Sprintf(
-							"context %q references unknown agent %q", ctxName, ctx.Agent,
+							"profile %q references unknown agent %q", ctxName, ctx.Agent,
 						))
 					}
 				}
@@ -48,7 +48,7 @@ func validateCmd() *cobra.Command {
 					path := config.ResolveSecretPath(ctx.Secret)
 					if _, err := os.Stat(path); os.IsNotExist(err) {
 						errors = append(errors, fmt.Sprintf(
-							"context %q references secret %q which does not exist", ctxName, ctx.Secret,
+							"profile %q references secret %q which does not exist", ctxName, ctx.Secret,
 						))
 					}
 				}
@@ -56,7 +56,7 @@ func validateCmd() *cobra.Command {
 				if ctx.Sandbox != nil {
 					if err := sandbox.ValidateSandboxRef(ctx.Sandbox, cfg.Sandboxes); err != nil {
 						errors = append(errors, fmt.Sprintf(
-							"context %q has invalid sandbox config: %s", ctxName, err,
+							"profile %q has invalid sandbox config: %s", ctxName, err,
 						))
 					}
 				}
@@ -64,7 +64,7 @@ func validateCmd() *cobra.Command {
 				if ctxName != cfg.DefaultContext && ctxName != "default" {
 					if len(ctx.Match) == 0 {
 						warnings = append(warnings, fmt.Sprintf(
-							"context %q has no match rules (will never activate)", ctxName,
+							"profile %q has no match rules (will never activate)", ctxName,
 						))
 					}
 				}
@@ -73,11 +73,11 @@ func validateCmd() *cobra.Command {
 					if strings.Contains(envVal, "{{") {
 						if _, tmplErr := template.New("").Parse(envVal); tmplErr != nil {
 							errors = append(errors, fmt.Sprintf(
-								"context %q env var %q has invalid template syntax: %s", ctxName, envKey, tmplErr,
+								"profile %q env var %q has invalid template syntax: %s", ctxName, envKey, tmplErr,
 							))
 						} else if strings.Contains(envVal, ".secrets.") && ctx.Secret == "" {
 							errors = append(errors, fmt.Sprintf(
-								"context %q env var %q references secrets but no secret is configured", ctxName, envKey,
+								"profile %q env var %q references secrets but no secret is configured", ctxName, envKey,
 							))
 						}
 					}
@@ -98,7 +98,7 @@ func validateCmd() *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if len(errors) == 0 && len(warnings) == 0 {
-				fmt.Fprintf(out, "OK (%d contexts, %d agents, %d secrets)\n",
+				fmt.Fprintf(out, "OK (%d profiles, %d agents, %d secrets)\n",
 					len(cfg.Contexts), len(cfg.Agents), len(secretsCount))
 				return nil
 			}

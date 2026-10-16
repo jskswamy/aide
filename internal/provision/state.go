@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/statedir"
 )
 
 // StateVersion is the current managed.json schema version. Bump on
@@ -55,7 +56,7 @@ type ContextState struct {
 	Hooks        []ManagedHook          `json:"hooks,omitempty"`
 }
 
-// ManagedState is the on-disk shape of ~/.local/state/aide/managed.json.
+// ManagedState is the on-disk shape of managed.json (DefaultStatePath).
 // Only updated when a sync run completes successfully end-to-end.
 type ManagedState struct {
 	Version  int                      `json:"version"`
@@ -99,8 +100,9 @@ func SaveState(path string, st *ManagedState) error {
 	return fsutil.AtomicWrite(path, data)
 }
 
-// DefaultStatePath returns ~/.local/state/aide/managed.json given a
-// home directory. Caller is responsible for HOME resolution.
+// DefaultStatePath returns managed.json in aide's state directory
+// ($XDG_STATE_HOME/aide or ~/.local/state/aide; see statedir.Path)
+// given a home directory. Caller is responsible for HOME resolution.
 func DefaultStatePath(homeDir string) string {
-	return homeDir + "/.local/state/aide/managed.json"
+	return statedir.Path(homeDir, "managed.json")
 }

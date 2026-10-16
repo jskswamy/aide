@@ -153,3 +153,56 @@ func TestKey_RequiresBothParts(t *testing.T) {
 		t.Error("Validate() without profile should fail")
 	}
 }
+
+func TestLoad_CorruptFileNamesFileAndRemedy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	for _, body := range []string{`{not json`, `{}`, `[1,2]`} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(path)
+		if !errors.Is(err, ErrCorrupt) {
+			t.Fatalf("Load(%s) error = %v, want ErrCorrupt", body, err)
+		}
+		if !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "aide project clear --reset") {
+			t.Errorf("error should name the file and the remedy: %v", err)
+		}
+	}
+}
+
+func TestReset_MovesFileAside(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preferences.json")
+	if err := os.WriteFile(path, []byte(`{not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := Reset(path)
+	if err != nil {
+		t.Fatalf("Reset() error = %v", err)
+	}
+	if !strings.HasPrefix(moved, path+".corrupt-") {
+		t.Errorf("moved to %q", moved)
+	}
+	if got, _ := os.ReadFile(moved); string(got) != `{not json` {
+		t.Error("moved file lost its content")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("original file still present")
+	}
+	if f, err := Load(path); err != nil || len(f.Profiles) != 0 {
+		t.Errorf("after Reset, Load() = %v, %v; want empty", f, err)
+	}
+	if moved, err := Reset(path); err != nil || moved != "" {
+		t.Errorf("Reset() with no file = %q, %v; want nothing moved", moved, err)
+	}
+}
+
+func TestUpdate_UnchangedWritesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	if err := Update(path, func(*File) error { return ErrUnchanged }); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("Update() wrote the file although nothing changed")
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 )
@@ -21,6 +22,13 @@ const Version = 1
 // ErrUnsupportedVersion reports a preferences file written by a newer
 // aide. It is never overwritten.
 var ErrUnsupportedVersion = errors.New("unsupported preferences file version")
+
+// ErrCorrupt reports a preferences file aide cannot read. It is never
+// overwritten; `aide project clear --reset` moves it aside.
+var ErrCorrupt = errors.New("unreadable preferences file")
+
+// resetHint is the recovery a corrupt or foreign file's error names.
+const resetHint = "run `aide project clear --reset` to move it aside and start over"
 
 // ErrNoRepositoryIdentity reports a directory without an origin remote,
 // which preferences cannot be keyed on.
@@ -115,11 +123,14 @@ func Load(path string) (*File, error) {
 	}
 	var f File
 	if err := json.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("parsing preferences %s: %w", path, err)
+		return nil, fmt.Errorf("%w: %s: %v; %s", ErrCorrupt, path, err, resetHint)
+	}
+	if f.Version < 1 {
+		return nil, fmt.Errorf("%w: %s has no version, so it is not an aide preferences file; %s", ErrCorrupt, path, resetHint)
 	}
 	if f.Version > Version {
-		return nil, fmt.Errorf("%w: %s has version %d, this aide supports %d; upgrade aide or move the file aside",
-			ErrUnsupportedVersion, path, f.Version, Version)
+		return nil, fmt.Errorf("%w: %s has version %d, this aide supports %d; upgrade aide, or %s",
+			ErrUnsupportedVersion, path, f.Version, Version, resetHint)
 	}
 	f.Version = Version
 	return &f, nil
@@ -138,15 +149,36 @@ func Save(path string, f *File) error {
 	return nil
 }
 
+// ErrUnchanged is returned by an Update callback to skip the write.
+var ErrUnchanged = errors.New("preferences unchanged")
+
 // Update loads path, applies fn and saves the result. Nothing is
-// written when loading or fn fails.
+// written when loading fails, fn fails, or fn returns ErrUnchanged
+// (then Update returns nil).
 func Update(path string, fn func(*File) error) error {
 	f, err := Load(path)
 	if err != nil {
 		return err
 	}
 	if err := fn(f); err != nil {
+		if errors.Is(err, ErrUnchanged) {
+			return nil
+		}
 		return err
 	}
 	return Save(path, f)
+}
+
+// Reset moves the file at path aside to <path>.corrupt-<timestamp>, so
+// the next Load starts empty, and returns where it went ("" when there
+// was no file). Nothing is deleted.
+func Reset(path string) (string, error) {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	moved := path + ".corrupt-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	if err := os.Rename(path, moved); err != nil {
+		return "", fmt.Errorf("moving preferences %s aside: %w", path, err)
+	}
+	return moved, nil
 }

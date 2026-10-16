@@ -105,25 +105,25 @@ func projectSetCmd() *cobra.Command {
 			if err := t.key.Validate(); err != nil {
 				return fmt.Errorf("cannot save repository preferences: %w", err)
 			}
-			f, err := prefs.Load(t.path)
+			var p prefs.Preference
+			err = prefs.Update(t.path, func(f *prefs.File) error {
+				p, _ = f.Get(t.key)
+				if agent != "" {
+					p.Harness = agent
+				}
+				switch {
+				case noCredentials:
+					p.Credentials = prefs.Selection()
+				case credsSet:
+					p.Credentials = prefs.Selection(nonEmpty(credentials)...)
+				}
+				if err := t.check(p); err != nil {
+					return err
+				}
+				f.Set(t.key, p)
+				return nil
+			})
 			if err != nil {
-				return err
-			}
-			p, _ := f.Get(t.key)
-			if agent != "" {
-				p.Harness = agent
-			}
-			switch {
-			case noCredentials:
-				p.Credentials = prefs.Selection()
-			case credsSet:
-				p.Credentials = prefs.Selection(nonEmpty(credentials)...)
-			}
-			if err := t.check(p); err != nil {
-				return err
-			}
-			f.Set(t.key, p)
-			if err := prefs.Save(t.path, f); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Saved for %s: %s\n", t.describe(), describePreference(p))
@@ -160,17 +160,27 @@ func (t *projectTarget) check(p prefs.Preference) error {
 
 func projectClearCmd() *cobra.Command {
 	var profile string
-	var clearAgent, clearCredentials bool
+	var clearAgent, clearCredentials, reset bool
 	cmd := &cobra.Command{
 		Use:   "clear",
 		Short: "Clear saved repository preferences (all, or the fields named)",
 		Long: `Clear what aide project set saved for this repository under the current
 profile. With --agent or --credential only that field is cleared; with
 neither, both are. Cleared fields fall back to .aide.yaml and the
-profile defaults.`,
+profile defaults.
+
+--reset moves the whole preferences file (every repository and
+profile) aside to <file>.corrupt-<timestamp> and starts empty; use it
+when the file cannot be read. Nothing is deleted.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if reset {
+				if clearAgent || clearCredentials || profile != "" {
+					return errors.New("--reset clears the whole preferences file; it takes no --agent, --credential or --profile")
+				}
+				return runProjectReset(cmd)
+			}
 			t, err := resolveProjectTarget(cmd, profile)
 			if err != nil {
 				return err
@@ -184,7 +194,7 @@ profile defaults.`,
 			err = prefs.Update(t.path, func(f *prefs.File) error {
 				p, ok := f.Get(t.key)
 				if !ok {
-					return nil
+					return prefs.ErrUnchanged
 				}
 				if all || clearAgent {
 					cleared = cleared || p.Harness != ""
@@ -193,6 +203,9 @@ profile defaults.`,
 				if all || clearCredentials {
 					cleared = cleared || p.Credentials != nil
 					p.Credentials = nil
+				}
+				if !cleared {
+					return prefs.ErrUnchanged
 				}
 				f.Set(t.key, p)
 				return nil
@@ -211,8 +224,29 @@ profile defaults.`,
 	cmd.Flags().StringVar(&profile, "profile", "", "Clear under this profile instead of the one matched here")
 	cmd.Flags().BoolVar(&clearAgent, "agent", false, "Clear only the saved harness")
 	cmd.Flags().BoolVar(&clearCredentials, "credential", false, "Clear only the saved credential selection")
+	cmd.Flags().BoolVar(&reset, "reset", false, "Move the whole preferences file aside (for a file aide cannot read)")
 	registerSelectionCompletions(cmd)
 	return cmd
+}
+
+// runProjectReset moves the preferences file aside and says where.
+func runProjectReset(cmd *cobra.Command) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolving home directory: %w", err)
+	}
+	path := prefs.DefaultPath(home)
+	moved, err := prefs.Reset(path)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if moved == "" {
+		fmt.Fprintf(out, "No preferences file at %s; nothing to reset\n", path)
+		return nil
+	}
+	fmt.Fprintf(out, "Moved %s aside to %s; repository preferences start empty\n", path, moved)
+	return nil
 }
 
 // projectShowResult is `aide project show --format json`. Credentials

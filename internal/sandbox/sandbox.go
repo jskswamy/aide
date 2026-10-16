@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
@@ -515,6 +516,9 @@ func DetectGuardConflicts(results []seatbelt.GuardResult) []string {
 // "respect user overrides by returning nil" still surface their managed
 // key set. We only use the returned map's KEYS — the values in env have
 // already been chosen by applyAgentEnv (user value or module default).
+//
+// Credential names from the scrub registry (internal/envscrub) never
+// survive, even when a module declares them.
 func filterEnv(env []string, policy Policy) []string {
 	essential := map[string]bool{
 		"PATH": true, "HOME": true, "USER": true,
@@ -524,10 +528,11 @@ func filterEnv(env []string, policy Policy) []string {
 	for _, k := range agentEnvKeys(policy) {
 		essential[k] = true
 	}
+	credentials := envscrub.Credentials()
 	var filtered []string
 	for _, e := range env {
 		k := strings.SplitN(e, "=", 2)[0]
-		if essential[k] {
+		if essential[k] && !credentials.Matches(k) {
 			filtered = append(filtered, e)
 		}
 	}

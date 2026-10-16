@@ -238,3 +238,29 @@ func TestSandboxDeny_RevokesClaudeProjectDirectory(t *testing.T) {
 		t.Fatalf("additionalDirectories = %v, want empty (nested grant should be revoked)", got)
 	}
 }
+
+// aide sandbox test must print what a profile launch applies: the
+// profile's own Claude config dir, not the profile-less default.
+func TestSandboxTest_ProfileUsesItsOwnClaudeConfigDir(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	yaml := "profiles:\n" +
+		"  verify-a:\n    agent: claude\n    config_dir_name: verify-a\n" +
+		"  verify-b:\n    agent: claude\n    config_dir_name: verify-b\n" +
+		"default_profile: verify-a\n"
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runSandboxCmd(t, "test", "--profile", "verify-b")
+	if err != nil {
+		t.Fatalf("sandbox test: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, filepath.Join(dir, ".claude-verify-b")) {
+		t.Errorf("profile's config dir missing from sandbox profile:\n%s", out)
+	}
+	for _, other := range []string{".claude-verify-a", filepath.Join(".config", "aide", "claude")} {
+		if strings.Contains(out, other) {
+			t.Errorf("sandbox profile for verify-b grants %s:\n%s", other, out)
+		}
+	}
+}

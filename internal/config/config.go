@@ -107,6 +107,7 @@ func parseProjectOverride(path string, data []byte) (*ProjectOverride, error) {
 func (c *Config) loadProjectConfig(projectDir string) error {
 	d := DiscoverProject(projectDir)
 	c.ProjectConfigErr = d.Err
+	c.ProjectConfigWarning = d.Warning
 	for _, l := range []struct{ source, path, root string }{
 		{LayerInherited, d.MainPath, d.MainCheckoutRoot},
 		{LayerLocal, d.LocalPath, d.localRewriteRoot()},

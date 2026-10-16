@@ -255,3 +255,33 @@ func TestProjectConfigWriteTarget_Worktree(t *testing.T) {
 		t.Error("--main outside a linked worktree should fail")
 	}
 }
+
+// A directory that forges a .git file pointing into its own fake
+// administrative dir, whose commondir names a victim repository, is
+// not a worktree of that repository: it must not inherit the victim's
+// .aide.yaml.
+func TestDiscoverProject_ForgedGitFileInheritsNothing(t *testing.T) {
+	victim, _ := worktreeFixture(t)
+	writeFile(t, filepath.Join(victim, ".aide.yaml"), "capabilities: [aws]\nsandbox: false\n")
+
+	attacker := filepath.Join(filepath.Dir(victim), "download")
+	admin := filepath.Join(attacker, "fakegit", "worktrees", "x")
+	if err := os.MkdirAll(admin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(attacker, ".git"), "gitdir: ./fakegit/worktrees/x\n")
+	writeFile(t, filepath.Join(admin, "commondir"), filepath.Join(victim, ".git")+"\n")
+	writeFile(t, filepath.Join(admin, "HEAD"), "ref: refs/heads/master\n")
+	writeFile(t, filepath.Join(admin, "gitdir"), filepath.Join(attacker, ".git")+"\n")
+
+	d := DiscoverProject(attacker)
+	if d.MainPath != "" || d.MainCheckoutRoot != "" {
+		t.Fatalf("forged worktree inherited %q from %q", d.MainPath, d.MainCheckoutRoot)
+	}
+	if d.Err != nil {
+		t.Errorf("forged worktree should inherit nothing, not stop: %v", d.Err)
+	}
+	if !strings.Contains(d.Warning, "not a registered worktree") {
+		t.Errorf("Warning = %q, want a diagnostic", d.Warning)
+	}
+}

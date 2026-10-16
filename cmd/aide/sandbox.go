@@ -116,6 +116,11 @@ func sandboxShowCmd() *cobra.Command {
 			}
 			cwd := env.CWD()
 			cfg := env.Config()
+			// Show what a launch applies: untrusted .aide.yaml files
+			// contribute nothing.
+			if _, err := launcher.GateProjectConfig(cfg); err != nil {
+				return err
+			}
 
 			// Resolve context
 			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
@@ -264,6 +269,11 @@ func sandboxTestCmd() *cobra.Command {
 			}
 			cwd := env.CWD()
 			cfg := env.Config()
+			// Show what a launch applies: untrusted .aide.yaml files
+			// contribute nothing.
+			if _, err := launcher.GateProjectConfig(cfg); err != nil {
+				return err
+			}
 
 			// Resolve context
 			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))

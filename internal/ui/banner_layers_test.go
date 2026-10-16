@@ -42,3 +42,21 @@ func TestRenderBanner_ShowsEachTrustFileAndInheritedGrants(t *testing.T) {
 		}
 	}
 }
+
+// The approve hint names the file even for a local one, and the
+// wants line covers loosening settings beyond capabilities and paths.
+func TestTrustFileLines_NameFileAndLooseningWants(t *testing.T) {
+	ti := &TrustInfo{Status: "untrusted", Source: "local", Path: "~/src/wt/.aide.yaml", Wants: TrustWants{
+		Readable: []string{"/etc"}, Network: "unrestricted", Guards: []string{"base"},
+		Allow: []string{"(allow mach-lookup)"}, SandboxDisabled: true, AutoApprove: true,
+	}}
+	if got := trustFileStatusLine(ti); !strings.Contains(got, "aide trust ~/src/wt/.aide.yaml") {
+		t.Errorf("status line = %q", got)
+	}
+	got := trustFileWantsLine(ti)
+	for _, want := range []string{"/etc", "network unrestricted", "guards base", "(allow mach-lookup)", "sandbox off", "auto-approve"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("wants line %q missing %q", got, want)
+		}
+	}
+}

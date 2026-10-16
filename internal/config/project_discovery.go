@@ -42,6 +42,9 @@ type ProjectDiscovery struct {
 	MainPath string
 	// Err is set when a linked worktree's main checkout cannot be read.
 	Err error
+	// Warning explains why nothing was inherited from a repository the
+	// checkout claims to belong to but is not registered with.
+	Warning string
 }
 
 // LocalWritePath is where this checkout's .aide.yaml is written: the
@@ -96,7 +99,8 @@ func DiscoverProject(startDir string) ProjectDiscovery {
 	if fi, err := os.Stat(gitEntry); err == nil && fi.IsDir() {
 		return d
 	}
-	main, err := mainCheckoutOf(d.CheckoutRoot, gitEntry)
+	main, warning, err := mainCheckoutOf(d.CheckoutRoot, gitEntry)
+	d.Warning = warning
 	if err != nil {
 		d.Err = err
 		return d
@@ -116,9 +120,10 @@ func DiscoverProject(startDir string) ProjectDiscovery {
 }
 
 // mainCheckoutOf returns the main checkout root of the linked worktree
-// at root, or "" when root is not a linked worktree (a submodule) or
-// its repository is bare.
-func mainCheckoutOf(root, gitFile string) (string, error) {
+// at root, or "" when root is not a linked worktree (a submodule), its
+// repository is bare, or the repository does not register root as one
+// of its worktrees (then warning says why nothing is inherited).
+func mainCheckoutOf(root, gitFile string) (main, warning string, err error) {
 	out, err := gitOutput(root, "rev-parse", "--git-dir", "--git-common-dir")
 	if err != nil {
 		// git failed or is missing. A submodule inherits nothing; a
@@ -127,32 +132,59 @@ func mainCheckoutOf(root, gitFile string) (string, error) {
 		// inheritance.
 		gitDir := gitDirPointer(gitFile)
 		if !isLinkedWorktreeGitDir(gitDir) {
-			return "", nil
+			return "", "", nil
 		}
-		return "", mainUnavailable(root, missingMainPath(gitDir), err)
+		return "", "", mainUnavailable(root, missingMainPath(gitDir), err)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 2 {
-		return "", fmt.Errorf("unexpected git rev-parse output in %s: %q", root, out)
+		return "", "", fmt.Errorf("unexpected git rev-parse output in %s: %q", root, out)
 	}
-	if sameDir(absUnder(root, lines[0]), absUnder(root, lines[1])) {
-		return "", nil // not a linked worktree: a submodule
+	gitDir, commonDir := absUnder(root, lines[0]), absUnder(root, lines[1])
+	if sameDir(gitDir, commonDir) {
+		return "", "", nil // not a linked worktree: a submodule
 	}
 	list, err := gitOutput(root, "worktree", "list", "--porcelain")
 	if err != nil {
-		return "", mainUnavailable(root, absUnder(root, lines[1]), err)
+		return "", "", mainUnavailable(root, commonDir, err)
+	}
+	if !registeredWorktree(root, gitDir, commonDir, list) {
+		return "", fmt.Sprintf("%s is not a registered worktree of %s (its .git file points at %s); "+
+			"no .aide.yaml is inherited from that repository", root, commonDir, gitDir), nil
 	}
 	main, bare := firstWorktree(list)
 	if bare || main == "" {
-		return "", nil
+		return "", "", nil
 	}
 	if fi, err := os.Stat(main); err != nil || !fi.IsDir() {
 		if err == nil {
 			err = errors.New("not a directory")
 		}
-		return "", mainUnavailable(root, main, err)
+		return "", "", mainUnavailable(root, main, err)
 	}
-	return main, nil
+	return main, "", nil
+}
+
+// registeredWorktree reports whether the repository at commonDir
+// records root as one of its linked worktrees, so a .git file cannot
+// borrow another repository's configuration by naming it: the
+// administrative dir must lie in <commonDir>/worktrees/, its gitdir
+// file must point back at root's .git, and git worktree list must name
+// root.
+func registeredWorktree(root, gitDir, commonDir, porcelain string) bool {
+	if !sameDir(filepath.Dir(gitDir), filepath.Join(commonDir, "worktrees")) {
+		return false
+	}
+	back, err := os.ReadFile(filepath.Join(gitDir, "gitdir")) // #nosec G304 -- git's own worktree record
+	if err != nil || !sameDir(absUnder(gitDir, strings.TrimSpace(string(back))), filepath.Join(root, ".git")) {
+		return false
+	}
+	for _, line := range strings.Split(porcelain, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && sameDir(p, root) {
+			return true
+		}
+	}
+	return false
 }
 
 func mainUnavailable(worktree, path string, cause error) error {

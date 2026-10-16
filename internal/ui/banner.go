@@ -180,11 +180,12 @@ func trustFileStatusLine(ti *TrustInfo) string {
 		return ""
 	}
 	origin := ""
-	trustCmd := "aide trust"
 	if ti.Source == "inherited" {
 		origin = " (inherited from main checkout)"
-		trustCmd = "aide trust " + ti.Path
 	}
+	// Name the file: a bare aide trust acts on ./.aide.yaml, which is
+	// the wrong file from a subdirectory or for an inherited one.
+	trustCmd := "aide trust " + ti.Path
 	switch ti.Status {
 	case "denied":
 		return fmt.Sprintf("🚫 .aide.yaml%s denied at %s — run %s to undo", origin, ti.Path, trustCmd)
@@ -211,8 +212,22 @@ func trustFileWantsLine(ti *TrustInfo) string {
 	for _, c := range w.Capabilities {
 		parts = append(parts, c+" capability")
 	}
+	if w.SandboxDisabled {
+		parts = append(parts, "sandbox off")
+	}
+	if w.AutoApprove {
+		parts = append(parts, "auto-approve")
+	}
+	if w.Network != "" {
+		parts = append(parts, "network "+w.Network)
+	}
 	parts = append(parts, w.Writable...)
+	parts = append(parts, w.Readable...)
 	parts = append(parts, w.Unguard...)
+	if len(w.Guards) > 0 {
+		parts = append(parts, "guards "+strings.Join(w.Guards, ","))
+	}
+	parts = append(parts, w.Allow...)
 	if len(w.EnvVars) > 0 {
 		parts = append(parts, truncateList(w.EnvVars, 3))
 	}

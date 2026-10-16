@@ -16,6 +16,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/envscrub"
+	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
@@ -298,6 +299,11 @@ func envListCmd() *cobra.Command {
 				}
 				envMap = ctx.Env
 			} else {
+				// What a launch applies: untrusted .aide.yaml files
+				// contribute nothing.
+				if _, err := launcher.GateProjectConfig(cfg); err != nil {
+					return err
+				}
 				resolved, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 				if err != nil {
 					return err

@@ -5,6 +5,8 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/homepath"
@@ -20,6 +22,10 @@ type ProjectGate struct {
 	// InheritedGrants are the security-sensitive grants the trusted
 	// main checkout file of a linked worktree contributes.
 	InheritedGrants []ui.InheritedGrant
+	// Warnings explain project files that were deliberately not
+	// considered (a checkout not registered with the repository it
+	// names).
+	Warnings []string
 }
 
 // Primary is the first untrusted or denied file, or nil when every
@@ -61,59 +67,62 @@ func GateProjectConfig(cfg *config.Config) (ProjectGate, error) {
 	return (&Launcher{}).applyTrustGate(cfg)
 }
 
-// applyTrustGate keeps the trusted .aide.yaml layers of cfg and
-// re-merges ProjectOverride from them.
+// applyTrustGate judges every .aide.yaml layer of cfg, marks the
+// untrusted and denied ones rejected and re-merges ProjectOverride from
+// the rest. It is idempotent: calling it again reports the same files.
 func (l *Launcher) applyTrustGate(cfg *config.Config) (ProjectGate, error) {
 	if err := cfg.ProjectConfigErr; err != nil {
 		cfg.DropProjectConfig()
 		return ProjectGate{}, err
 	}
-	layers, ok := l.projectLayers(cfg)
-	if !ok {
+	var gate ProjectGate
+	if w := cfg.ProjectConfigWarning; w != "" {
+		gate.Warnings = append(gate.Warnings, w)
+	}
+	if !l.ensureProjectLayers(cfg) {
 		cfg.DropProjectConfig()
-		return ProjectGate{}, nil
+		return gate, nil
+	}
+	if len(cfg.ProjectLayers) == 0 {
+		return gate, nil // no project file: nothing to judge
 	}
 	homeDir, _ := os.UserHomeDir()
 	store := l.trustStore()
-	var gate ProjectGate
-	var kept []config.ProjectLayer
-	for _, layer := range layers {
+	for i := range cfg.ProjectLayers {
+		layer := &cfg.ProjectLayers[i]
 		fc := store.CheckContents(layer.Path, layer.Contents)
 		display := homepath.Collapse(fc.Path, homeDir)
+		layer.Rejected = fc.Status != trust.Trusted
 		switch fc.Status {
 		case trust.Trusted:
-			kept = append(kept, layer)
 		case trust.Denied:
 			gate.Files = append(gate.Files, ui.TrustInfo{Status: "denied", Path: display, Source: layer.Source})
 		default:
 			gate.Files = append(gate.Files, buildTrustInfo(display, layer.Source, layer.Override))
 		}
 	}
-	cfg.ProjectLayers = kept
-	cfg.ProjectOverride = config.MergeProjectLayers(kept)
-	gate.InheritedGrants = inheritedGrants(kept, cfg.ProjectOverride, homeDir)
+	cfg.ProjectOverride = config.MergeProjectLayers(cfg.ProjectLayers)
+	gate.InheritedGrants = inheritedGrants(cfg.ProjectLayers, cfg.ProjectOverride, homeDir)
 	return gate, nil
 }
 
-// projectLayers returns cfg's layers. A config built without Load
-// (ProjectOverride and ProjectConfigPath only) is one local layer
-// judged on the file's current contents; ok is false when it cannot
-// be read.
-func (l *Launcher) projectLayers(cfg *config.Config) ([]config.ProjectLayer, bool) {
-	if len(cfg.ProjectLayers) > 0 {
-		return cfg.ProjectLayers, true
-	}
-	if cfg.ProjectOverride == nil || cfg.ProjectConfigPath == "" {
-		return nil, true
+// ensureProjectLayers makes sure cfg's project config is held as
+// layers. A config built without Load (ProjectOverride and
+// ProjectConfigPath only) becomes one local layer judged on the file's
+// current contents; it returns false when that file cannot be read.
+func (l *Launcher) ensureProjectLayers(cfg *config.Config) bool {
+	if len(cfg.ProjectLayers) > 0 || cfg.ProjectOverride == nil || cfg.ProjectConfigPath == "" {
+		return true
 	}
 	contents, err := os.ReadFile(cfg.ProjectConfigPath)
 	if err != nil {
 		fmt.Fprintf(l.stderr(), "warning: could not read %s for trust check: %v — project config not applied\n", cfg.ProjectConfigPath, err)
-		return nil, false
+		return false
 	}
-	return []config.ProjectLayer{{
+	cfg.ProjectLayers = []config.ProjectLayer{{
 		Source: config.LayerLocal, Path: cfg.ProjectConfigPath, Contents: contents, Override: cfg.ProjectOverride,
-	}}, true
+	}}
+	return true
 }
 
 // buildTrustInfo describes what an untrusted file requests.
@@ -126,10 +135,18 @@ func buildTrustInfo(displayPath, source string, po *config.ProjectOverride) ui.T
 		Agent:        po.Agent,
 		Capabilities: po.Capabilities,
 	}
-	if po.Sandbox != nil {
-		ti.Wants.Writable = append(slices.Clone(po.Sandbox.Writable), po.Sandbox.WritableExtra...)
-		ti.Wants.Unguard = po.Sandbox.Unguard
+	if sb := po.Sandbox; sb != nil {
+		ti.Wants.Writable = append(slices.Clone(sb.Writable), sb.WritableExtra...)
+		ti.Wants.Readable = append(slices.Clone(sb.Readable), sb.ReadableExtra...)
+		ti.Wants.Unguard = sb.Unguard
+		ti.Wants.Guards = sb.Guards
+		ti.Wants.Allow = sb.Allow
+		ti.Wants.SandboxDisabled = sb.Disabled
+		if sb.Network != nil {
+			ti.Wants.Network = sb.Network.Mode
+		}
 	}
+	ti.Wants.AutoApprove = po.Yolo != nil && *po.Yolo
 	for k := range po.Env {
 		ti.Wants.EnvVars = append(ti.Wants.EnvVars, k)
 	}
@@ -137,15 +154,17 @@ func buildTrustInfo(displayPath, source string, po *config.ProjectOverride) ui.T
 	return ti
 }
 
-// inheritedGrants lists the security-sensitive grants that the kept
-// inherited layer contributes and that survive the merge: paths made
-// writable or readable, network mode, removed guards, capabilities,
-// a disabled sandbox and auto-approve.
-func inheritedGrants(kept []config.ProjectLayer, merged *config.ProjectOverride, homeDir string) []ui.InheritedGrant {
+// inheritedGrants lists the security-sensitive settings that the
+// applied inherited layer contributes and that survive the merge:
+// capabilities, MCP servers, paths made writable or readable, replaced
+// guard or deny lists, removed guards, extra allow rules, network mode,
+// subprocess and environment loosening, a disabled sandbox and
+// auto-approve.
+func inheritedGrants(layers []config.ProjectLayer, merged *config.ProjectOverride, homeDir string) []ui.InheritedGrant {
 	var inh *config.ProjectLayer
-	for i := range kept {
-		if kept[i].Source == config.LayerInherited {
-			inh = &kept[i]
+	for i := range layers {
+		if layers[i].Source == config.LayerInherited && !layers[i].Rejected {
+			inh = &layers[i]
 		}
 	}
 	if inh == nil || merged == nil {
@@ -156,33 +175,39 @@ func inheritedGrants(kept []config.ProjectLayer, merged *config.ProjectOverride,
 	add := func(kind, value string) {
 		out = append(out, ui.InheritedGrant{Kind: kind, Value: value, Source: src})
 	}
-	po := inh.Override
-	for _, c := range po.Capabilities {
-		if slices.Contains(merged.Capabilities, c) {
-			add("capability", c)
+	addEach := func(kind string, values, mergedValues []string) {
+		for _, v := range values {
+			if slices.Contains(mergedValues, v) {
+				add(kind, v)
+			}
 		}
 	}
+	po := inh.Override
+	addEach("capability", po.Capabilities, merged.Capabilities)
+	addEach("mcp_server", po.MCPServers, merged.MCPServers)
 	if sb, msb := po.Sandbox, merged.Sandbox; sb != nil && msb != nil {
 		if sb.Disabled && msb.Disabled {
 			add("sandbox", "disabled")
 		}
-		for _, p := range append(slices.Clone(sb.Writable), sb.WritableExtra...) {
-			if slices.Contains(msb.Writable, p) || slices.Contains(msb.WritableExtra, p) {
-				add("writable", p)
-			}
+		addEach("writable", append(slices.Clone(sb.Writable), sb.WritableExtra...), append(slices.Clone(msb.Writable), msb.WritableExtra...))
+		addEach("readable", append(slices.Clone(sb.Readable), sb.ReadableExtra...), append(slices.Clone(msb.Readable), msb.ReadableExtra...))
+		// Replacing the guard or deny list can drop defaults.
+		if len(sb.Guards) > 0 && slices.Equal(sb.Guards, msb.Guards) {
+			add("guards", strings.Join(sb.Guards, ", "))
 		}
-		for _, p := range append(slices.Clone(sb.Readable), sb.ReadableExtra...) {
-			if slices.Contains(msb.Readable, p) || slices.Contains(msb.ReadableExtra, p) {
-				add("readable", p)
-			}
+		if len(sb.Denied) > 0 && slices.Equal(sb.Denied, msb.Denied) {
+			add("denied", strings.Join(sb.Denied, ", "))
 		}
+		addEach("unguard", sb.Unguard, msb.Unguard)
+		addEach("allow", sb.Allow, msb.Allow)
 		if sb.Network != nil && msb.Network == sb.Network {
 			add("network", sb.Network.Mode)
 		}
-		for _, g := range sb.Unguard {
-			if slices.Contains(msb.Unguard, g) {
-				add("unguard", g)
-			}
+		if sb.AllowSubprocess != nil && msb.AllowSubprocess == sb.AllowSubprocess {
+			add("allow_subprocess", strconv.FormatBool(*sb.AllowSubprocess))
+		}
+		if sb.CleanEnv != nil && !*sb.CleanEnv && msb.CleanEnv == sb.CleanEnv {
+			add("clean_env", "false")
 		}
 	}
 	if po.Yolo != nil && *po.Yolo && merged.Yolo == po.Yolo {

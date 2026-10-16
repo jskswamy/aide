@@ -31,17 +31,27 @@ type ProjectLayer struct {
 	// Override has relative paths already rewritten against the
 	// checkout containing the file.
 	Override *ProjectOverride
+	// Rejected is set by the trust gate when the file is untrusted or
+	// denied; a rejected layer contributes nothing.
+	Rejected bool
 }
 
-// MergeProjectLayers merges layers in order (inherited, then local).
-// It returns nil without layers and a single layer's override as is.
+// MergeProjectLayers merges the layers that are not rejected, in order
+// (inherited, then local). It returns nil when none apply and a single
+// applied layer's override as is.
 func MergeProjectLayers(layers []ProjectLayer) *ProjectOverride {
-	if len(layers) == 1 {
-		return layers[0].Override
+	var applied []*ProjectOverride
+	for _, l := range layers {
+		if !l.Rejected {
+			applied = append(applied, l.Override)
+		}
+	}
+	if len(applied) == 1 {
+		return applied[0]
 	}
 	var merged *ProjectOverride
-	for _, l := range layers {
-		merged = MergeProjectOverrides(merged, l.Override)
+	for _, po := range applied {
+		merged = MergeProjectOverrides(merged, po)
 	}
 	return merged
 }
@@ -52,6 +62,7 @@ func (c *Config) DropProjectConfig() {
 	c.ProjectOverride = nil
 	c.ProjectLayers = nil
 	c.ProjectConfigErr = nil
+	c.ProjectConfigWarning = ""
 }
 
 // ProjectFileSetting names the .aide.yaml whose setting applies: the
@@ -59,7 +70,7 @@ func (c *Config) DropProjectConfig() {
 // ProjectConfigPath. Messages use it to point at the right file.
 func (c *Config) ProjectFileSetting(has func(*ProjectOverride) bool) string {
 	for i := len(c.ProjectLayers) - 1; i >= 0; i-- {
-		if po := c.ProjectLayers[i].Override; po != nil && has(po) {
+		if po := c.ProjectLayers[i].Override; po != nil && !c.ProjectLayers[i].Rejected && has(po) {
 			return c.ProjectLayers[i].Path
 		}
 	}

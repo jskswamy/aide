@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/jskswamy/aide/internal/trust"
 	"os"
 	"path/filepath"
 	"strings"
@@ -339,6 +340,8 @@ contexts:
 	if err := os.WriteFile(filepath.Join(dir, ".aide.yaml"), []byte("disabled_capabilities: [ssh]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Commands report what a launch applies, so the file is trusted.
+	trustProjectFile(t, filepath.Join(dir, ".aide.yaml"))
 
 	out := runCapCmdInPlace(t, "audit")
 
@@ -404,6 +407,8 @@ contexts:
 	if err := os.WriteFile(filepath.Join(dir, ".aide.yaml"), []byte("disabled_capabilities: [docker]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Commands report what a launch applies, so the file is trusted.
+	trustProjectFile(t, filepath.Join(dir, ".aide.yaml"))
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -470,6 +475,8 @@ contexts:
 	if err := os.WriteFile(filepath.Join(dir, ".aide.yaml"), []byte("disabled_capabilities: [clipboard]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Commands report what a launch applies, so the file is trusted.
+	trustProjectFile(t, filepath.Join(dir, ".aide.yaml"))
 
 	out := runCapCmdInPlace(t, "list", "--profile", "work")
 
@@ -644,5 +651,17 @@ func TestCapSuggestForPath_JSONFormat_Empty(t *testing.T) {
 	}
 	if got.Suggestions == nil {
 		t.Error("expected [], got JSON null")
+	}
+}
+
+// trustProjectFile approves path in the default trust store.
+func trustProjectFile(t *testing.T, path string) {
+	t.Helper()
+	fc, err := trust.DefaultStore().CheckFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := trust.DefaultStore().Trust(fc.Path, fc.Contents); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -111,3 +111,55 @@ func TestPrompt_WorktreeUsesTheSharedGate(t *testing.T) {
 		t.Errorf("prompt does not flag the denied inherited file: %q", out.String())
 	}
 }
+
+// An untrusted inherited file cannot restyle the statusline, including
+// hiding or faking its own untrusted indicator.
+func TestStatusline_IgnoresUntrustedInheritedStyle(t *testing.T) {
+	mainDir, wtDir := worktreeWriteFixture(t)
+	if err := os.WriteFile(filepath.Join(mainDir, ".aide.yaml"),
+		[]byte("statusline:\n  trust:\n    untrusted: ALLGOOD\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(wtDir)
+	t.Setenv("AIDE_SANDBOX", "on")
+	t.Setenv("AIDE_NETWORK_MODE", "outbound")
+	t.Setenv("AIDE_TRUST", "untrusted")
+	t.Setenv("AIDE_AGENT", "claude")
+
+	var buf bytes.Buffer
+	cmd := statuslineAgentCmd("claude")
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	if err := runStatuslineRenderWithStdin(cmd, "claude", nil, false, strings.NewReader(""), ""); err != nil {
+		t.Fatalf("statusline: %v\n%s", err, buf.String())
+	}
+	if strings.Contains(buf.String(), "ALLGOOD") || !strings.Contains(buf.String(), "⚠") {
+		t.Errorf("untrusted inherited statusline style applied: %q", buf.String())
+	}
+}
+
+// aide cap list reports what a launch applies: an untrusted inherited
+// file's capability is not shown as enabled.
+func TestCapList_IgnoresUntrustedInheritedCapabilities(t *testing.T) {
+	mainDir, wtDir := worktreeWriteFixture(t)
+	t.Setenv("HOME", t.TempDir())
+	if err := os.WriteFile(filepath.Join(mainDir, ".aide.yaml"), []byte("capabilities: [docker]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(wtDir)
+
+	cmd := capCmd()
+	output.RegisterFlag(cmd)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"list"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cap list: %v\n%s", err, out.String())
+	}
+	for _, line := range strings.Split(out.String(), "\n") {
+		if f := strings.Fields(line); len(f) > 1 && f[0] == "docker" && f[1] == "enabled" {
+			t.Errorf("untrusted inherited capability listed as enabled: %q", line)
+		}
+	}
+}

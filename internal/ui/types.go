@@ -85,6 +85,13 @@ type TrustWants struct {
 	Writable     []string `json:"writable,omitempty"`
 	Unguard      []string `json:"unguard,omitempty"`
 	EnvVars      []string `json:"env_vars,omitempty"` // var names (not a count — names are not sensitive)
+	Readable     []string `json:"readable,omitempty"`
+	Network      string   `json:"network,omitempty"`
+	// Guards is a replacement guard list; Allow extra sandbox rules.
+	Guards          []string `json:"guards,omitempty"`
+	Allow           []string `json:"allow,omitempty"`
+	SandboxDisabled bool     `json:"sandbox_disabled,omitempty"`
+	AutoApprove     bool     `json:"auto_approve,omitempty"`
 }
 
 // BannerData holds all information needed to render an aide banner.

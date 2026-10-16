@@ -286,8 +286,15 @@ file, once. See "Linked git worktrees" in `docs/configuration.md`.
   in `aide which --format json`, `project_trust` in `aide status`),
   name the command that approves an inherited file, and list grants
   inherited from the main checkout (capabilities, writable and readable
-  paths, network, removed guards, auto-approve) labeled with that file
-  (`inherited_grants`). `aide prompt` uses the same per-file check.
+  paths, replaced guard or deny lists, `allow` rules, network,
+  removed guards, `allow_subprocess`, `clean_env: false`, MCP servers,
+  auto-approve) labeled with that file (`inherited_grants`). `aide
+  prompt`, `aide cap list|audit`, `aide env list`, `aide sandbox
+  show|test` and the statusline use the same per-file check, so an
+  untrusted file never shows as active or restyles the statusline.
+- Only a worktree the repository itself registers inherits: a `.git`
+  file that merely names another repository inherits nothing and
+  prints a warning.
 - A worktree whose main checkout is deleted, moved or unreadable stops
   the launch with `main checkout unavailable`, naming the missing path
   and the remedies (restore it, `git worktree repair` / `git worktree

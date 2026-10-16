@@ -235,6 +235,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	} else if gate, err = l.applyTrustGate(cfg); err != nil {
 		return err
 	}
+	for _, w := range gate.Warnings {
+		fmt.Fprintf(l.stderr(), "aide: warning: %s\n", w)
+	}
 
 	// 2. Detect git remote + project root
 	remotes := aidectx.GitRemotes(cwd)
@@ -249,6 +252,13 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		rc, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remotes)
 		if err != nil {
 			return err
+		}
+		// The reloaded config was gated; refresh what the banner and
+		// AIDE_TRUST report from it (the gate is idempotent).
+		if !l.IgnoreProjectConfig {
+			if gate, err = l.applyTrustGate(cfg); err != nil {
+				return err
+			}
 		}
 	}
 	if notice := ProjectProfileNotice(cfg, rc); notice != "" {
@@ -621,14 +631,18 @@ func (l *Launcher) buildDiagContext(cfg *config.Config, rc *aidectx.ResolvedCont
 		BuildDate: l.BuildDate,
 		Sandbox:   sb,
 	}
-	switch {
-	case cfg != nil && len(cfg.ProjectLayers) > 0:
-		paths := make([]string, len(cfg.ProjectLayers))
-		for i, layer := range cfg.ProjectLayers {
-			paths[i] = layer.Path
+	var applied []string
+	if cfg != nil {
+		for _, layer := range cfg.ProjectLayers {
+			if !layer.Rejected {
+				applied = append(applied, layer.Path)
+			}
 		}
-		dc.ResolvedConfig = strings.Join(paths, " + ")
-	case cfg != nil && cfg.ProjectConfigPath != "":
+	}
+	switch {
+	case len(applied) > 0:
+		dc.ResolvedConfig = strings.Join(applied, " + ")
+	case cfg != nil && len(cfg.ProjectLayers) == 0 && cfg.ProjectConfigPath != "":
 		dc.ResolvedConfig = cfg.ProjectConfigPath
 	default:
 		dc.ResolvedConfig = l.configDir() + " (no project config)"

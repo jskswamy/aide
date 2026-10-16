@@ -229,3 +229,90 @@ func TestLaunch_InheritedProviderEnvNamesItsFile(t *testing.T) {
 		t.Errorf("error does not name the inherited file %s: %v", mainFile, err)
 	}
 }
+
+// Settings that loosen the sandbox are listed as inherited grants too,
+// each labeled with the main checkout file.
+func TestGate_InheritedGrantsListLooseningSettings(t *testing.T) {
+	mainFile, localFile, wtDir := worktreeGateFixture(t)
+	writeGateFile(t, mainFile, `mcp_servers: [git]
+sandbox:
+  guards: [base]
+  denied: [/secret]
+  allow: ["(allow mach-lookup)"]
+  allow_subprocess: true
+  clean_env: false
+`)
+	store := trust.NewStore(t.TempDir())
+	trustFile(t, store, mainFile)
+	trustFile(t, store, localFile)
+
+	_, gate := gatedCaps(t, store, wtDir)
+	got := map[string]string{}
+	for _, g := range gate.InheritedGrants {
+		got[g.Kind] = g.Value
+		if !strings.HasSuffix(g.Source, filepath.Join("main", ".aide.yaml")) {
+			t.Errorf("grant %+v not labeled with the main checkout file", g)
+		}
+	}
+	want := map[string]string{
+		"mcp_server": "git", "guards": "base", "denied": "/secret",
+		"allow": "(allow mach-lookup)", "allow_subprocess": "true", "clean_env": "false",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("grant %s = %q, want %q (all: %v)", k, got[k], v, got)
+		}
+	}
+}
+
+// Every caller shares one gate, so a second call must report the same
+// untrusted files rather than treating a filtered config as trusted.
+func TestGate_IsIdempotent(t *testing.T) {
+	_, localFile, wtDir := worktreeGateFixture(t)
+	store := trust.NewStore(t.TempDir())
+	trustFile(t, store, localFile)
+	cfg := loadGateConfig(t, wtDir)
+	l := &Launcher{TrustStore: store}
+	first, err := l.applyTrustGate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := l.applyTrustGate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Files) != 1 || len(second.Files) != 1 || second.Status() != "untrusted" {
+		t.Errorf("first=%+v second=%+v", first.Files, second.Files)
+	}
+	if strings.Join(cfg.ProjectOverride.Capabilities, ",") != "python" {
+		t.Errorf("capabilities = %v", cfg.ProjectOverride.Capabilities)
+	}
+}
+
+// A forged .git file naming another repository inherits nothing from
+// it, and the gate says why.
+func TestGate_ForgedWorktreeInheritsNothing(t *testing.T) {
+	victim, _ := testutil.GitWorktree(t)
+	victimFile := filepath.Join(victim, ".aide.yaml")
+	writeGateFile(t, victimFile, "capabilities: [aws]\n")
+	store := trust.NewStore(t.TempDir())
+	trustFile(t, store, victimFile)
+
+	attacker := filepath.Join(filepath.Dir(victim), "download")
+	admin := filepath.Join(attacker, "fakegit", "worktrees", "x")
+	if err := os.MkdirAll(admin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeGateFile(t, filepath.Join(attacker, ".git"), "gitdir: ./fakegit/worktrees/x\n")
+	writeGateFile(t, filepath.Join(admin, "commondir"), filepath.Join(victim, ".git")+"\n")
+	writeGateFile(t, filepath.Join(admin, "HEAD"), "ref: refs/heads/master\n")
+	writeGateFile(t, filepath.Join(admin, "gitdir"), filepath.Join(attacker, ".git")+"\n")
+
+	caps, gate := gatedCaps(t, store, attacker)
+	if len(caps) != 0 {
+		t.Errorf("capabilities = %v: forged worktree borrowed the victim's grants", caps)
+	}
+	if len(gate.Warnings) != 1 || !strings.Contains(gate.Warnings[0], "not a registered worktree") {
+		t.Errorf("warnings = %v", gate.Warnings)
+	}
+}

@@ -7,9 +7,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the top-level configuration, supporting both minimal and full formats.
-// When the YAML contains "agents" or "contexts" keys, it is the full (structured)
-// format. Otherwise it is the minimal (flat) format treated as a single default context.
+// Config is the top-level configuration, supporting both minimal and
+// full formats. When the YAML contains "agents", "contexts" or
+// "profiles" keys, it is the full (structured) format; profiles:
+// entries load into Contexts. Otherwise it is the minimal (flat) format treated as a single default context.
 type Config struct {
 	// --- Full format fields ---
 	Agents         map[string]AgentDef      `yaml:"agents,omitempty"`
@@ -45,6 +46,16 @@ type Config struct {
 	// resolution time. Not serialized to YAML.
 	ProjectOverride   *ProjectOverride `yaml:"-"`
 	ProjectConfigPath string           `yaml:"-"` // absolute path to .aide.yaml, if found
+
+	// ProfileSchema is true when the file declared profiles: /
+	// default_profile: rather than the legacy contexts: /
+	// default_context:. Both load into Contexts/DefaultContext;
+	// MarshalYAML writes the schema the file was loaded in, so saves
+	// never convert a file implicitly.
+	ProfileSchema bool `yaml:"-"`
+
+	// loadErr is set on the FailedLoad placeholder; writers refuse it.
+	loadErr error
 }
 
 // IsMinimal returns true when the config uses the flat single-context format.
@@ -166,35 +177,20 @@ func (c Context) MarshalYAML() (interface{}, error) {
 // generic ContextOverride[PluginEntry] handles the v2 mapping form;
 // the legacy `[]string` selection list is captured in PluginsList.
 func (c *Context) UnmarshalYAML(node *yaml.Node) error {
-	type rawCtx struct {
-		Match        []MatchRule       `yaml:"match,omitempty"`
-		Agent        string            `yaml:"agent"`
-		Icon         string            `yaml:"icon,omitempty"`
-		Secret       string            `yaml:"secret,omitempty"`
-		Env          map[string]string `yaml:"env,omitempty"`
-		Profile      string            `yaml:"profile,omitempty"`
-		ProfileDir   string            `yaml:"profile_dir,omitempty"`
-		Sandbox      *SandboxRef       `yaml:"sandbox,omitempty"`
-		Yolo         *bool             `yaml:"yolo,omitempty"`
-		Capabilities []string          `yaml:"capabilities,omitempty"`
-		MCPServers   yaml.Node         `yaml:"mcp_servers,omitempty"`
-		Plugins      yaml.Node         `yaml:"plugins,omitempty"`
-		Hooks        yaml.Node         `yaml:"hooks,omitempty"`
+	// plain decodes every statically typed field; the polymorphic
+	// fields are tagged yaml:"-" on Context and decoded from r below.
+	type plain Context
+	if err := node.Decode((*plain)(c)); err != nil {
+		return err
 	}
-	var r rawCtx
+	var r struct {
+		MCPServers yaml.Node `yaml:"mcp_servers,omitempty"`
+		Plugins    yaml.Node `yaml:"plugins,omitempty"`
+		Hooks      yaml.Node `yaml:"hooks,omitempty"`
+	}
 	if err := node.Decode(&r); err != nil {
 		return err
 	}
-	c.Match = r.Match
-	c.Agent = r.Agent
-	c.Icon = r.Icon
-	c.Secret = r.Secret
-	c.Env = r.Env
-	c.Profile = r.Profile
-	c.ProfileDir = r.ProfileDir
-	c.Sandbox = r.Sandbox
-	c.Yolo = r.Yolo
-	c.Capabilities = r.Capabilities
 
 	switch r.MCPServers.Kind {
 	case 0:
@@ -759,6 +755,9 @@ type GuardType struct {
 // It is NOT stored as a context. Instead, the resolver merges it on top
 // of whichever global context matches.
 type ProjectOverride struct {
+	// Profile references a profile the user config defines, by name.
+	// .aide.yaml can never define a profile (see UnmarshalYAML).
+	Profile              string            `yaml:"profile,omitempty"`
 	Agent                string            `yaml:"agent,omitempty"`
 	Env                  map[string]string `yaml:"env,omitempty"`
 	Secret               string            `yaml:"secret,omitempty"`

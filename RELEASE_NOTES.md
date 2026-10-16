@@ -85,6 +85,52 @@ driver, so its hooks are synced, and the launch banner shows the
 Cursor icon for `cursor-agent`. Existing `agent: cursor` contexts and
 their sync state are unchanged.
 
+### ⚙️ Configuration
+
+#### config.yaml accepts profiles: alongside the legacy contexts:
+
+`config.yaml` can now declare `profiles:` and `default_profile:`
+instead of `contexts:` and `default_context:`. Both load the same way;
+existing `contexts:` files keep working and are not rewritten. Commands
+that save the config write back whichever form the file used.
+
+- Inside a `profiles:` entry the native config-dir keys are
+  `config_dir_name:` (was `profile:`) and `config_dir:` (was
+  `profile_dir:`). The old names are rejected there with
+  `profiles.<name>: profile: is a contexts: key; under profiles: use
+  config_dir_name:`; the new names under `contexts:` are rejected the
+  same way. `sandbox: {profile: ...}` (a named sandbox policy) is
+  unchanged.
+- A file that mixes the two forms (e.g. `contexts:` with `profiles:`,
+  or `default_context:` with `default_profile:`) stops with `config
+  mixes profiles: and contexts: declarations`, naming the keys found
+  and how to convert.
+- **Behavior change:** two profiles (or contexts) whose agent config
+  dirs would be the same directory now stop with `profiles share a
+  native config dir`. This covers symlinks, a symlinked parent of a
+  dir not created yet, and (for existing dirs) case-insensitive
+  filesystems. Because `--agent` can launch any profile under any
+  agent, every agent is checked: `work-claude` (agent claude) and
+  `work-codex` (agent codex) both with `profile: work` collide on
+  `~/.claude-work`. The error explains why and how to keep both
+  logins: merge the two into one profile, or pin each to the dir it
+  uses today (`profile_dir: ~/.claude-work` on one,
+  `profile_dir: ~/.codex-work` on the other).
+- `.aide.yaml` may name an existing profile with `profile: <name>`. A
+  name your config does not define prints a warning naming the file
+  and the profile, and aide carries on. Selecting that profile from
+  `.aide.yaml` is not wired in yet.
+- `.aide.yaml` can never define a profile: `profiles:`, `contexts:`,
+  `default_profile:`, `default_context:`, `config_dir_name:`,
+  `config_dir:`, `profile_dir:`, `match:`, `credentials:` and
+  `default_credentials:` stop with `profile not allowed in project
+  override: <key>: defines a profile`, whether or not the file is
+  trusted.
+- Commands that save the config (such as `aide agents add`) now refuse
+  to write when the config failed to load, with `refusing to write
+  config: it failed to load`. Before, some of them wrote an empty
+  config over your `config.yaml`.
+
 ### 🔧 Internal
 
 #### Multi-agent profile design

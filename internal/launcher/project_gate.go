@@ -100,6 +100,9 @@ func (l *Launcher) applyTrustGate(cfg *config.Config) (ProjectGate, error) {
 		default:
 			gate.Files = append(gate.Files, buildTrustInfo(display, layer.Source, layer.Override))
 		}
+		if fc.Status != trust.Trusted && fc.Target != "" {
+			gate.Files[len(gate.Files)-1].Target = homepath.Collapse(fc.Target, homeDir)
+		}
 	}
 	cfg.ProjectOverride = config.MergeProjectLayers(cfg.ProjectLayers)
 	gate.InheritedGrants = inheritedGrants(cfg.ProjectLayers, cfg.ProjectOverride, homeDir)

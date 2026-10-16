@@ -421,8 +421,11 @@ Paths starting with `/`, `~`, `$` or `{{` are left as written.
 
 `.aide.yaml` files are not applied until trusted. On first encounter, aide shows the file's contents and skips it. Run `aide trust` to approve the file, or `aide deny` to block it permanently. See [Sandbox](sandbox.md#trust-gate) for details.
 
-Trust is recorded per file, keyed on the symlink-resolved path and the
-file's contents: editing a file withdraws its approval. `aide trust`,
+Trust is recorded per file, keyed on where the file is found (parent
+directories symlink-resolved) and its contents: editing a file
+withdraws its approval. A `.aide.yaml` that is a symlink is approved
+at its own location, never through the file it points to; the trust
+banner shows both. `aide trust`,
 `aide deny` and `aide untrust` take an optional path for a file outside
 the current directory.
 

@@ -53,6 +53,10 @@ func TestTrustFileLines_NameFileAndLooseningWants(t *testing.T) {
 	if got := trustFileStatusLine(ti); !strings.Contains(got, "aide trust ~/src/wt/.aide.yaml") {
 		t.Errorf("status line = %q", got)
 	}
+	ti.Target = "~/other/.aide.yaml"
+	if got := trustFileStatusLine(ti); !strings.Contains(got, "symlink to ~/other/.aide.yaml") {
+		t.Errorf("status line for a symlink = %q, want its target shown", got)
+	}
 	got := trustFileWantsLine(ti)
 	for _, want := range []string{"/etc", "network unrestricted", "guards base", "(allow mach-lookup)", "sandbox off", "auto-approve"} {
 		if !strings.Contains(got, want) {

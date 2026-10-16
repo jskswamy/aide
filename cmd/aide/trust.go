@@ -143,8 +143,9 @@ func trustCmd() *cobra.Command {
 		Use:   "trust [path]",
 		Short: "Trust a .aide.yaml (default: the one in the current directory)",
 		Long: `Trust a .aide.yaml at its current contents. Trust is recorded per file,
-keyed on the symlink-resolved path and the contents: changing the file
-withdraws the approval. In a linked git worktree, the main checkout's
+keyed on its location (parent directories symlink-resolved) and the
+contents: changing the file withdraws the approval. A symlinked
+.aide.yaml is approved at its own location, never via its target. In a linked git worktree, the main checkout's
 .aide.yaml is a separate file with its own approval; pass its path.`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,

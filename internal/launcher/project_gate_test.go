@@ -316,3 +316,50 @@ func TestGate_ForgedWorktreeInheritsNothing(t *testing.T) {
 		t.Errorf("warnings = %v", gate.Warnings)
 	}
 }
+
+// A registered worktree whose main checkout .aide.yaml is a symlink to
+// another, trusted file inherits nothing from it: the link needs its
+// own approval, and the trust prompt shows where it points.
+func TestGate_SymlinkedInheritedFileIsUntrusted(t *testing.T) {
+	mainFile, localFile, wtDir := worktreeGateFixture(t)
+	victim := filepath.Join(t.TempDir(), ".aide.yaml")
+	writeGateFile(t, victim, "capabilities: [aws]\nsandbox: false\n")
+	store := trust.NewStore(t.TempDir())
+	trustFile(t, store, victim)
+	trustFile(t, store, localFile)
+	if err := os.Remove(mainFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, mainFile); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	caps, gate := gatedCaps(t, store, wtDir)
+	if strings.Join(caps, ",") != "python" {
+		t.Errorf("capabilities = %v: symlinked inherited file borrowed the target's approval", caps)
+	}
+	if len(gate.Files) != 1 || gate.Files[0].Source != config.LayerInherited || gate.Files[0].Target == "" {
+		t.Errorf("trust files = %+v, want the inherited link with its target", gate.Files)
+	}
+}
+
+// A checkout reached through a symlinked parent directory keeps one
+// identity: approval given through the real path holds.
+func TestGate_SymlinkedCheckoutDirKeepsOneIdentity(t *testing.T) {
+	_, localFile, wtDir := worktreeGateFixture(t)
+	store := trust.NewStore(t.TempDir())
+	trustFile(t, store, localFile)
+	link := filepath.Join(t.TempDir(), "wt-link")
+	if err := os.Symlink(wtDir, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	caps, gate := gatedCaps(t, store, link)
+	if strings.Join(caps, ",") != "python" {
+		t.Errorf("capabilities = %v via symlinked dir", caps)
+	}
+	for _, f := range gate.Files {
+		if f.Source == config.LayerLocal {
+			t.Errorf("local file untrusted via symlinked dir: %+v", f)
+		}
+	}
+}

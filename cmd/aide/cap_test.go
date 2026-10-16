@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/jskswamy/aide/internal/trust"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/jskswamy/aide/internal/consent"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/testutil"
+	"github.com/jskswamy/aide/internal/trust"
 )
 
 // runCapCmd builds a fresh `cap` cobra command, runs it with args, and

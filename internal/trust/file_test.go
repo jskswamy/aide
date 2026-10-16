@@ -119,3 +119,39 @@ func TestCheckContentsJudgesGivenBytes(t *testing.T) {
 		t.Errorf("other bytes: %v, want untrusted", got)
 	}
 }
+
+// A symlinked .aide.yaml is its own file for trust: approving its
+// target elsewhere never approves the link.
+func TestCheckFileSymlinkedFileNeedsItsOwnApproval(t *testing.T) {
+	victimDir := testutil.CanonicalTempDir(t)
+	victim := filepath.Join(victimDir, ".aide.yaml")
+	if err := os.WriteFile(victim, []byte("sandbox: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(t.TempDir())
+	fc, err := store.CheckFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Trust(fc.Path, fc.Contents); err != nil {
+		t.Fatal(err)
+	}
+
+	attacker := filepath.Join(t.TempDir(), ".aide.yaml")
+	if err := os.Symlink(victim, attacker); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	fc, err = store.CheckFile(attacker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fc.Status != Untrusted {
+		t.Errorf("symlink to a trusted file is %v, want untrusted", fc.Status)
+	}
+	if fc.Path == victim {
+		t.Errorf("identity followed the link to %s", fc.Path)
+	}
+	if fc.Target != victim {
+		t.Errorf("Target = %q, want %q", fc.Target, victim)
+	}
+}

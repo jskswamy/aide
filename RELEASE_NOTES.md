@@ -311,10 +311,14 @@ file, once. See "Linked git worktrees" in `docs/configuration.md`.
 
 `aide trust [path]`, `aide deny [path]` and `aide untrust [path]` act
 on the named `.aide.yaml` (default: the one in the current directory).
-Approvals are keyed on the symlink-resolved path and the file's
-contents, so a file reached through a symlinked directory shares one
-approval. Approvals recorded through a symlinked path before this
-release are asked for again once.
+Approvals are keyed on where the file is found (its parent
+directories symlink-resolved, so a checkout reached through a
+symlinked directory shares one approval) and its contents. A
+`.aide.yaml` that is itself a symlink needs its own approval at its
+own location: approving the file it points to never approves the
+link, and trust prompts show both the link and its target. Approvals
+recorded through a symlinked directory before this release are asked
+for again once.
 
 ### 🧰 CLI
 

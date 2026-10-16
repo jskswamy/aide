@@ -67,6 +67,9 @@ type TrustInfo struct {
 	// Source is "inherited" for a linked worktree's main checkout
 	// file and "local" for the checkout's own; empty when unknown.
 	Source string `json:"source,omitempty"`
+	// Target is where Path points when the .aide.yaml is a symlink.
+	// Trust is given to Path itself, never to the target.
+	Target string `json:"target,omitempty"`
 }
 
 // InheritedGrant is a security-sensitive grant a linked worktree

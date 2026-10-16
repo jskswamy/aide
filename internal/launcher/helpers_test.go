@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"fmt"
+	"github.com/jskswamy/aide/internal/testutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -146,7 +147,7 @@ func TestWrapTemplateError(t *testing.T) {
 }
 
 func TestApplyTrustGate(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := testutil.CanonicalTempDir(t)
 	aidePath := filepath.Join(tmpDir, ".aide.yaml")
 	if err := os.WriteFile(aidePath, []byte("agent: claude\n"), 0o600); err != nil {
 		t.Fatalf("writing temp .aide.yaml: %v", err)

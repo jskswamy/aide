@@ -230,7 +230,12 @@ it, keeping the original as `config.yaml.bak`:
 - Profiles with no config dir of their own run the agent from its
   global dir (such as `~/.claude`) and share that one login. They are
   listed and left alone; `--adopt <profile>` keeps the global login
-  for one of them by pinning `config_dirs: {claude: ~/.claude}`.
+  of its own agent for one of them by adding `config_dir_name:
+  <profile>` and `config_dirs: {claude: ~/.claude}`. Launched under
+  another agent (`--agent codex`), that profile then uses a fresh
+  `~/.codex-<profile>` dir with its own login.
+- A section that uses YAML anchors, aliases or merge keys is refused;
+  expand it by hand and re-run.
 - Provisioning state is updated so the rewrite is not reported as
   drift. `.aide.yaml` files are never changed, and a launch never
   rewrites the config.

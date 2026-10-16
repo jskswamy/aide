@@ -1,5 +1,23 @@
 ## Unreleased
 
+### 🧰 CLI
+
+#### --agent now gets its own profile directory
+
+In a context with `profile:`, `aide --agent pi` exported the context
+agent's config directory (e.g. `CLAUDE_CONFIG_DIR=~/.claude-work`) and
+gave Pi nothing, so Pi ran against its default `~/.pi`. The profile
+directory now belongs to the agent that actually launches
+(`PI_CODING_AGENT_DIR=~/.pi-work`).
+
+- The profile is validated against that agent, so `env:` declaring its
+  config-dir variable beside `profile:` is now rejected for `--agent`
+  launches too.
+- The original agent's config-dir variable is no longer passed to the
+  agent you switched to.
+- `aide which` and `aide status` accept `--agent` to show what such a
+  launch would use.
+
 ### 🔧 Internal
 
 #### Multi-agent profile design

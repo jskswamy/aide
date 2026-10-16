@@ -162,7 +162,7 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 		if err != nil {
 			return fmt.Errorf("home dir: %w", err)
 		}
-		previewEnv, err := launcher.PreviewSessionEnv(cfg, cwd, contextName, homeDir)
+		previewEnv, err := launcher.PreviewSessionEnv(cfg, cwd, contextName, homeDir, explicitAgent)
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 	case isTTY:
 		agent = resolveStatuslineAgent(explicitAgent, isTTY, nil)
 		if homeDir, err := os.UserHomeDir(); err == nil && cfgErr == nil {
-			if previewEnv, err := launcher.PreviewSessionEnv(cfg, cwd, "", homeDir); err == nil {
+			if previewEnv, err := launcher.PreviewSessionEnv(cfg, cwd, "", homeDir, explicitAgent); err == nil {
 				env = previewEnv
 			}
 		}

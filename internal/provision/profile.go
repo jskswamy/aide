@@ -118,6 +118,30 @@ func InjectProfileEnv(ctx config.Context, env map[string]string, homeDir string)
 	return env, nil
 }
 
+// WithAgent returns ctx with its agent replaced, as `--agent` does.
+// When ctx selects a profile, the profile owns the config-dir choice,
+// so the previous agent's dir key is dropped from a copy of Env rather
+// than leaking into the new agent's environment.
+func WithAgent(ctx config.Context, agent string) config.Context {
+	prev := ctx.Agent
+	ctx.Agent = agent
+	if ctx.Profile == "" || prev == agent {
+		return ctx
+	}
+	prevKey := ProfileEnvKeyFor(prev)
+	if _, ok := ctx.Env[prevKey]; !ok || prevKey == ProfileEnvKeyFor(agent) {
+		return ctx
+	}
+	env := make(map[string]string, len(ctx.Env))
+	for k, v := range ctx.Env {
+		if k != prevKey {
+			env[k] = v
+		}
+	}
+	ctx.Env = env
+	return ctx
+}
+
 // Profile resolves the env var and absolute config-dir path for a
 // profile name. override is non-empty when the user supplied
 // profile_dir. Returns ErrProfileNotSupported (wrapped) when the

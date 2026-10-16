@@ -155,6 +155,8 @@ type Launcher struct {
 	Yolo                bool         // inject agent-specific skip-permissions flag
 	NoYolo              bool         // override: disable yolo mode (overrides config and --yolo)
 	Stderr              io.Writer    // override for testing (default: os.Stderr)
+	Stdin               io.Reader    // override for testing (default: os.Stdin)
+	StdinIsTTY          func() bool  // override for testing (default: checks os.Stdin)
 	IgnoreProjectConfig bool         // skip .aide.yaml entirely
 	UnrestrictedNetwork bool         // force unrestricted network, clear port rules (-N flag)
 	TrustStore          *trust.Store // override for testing (default: trust.DefaultStore())
@@ -245,7 +247,17 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving home directory: %w", err)
 	}
 
-	// 3b. Validate + inject per-profile env (CLAUDE_CONFIG_DIR etc.)
+	// 3b. If agentOverride is set, validate and override context's agent.
+	// This must precede profile injection so the profile directory is
+	// the final agent's, not the context's original one.
+	if agentOverride != "" {
+		if err := ValidateAgentOverride(cfg, agentOverride, l.lookPath()); err != nil {
+			return err
+		}
+		rc.Context = provision.WithAgent(rc.Context, agentOverride)
+	}
+
+	// 4. Validate + inject per-profile env (CLAUDE_CONFIG_DIR etc.)
 	// when ctx.Profile is set. Errors here are config errors and
 	// must abort the launch — profile mis-config silently launching
 	// against the wrong dir is the exact class of bug this feature
@@ -255,24 +267,6 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("context %q: %w", rc.Name, perr)
 	}
 	rc.Context.Env = mergedEnv
-
-	// 4. If agentOverride is set, validate and override context's agent.
-	// Accept: known agents, agents defined in config, or names resolvable on PATH.
-	if agentOverride != "" {
-		_, inAgentsMap := cfg.Agents[agentOverride]
-		if !IsKnownAgent(agentOverride) && !inAgentsMap {
-			lookPath := l.lookPath()
-			if _, err := lookPath(agentOverride); err != nil {
-				return fmt.Errorf(
-					"unknown agent %q (not in known agents, config, or PATH).\n\n"+
-						"Register it first: aide agents add %s --binary /path/to/binary\n"+
-						"Known agents: %s",
-					agentOverride, agentOverride, strings.Join(KnownAgents, ", "),
-				)
-			}
-		}
-		rc.Context.Agent = agentOverride
-	}
 
 	// 5. Look up agent binary
 	agentName := rc.Context.Agent
@@ -1045,8 +1039,14 @@ func (l *Launcher) handleEmptyStateLaunch(
 	cwd string,
 	remoteURL string,
 ) (*aidectx.ResolvedContext, *config.Config, error) {
-	tty := isStdinTTY()
-	rc, err := handleEmptyState(cfg, os.Stdin, os.Stderr, tty, l.EmptyStateActions)
+	isTTY, in := isStdinTTY, io.Reader(os.Stdin)
+	if l.StdinIsTTY != nil {
+		isTTY = l.StdinIsTTY
+	}
+	if l.Stdin != nil {
+		in = l.Stdin
+	}
+	rc, err := handleEmptyState(cfg, in, l.stderr(), isTTY(), l.EmptyStateActions)
 	if err == nil {
 		return rc, cfg, nil
 	}

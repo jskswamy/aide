@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/launcher/mocks"
+	"github.com/jskswamy/aide/internal/provision"
+	_ "github.com/jskswamy/aide/internal/provision/agents/claude"
+	_ "github.com/jskswamy/aide/internal/provision/agents/pi"
 	"github.com/jskswamy/aide/internal/secrets"
 )
 
@@ -396,6 +400,125 @@ default_context: default
 	innerBinary, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if innerBinary != "/usr/local/bin/codex" {
 		t.Errorf("expected binary /usr/local/bin/codex, got %s", innerBinary)
+	}
+}
+
+// launchCapturingEnv runs Launch with a mock execer and returns the env
+// handed to Exec.
+func launchCapturingEnv(t *testing.T, configYAML, agentOverride string) []string {
+	t.Helper()
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+	writeMinimalConfig(t, configDir, configYAML)
+
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, _ []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
+	l := &Launcher{
+		Execer:    mockExec,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			return "/usr/local/bin/" + file, nil
+		},
+	}
+	if err := l.Launch(cwd, agentOverride, nil, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+	return capturedEnv
+}
+
+func TestLauncher_AgentOverride_InjectsFinalAgentProfileDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	env := launchCapturingEnv(t, `
+agents:
+  claude:
+    binary: claude
+  pi:
+    binary: pi
+contexts:
+  work:
+    agent: claude
+    profile: work
+default_context: work
+`, "pi")
+
+	got, ok := envValue(env, "PI_CODING_AGENT_DIR")
+	if !ok {
+		t.Fatal("PI_CODING_AGENT_DIR not set for --agent pi with profile: work")
+	}
+	if want := filepath.Join(home, ".pi-work"); got != want {
+		t.Errorf("PI_CODING_AGENT_DIR = %q, want %q", got, want)
+	}
+	if v, ok := envValue(env, "CLAUDE_CONFIG_DIR"); ok {
+		t.Errorf("CLAUDE_CONFIG_DIR leaked into pi launch: %q", v)
+	}
+}
+
+func TestLauncher_AgentOverride_DropsOriginalAgentDirKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// env.CLAUDE_CONFIG_DIR beside profile: is a conflict for claude, but
+	// once --agent pi takes over it must not ride along into pi's env.
+	env := launchCapturingEnv(t, `
+agents:
+  claude:
+    binary: claude
+  pi:
+    binary: pi
+contexts:
+  work:
+    agent: claude
+    profile: work
+    env:
+      CLAUDE_CONFIG_DIR: /elsewhere
+default_context: work
+`, "pi")
+
+	if v, ok := envValue(env, "CLAUDE_CONFIG_DIR"); ok {
+		t.Errorf("CLAUDE_CONFIG_DIR leaked into pi launch: %q", v)
+	}
+	if _, ok := envValue(env, "PI_CODING_AGENT_DIR"); !ok {
+		t.Error("PI_CODING_AGENT_DIR not set")
+	}
+}
+
+func TestLauncher_AgentOverride_ValidatesProfileAgainstFinalAgent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// env.PI_CODING_AGENT_DIR is harmless for claude but conflicts with
+	// profile: once pi is the agent that runs.
+	configDir := t.TempDir()
+	writeMinimalConfig(t, configDir, `
+agents:
+  claude:
+    binary: claude
+  pi:
+    binary: pi
+contexts:
+  work:
+    agent: claude
+    profile: work
+    env:
+      PI_CODING_AGENT_DIR: /elsewhere
+default_context: work
+`)
+	l := &Launcher{
+		Execer:    mocks.NewMockExecer(gomock.NewController(t)),
+		ConfigDir: configDir,
+	}
+	err := l.Launch(t.TempDir(), "pi", nil, false, false, nil, nil)
+	if !errors.Is(err, provision.ErrProfileConflict) {
+		t.Fatalf("Launch error = %v, want ErrProfileConflict", err)
 	}
 }
 
@@ -1550,5 +1673,72 @@ func TestApplyTrustGate_FailClosedOnReadError(t *testing.T) {
 	// trustInfo should be nil (no disclosure of untrusted wants on read error)
 	if trustInfo != nil {
 		t.Errorf("trustInfo should be nil on read error, got %v", trustInfo)
+	}
+}
+
+// createContextAction is an EmptyStateActions whose Create rewrites the
+// config file, forcing Launch down the reload path.
+type createContextAction struct {
+	t         *testing.T
+	configDir string
+	yaml      string
+}
+
+func (a createContextAction) Bind(string) error { return nil }
+func (a createContextAction) Create(string) error {
+	writeMinimalConfig(a.t, a.configDir, a.yaml)
+	return nil
+}
+
+func TestLauncher_AgentOverride_AfterEmptyStateReload(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// No context matches and there is no default, so Launch prompts.
+	writeMinimalConfig(t, configDir, `
+contexts:
+  other:
+    agent: claude
+    match:
+      - path: /never/matches
+`)
+
+	ctrl := gomock.NewController(t)
+	var capturedEnv []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ string, _ []string, env []string) error {
+			capturedEnv = env
+			return nil
+		})
+	l := &Launcher{
+		Execer:     mockExec,
+		ConfigDir:  configDir,
+		Stderr:     &bytes.Buffer{},
+		Stdin:      strings.NewReader("2\n"),
+		StdinIsTTY: func() bool { return true },
+		LookPath: func(file string) (string, error) {
+			return "/usr/local/bin/" + file, nil
+		},
+		EmptyStateActions: createContextAction{t: t, configDir: configDir, yaml: `
+contexts:
+  work:
+    agent: claude
+    profile: work
+default_context: work
+`},
+	}
+	if err := l.Launch(cwd, "pi", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	if got, _ := envValue(capturedEnv, "PI_CODING_AGENT_DIR"); got != filepath.Join(home, ".pi-work") {
+		t.Errorf("PI_CODING_AGENT_DIR = %q, want %q", got, filepath.Join(home, ".pi-work"))
+	}
+	if v, ok := envValue(capturedEnv, "CLAUDE_CONFIG_DIR"); ok {
+		t.Errorf("CLAUDE_CONFIG_DIR leaked into pi launch: %q", v)
 	}
 }

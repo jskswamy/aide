@@ -205,3 +205,30 @@ func TestShippedDriversProfileSupport(t *testing.T) {
 		})
 	}
 }
+
+func TestWithAgent_DropsPreviousAgentDirKeyWithoutMutatingCaller(t *testing.T) {
+	env := map[string]string{"CLAUDE_CONFIG_DIR": "/elsewhere", "FOO": "bar"}
+	ctx := config.Context{Agent: "claude", Profile: "work", Env: env}
+
+	got := provision.WithAgent(ctx, "codex")
+
+	if got.Agent != "codex" {
+		t.Errorf("Agent = %q, want codex", got.Agent)
+	}
+	if _, ok := got.Env["CLAUDE_CONFIG_DIR"]; ok {
+		t.Error("CLAUDE_CONFIG_DIR kept after switching away from claude")
+	}
+	if got.Env["FOO"] != "bar" {
+		t.Errorf("FOO = %q, want bar", got.Env["FOO"])
+	}
+	if env["CLAUDE_CONFIG_DIR"] != "/elsewhere" {
+		t.Error("caller's env map was mutated")
+	}
+}
+
+func TestWithAgent_KeepsEnvWithoutProfile(t *testing.T) {
+	ctx := config.Context{Agent: "claude", Env: map[string]string{"CLAUDE_CONFIG_DIR": "/x"}}
+	if got := provision.WithAgent(ctx, "codex"); got.Env["CLAUDE_CONFIG_DIR"] != "/x" {
+		t.Error("explicit env dropped for a context without profile:")
+	}
+}

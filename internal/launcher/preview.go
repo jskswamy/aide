@@ -25,7 +25,9 @@ import (
 // extends/combines/variants, so AIDE_CAPS may differ from a real launch's
 // fully-resolved set in edge cases — good enough for a statusline preview,
 // not a byte-exact simulation.
-func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir string) (map[string]string, error) {
+//
+// A non-empty agent stands in for `--agent`, replacing the context's agent.
+func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent string) (map[string]string, error) {
 	var ctx config.Context
 	var name string
 	var trustInfo *ui.TrustInfo
@@ -48,6 +50,9 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir string) (ma
 		}
 		ctx = rc.Context
 		name = rc.Name
+	}
+	if agent != "" {
+		ctx.Agent = agent
 	}
 
 	sandboxCfg, sbDisabled, err := sandbox.ResolveSandboxRef(ctx.Sandbox, cfg.Sandboxes)

@@ -231,7 +231,7 @@ agent:
   scrubbed names (cloud variables, `scrub_env:` names) are passed on
   with a warning naming the variable (never its value).
 - cloud variables a capability grants through `env_allow` (the
-  built-in `aws` and `gcp` capabilities re-admit their variables).
+  built-in `aws`, `gcp` and `azure` capabilities re-admit their variables).
   Provider keys (including those in a cloud namespace, such as
   `AWS_BEARER_TOKEN_BEDROCK`), secret material and `scrub_env:` names
   are never re-admitted this way.

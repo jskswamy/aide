@@ -38,7 +38,14 @@ func init() {
 			Name:        "azure",
 			Description: "Azure CLI and credentials",
 			Writable:    []string{"~/.azure"},
-			EnvAllow:    []string{"AZURE_CONFIG_DIR", "AZURE_SUBSCRIPTION_ID"},
+			EnvAllow: []string{
+				"AZURE_CONFIG_DIR", "AZURE_SUBSCRIPTION_ID",
+				// Azure default credential chain (service principal,
+				// workload identity, user/password).
+				"AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_CLIENT_SECRET",
+				"AZURE_CLIENT_CERTIFICATE_PATH", "AZURE_CLIENT_CERTIFICATE_PASSWORD",
+				"AZURE_FEDERATED_TOKEN_FILE", "AZURE_USERNAME", "AZURE_PASSWORD",
+			},
 		},
 		"digitalocean": {
 			Name:        "digitalocean",

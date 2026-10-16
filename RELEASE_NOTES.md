@@ -1,3 +1,16 @@
+## Unreleased
+
+### 🔧 Internal
+
+#### Multi-agent profile design
+
+A draft design documents the proposed evolution from contexts to profiles,
+profile-isolated agent authentication, selected API credentials, repository
+preferences, worktree configuration inheritance, and Skillshare integration.
+
+- Design only; no runtime behavior or configuration format has changed.
+- See the 2026-10-16 profiles design spec in `docs/superpowers/specs/`.
+
 ## v2.3.0 (2026-10-15)
 
 Pi and OpenCode join the supported agents, the Linux sandbox now gives

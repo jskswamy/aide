@@ -218,7 +218,7 @@ Examples:
 	cmd.Flags().StringVar(&secretKey, "secret-key", "", "Key inside the secret store to reference")
 	cmd.Flags().StringVar(&secretStore, "secret-store", "", "Secret store name (defaults to context's bound store)")
 	cmd.Flags().BoolVar(&pick, "pick", false, "Interactively pick a key from the resolved store")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile (default: CWD-matched)")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	return cmd
@@ -337,7 +337,7 @@ func envListCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile (default: CWD-matched)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -388,7 +388,7 @@ func envRemoveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }

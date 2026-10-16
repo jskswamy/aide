@@ -46,7 +46,7 @@ Flags:
 			return runSync(cmd.OutOrStdout(), cmd.InOrStdin(), contextName, planOnly, yes, forceSecrets)
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Profile name (default: matched by CWD)")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&planOnly, "plan", false, "Show the plan and exit without applying")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Apply without prompting")

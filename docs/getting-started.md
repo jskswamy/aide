@@ -37,24 +37,29 @@ $ aide setup
 
 Setting up aide for /home/user/work/myproject
 
-Detected agents on PATH: claude, codex, copilot
-Agent (default: claude):
-Profile name (default: myproject):
-Match rule (path glob or remote URL)?
-  [1] This folder (/home/user/work/myproject)
-  [2] A folder path or pattern
-  [3] By git repository URL
-Select [1]:
+Step 1: Agent
+  Detected on PATH: claude, codex, copilot
+  Agent for this folder [claude]:
 
-Set up secrets? (y/N): y
-Age public key: age1abc...
-Secrets file name (e.g. personal): work
+Step 2: Secrets
+  No secrets files found.
+  Create one? (y/N): n
+  Skipping secrets.
 
-Created secrets/work.enc.yaml
-Created /home/user/.config/aide/config.yaml
+Step 4: Sandbox
+  Default policy protects SSH keys, cloud credentials, and browser profiles.
+  [1] Use defaults (recommended)
+  [2] Add extra denied paths
+  [3] Disable sandbox (not recommended)
+  Select [1]:
+  Using default sandbox policy.
+
+Created profile "myproject":
+  Agent:    claude
+  Match:    /home/user/work/myproject
 ```
 
-The wizard asks for: the agent binary to launch, a profile name (defaults to the directory name), a match rule (path or remote pattern), and optionally an age public key and secrets file name.
+The wizard asks for the agent to launch, an optional secrets file (and, when it has keys, which to wire as env vars) and a sandbox policy. It names the profile after the directory and binds this folder as its match rule. When profiles already exist it first offers to add this folder to one of them, or to inherit from one.
 
 ## Using Capabilities
 

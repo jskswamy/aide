@@ -32,7 +32,7 @@ state file so future syncs reconcile them.`,
 			return runAdopt(cmd.OutOrStdout(), cmd.InOrStdin(), contextName, yes)
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "Context name (default: matched by CWD)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Profile name (default: matched by CWD)")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&yes, "yes", false, "Adopt all unmanaged items without prompting")
 	return cmd

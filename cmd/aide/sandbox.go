@@ -75,7 +75,7 @@ func sandboxNetworkCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -120,7 +120,7 @@ func sandboxShowCmd() *cobra.Command {
 			// Resolve context
 			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 			if err != nil {
-				return fmt.Errorf("resolving context: %w", err)
+				return fmt.Errorf("resolving profile: %w", err)
 			}
 
 			if contextName != "" {
@@ -241,7 +241,7 @@ func sandboxShowCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "show policy for a specific context")
+	cmd.Flags().StringVar(&contextName, "context", "", "show policy for a specific profile")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
 	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
@@ -268,7 +268,7 @@ func sandboxTestCmd() *cobra.Command {
 			// Resolve context
 			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 			if err != nil {
-				return fmt.Errorf("resolving context: %w", err)
+				return fmt.Errorf("resolving profile: %w", err)
 			}
 
 			if contextName != "" {
@@ -350,7 +350,7 @@ func sandboxTestCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "generate the sandbox profile for a specific context")
+	cmd.Flags().StringVar(&contextName, "context", "", "generate the sandbox profile for a specific profile")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
 	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
@@ -718,7 +718,7 @@ func sandboxDenyCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&noAgentGrant, "no-agent-grant", false, "skip revoking this path in the agent's own permission store")
 	return cmd
@@ -772,7 +772,7 @@ func sandboxAllowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&write, "write", false, "add to writable_extra instead of readable_extra")
 	cmd.Flags().BoolVar(&noAgentGrant, "no-agent-grant", false, "skip granting this path in the agent's own permission store")
@@ -800,7 +800,7 @@ func sandboxResetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -848,7 +848,7 @@ func sandboxPortsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -932,7 +932,7 @@ func sandboxGuardsCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&contextName, "context", "", "target context name")
+	cmd.Flags().StringVar(&contextName, "context", "", "target profile name")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
 	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
@@ -1002,7 +1002,7 @@ func sandboxGuardCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }
@@ -1070,7 +1070,7 @@ func sandboxUnguardCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
 }

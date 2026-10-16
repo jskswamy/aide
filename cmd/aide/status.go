@@ -378,7 +378,7 @@ func useCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "use [agent-name]",
 		Short: "Bind current directory to an agent or profile",
-		Long: `Bind current directory (or a glob pattern) to an agent/context in global config.
+		Long: `Bind current directory (or a glob pattern) to an agent or profile in global config.
 
 Examples:
   aide use claude                       # Bind CWD to claude
@@ -529,7 +529,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&matchPattern, "match", "", "Glob pattern to match instead of CWD")
-	cmd.Flags().StringVar(&contextName, "context", "", "Add match rule to an existing context")
+	cmd.Flags().StringVar(&contextName, "context", "", "Add match rule to an existing profile")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().StringVar(&secretFlag, "secret", "", "Secret name (e.g. work)")
 	cmd.Flags().StringVar(&sandboxProfile, "sandbox", "", "Sandbox profile name (e.g. strict, none, default)")

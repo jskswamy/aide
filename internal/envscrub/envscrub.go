@@ -24,32 +24,22 @@ import (
 	"github.com/jskswamy/aide/internal/harness"
 )
 
-// providerNames are provider API keys, bearer/OAuth tokens and
-// federation/provider-selector variables. They are never re-admitted by
-// capability grants, even inside a cloud namespace such as AWS_*: a
-// provider credential reaches the agent only as an explicit selection.
-var providerNames = []string{
+// providerSecretNames are secret-bearing provider credentials: API
+// keys, bearer/OAuth tokens and auth-file/profile selectors. In a
+// profile they are set only through credentials: bindings.
+var providerSecretNames = []string{
 	// Anthropic / Claude Code
 	"ANTHROPIC_API_KEY",
 	"ANTHROPIC_AUTH_TOKEN",
 	"CLAUDE_CODE_OAUTH_TOKEN",
 	"ANTHROPIC_PROFILE",
-	"ANTHROPIC_FEDERATION_RULE_ID",
-	"ANTHROPIC_ORGANIZATION_ID",
 	"ANTHROPIC_IDENTITY_TOKEN_FILE",
-	"ANTHROPIC_SERVICE_ACCOUNT_ID",
-	"ANTHROPIC_WORKSPACE_ID",
 	"ANTHROPIC_FOUNDRY_API_KEY",
-	"ANTHROPIC_VERTEX_PROJECT_ID",
 	"AWS_BEARER_TOKEN_BEDROCK",
-	"CLAUDE_CODE_USE_BEDROCK",
-	"CLAUDE_CODE_USE_VERTEX",
-	"CLAUDE_CODE_USE_FOUNDRY",
 	// OpenAI / Codex
 	"CODEX_API_KEY",
 	"CODEX_ACCESS_TOKEN",
 	"OPENAI_API_KEY",
-	"OPENAI_BASE_URL",
 	"AZURE_OPENAI_API_KEY",
 	// Other model providers
 	"GEMINI_API_KEY",
@@ -59,6 +49,30 @@ var providerNames = []string{
 	"GROQ_API_KEY",
 	"XAI_API_KEY",
 	"DEEPSEEK_API_KEY",
+}
+
+// providerSelectorNames are non-secret provider selectors, endpoints and
+// federation identifiers. A profile may set them in env: as ordinary
+// configuration; an inherited shell value is still scrubbed.
+var providerSelectorNames = []string{
+	"ANTHROPIC_FEDERATION_RULE_ID",
+	"ANTHROPIC_ORGANIZATION_ID",
+	"ANTHROPIC_SERVICE_ACCOUNT_ID",
+	"ANTHROPIC_WORKSPACE_ID",
+	"ANTHROPIC_VERTEX_PROJECT_ID",
+	"CLAUDE_CODE_USE_BEDROCK",
+	"CLAUDE_CODE_USE_VERTEX",
+	"CLAUDE_CODE_USE_FOUNDRY",
+	"OPENAI_BASE_URL",
+	// Endpoints a key can be redirected to.
+	"ANTHROPIC_BASE_URL",
+	"ANTHROPIC_BEDROCK_BASE_URL",
+	"ANTHROPIC_VERTEX_BASE_URL",
+	"ANTHROPIC_FOUNDRY_BASE_URL",
+	"ANTHROPIC_FOUNDRY_RESOURCE",
+	"OPENAI_API_BASE",
+	"AZURE_OPENAI_ENDPOINT",
+	"GOOGLE_GEMINI_BASE_URL",
 }
 
 // cloudNames are ambient cloud credentials and selectors. A trailing
@@ -78,6 +92,35 @@ var cloudNames = []string{
 var secretMaterialNames = []string{
 	"SOPS_AGE_KEY",
 	"SOPS_AGE_KEY_FILE",
+}
+
+// IsProviderSecretName reports whether name is a secret-bearing
+// provider credential (API key, token, auth-file or profile selector).
+// Such names reach an agent only through an explicit credential
+// binding, never through a profile's general env:.
+func IsProviderSecretName(name string) bool {
+	return slices.Contains(providerSecretNames, name)
+}
+
+// IsProviderSelectorName reports whether name is a non-secret provider
+// selector or endpoint, which a profile may set in env:.
+func IsProviderSelectorName(name string) bool {
+	return slices.Contains(providerSelectorNames, name)
+}
+
+// IsProviderName reports whether name is a provider credential or a
+// provider selector/endpoint. Repository config may set neither.
+func IsProviderName(name string) bool {
+	return IsProviderSecretName(name) || IsProviderSelectorName(name)
+}
+
+// IsSecretMaterialName reports whether name is aide's own secret
+// material: any SOPS_AGE_KEY* variable.
+func IsSecretMaterialName(name string) bool {
+	if strings.HasPrefix(name, "SOPS_AGE_KEY") {
+		return true
+	}
+	return slices.Contains(secretMaterialNames, name)
 }
 
 // nameSet holds exact names and prefixes (entries ending in "*").
@@ -138,7 +181,7 @@ func SecretMaterial() Registry { return Registry{}.Pin(secretMaterialNames...) }
 // keys and tokens, federation and cloud selectors, and secret material.
 // Only the cloud names can be exempted with Permit.
 func Credentials() Registry {
-	return Registry{}.Pin(secretMaterialNames...).Pin(providerNames...).With(cloudNames...)
+	return Registry{}.Pin(secretMaterialNames...).Pin(providerSecretNames...).Pin(providerSelectorNames...).With(cloudNames...)
 }
 
 // ConfigDirRedirects returns, sorted, every harness config-dir redirect

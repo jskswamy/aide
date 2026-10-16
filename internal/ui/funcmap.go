@@ -27,6 +27,7 @@ func colorFuncMap() template.FuncMap {
 		// Data helpers (wrapping existing functions)
 		"agentDisplay":       agentDisplay,
 		"secretDisplay":      secretDisplay,
+		"credentialDisplay":  credentialDisplay,
 		"envItemLines":       envItemLines,
 		"hasTrust":           hasTrust,
 		"trustStatusLine":    trustStatusLine,

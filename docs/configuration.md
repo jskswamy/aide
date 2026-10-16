@@ -190,9 +190,10 @@ not `--clean-env` is set:
 - provider API keys and tokens (`ANTHROPIC_API_KEY`,
   `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`,
   `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `GEMINI_API_KEY`, ...) and
-  provider selectors (`OPENAI_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`,
-  `CLAUDE_CODE_USE_VERTEX`, `AWS_BEARER_TOKEN_BEDROCK`, Anthropic
-  federation variables, ...);
+  provider selectors and endpoints (`OPENAI_BASE_URL`,
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_BEDROCK_BASE_URL`,
+  `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`,
+  `AWS_BEARER_TOKEN_BEDROCK`, Anthropic federation variables, ...);
 - ambient cloud credentials: `AWS_*`, `CLOUDSDK_*`,
   `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
   `GCLOUD_PROJECT`;
@@ -207,9 +208,15 @@ not `--clean-env` is set:
 The full list lives in `internal/envscrub`. What still reaches the
 agent:
 
-- values the context sets in `env:`. A credential name there (for
-  example `OPENAI_API_KEY: "{{ .secrets.openai }}"`) is passed on but
-  prints a deprecation warning naming the variable (never its value).
+- the profile's selected `credentials:` bindings (see "Credential
+  bindings" below);
+- values the context sets in `env:`. A provider API key or token there
+  is no longer passed through `env:`: see "Legacy credentials in
+  `env:`" below. Provider selectors and endpoints
+  (`CLAUDE_CODE_USE_BEDROCK`, `ANTHROPIC_VERTEX_PROJECT_ID`,
+  `OPENAI_BASE_URL`, ...) are ordinary configuration there. Other
+  scrubbed names (cloud variables, `scrub_env:` names) are passed on
+  with a warning naming the variable (never its value).
 - cloud variables a capability grants through `env_allow` (the
   built-in `aws` and `gcp` capabilities re-admit their variables).
   Provider keys (including those in a cloud namespace, such as
@@ -228,6 +235,95 @@ controls whether the agent can read them. Provisioning subprocesses
 The no-config passthrough (`aide` with no `config.yaml`) only removes
 `SOPS_AGE_KEY` and `SOPS_AGE_KEY_FILE`; shell API keys still reach the
 agent there. Passthrough is not an isolation guarantee.
+
+Every env name a `credentials:` binding declares (in any profile) is
+also scrubbed from the inherited environment, so a custom key exported
+in your shell cannot reach an agent that did not select it.
+
+---
+
+## Credential bindings
+
+A profile names its provider API keys under `credentials:` and picks
+the ones a launch injects with `default_credentials:`. Each binding
+refers to one key in an age-encrypted secret store (the same stores
+`secret:` names; see `aide secrets`).
+
+```yaml
+profiles:
+  work:
+    agent: claude
+    credentials:
+      anthropic:
+        backend: age            # the only backend
+        store: work             # secret store, named like secret:
+        key: anthropic_api_key  # key inside that store
+      openrouter:
+        backend: age
+        store: work
+        key: openrouter_api_key
+        harnesses: [pi]         # optional: only for these agents
+      corp:                     # custom name: env: and harnesses: required
+        backend: age
+        store: corp
+        key: llm_token
+        env: [CORP_LLM_TOKEN]
+        harnesses: [pi]
+    default_credentials: [anthropic]
+```
+
+- Built-in names and the variable each sets: `anthropic`
+  (`ANTHROPIC_API_KEY`), `openai` (`OPENAI_API_KEY`), `openrouter`
+  (`OPENROUTER_API_KEY`), `codex` (`CODEX_API_KEY`), `gemini`
+  (`GEMINI_API_KEY`). `env:` on a built-in replaces its variable
+  names. A built-in without `harnesses:` is usable with every agent.
+- Any other name is custom and must list `env:` and `harnesses:`.
+  `harnesses:` matches the agent an `agents:` entry runs (`my-claude`
+  with `binary: claude` is `claude`).
+- A binding cannot set `PATH`, `HOME` and other process essentials,
+  `AIDE_*`, `SOPS_AGE_KEY*`, or an agent config-dir variable such as
+  `CLAUDE_CONFIG_DIR`.
+- Only the selected bindings are injected, and only their stores are
+  decrypted. Unselected bindings and other profiles' bindings never
+  are: a profile without a key does not borrow one from another
+  profile.
+- A launch stops before anything runs when a selected binding is not
+  defined in the profile, is restricted to other agents (for example
+  after `--agent`), or its store or key is missing.
+- Selected bindings are set after the profile's `env:`, so they win
+  over a general `env:` value; `never_allow_env:` still removes them.
+- The banner, `aide which` and `aide status` show binding names and
+  variable names only (`--format json`: `credentials` with `name` and
+  `env`, and `auth_mode`), never values.
+- Loading fails with `invalid credentials` when `backend:` is not
+  `age`, `store:` or `key:` is missing, a custom name lacks `env:` or
+  `harnesses:`, an agent in `harnesses:` is unknown, or
+  `default_credentials:` names an undefined binding.
+- `.aide.yaml` cannot declare `credentials:` or
+  `default_credentials:`, and a provider credential, selector or
+  endpoint in its `env:` stops the launch (an endpoint there could
+  redirect the profile's key to a host the repository chose).
+
+### Legacy credentials in `env:`
+
+A secret-bearing provider credential in a profile's `env:` (API keys
+and tokens such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`CODEX_API_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, or auth-file selectors such
+as `ANTHROPIC_IDENTITY_TOKEN_FILE`) is handled at launch, without
+changing your config file. Selectors and endpoints are not affected.
+
+- `ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"`, a single
+  secret reference with the profile's `secret:` store, becomes an
+  implicit binding that is selected by default, so the launch behaves
+  as before. aide prints a note once per run with the `credentials:`
+  block to replace it with.
+- Any other value (a literal key, a longer template, or a secret
+  reference without `secret:`) stops the launch with the
+  `credentials:` block to use instead. Values are never printed.
+
+`aide env set` refuses these names and shows the `credentials:` block
+to declare instead. It sets selectors and endpoints only with
+`--global`, since `.aide.yaml` cannot carry them.
 
 ---
 
@@ -255,6 +351,7 @@ also honors:
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
+- `credentials:` / `default_credentials:`: named provider API key bindings and the ones injected by default. See [Credential bindings](#credential-bindings).
 - `icon:` (string, optional): Unicode symbol displayed alongside the context name in the banner and `aide prompt` output.
 - `profile:` (string, optional): per-context agent profile name. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Contexts](contexts.md).
 - `profile_dir:` (string, optional): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path. Requires `profile:` to also be set.

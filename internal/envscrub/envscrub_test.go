@@ -158,3 +158,53 @@ func TestPermitNeverReadmitsCustomNames(t *testing.T) {
 		t.Error("Permit after Pin re-admitted a custom name")
 	}
 }
+
+func TestIsProviderSecretName(t *testing.T) {
+	for _, n := range []string{"ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "CODEX_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
+		"AWS_BEARER_TOKEN_BEDROCK", "ANTHROPIC_IDENTITY_TOKEN_FILE", "ANTHROPIC_PROFILE"} {
+		if !envscrub.IsProviderSecretName(n) {
+			t.Errorf("IsProviderSecretName(%q) = false, want true", n)
+		}
+	}
+	// Selectors and endpoints are configuration, not secrets.
+	for _, n := range []string{"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+		"ANTHROPIC_VERTEX_PROJECT_ID", "OPENAI_BASE_URL", "AWS_PROFILE", "SOPS_AGE_KEY", "FOO", ""} {
+		if envscrub.IsProviderSecretName(n) {
+			t.Errorf("IsProviderSecretName(%q) = true, want false", n)
+		}
+	}
+}
+
+func TestProviderSelectorsStayScrubbedAndPinned(t *testing.T) {
+	reg := envscrub.Credentials().Permit("CLAUDE_CODE_USE_BEDROCK", "OPENAI_BASE_URL", "AWS_BEARER_TOKEN_BEDROCK")
+	for _, n := range []string{"CLAUDE_CODE_USE_BEDROCK", "OPENAI_BASE_URL", "AWS_BEARER_TOKEN_BEDROCK"} {
+		if !reg.Matches(n) {
+			t.Errorf("%s is no longer scrubbed from the inherited env", n)
+		}
+	}
+	if !envscrub.IsProviderSelectorName("CLAUDE_CODE_USE_BEDROCK") || envscrub.IsProviderSelectorName("ANTHROPIC_API_KEY") {
+		t.Error("IsProviderSelectorName misclassifies")
+	}
+}
+
+func TestEndpointSelectorsAndProviderNames(t *testing.T) {
+	for _, n := range []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_BEDROCK_BASE_URL", "ANTHROPIC_VERTEX_BASE_URL", "OPENAI_API_BASE", "AZURE_OPENAI_ENDPOINT"} {
+		if !envscrub.IsProviderSelectorName(n) || envscrub.IsProviderSecretName(n) {
+			t.Errorf("%s should be a selector", n)
+		}
+		if !envscrub.Credentials().Matches(n) {
+			t.Errorf("%s is not scrubbed from the shell", n)
+		}
+	}
+	for _, n := range []string{"ANTHROPIC_API_KEY", "OPENAI_BASE_URL"} {
+		if !envscrub.IsProviderName(n) {
+			t.Errorf("IsProviderName(%q) = false", n)
+		}
+	}
+	if envscrub.IsProviderName("AWS_PROFILE") {
+		t.Error("IsProviderName(AWS_PROFILE) = true")
+	}
+	if !envscrub.IsSecretMaterialName("SOPS_AGE_KEY_CMD") {
+		t.Error("SOPS_AGE_KEY_CMD is not secret material")
+	}
+}

@@ -53,6 +53,7 @@ func setShellCredentials(t *testing.T) {
 		"SOPS_AGE_KEY_FILE":     "/shell/age.txt",
 		"AWS_SECRET_ACCESS_KEY": "aws-shell",
 		"AWS_PROFILE":           "prod",
+		"GOOGLE_CLOUD_PROJECT":  "shell-proj",
 	} {
 		t.Setenv(k, v)
 	}
@@ -71,11 +72,11 @@ contexts:
     agent: claude
     env:
       FOO: bar
-      OPENAI_API_KEY: from-context
+      GOOGLE_CLOUD_PROJECT: from-context
 default_context: work
 `, "")
 
-	for _, k := range []string{"ANTHROPIC_API_KEY", "CODEX_API_KEY", "SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE", "AWS_SECRET_ACCESS_KEY", "AWS_PROFILE"} {
+	for _, k := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE", "AWS_SECRET_ACCESS_KEY", "AWS_PROFILE"} {
 		if v, ok := envValue(env, k); ok {
 			t.Errorf("inherited %s reached the agent: %q", k, v)
 		}
@@ -83,8 +84,8 @@ default_context: work
 	if v, _ := envValue(env, "FOO"); v != "bar" {
 		t.Errorf("FOO = %q, want bar", v)
 	}
-	if v, _ := envValue(env, "OPENAI_API_KEY"); v != "from-context" {
-		t.Errorf("context env OPENAI_API_KEY = %q, want from-context", v)
+	if v, _ := envValue(env, "GOOGLE_CLOUD_PROJECT"); v != "from-context" {
+		t.Errorf("context env GOOGLE_CLOUD_PROJECT = %q, want from-context", v)
 	}
 	var warnings []string
 	for _, line := range strings.Split(stderr, "\n") {
@@ -93,8 +94,8 @@ default_context: work
 		}
 	}
 	warned := strings.Join(warnings, "\n")
-	if !strings.Contains(warned, "OPENAI_API_KEY") {
-		t.Errorf("no migration warning for env: OPENAI_API_KEY; stderr:\n%s", stderr)
+	if !strings.Contains(warned, "GOOGLE_CLOUD_PROJECT") {
+		t.Errorf("no migration warning for env: GOOGLE_CLOUD_PROJECT; stderr:\n%s", stderr)
 	}
 	if strings.Contains(warned, "from-context") {
 		t.Errorf("warning printed the credential value: %s", warned)
@@ -264,7 +265,7 @@ profiles:
   work:
     agent: claude
     env:
-      OPENAI_API_KEY: x
+      GOOGLE_CLOUD_PROJECT: x
 default_profile: work
 `, `profile "work"`},
 		"contexts": {`
@@ -275,7 +276,7 @@ contexts:
   work:
     agent: claude
     env:
-      OPENAI_API_KEY: x
+      GOOGLE_CLOUD_PROJECT: x
 default_context: work
 `, `profile (context) "work"`},
 	} {

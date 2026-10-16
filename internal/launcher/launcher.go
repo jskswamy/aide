@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -151,6 +152,11 @@ type Launcher struct {
 	IgnoreProjectConfig bool         // skip .aide.yaml entirely
 	UnrestrictedNetwork bool         // force unrestricted network, clear port rules (-N flag)
 	TrustStore          *trust.Store // override for testing (default: trust.DefaultStore())
+	// hintedLegacy records legacy credential hints already printed.
+	hintedLegacy map[string]bool
+	// Auth selects API credential injection (default) or native login,
+	// which injects no provider credentials.
+	Auth AuthMode
 
 	// Variant selection inputs (optional; zero value disables variant flow).
 	VariantOverrides map[string][]string
@@ -266,6 +272,29 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 
+	// 5a. Credentials: translate legacy env: credentials, check the
+	// selection against the final harness, and decrypt only the selected
+	// bindings' stores, all before any side effect: a missing binding,
+	// store or key stops the launch here.
+	profileCtx, legacyCreds, err := profileCredentials(cfg, rc)
+	if err != nil {
+		return err
+	}
+	rc.Context = profileCtx
+	credPlan, err := PlanCredentials(rc.Name, rc.Context, cfg.HarnessOf(rc.Context.Agent), rc.Context.DefaultCredentials, l.Auth)
+	if err != nil {
+		return err
+	}
+	l.printLegacyCredentialHints(profileLabel(cfg, rc.Name), legacyCreds)
+	if len(credPlan.Ignored) > 0 {
+		fmt.Fprintf(l.stderr(), "aide: note: native login: not injecting credentials %s\n", strings.Join(credPlan.Ignored, ", "))
+	}
+	loadStore := cachingLoader(loadSecretStore)
+	credEnv, err := ResolveCredentialEnv(credPlan, loadStore)
+	if err != nil {
+		return err
+	}
+
 	// 5b. Resolve effective auto-approve from config layers + CLI flags.
 	// Priority: --no-auto-approve/--no-yolo (highest) > --auto-approve/--yolo flag > project override > context > preferences
 	var prefYolo *bool
@@ -304,7 +333,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if rc.Context.Secret != "" {
 		secretsPath := config.ResolveSecretPath(rc.Context.Secret)
 		var err error
-		secretsMap, err = secrets.LoadSecretsMap(secretsPath)
+		secretsMap, err = loadStore(secretsPath)
 		if err != nil {
 			cleanup()
 			return err
@@ -331,7 +360,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		resolvedEnv[k] = homepath.Expand(v, homeDir)
 	}
 
-	warnLegacyCredentialEnv(l.stderr(), profileLabel(cfg, rc.Name), rc.Context.Env, cfg.ScrubEnv)
+	warnLegacyCredentialEnv(l.stderr(), profileLabel(cfg, rc.Name), rc.Context.Env, cfg.CredentialScrubNames())
 
 	// 11. Resolve binary to absolute path (syscall.Exec requires it).
 	// Must happen before sandbox wrapping since sandbox rewrites cmd.Path.
@@ -414,8 +443,10 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if cleanEnv {
 		baseEnv = filterEssentialEnv(baseEnv)
 	}
-	baseEnv = envscrub.ScrubCredentials(baseEnv, launchScrubRegistry(rc.Context, capOverrides.EnvAllow), cfg.ScrubEnv)
+	baseEnv = envscrub.ScrubCredentials(baseEnv, launchScrubRegistry(rc.Context, capOverrides.EnvAllow), cfg.CredentialScrubNames())
 	env := mergeEnv(baseEnv, resolvedEnv)
+	// Selected credential bindings go on top of the general env.
+	env = mergeEnv(env, credEnv)
 
 	// Filter never-allow env vars from the agent's environment.
 	// Combine top-level config and capability-resolved never-allow vars.
@@ -516,6 +547,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
 		bannerData := l.buildBannerData(rc, agentName, agentBinary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra, trustInfo)
 		bannerData.Yolo = effectiveYolo
+		SetBannerCredentials(bannerData, credPlan)
 		bannerData.AutoApprove = effectiveYolo
 		style := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
 		if err := ui.RenderBanner(l.stderr(), style, bannerData); err != nil {
@@ -530,7 +562,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// 14. Exec the agent binary
 	args := append([]string{binary}, extraArgs...)
 	if l.Diagnose {
-		dc := l.buildDiagContext(cfg, rc, diagSandbox)
+		dc := l.buildDiagContext(cfg, rc, credPlan, diagSandbox)
 		return l.runDiagnose(binary, args, env, sandboxExtraFiles, dc)
 	}
 	return l.Execer.Exec(binary, args, env)
@@ -544,7 +576,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 // secrets path in Launch only runs when a context references a secret.
 // If discovery fails we leave the field empty rather than failing the
 // whole launch — diagnose is supposed to be observational.
-func (l *Launcher) buildDiagContext(cfg *config.Config, rc *aidectx.ResolvedContext, sb diag.SandboxInfo) diagContext {
+func (l *Launcher) buildDiagContext(cfg *config.Config, rc *aidectx.ResolvedContext, plan CredentialPlan, sb diag.SandboxInfo) diagContext {
 	dc := diagContext{
 		Version:   l.Version,
 		Commit:    l.Commit,
@@ -558,6 +590,11 @@ func (l *Launcher) buildDiagContext(cfg *config.Config, rc *aidectx.ResolvedCont
 	}
 	if rc != nil && rc.Context.Secret != "" {
 		dc.SecretSourcePaths = []string{config.ResolveSecretPath(rc.Context.Secret)}
+	}
+	for _, p := range plan.storePaths() {
+		if !slices.Contains(dc.SecretSourcePaths, p) {
+			dc.SecretSourcePaths = append(dc.SecretSourcePaths, p)
+		}
 	}
 	if id, err := secrets.DiscoverAgeKey(); err == nil && id != nil {
 		dc.AgeKeySource = ageKeySourceLabel(id)
@@ -669,10 +706,12 @@ func launchScrubRegistry(ctx config.Context, permitted []string) envscrub.Regist
 }
 
 // warnLegacyCredentialEnv flags context env: entries whose names are
-// credentials. They still reach the agent; only names are printed,
-// never values.
+// scrubbed credentials (cloud and scrub_env: names; provider secrets
+// were already translated or refused, and provider selectors are
+// ordinary config). They still reach the agent; only names are
+// printed, never values.
 func warnLegacyCredentialEnv(w io.Writer, label string, env map[string]string, custom []string) {
-	names := envscrub.Credentials().With(custom...).MatchingNames(env)
+	names := slices.DeleteFunc(envscrub.Credentials().With(custom...).MatchingNames(env), envscrub.IsProviderSelectorName)
 	if len(names) == 0 {
 		return
 	}

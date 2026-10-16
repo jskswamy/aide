@@ -14,11 +14,8 @@ and `SOPS_AGE_KEY` / `SOPS_AGE_KEY_FILE` exported in your shell are
 removed before the context's `env:` is applied. If you relied on an API
 key exported in your shell, the agent now falls back to its own login.
 
-- The replacement is the upcoming `credentials:` bindings, which select
-  a key from your age-encrypted secrets per profile. Until then, a
-  profile's `env:` entry still passes a key through, with a
-  deprecation warning naming the profile and the variable (never its
-  value).
+- The replacement is `credentials:` bindings (see "Credential bindings
+  select provider API keys per profile" below).
 - The built-in `aws` and `gcp` capabilities re-admit the cloud
   variables they list in `env_allow`. Provider keys (including
   `AWS_BEARER_TOKEN_BEDROCK`) and your `scrub_env:` names are never
@@ -35,6 +32,87 @@ key exported in your shell, the agent now falls back to its own login.
 - aide matches names: unknown variable names, and files or keychains
   that cloud variables point at, are not scrubbed. See
   "Credential-clean environment" in `docs/configuration.md`.
+
+#### Provider keys in a profile's env: stop the launch unless translatable
+
+A secret-bearing provider credential in a profile's `env:` (API keys
+and tokens such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`CODEX_API_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, or auth-file selectors such
+as `ANTHROPIC_IDENTITY_TOKEN_FILE`) is no longer passed through as
+general environment. Non-secret provider selectors and endpoints
+(`CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`,
+`ANTHROPIC_VERTEX_PROJECT_ID`, `OPENAI_BASE_URL`, ...) stay ordinary
+`env:` configuration, with no warning; their shell copies are still
+scrubbed.
+
+- A value that is a single `{{ .secrets.<key> }}` reference, with the
+  profile's `secret:` store, keeps working: it becomes an implicit
+  credential binding selected by default, and aide prints a note once
+  per run with the `credentials:` block to replace it with. Your
+  config is never rewritten.
+- Any other value (a literal key, a longer template, a reference
+  without `secret:`) stops the launch with `provider credential in
+  env`, naming the variable (never its value) and showing the
+  `credentials:` block to use instead.
+- A provider credential, selector or endpoint in `.aide.yaml` `env:`
+  stops the launch: repository config cannot select provider
+  credentials or redirect them to another endpoint. Set selectors and
+  endpoints in your profile's `env:` instead.
+- Cloud and `scrub_env:` names in `env:` still pass through with the
+  existing warning.
+- `aide env set` refuses provider API keys and tokens, pointing to a
+  `credentials:` binding instead, and sets selectors and endpoints
+  only with `--global`; its help examples no longer use keys.
+- **Behavior change:** endpoint variables are now also scrubbed from
+  the shell for configured launches: `ANTHROPIC_BASE_URL`,
+  `ANTHROPIC_BEDROCK_BASE_URL`, `ANTHROPIC_VERTEX_BASE_URL`,
+  `ANTHROPIC_FOUNDRY_BASE_URL`, `ANTHROPIC_FOUNDRY_RESOURCE`,
+  `OPENAI_API_BASE`, `AZURE_OPENAI_ENDPOINT` and
+  `GOOGLE_GEMINI_BASE_URL`. If you export one (for example a proxy
+  URL), set it in the profile's `env:`.
+
+### ✨ New
+
+#### Credential bindings select provider API keys per profile
+
+A profile can name its provider API keys under `credentials:` and pick
+the ones to inject with `default_credentials:`:
+
+```yaml
+profiles:
+  work:
+    agent: claude
+    credentials:
+      anthropic: {backend: age, store: work, key: anthropic_api_key}
+    default_credentials: [anthropic]
+```
+
+- Each binding is one key in an age-encrypted secret store (named like
+  `secret:`). Built-in names set the conventional variable:
+  `anthropic`, `openai`, `openrouter`, `codex`, `gemini`. Other names
+  must declare `env:` and `harnesses:`; `harnesses:` optionally
+  restricts a built-in too.
+- Only selected bindings are injected and only their stores are
+  decrypted. Bindings resolve from the selected profile only.
+- The launch stops before anything runs when a selected binding is
+  undefined, does not allow the launching agent, or its store or key
+  is missing.
+- A config with a malformed binding fails to load with `invalid
+  credentials` (backend other than `age`, missing `store:`/`key:`,
+  custom name without `env:`/`harnesses:`, unknown agent, undefined
+  `default_credentials:` entry).
+- Env names a binding declares are scrubbed from the inherited shell
+  environment, like `scrub_env:`. A binding cannot set `PATH`, `HOME`
+  and other process essentials, `AIDE_*`, the age key variables, or an
+  agent config-dir variable such as `CLAUDE_CONFIG_DIR`.
+- `harnesses:` matches the agent an `agents:` entry runs, so an alias
+  such as `my-claude` with `binary: claude` counts as `claude`.
+- `aide --diagnose` lists the secret stores of the selected bindings
+  (paths only).
+- The launch banner, `aide which` and `aide status` list binding and
+  variable names, never values. `--format json` gains `credentials`
+  (`name`, `env`) and `auth_mode`; `aide status` also gains
+  `credential_error`.
 
 ### 🧰 CLI
 

@@ -285,3 +285,75 @@ func TestDiscoverProject_ForgedGitFileInheritsNothing(t *testing.T) {
 		t.Errorf("Warning = %q, want a diagnostic", d.Warning)
 	}
 }
+
+// symlinkOrSkip creates link -> target or skips the test.
+func symlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+}
+
+// A directory symlinked into another repository keeps the identity of
+// where the file really lives: its relative paths are anchored to the
+// checkout holding the file, never the repository the link sits in.
+func TestLoad_RelativePathsAnchorAtResolvedCheckout(t *testing.T) {
+	victim, _ := worktreeFixture(t)
+	base := filepath.Dir(victim)
+	if err := os.MkdirAll(filepath.Join(victim, "pkg"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(victim, "pkg", ".aide.yaml"), "sandbox:\n  writable_extra: [secrets]\n")
+	attacker := filepath.Join(base, "evil")
+	gitRun(t, base, "init", "-q", "evil")
+	symlinkOrSkip(t, filepath.Join(victim, "pkg"), filepath.Join(attacker, "sub"))
+
+	cfg, err := Load(writeGlobal(t), filepath.Join(attacker, "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.ProjectOverride.Sandbox.WritableExtra
+	if want := filepath.Join(victim, "secrets"); len(got) != 1 || got[0] != want {
+		t.Errorf("writable_extra = %v, want %s (anchored where the file lives, not in %s)", got, want, attacker)
+	}
+}
+
+// ../ in a file reached through a symlinked checkout root stays
+// relative to the real checkout.
+func TestLoad_ParentRelativePathDoesNotEscapeIntoLinkingRepo(t *testing.T) {
+	victim, _ := worktreeFixture(t)
+	base := filepath.Dir(victim)
+	writeFile(t, filepath.Join(victim, ".aide.yaml"), "sandbox:\n  readable_extra: [../x]\n")
+	attacker := filepath.Join(base, "evil")
+	gitRun(t, base, "init", "-q", "evil")
+	symlinkOrSkip(t, victim, filepath.Join(attacker, "sub"))
+
+	cfg, err := Load(writeGlobal(t), filepath.Join(attacker, "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.ProjectOverride.Sandbox.ReadableExtra
+	if want := filepath.Join(base, "x"); len(got) != 1 || got[0] != want {
+		t.Errorf("readable_extra = %v, want %s", got, want)
+	}
+}
+
+// When the checkout holding a file cannot be determined, a layer with
+// relative paths contributes nothing rather than guessing an anchor.
+func TestLoad_UnanchorableRelativePathsDropTheLayer(t *testing.T) {
+	dir := realTempDir(t)
+	writeFile(t, filepath.Join(dir, ".aide.yaml"), "sandbox:\n  writable_extra: [build]\n")
+	configDir := writeGlobal(t)
+	t.Setenv("PATH", "")
+
+	cfg, err := Load(configDir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProjectOverride != nil || len(cfg.ProjectLayers) != 0 {
+		t.Errorf("layer applied with an unknown anchor: %+v", cfg.ProjectOverride)
+	}
+	if len(cfg.ProjectConfigWarnings) != 1 || !strings.Contains(cfg.ProjectConfigWarnings[0], "relative") {
+		t.Errorf("warnings = %v", cfg.ProjectConfigWarnings)
+	}
+}

@@ -138,6 +138,15 @@ func trustTarget(args []string) string {
 	return config.ProjectConfigFileName
 }
 
+// symlinkNote says where a symlinked .aide.yaml points; trust applies
+// to the link's own location, never to its target.
+func symlinkNote(target string) string {
+	if target == "" {
+		return ""
+	}
+	return " (symlink to " + target + "; approved at the link's location only)"
+}
+
 func trustCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "trust [path]",
@@ -158,7 +167,7 @@ contents: changing the file withdraws the approval. A symlinked
 			if err := trust.DefaultStore().Trust(fc.Path, fc.Contents); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Trusted: %s\n", fc.Path)
+			fmt.Fprintf(cmd.OutOrStdout(), "Trusted: %s%s\n", fc.Path, symlinkNote(fc.Target))
 			return nil
 		},
 	}
@@ -198,7 +207,7 @@ func untrustCmd() *cobra.Command {
 			if err := trust.DefaultStore().Untrust(fc.Path, fc.Contents); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Untrusted: %s\n", fc.Path)
+			fmt.Fprintf(cmd.OutOrStdout(), "Untrusted: %s%s\n", fc.Path, symlinkNote(fc.Target))
 			return nil
 		},
 	}

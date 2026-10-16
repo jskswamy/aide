@@ -60,13 +60,34 @@ func (d ProjectDiscovery) LocalWritePath(startDir string) string {
 	}
 }
 
-// localRewriteRoot is the directory relative paths in the local file
-// are interpreted against.
-func (d ProjectDiscovery) localRewriteRoot() string {
-	if d.CheckoutRoot != "" {
-		return d.CheckoutRoot
+// anchorRoot is the directory relative paths in the .aide.yaml at path
+// are interpreted against: the root of the checkout containing the
+// file's symlink-resolved directory (the location trust keys on),
+// asked of git from there, never the lexical path aide reached it by.
+// Outside any repository it is that resolved directory. It fails when
+// neither can be determined.
+func anchorRoot(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
 	}
-	return filepath.Dir(d.LocalPath)
+	dir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return "", err
+	}
+	out, err := gitOutput(dir, "rev-parse", "--show-toplevel")
+	switch {
+	case err == nil:
+		top := strings.TrimSpace(out)
+		if resolved, rerr := filepath.EvalSymlinks(top); rerr == nil {
+			top = resolved
+		}
+		return top, nil
+	case strings.Contains(err.Error(), "not a git repository"):
+		return dir, nil
+	default:
+		return "", err
+	}
 }
 
 // DiscoverProject finds the .aide.yaml files that apply in startDir.
@@ -199,9 +220,11 @@ func mainUnavailable(worktree, path string, cause error) error {
 // environment so the answer is about dir.
 func gitOutput(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) // #nosec G204 -- fixed git subcommands
+	// Untranslated messages: callers match "not a git repository".
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
 	for _, kv := range os.Environ() {
 		if name, _, _ := strings.Cut(kv, "="); name == "GIT_DIR" || name == "GIT_WORK_TREE" ||
-			name == "GIT_COMMON_DIR" || name == "GIT_INDEX_FILE" {
+			name == "GIT_COMMON_DIR" || name == "GIT_INDEX_FILE" || name == "LC_ALL" {
 			continue
 		}
 		cmd.Env = append(cmd.Env, kv)

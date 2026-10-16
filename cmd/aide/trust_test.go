@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"github.com/jskswamy/aide/internal/testutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/trust"
@@ -52,5 +54,27 @@ func TestTrustCmdTakesPathAndResolvesSymlinks(t *testing.T) {
 	fc, _ = trust.DefaultStore().CheckFile(filepath.Join(link, ".aide.yaml"))
 	if fc.Status != trust.Denied {
 		t.Errorf("status after deny = %v, want denied", fc.Status)
+	}
+}
+
+func TestTrustCmdShowsSymlinkTarget(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	target := filepath.Join(testutil.CanonicalTempDir(t), ".aide.yaml")
+	if err := os.WriteFile(target, []byte("agent: claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), ".aide.yaml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	cmd := trustCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{link})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "symlink to "+target) {
+		t.Errorf("output %q does not show the target", out.String())
 	}
 }

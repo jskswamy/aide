@@ -414,7 +414,12 @@ Relative sandbox paths (`writable`, `readable`, `denied` and their
 `_extra` forms) are interpreted against the root of the checkout that
 contains the declaring `.aide.yaml`, not the directory you launch from
 (and not the file's own directory when the file sits in a
-subdirectory of the checkout).
+subdirectory of the checkout). The checkout is found from the file's
+real location (symlinks in its directory resolved), the same location
+trust is keyed on, so a repository that symlinks to another one's
+directory cannot re-anchor its paths. Outside git, paths anchor at the
+file's real directory; if git cannot be run there, a file with
+relative paths is not applied and aide prints a warning.
 Paths starting with `/`, `~`, `$` or `{{` are left as written.
 
 ### Trust gate

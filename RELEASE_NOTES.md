@@ -300,8 +300,11 @@ file, once. See "Linked git worktrees" in `docs/configuration.md`.
   and the remedies (restore it, `git worktree repair` / `git worktree
   prune`, or `--ignore-project-config`).
 - Relative sandbox paths in any `.aide.yaml` now mean paths under the
-  root of the checkout holding that file, not the directory you launch
-  from.
+  root of the checkout that really holds the file (its directory with
+  symlinks resolved, asked of git), not the directory you launch from
+  or a repository that merely links to it. If that checkout cannot be
+  determined, a file with relative paths is not applied and aide
+  warns.
 - `aide cap enable|disable` and `aide env set|remove` in a worktree
   edit the worktree's own `.aide.yaml` (created if absent); `--main`
   edits the main checkout's. Project edits now keep a file as written
@@ -316,9 +319,10 @@ directories symlink-resolved, so a checkout reached through a
 symlinked directory shares one approval) and its contents. A
 `.aide.yaml` that is itself a symlink needs its own approval at its
 own location: approving the file it points to never approves the
-link, and trust prompts show both the link and its target. Approvals
-recorded through a symlinked directory before this release are asked
-for again once.
+link, and trust prompts and `aide trust` show both the link and its
+target. Approvals recorded through a symlinked directory, and
+approvals of a `.aide.yaml` that is itself a symlink, made before this
+release are asked for again once.
 
 ### 🧰 CLI
 

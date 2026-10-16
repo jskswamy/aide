@@ -57,9 +57,11 @@ type Config struct {
 	// cannot be read (ErrMainCheckoutUnavailable). The trust gate
 	// reports it; launches stop unless project config is ignored.
 	ProjectConfigErr error `yaml:"-"`
-	// ProjectConfigWarning explains why a checkout that claims to be
-	// a linked worktree inherited nothing (see ProjectDiscovery.Warning).
-	ProjectConfigWarning string `yaml:"-"`
+	// ProjectConfigWarnings explain project files that were left out:
+	// a checkout not registered with the repository it names (see
+	// ProjectDiscovery.Warning), or a file whose relative paths have
+	// no determinable anchor.
+	ProjectConfigWarnings []string `yaml:"-"`
 
 	// ProfileSchema is true when the file declared profiles: /
 	// default_profile: rather than the legacy contexts: /

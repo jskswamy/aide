@@ -423,6 +423,14 @@ The path is shown absolute; the helper's command is never printed. The
 launch continues. See "Credential-clean environment" in
 `docs/configuration.md` for this limit and for `~/.config/anthropic`.
 
+#### aide sandbox test shows the profile's own config dir
+
+`aide sandbox test --profile <name>` printed the sandbox for the
+harness's profile-less default dir (on Linux `~/.config/aide/claude`)
+instead of the profile's own (`~/.claude-<name>`). It now injects the
+profile's config dir as a launch does, and stops with the launch's
+error when the profile's dir settings are invalid.
+
 #### remote_name in match rules now takes effect
 
 A remote rule with `remote_name: upstream` was documented but ignored:

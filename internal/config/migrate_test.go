@@ -214,3 +214,141 @@ func TestMigrateProfiles_MinimalConfigIsUnchanged(t *testing.T) {
 		t.Errorf("minimal config changed:\n%s", m.Output)
 	}
 }
+
+// YAML anchors, aliases and merge keys share nodes between profiles;
+// editing them would drop or change another profile's settings, so the
+// migration refuses instead (never silently, never a panic).
+func TestMigrateProfiles_RefusesSharedYAMLNodes(t *testing.T) {
+	cases := map[string]string{
+		"env alias": `contexts:
+  work:
+    agent: claude
+    secret: work
+    env: &shared
+      ANTHROPIC_API_KEY: "{{ .secrets.x }}"
+      EDITOR: vim
+  oss:
+    agent: claude
+    secret: work
+    env: *shared
+`,
+		"merge key": `base: &base
+  agent: claude
+  secret: work
+  env:
+    ANTHROPIC_API_KEY: "{{ .secrets.x }}"
+contexts:
+  work:
+    <<: *base
+`,
+		"entry alias": `contexts:
+  work: &w
+    agent: claude
+  oss: *w
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			_, err := MigrateProfiles([]byte(body), MigrateOptions{Home: home})
+			if !errors.Is(err, ErrSharedYAML) {
+				t.Fatalf("err = %v, want ErrSharedYAML", err)
+			}
+			if !strings.Contains(err.Error(), "by hand") {
+				t.Errorf("error lacks the remedy: %v", err)
+			}
+		})
+	}
+}
+
+// An already migrated file that uses anchors needs no edit, so it is
+// left alone rather than refused.
+func TestMigrateProfiles_AnchorsInMigratedFileWithNothingToDo(t *testing.T) {
+	body := `profiles:
+  work: &w
+    agent: claude
+    config_dir_name: work
+`
+	m := migrate(t, body)
+	if m.Changed {
+		t.Errorf("changed:\n%s", m.Output)
+	}
+}
+
+// Every migrated profile keeps its effective env: except the moved
+// credential entries.
+func TestMigrateProfiles_EffectiveEnvKept(t *testing.T) {
+	m := migrate(t, legacyMigrateConfig, "personal")
+	var before Config
+	if err := yaml.Unmarshal([]byte(legacyMigrateConfig), &before); err != nil {
+		t.Fatal(err)
+	}
+	after := decodeMigrated(t, m)
+	moved := map[string]bool{}
+	for _, c := range m.Credentials {
+		moved[c.Profile+"/"+c.EnvVar] = true
+	}
+	for name, ctx := range before.Contexts {
+		for k, v := range ctx.Env {
+			got, ok := after.Contexts[name].Env[k]
+			if moved[name+"/"+k] {
+				if ok {
+					t.Errorf("%s: moved %s still in env", name, k)
+				}
+				continue
+			}
+			if !ok || got != v {
+				t.Errorf("%s: env %s = %q (present %v), want %q", name, k, got, ok, v)
+			}
+		}
+		if len(after.Contexts[name].Env) > len(ctx.Env) {
+			t.Errorf("%s: env grew: %v", name, after.Contexts[name].Env)
+		}
+	}
+}
+
+func TestCheckEnvKept_RejectsDroppedVars(t *testing.T) {
+	var before Config
+	if err := yaml.Unmarshal([]byte("contexts:\n  work:\n    agent: claude\n    env: {EDITOR: vim, A: b}\n"), &before); err != nil {
+		t.Fatal(err)
+	}
+	err := checkEnvKept(&before, []byte("profiles:\n  work:\n    agent: claude\n    env: {A: b}\n"), nil)
+	if err == nil {
+		t.Fatal("dropped EDITOR not detected")
+	}
+	if err := checkEnvKept(&before, []byte("profiles:\n  work:\n    agent: claude\n    env: {A: b, EDITOR: vim}\n"), nil); err != nil {
+		t.Errorf("unchanged env rejected: %v", err)
+	}
+}
+
+func TestMigrateProfiles_CustomCredentialWithoutKnownHarness(t *testing.T) {
+	for name, agent := range map[string]string{"no agent": "", "unknown": "    agent: mytool\n"} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			body := "contexts:\n  work:\n" + agent + "    secret: work\n    env:\n      GROQ_API_KEY: \"{{ .secrets.groq }}\"\n"
+			_, err := MigrateProfiles([]byte(body), MigrateOptions{Home: home})
+			if !errors.Is(err, ErrLegacyCredentialEnv) || !strings.Contains(err.Error(), "not a known harness") {
+				t.Fatalf("err = %v", err)
+			}
+			if strings.Contains(err.Error(), `"."`) {
+				t.Errorf("confusing harness name in error: %v", err)
+			}
+		})
+	}
+}
+
+func TestMigrateProfiles_AdoptReportsOtherHarnessDirs(t *testing.T) {
+	m := migrate(t, legacyMigrateConfig, "personal")
+	gl := m.GlobalLogins[0]
+	var got []string
+	for _, o := range gl.OtherDirs {
+		got = append(got, o.Harness+"="+o.Dir)
+	}
+	joined := strings.Join(got, ",")
+	if !strings.Contains(joined, "codex=~/.codex-personal") || !strings.Contains(joined, "pi=~/.pi-personal") ||
+		strings.Contains(joined, "claude=") {
+		t.Errorf("OtherDirs = %v", got)
+	}
+}

@@ -10,22 +10,23 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/ui"
 )
 
-// KnownAgents is the list of agent binaries aide can detect on PATH.
-var KnownAgents = []string{
-	"aider",
-	"amp",
-	"claude",
-	"codex",
-	"copilot",
-	"cursor-agent",
-	"gemini",
-	"goose",
-	"opencode",
-	"pi",
+// KnownAgents is the list of agent binaries aide can detect on PATH:
+// every launchable harness, in name order.
+var KnownAgents = knownAgents()
+
+func knownAgents() []string {
+	var names []string
+	for _, d := range harness.All() {
+		if d.Launchable() {
+			names = append(names, d.Name)
+		}
+	}
+	return names
 }
 
 // LookPathFunc abstracts exec.LookPath for testability.
@@ -67,9 +68,12 @@ func ValidateAgentOverride(cfg *config.Config, agent string, lookPath LookPathFu
 // ScanAgents scans PATH for known agent binaries.
 func ScanAgents(lookPath LookPathFunc) *PassthroughResult {
 	found := make(map[string]string)
-	for _, name := range KnownAgents {
-		if path, err := lookPath(name); err == nil {
-			found[name] = path
+	for _, d := range harness.All() {
+		if !d.Launchable() {
+			continue
+		}
+		if path, err := lookPath(d.Binary); err == nil {
+			found[d.Name] = path
 		}
 	}
 	return &PassthroughResult{Found: found}

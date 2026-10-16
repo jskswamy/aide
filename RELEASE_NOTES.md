@@ -18,6 +18,26 @@ directory now belongs to the agent that actually launches
 - `aide which` and `aide status` accept `--agent` to show what such a
   launch would use.
 
+#### Clear error for profiles on agents without profile support
+
+Selecting a context with `profile:` for an agent that cannot isolate a
+profile now stops with `Profiles are not supported for harness
+"opencode"`. Before, OpenCode and Cursor reported a driver-level
+message, and Aider, Amp, Goose and unknown agents reported `no
+provisioner registered for agent`.
+
+- Profiles remain supported for Claude, Codex, Pi, Copilot and Gemini.
+
+#### aide sync works for cursor-agent contexts
+
+A context with `agent: cursor-agent` (the name `aide` discovers and
+sandboxes) failed `aide sync` and the plugin/hook commands with `no
+provisioner registered for agent "cursor-agent"`, because the Cursor
+driver was registered as `cursor`. Both names now reach the Cursor
+driver, so its hooks are synced, and the launch banner shows the
+Cursor icon for `cursor-agent`. Existing `agent: cursor` contexts and
+their sync state are unchanged.
+
 ### 🔧 Internal
 
 #### Multi-agent profile design

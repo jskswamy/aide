@@ -22,9 +22,10 @@ type Capabilities struct {
 	SourceShapes    []SourceShape
 	SupportsHooks   bool
 	// ProfileEnvKey is the env-var name the driver injects when a
-	// context declares profile:. Empty string signals the driver does
-	// not support profile (see DriverBase.Profile, which returns
-	// ErrProfileNotSupported in that case).
+	// context declares profile:. Shipped drivers copy it from the
+	// harness table (ProfileEnvKeyFor). Empty string signals the
+	// driver does not support profile (see DriverBase.Profile, which
+	// returns ErrProfileNotSupported in that case).
 	ProfileEnvKey string
 	// PluginsByInstallRef marks drivers whose agent reports and removes
 	// URL-direct plugins by install ref (OpenCode, Pi) rather than by a

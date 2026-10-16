@@ -1,6 +1,10 @@
 package provision
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/jskswamy/aide/internal/harness"
+)
 
 // provisionerRegistry holds all drivers registered via
 // RegisterProvisioner. Drivers register themselves in their package's
@@ -18,10 +22,23 @@ func RegisterProvisioner(p Provisioner) {
 }
 
 // ProvisionerFor returns the driver for the given agent name and a
-// boolean reporting whether it was found.
+// boolean reporting whether it was found. A harness name or alias
+// finds the driver registered under any of the harness's names, so
+// "cursor-agent" finds the "cursor" driver.
 func ProvisionerFor(agentName string) (Provisioner, bool) {
-	p, ok := provisionerRegistry[agentName]
-	return p, ok
+	if p, ok := provisionerRegistry[agentName]; ok {
+		return p, true
+	}
+	d, ok := harness.Lookup(agentName)
+	if !ok {
+		return nil, false
+	}
+	for _, name := range d.Names() {
+		if p, ok := provisionerRegistry[name]; ok {
+			return p, true
+		}
+	}
+	return nil, false
 }
 
 // AllProvisioners returns every registered driver, sorted by name for

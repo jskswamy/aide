@@ -32,7 +32,7 @@ func New(r provision.Runner) *Driver {
 			RequiresTTY:     false,
 			SourceShapes:    []provision.SourceShape{provision.ShapeMarketplace},
 			SupportsHooks:   true,
-			ProfileEnvKey:   "COPILOT_HOME",
+			ProfileEnvKey:   provision.ProfileEnvKeyFor(agentName),
 		}},
 		runner: r,
 	}

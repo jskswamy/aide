@@ -31,7 +31,7 @@ func New(r provision.Runner) *Driver {
 			RequiresTTY:     false,
 			SourceShapes:    []provision.SourceShape{provision.ShapeURLDirect},
 			SupportsHooks:   true,
-			ProfileEnvKey:   "GEMINI_HOME",
+			ProfileEnvKey:   provision.ProfileEnvKeyFor(agentName),
 			PluginNoun:      "extensions",
 		}},
 		runner: r,

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/jskswamy/aide/internal/harness"
 )
 
 // NetworkDisplayName converts a raw network mode to a user-friendly label.
@@ -112,15 +114,21 @@ func RemoveFromSlice(slice []string, item string) []string {
 	return result
 }
 
-// DefaultAgentIcons maps known agent binary names to their default display icons.
-var DefaultAgentIcons = map[string]string{
-	"claude":   "🤖",
-	"gemini":   "✨",
-	"codex":    "📝",
-	"copilot":  "✈️",
-	"cursor":   "🖱",
-	"opencode": "🔷",
-	"pi":       "🥧",
+// DefaultAgentIcons maps known agent names and their aliases to their
+// default display icons.
+var DefaultAgentIcons = defaultAgentIcons()
+
+func defaultAgentIcons() map[string]string {
+	icons := map[string]string{}
+	for _, d := range harness.All() {
+		if d.Icon == "" {
+			continue
+		}
+		for _, name := range d.Names() {
+			icons[name] = d.Icon
+		}
+	}
+	return icons
 }
 
 // BadgeForSource returns the emoji badge for a given env source classification

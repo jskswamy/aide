@@ -163,7 +163,8 @@ current profile (or `--profile <name>`). `aide project clear [--agent]
 [--credential]` removes them and `aide project show [--format json]`
 prints them.
 
-- Preferences are user-local, in `~/.local/state/aide/preferences.json`,
+- Preferences are user-local, in `preferences.json` in aide's state
+  directory (`$XDG_STATE_HOME/aide`, default `~/.local/state/aide`),
   keyed by profile and the normalized `origin` remote, so worktrees and
   clones share them under one profile but not across profiles. They
   hold names only, never secret values or models, and never change
@@ -186,6 +187,18 @@ prints them.
   `aide statusline --profile <name>` also shows the saved harness.
 
 ### 🧰 CLI
+
+#### aide's state files honor XDG_STATE_HOME
+
+Provisioning ownership (`managed.json`) and repository preferences
+(`preferences.json`) now share one state directory:
+`$XDG_STATE_HOME/aide` when `XDG_STATE_HOME` is set to an absolute
+path, else `~/.local/state/aide` as before.
+
+- A file that exists only at the old `~/.local/state/aide` location
+  keeps being used there, so setting `XDG_STATE_HOME` never loses
+  ownership records or saved preferences. Move the file into
+  `$XDG_STATE_HOME/aide` to switch.
 
 #### --agent now gets its own profile directory
 

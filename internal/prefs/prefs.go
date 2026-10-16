@@ -10,10 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/statedir"
 )
 
 // Version is the preferences file format this aide reads and writes.
@@ -106,9 +106,9 @@ func (f *File) Set(k Key, p Preference) {
 }
 
 // DefaultPath is the preferences file under aide's state directory,
-// beside provisioning state.
+// beside provisioning state (see statedir.Path).
 func DefaultPath(homeDir string) string {
-	return filepath.Join(homeDir, ".local", "state", "aide", "preferences.json")
+	return statedir.Path(homeDir, "preferences.json")
 }
 
 // Load reads the preferences file at path. A missing file is an empty

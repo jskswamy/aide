@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 
 	"gopkg.in/yaml.v3"
@@ -44,6 +45,17 @@ type GlobalLogin struct {
 	Harness string
 	Dir     string // ~-relative default dir
 	Adopted bool
+	// OtherDirs are the dirs the other profile-capable harnesses would
+	// use under this profile once adopted (config_dir_name: <profile>):
+	// fresh dirs needing their own login, instead of each harness's
+	// global login.
+	OtherDirs []OtherHarnessDir
+}
+
+// OtherHarnessDir is the native config dir one harness uses.
+type OtherHarnessDir struct {
+	Harness string
+	Dir     string
 }
 
 // Migration is the result of MigrateProfiles. Nothing is written.
@@ -87,24 +99,47 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	}
 	root := doc.Content[0]
 
-	if !cfg.ProfileSchema {
-		m.renameTopLevel(root)
-	}
-	section := mappingValue(root, keyProfiles)
 	names := sortedKeys(cfg.Contexts)
-
+	moves := map[string][]MigratedCredential{}
 	for _, name := range names {
 		ctx := cfg.Contexts[name]
 		_, legacy, err := TranslateLegacyCredentials(ctx, ctx.Secret)
 		if err != nil {
 			return nil, fmt.Errorf("profiles.%s: %w", name, err)
 		}
-		entry := mappingValue(section, name)
 		for _, l := range legacy {
 			mc := MigratedCredential{Profile: name, Name: l.Name, EnvVar: l.EnvVar, Store: l.Binding.Store, Key: l.Binding.Key}
 			if !IsBuiltinCredential(l.Name) {
-				mc.Harnesses = []string{cfg.HarnessOf(ctx.Agent)}
+				h := cfg.HarnessOf(ctx.Agent)
+				if _, ok := harness.Lookup(h); !ok {
+					return nil, fmt.Errorf("%w: profiles.%s: env: %s is a custom provider credential, and its binding must name the "+
+						"harnesses it is for, but the profile's agent %q is not a known harness; move it to credentials: by hand "+
+						"with harnesses: [<harness>] and re-run", ErrLegacyCredentialEnv, name, l.EnvVar, ctx.Agent)
+				}
+				mc.Harnesses = []string{h}
 			}
+			moves[name] = append(moves[name], mc)
+		}
+	}
+	if cfg.ProfileSchema && len(moves) == 0 && len(opts.Adopt) == 0 {
+		m.GlobalLogins = globalLogins(&cfg, names, opts.Home)
+		return m, nil
+	}
+	sectionKey := keyProfiles
+	if !cfg.ProfileSchema {
+		sectionKey = keyContexts
+	}
+	if err := refuseSharedNodes(mappingValue(root, sectionKey), sectionKey); err != nil {
+		return nil, err
+	}
+
+	if !cfg.ProfileSchema {
+		m.renameTopLevel(root)
+	}
+	section := mappingValue(root, keyProfiles)
+	for _, name := range names {
+		entry := mappingValue(section, name)
+		for _, mc := range moves[name] {
 			if err := moveCredential(entry, mc); err != nil {
 				return nil, fmt.Errorf("profiles.%s: %w", name, err)
 			}
@@ -112,7 +147,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 		}
 	}
 
-	m.GlobalLogins = globalLogins(&cfg, names)
+	m.GlobalLogins = globalLogins(&cfg, names, opts.Home)
 	adopted, err := m.adopt(section, opts.Adopt)
 	if err != nil {
 		return nil, err
@@ -131,6 +166,9 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 		return nil, fmt.Errorf("encoding migrated config: %w", err)
 	}
 	if err := validateMigrated(buf.Bytes(), opts.Home); err != nil {
+		return nil, err
+	}
+	if err := checkEnvKept(&cfg, buf.Bytes(), moves); err != nil {
 		return nil, err
 	}
 	m.Output = buf.Bytes()
@@ -167,6 +205,9 @@ func (m *Migration) renameTopLevel(root *yaml.Node) {
 // selection.
 func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
 	env := mappingValue(entry, "env")
+	if env == nil || mappingValue(env, mc.EnvVar) == nil {
+		return fmt.Errorf("env: %s not found in the profile's own env: map; move it to credentials: by hand", mc.EnvVar)
+	}
 	deleteKey(env, mc.EnvVar)
 	if len(env.Content) == 0 {
 		deleteKey(entry, "env")
@@ -189,7 +230,7 @@ func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
 
 // globalLogins lists the profiles whose harness supports profiles but
 // which select no native config dir.
-func globalLogins(cfg *Config, names []string) []GlobalLogin {
+func globalLogins(cfg *Config, names []string, home string) []GlobalLogin {
 	var out []GlobalLogin
 	for _, name := range names {
 		ctx := cfg.Contexts[name]
@@ -201,7 +242,14 @@ func globalLogins(cfg *Config, names []string) []GlobalLogin {
 		if !ok || !d.SupportsProfiles() || d.DefaultConfigDir == "" {
 			continue
 		}
-		out = append(out, GlobalLogin{Profile: name, Harness: d.Name, Dir: "~/" + d.DefaultConfigDir})
+		gl := GlobalLogin{Profile: name, Harness: d.Name, Dir: "~/" + d.DefaultConfigDir}
+		for _, other := range profileHarnesses() {
+			if other != d.Name {
+				gl.OtherDirs = append(gl.OtherDirs, OtherHarnessDir{Harness: other,
+					Dir: tildePath(harness.ProfileConfigDir(other, name, "", home), home)})
+			}
+		}
+		out = append(out, gl)
 	}
 	return out
 }
@@ -290,4 +338,79 @@ func deleteKey(mapping *yaml.Node, key string) {
 
 func scalar(v string) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v}
+}
+
+// refuseSharedNodes stops a migration over a profiles/contexts section
+// that uses YAML anchors, aliases or merge keys: editing a shared node
+// would change (or drop) other profiles' settings with it.
+func refuseSharedNodes(section *yaml.Node, key string) error {
+	if section == nil {
+		return nil
+	}
+	var where string
+	var walk func(n *yaml.Node, path string)
+	walk = func(n *yaml.Node, path string) {
+		if where != "" || n == nil {
+			return
+		}
+		if n.Kind == yaml.AliasNode || n.Anchor != "" {
+			where = path
+			return
+		}
+		if n.Kind == yaml.MappingNode {
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				k := n.Content[i].Value
+				if k == "<<" {
+					where = path
+					return
+				}
+				walk(n.Content[i+1], path+"."+k)
+			}
+			return
+		}
+		for _, c := range n.Content {
+			walk(c, path)
+		}
+	}
+	walk(section, key)
+	if where == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %s uses a YAML anchor, alias or merge key (&name, *name or <<:); "+
+		"migrating would edit settings shared with other profiles. Expand it into plain values by hand and re-run",
+		ErrSharedYAML, where)
+}
+
+// ErrSharedYAML reports a config migration cannot edit safely because
+// profile settings are shared through YAML anchors or aliases.
+var ErrSharedYAML = errors.New("cannot migrate shared YAML nodes")
+
+// checkEnvKept fails unless every profile's effective env: in the
+// migrated text equals the input's minus the credentials moved out of
+// it: a safety net against any edit dropping unrelated variables.
+func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCredential) error {
+	var after Config
+	if err := yaml.Unmarshal(migrated, &after); err != nil {
+		return fmt.Errorf("migrated config does not parse: %w", err)
+	}
+	if !slices.Equal(sortedKeys(before.Contexts), sortedKeys(after.Contexts)) {
+		return errors.New("migration changed the set of profiles; nothing written")
+	}
+	for name, ctx := range before.Contexts {
+		want := maps.Clone(ctx.Env)
+		for _, mc := range moves[name] {
+			delete(want, mc.EnvVar)
+		}
+		if len(want) == 0 {
+			want = nil
+		}
+		got := after.Contexts[name].Env
+		if len(got) == 0 {
+			got = nil
+		}
+		if !maps.Equal(want, got) {
+			return fmt.Errorf("migration would change profiles.%s env: beyond the moved credentials; nothing written", name)
+		}
+	}
+	return nil
 }

@@ -56,6 +56,7 @@ func envSetCmd() *cobra.Command {
 		pick        bool
 		contextName string
 		global      bool
+		main        bool
 	)
 
 	cmd := &cobra.Command{
@@ -104,6 +105,9 @@ Examples:
 			if err := validateContextScope(global, contextName); err != nil {
 				return err
 			}
+			if err := validateMainScope(global, main); err != nil {
+				return err
+			}
 			if useSecret && !global {
 				return fmt.Errorf("secret references require --global (secrets are context-scoped)")
 			}
@@ -111,7 +115,7 @@ Examples:
 			// Project path: literal KEY VALUE only.
 			if !global {
 				value := args[1]
-				_, po, poPath, err := resolveProjectOverrideForMutation()
+				_, po, poPath, err := resolveProjectOverrideForMutation(main)
 				if err != nil {
 					return err
 				}
@@ -221,6 +225,7 @@ Examples:
 	cmd.Flags().StringVar(&contextName, "context", "", "Target profile (default: CWD-matched)")
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	addMainFlag(cmd, &main)
 	return cmd
 }
 
@@ -344,7 +349,7 @@ func envListCmd() *cobra.Command {
 
 func envRemoveCmd() *cobra.Command {
 	var contextName string
-	var global bool
+	var global, main bool
 
 	cmd := &cobra.Command{
 		Use:          "remove KEY",
@@ -354,6 +359,9 @@ func envRemoveCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 			if err := validateContextScope(global, contextName); err != nil {
+				return err
+			}
+			if err := validateMainScope(global, main); err != nil {
 				return err
 			}
 			if global {
@@ -372,7 +380,7 @@ func envRemoveCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from context %q (global)\n", key, ctxName)
 				return nil
 			}
-			_, po, poPath, err := resolveProjectOverrideForMutation()
+			_, po, poPath, err := resolveProjectOverrideForMutation(main)
 			if err != nil {
 				return err
 			}
@@ -388,6 +396,7 @@ func envRemoveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	addMainFlag(cmd, &main)
 	cmd.Flags().StringVar(&contextName, "context", "", "Target profile (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd

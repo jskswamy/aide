@@ -672,7 +672,7 @@ func capEditCmd() *cobra.Command {
 
 func capEnableCmd() *cobra.Command {
 	var contextName string
-	var global bool
+	var global, main bool
 	cmd := &cobra.Command{
 		Use:               "enable <capability>[,capability...]",
 		Short:             "Enable capabilities (project-level by default)",
@@ -683,6 +683,9 @@ func capEnableCmd() *cobra.Command {
 			capNames := display.SplitCommaList(args[0])
 
 			if err := validateContextScope(global, contextName); err != nil {
+				return err
+			}
+			if err := validateMainScope(global, main); err != nil {
 				return err
 			}
 
@@ -711,7 +714,7 @@ func capEnableCmd() *cobra.Command {
 			}
 
 			// Project path: write to .aide.yaml
-			cfg, po, poPath, err := resolveProjectOverrideForMutation()
+			cfg, po, poPath, err := resolveProjectOverrideForMutation(main)
 			if err != nil {
 				return err
 			}
@@ -737,6 +740,7 @@ func capEnableCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	addMainFlag(cmd, &main)
 	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd
@@ -744,7 +748,7 @@ func capEnableCmd() *cobra.Command {
 
 func capDisableCmd() *cobra.Command {
 	var contextName string
-	var global bool
+	var global, main bool
 	cmd := &cobra.Command{
 		Use:               "disable <capability>[,capability...]",
 		Short:             "Disable capabilities (project-level by default)",
@@ -755,6 +759,9 @@ func capDisableCmd() *cobra.Command {
 			capNames := display.SplitCommaList(args[0])
 
 			if err := validateContextScope(global, contextName); err != nil {
+				return err
+			}
+			if err := validateMainScope(global, main); err != nil {
 				return err
 			}
 
@@ -776,7 +783,7 @@ func capDisableCmd() *cobra.Command {
 			}
 
 			// Project path
-			_, po, poPath, err := resolveProjectOverrideForMutation()
+			_, po, poPath, err := resolveProjectOverrideForMutation(main)
 			if err != nil {
 				return err
 			}
@@ -798,6 +805,7 @@ func capDisableCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
+	addMainFlag(cmd, &main)
 	cmd.Flags().StringVar(&contextName, "context", "", "Target profile name (requires --global)")
 	addProfileFlag(cmd, &contextName)
 	return cmd

@@ -11,7 +11,6 @@ import (
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/prefs"
-	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -51,6 +50,12 @@ func promptCmd() *cobra.Command {
 			cwd := env.CWD()
 			cfg := env.Config()
 
+			// The same per-file trust gate a launch applies: untrusted
+			// files neither shape the prompt nor go unflagged.
+			gate, err := launcher.GateProjectConfig(cfg)
+			if err != nil {
+				return err
+			}
 			remotes := aidectx.GitRemotes(cwd)
 			resolved, err := aidectx.Resolve(cfg, cwd, remotes)
 			if err != nil {
@@ -65,7 +70,7 @@ func promptCmd() *cobra.Command {
 				}
 			}
 
-			trustStatus := promptTrustStatus(cfg)
+			trustStatus := gate.Status()
 			sbDisabled := resolved.Context.Sandbox != nil && resolved.Context.Sandbox.Disabled
 
 			ctxIcon := resolved.Context.Icon
@@ -127,27 +132,4 @@ func formatPromptLine(ctx, ctxIcon, agentIcon string, sbDisabled bool, trustStat
 		sep = ""
 	}
 	return strings.Join(parts, sep)
-}
-
-// promptTrustStatus returns the trust status of the current project configuration.
-// Returns:
-//   - "trusted" if no project override is configured
-//   - "denied" if the project override file is denied
-//   - "untrusted" if the project override file is untrusted
-//   - "trusted" otherwise
-func promptTrustStatus(cfg *config.Config) string {
-	// No project override configured means trusted by default
-	if cfg.ProjectConfigPath == "" || cfg.ProjectOverride == nil {
-		return "trusted"
-	}
-
-	// Read the project override file and check its trust status
-	contents, err := os.ReadFile(cfg.ProjectConfigPath)
-	if err != nil {
-		// If we can't read the file, treat as untrusted
-		return "untrusted"
-	}
-
-	status := trust.DefaultStore().Check(cfg.ProjectConfigPath, contents)
-	return status.String()
 }

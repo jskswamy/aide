@@ -331,6 +331,7 @@ Adds one or more capabilities to the current profile (or globally with `--global
 |------|-------------|
 | `--global` | Apply to user-level config instead of the project |
 | `--profile <name>` | Target a specific profile name (requires `--global`) |
+| `--main` | In a linked git worktree, edit the main checkout's `.aide.yaml` instead of the worktree's own |
 
 ```
 aide cap enable docker
@@ -349,6 +350,7 @@ Removes one or more capabilities from the current profile (or globally with `--g
 |------|-------------|
 | `--global` | Apply to user-level config instead of the project |
 | `--profile <name>` | Target a specific profile name (requires `--global`) |
+| `--main` | In a linked git worktree, edit the main checkout's `.aide.yaml` instead of the worktree's own |
 
 ```
 aide cap disable docker
@@ -596,6 +598,8 @@ generate a template referencing a key in the profile's bound secret store.
 | `--secret-store <name>` | Override which secret store to read from (without changing the profile binding) |
 | `--pick` | Interactively pick a key from the resolved store |
 | `--profile <name>` | Target profile (default: CWD-matched) |
+| `--global` | Apply to user-level config instead of the project |
+| `--main` | In a linked git worktree, edit the main checkout's `.aide.yaml` instead of the worktree's own |
 
 ```
 aide env set ANTHROPIC_API_KEY --secret-key api_key --profile work --global
@@ -629,6 +633,8 @@ Removes an env var from a profile.
 | Flag | Description |
 |------|-------------|
 | `--profile <name>` | Target profile (default: CWD-matched) |
+| `--global` | Apply to user-level config instead of the project |
+| `--main` | In a linked git worktree, edit the main checkout's `.aide.yaml` instead of the worktree's own |
 
 ```
 aide env remove ANTHROPIC_API_KEY
@@ -714,13 +720,14 @@ aide secrets rotate personal --add-key age1new... --remove-key age1old...
 ## aide trust
 
 ```
-aide trust
+aide trust [path]
 ```
 
-Trusts the `.aide.yaml` in the current directory. The file's content hash is recorded so that any external modification resets trust.
+Trusts a `.aide.yaml` (default: the one in the current directory). The approval is keyed on the symlink-resolved path and the file's contents, so any modification resets trust. In a linked git worktree the main checkout's file is approved separately; pass its path.
 
 ```
 aide trust
+aide trust ~/src/project/.aide.yaml
 ```
 
 ---
@@ -728,10 +735,10 @@ aide trust
 ## aide deny
 
 ```
-aide deny
+aide deny [path]
 ```
 
-Permanently blocks the `.aide.yaml` in the current directory from being applied, regardless of content changes.
+Permanently blocks a `.aide.yaml` (default: the one in the current directory) from being applied, regardless of content changes. `aide trust` on the file lifts the block.
 
 ```
 aide deny
@@ -742,10 +749,10 @@ aide deny
 ## aide untrust
 
 ```
-aide untrust
+aide untrust [path]
 ```
 
-Removes trust for the `.aide.yaml` in the current directory without blocking it. The next launch will show the untrusted warning.
+Removes trust for a `.aide.yaml` (default: the one in the current directory) without blocking it. The next launch will show the untrusted warning.
 
 ```
 aide untrust

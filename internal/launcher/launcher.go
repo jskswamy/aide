@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -229,12 +228,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// 1b. Trust-gate: check .aide.yaml before applying ProjectOverride.
-	var trustInfo *ui.TrustInfo
+	// 1b. Trust-gate: judge each .aide.yaml before applying any.
+	var gate ProjectGate
 	if l.IgnoreProjectConfig {
-		cfg.ProjectOverride = nil
-	} else if cfg.ProjectOverride != nil && cfg.ProjectConfigPath != "" {
-		trustInfo = l.applyTrustGate(cfg)
+		cfg.DropProjectConfig()
+	} else if gate, err = l.applyTrustGate(cfg); err != nil {
+		return err
 	}
 
 	// 2. Detect git remote + project root
@@ -583,7 +582,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefs.InfoDetail = "detailed"
 	}
 	if prefs.ShowInfo != nil && *prefs.ShowInfo {
-		bannerData := l.buildBannerData(rc, agentName, agentBinary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra, trustInfo)
+		bannerData := l.buildBannerData(rc, agentName, agentBinary, resolvedEnv, pathWarnings, sbDisabled, sandboxCfg, projectRoot, rtDir.Path(), homeDir, cwd, &prefs, resolvedCapSet, capOverrides, capProvenance, contextCapSet, withoutCaps, cfg, configWritableExtra, configReadableExtra, configDeniedExtra, gate)
 		bannerData.Yolo = effectiveYolo
 		SetBannerCredentials(bannerData, credPlan)
 		SetBannerSelection(bannerData, sel)
@@ -596,7 +595,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// Inject AIDE_* session vars for statusline and subprocesses.
-	env = injectAideSessionEnv(env, sbDisabled, sandboxCfg, effectiveYolo, resolvedCapSet, rc.Name, agentName, trustInfo)
+	env = injectAideSessionEnv(env, sbDisabled, sandboxCfg, effectiveYolo, resolvedCapSet, rc.Name, agentName, gate.Primary())
 
 	// 14. Exec the agent binary
 	args := append([]string{binary}, extraArgs...)
@@ -622,9 +621,16 @@ func (l *Launcher) buildDiagContext(cfg *config.Config, rc *aidectx.ResolvedCont
 		BuildDate: l.BuildDate,
 		Sandbox:   sb,
 	}
-	if cfg != nil && cfg.ProjectConfigPath != "" {
+	switch {
+	case cfg != nil && len(cfg.ProjectLayers) > 0:
+		paths := make([]string, len(cfg.ProjectLayers))
+		for i, layer := range cfg.ProjectLayers {
+			paths[i] = layer.Path
+		}
+		dc.ResolvedConfig = strings.Join(paths, " + ")
+	case cfg != nil && cfg.ProjectConfigPath != "":
 		dc.ResolvedConfig = cfg.ProjectConfigPath
-	} else {
+	default:
 		dc.ResolvedConfig = l.configDir() + " (no project config)"
 	}
 	if rc != nil && rc.Context.Secret != "" {
@@ -849,7 +855,7 @@ func (l *Launcher) buildBannerData(
 	withoutCaps []string,
 	cfg *config.Config,
 	configWritableExtra, configReadableExtra, configDeniedExtra []string,
-	trustInfo *ui.TrustInfo,
+	gate ProjectGate,
 ) *ui.BannerData {
 	data := &ui.BannerData{
 		ContextName: rc.Name,
@@ -858,8 +864,8 @@ func (l *Launcher) buildBannerData(
 		AgentPath:   binary,
 		SecretName:  rc.Context.Secret,
 		Warnings:    pathWarnings,
-		Trust:       trustInfo,
 	}
+	gate.SetBanner(data)
 
 	// Populate icons
 	data.ContextIcon = rc.Context.Icon
@@ -1072,83 +1078,6 @@ func (l *Launcher) trustStore() *trust.Store {
 	return trust.DefaultStore()
 }
 
-// GateProjectConfig applies the launch's .aide.yaml trust gate to cfg
-// with the default trust store: an untrusted or denied file
-// contributes nothing. Previews (which, status, statusline, aide
-// project) call it so they agree with what a launch would do.
-func GateProjectConfig(cfg *config.Config) *ui.TrustInfo {
-	if cfg.ProjectOverride == nil || cfg.ProjectConfigPath == "" {
-		return nil
-	}
-	return (&Launcher{}).applyTrustGate(cfg)
-}
-
-// applyTrustGate checks the trust status of .aide.yaml and nils out
-// ProjectOverride if the file is not trusted. Returns TrustInfo for
-// banner display when the status is untrusted or denied; nil when trusted.
-func (l *Launcher) applyTrustGate(cfg *config.Config) *ui.TrustInfo {
-	if cfg.ProjectConfigPath == "" || cfg.ProjectOverride == nil {
-		return nil
-	}
-	absPath, err := filepath.Abs(cfg.ProjectConfigPath)
-	if err != nil {
-		cfg.ProjectOverride = nil
-		return nil
-	}
-	contents, err := os.ReadFile(absPath)
-	if err != nil {
-		cfg.ProjectOverride = nil
-		fmt.Fprintf(l.stderr(), "warning: could not read %s for trust check: %v — project config not applied\n", absPath, err)
-		return nil
-	}
-
-	store := l.trustStore()
-	status := store.Check(absPath, contents)
-
-	homeDir, _ := os.UserHomeDir()
-	switch status {
-	case trust.Denied:
-		cfg.ProjectOverride = nil
-		return &ui.TrustInfo{
-			Status: "denied",
-			Path:   homepath.Collapse(absPath, homeDir),
-		}
-	case trust.Untrusted:
-		po := cfg.ProjectOverride
-		cfg.ProjectOverride = nil
-		return buildTrustInfo(absPath, homeDir, po)
-	default: // trust.Trusted
-		return nil
-	}
-}
-
-// buildTrustInfo constructs a TrustInfo from an untrusted ProjectOverride.
-func buildTrustInfo(absPath, homeDir string, po *config.ProjectOverride) *ui.TrustInfo {
-	if po == nil {
-		return &ui.TrustInfo{
-			Status: "untrusted",
-			Path:   homepath.Collapse(absPath, homeDir),
-		}
-	}
-	wants := ui.TrustWants{
-		Agent:        po.Agent,
-		Capabilities: po.Capabilities,
-	}
-	if po.Sandbox != nil {
-		wants.Writable = po.Sandbox.WritableExtra
-		wants.Unguard = po.Sandbox.Unguard
-	}
-	for k := range po.Env {
-		wants.EnvVars = append(wants.EnvVars, k)
-	}
-	sort.Strings(wants.EnvVars)
-	return &ui.TrustInfo{
-		Status: "untrusted",
-		Path:   homepath.Collapse(absPath, homeDir),
-		Wants:  wants,
-	}
-}
-
 // handleEmptyStateLaunch delegates to the empty-state helper and, on
 // ErrEmptyStateActionRanReloadNeeded, reloads config and re-resolves
 // context so Launch can continue normally.
@@ -1175,6 +1104,12 @@ func (l *Launcher) handleEmptyStateLaunch(
 		newCfg, lerr := config.Load(l.configDir(), cwd)
 		if lerr != nil {
 			return nil, cfg, fmt.Errorf("reloading config after empty-state action: %w", lerr)
+		}
+		// The reloaded config passes the same .aide.yaml gate.
+		if l.IgnoreProjectConfig {
+			newCfg.DropProjectConfig()
+		} else if _, gerr := l.applyTrustGate(newCfg); gerr != nil {
+			return nil, cfg, gerr
 		}
 		newRc, rerr := aidectx.Resolve(newCfg, cwd, remotes)
 		if rerr != nil {

@@ -187,13 +187,16 @@ func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName, homeDir 
 	return contextName, capability.AutoIncludeCcstatusline(ctx.Capabilities, nil, homeDir), nil
 }
 
-// resolveProjectOverrideForMutation loads the global config and project override
-// for mutation. Returns the global config (for validation), the project override
-// (empty if .aide.yaml doesn't exist), and the path to write .aide.yaml to.
+// resolveProjectOverrideForMutation loads the global config and the
+// project file to edit. Returns the global config (for validation),
+// that file's override as written (empty if it does not exist; never
+// the merged or path-rewritten view a launch uses), and its path. In a
+// linked worktree the file is the worktree's own .aide.yaml; main
+// selects the main checkout's instead.
 //
 // Like resolveContextForMutation, this helper has no *cobra.Command in scope
 // and so performs its own preamble rather than using cmdEnv.
-func resolveProjectOverrideForMutation() (*config.Config, *config.ProjectOverride, string, error) {
+func resolveProjectOverrideForMutation(main bool) (*config.Config, *config.ProjectOverride, string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("getting working directory: %w", err)
@@ -202,12 +205,29 @@ func resolveProjectOverrideForMutation() (*config.Config, *config.ProjectOverrid
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("loading config: %w", err)
 	}
-	poPath := config.FindProjectConfigForWrite(cwd)
-	po := cfg.ProjectOverride
-	if po == nil {
-		po = &config.ProjectOverride{}
+	poPath, err := config.ProjectConfigWriteTarget(cwd, main)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	po, err := config.LoadProjectOverrideFile(poPath)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("loading project config %s: %w", poPath, err)
 	}
 	return cfg, po, poPath, nil
+}
+
+// validateMainScope rejects --main combined with --global.
+func validateMainScope(global, main bool) error {
+	if global && main {
+		return fmt.Errorf("--main edits the main checkout's .aide.yaml and cannot be combined with --global")
+	}
+	return nil
+}
+
+// addMainFlag adds --main to a project-scope editing command.
+func addMainFlag(cmd *cobra.Command, main *bool) {
+	cmd.Flags().BoolVar(main, "main", false,
+		"In a linked git worktree, edit the main checkout's .aide.yaml instead of the worktree's own")
 }
 
 // capabilityNamesForCompletion returns a sorted list of all capability names

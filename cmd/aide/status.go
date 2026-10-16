@@ -205,10 +205,11 @@ func whichCmd() *cobra.Command {
 			cfg := env.Config()
 
 			homeDir, _ := os.UserHomeDir()
-			resolved, inputs, sel, notices, err := previewSelection(cmd, cfg, cwd, homeDir, &sf)
+			preview, err := previewSelection(cmd, cfg, cwd, homeDir, &sf)
 			if err != nil {
 				return err
 			}
+			resolved, inputs, sel, notices := preview.rc, preview.inputs, preview.sel, preview.notices
 
 			out := cmd.OutOrStdout()
 			prefs := resolved.Preferences
@@ -234,6 +235,7 @@ func whichCmd() *cobra.Command {
 
 			launcher.SetBannerCredentials(data, credPlan)
 			launcher.SetBannerSelection(data, sel)
+			preview.gate.SetBanner(data)
 			data.Warnings = append(data.Warnings, notices...)
 			if credErr != nil {
 				data.Warnings = append(data.Warnings, credErr.Error())
@@ -1174,6 +1176,11 @@ type statusResult struct {
 	CredentialSource    string   `json:"credential_source,omitempty"`
 	CredentialSelection []string `json:"credential_selection,omitempty"`
 	Notices             []string `json:"notices,omitempty"`
+	// ProjectTrust lists each untrusted or denied .aide.yaml (it
+	// contributes nothing); InheritedGrants the security-sensitive
+	// grants a linked worktree takes from its main checkout's file.
+	ProjectTrust    []ui.TrustInfo      `json:"project_trust,omitempty"`
+	InheritedGrants []ui.InheritedGrant `json:"inherited_grants,omitempty"`
 }
 
 func statusCmd() *cobra.Command {
@@ -1192,10 +1199,11 @@ func statusCmd() *cobra.Command {
 			cfg := env.Config()
 
 			homeDir, _ := os.UserHomeDir()
-			resolved, inputs, sel, notices, err := previewSelection(cmd, cfg, cwd, homeDir, &sf)
+			preview, err := previewSelection(cmd, cfg, cwd, homeDir, &sf)
 			if err != nil {
 				return err
 			}
+			resolved, inputs, sel, notices := preview.rc, preview.inputs, preview.sel, preview.notices
 
 			var credData ui.BannerData
 			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
@@ -1353,6 +1361,8 @@ func statusCmd() *cobra.Command {
 				CredentialSource:    credData.CredentialSource,
 				CredentialSelection: credData.CredentialSelection,
 				Notices:             notices,
+				ProjectTrust:        preview.gate.Files,
+				InheritedGrants:     preview.gate.InheritedGrants,
 			}
 
 			format, ferr := output.FromCmd(cmd)
@@ -1432,6 +1442,8 @@ func statusCmd() *cobra.Command {
 					}
 				}
 
+				writeStatusProjectTrust(w, result)
+
 				fmt.Fprintln(w)
 				fmt.Fprintf(w, "Network: %s\n", result.Network)
 				fmt.Fprintf(w, "Sandbox: %s (%d guards)\n", result.SandboxTier, result.SandboxGuardCount)
@@ -1447,6 +1459,25 @@ func statusCmd() *cobra.Command {
 	}
 	sf.register(cmd, agentFlagUsage)
 	return cmd
+}
+
+// writeStatusProjectTrust prints each untrusted or denied .aide.yaml
+// and the grants inherited from a main checkout, labeled by file.
+func writeStatusProjectTrust(w io.Writer, r statusResult) {
+	for _, f := range r.ProjectTrust {
+		origin := ""
+		if f.Source == config.LayerInherited {
+			origin = " (inherited from main checkout)"
+		}
+		fmt.Fprintf(w, "\nProject file: %s %s%s, not applied\n", f.Path, f.Status, origin)
+	}
+	if len(r.InheritedGrants) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Inherited from main checkout:")
+		for _, g := range r.InheritedGrants {
+			fmt.Fprintf(w, "  %-12s %s  \u2190 %s\n", g.Kind, g.Value, g.Source)
+		}
+	}
 }
 
 // statusSelectionLine says where the profile, harness and credential

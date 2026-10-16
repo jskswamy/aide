@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/jskswamy/aide/internal/fsutil"
@@ -46,27 +45,27 @@ func WriteProjectOverrideWithTrust(path string, po *ProjectOverride, store *trus
 	return nil
 }
 
-// FindProjectConfigForWrite walks up from startDir to find where to write .aide.yaml.
-// 1. If .aide.yaml exists in any ancestor (up to git root), return its path.
-// 2. If a .git directory is found (no .aide.yaml), return .aide.yaml in that dir.
-// 3. If neither found, return .aide.yaml in startDir.
+// FindProjectConfigForWrite returns the .aide.yaml that project-scope
+// edits from startDir write: this checkout's existing file, else one
+// at the checkout root, else in startDir. In a linked worktree that is
+// the worktree's own file, never the inherited main checkout's.
 func FindProjectConfigForWrite(startDir string) string {
-	dir := startDir
-	for {
-		candidate := filepath.Join(dir, ProjectConfigFileName)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
+	return DiscoverProject(startDir).LocalWritePath(startDir)
+}
 
-		gitDir := filepath.Join(dir, ".git")
-		if _, err := os.Stat(gitDir); err == nil {
-			return filepath.Join(dir, ProjectConfigFileName)
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return filepath.Join(startDir, ProjectConfigFileName)
-		}
-		dir = parent
+// ProjectConfigWriteTarget is FindProjectConfigForWrite, or with main
+// the main checkout's .aide.yaml of the linked worktree startDir is in
+// (created if absent). main outside a linked worktree is an error.
+func ProjectConfigWriteTarget(startDir string, main bool) (string, error) {
+	d := DiscoverProject(startDir)
+	if !main {
+		return d.LocalWritePath(startDir), nil
 	}
+	if d.Err != nil {
+		return "", d.Err
+	}
+	if d.MainCheckoutRoot == "" {
+		return "", fmt.Errorf("--main needs a linked git worktree; %s is not in one (edit its .aide.yaml without --main)", startDir)
+	}
+	return filepath.Join(d.MainCheckoutRoot, ProjectConfigFileName), nil
 }

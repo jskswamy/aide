@@ -979,7 +979,7 @@ func sandboxGuardCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Guard %q enabled for context %q (global)\n", name, ctxName)
 				return nil
 			}
-			_, po, poPath, err := resolveProjectOverrideForMutation()
+			_, po, poPath, err := resolveProjectOverrideForMutation(false)
 			if err != nil {
 				return err
 			}
@@ -1047,7 +1047,7 @@ func sandboxUnguardCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Guard %q disabled for context %q (global)\n", name, ctxName)
 				return nil
 			}
-			_, po, poPath, err := resolveProjectOverrideForMutation()
+			_, po, poPath, err := resolveProjectOverrideForMutation(false)
 			if err != nil {
 				return err
 			}

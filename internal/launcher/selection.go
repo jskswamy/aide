@@ -69,7 +69,7 @@ func SelectHarness(cfg *config.Config, rc *aidectx.ResolvedContext, in Selection
 		if repoAgent != "" && cfg.HarnessOf(repoAgent) != cfg.HarnessOf(agent) {
 			notice = fmt.Sprintf("using harness %q saved for this repository; %s sets %q "+
 				"(change with: aide project set --agent <name>, or aide project clear --agent)",
-				agent, cfg.ProjectConfigPath, repoAgent)
+				agent, cfg.ProjectFileSetting(func(po *config.ProjectOverride) bool { return po.Agent != "" }), repoAgent)
 		}
 	case repoAgent != "":
 		sel.HarnessSource = SourceRepository
@@ -167,6 +167,7 @@ func ProjectProfileNotice(cfg *config.Config, rc *aidectx.ResolvedContext) strin
 	if po == nil || po.Profile == "" || po.Profile == rc.Name {
 		return ""
 	}
+	file := cfg.ProjectFileSetting(func(po *config.ProjectOverride) bool { return po.Profile != "" })
 	if _, ok := cfg.Contexts[po.Profile]; !ok {
 		defined := strings.Join(slices.Sorted(maps.Keys(cfg.Contexts)), ", ")
 		if defined == "" {
@@ -175,9 +176,9 @@ func ProjectProfileNotice(cfg *config.Config, rc *aidectx.ResolvedContext) strin
 		return fmt.Sprintf("%s references profile %q, which your config does not define (defined: %s); "+
 			"using profile %q. A repository file never selects a profile: define it under profiles: "+
 			"in your aide config, or pick one with --profile <name>",
-			cfg.ProjectConfigPath, po.Profile, defined, rc.Name)
+			file, po.Profile, defined, rc.Name)
 	}
 	return fmt.Sprintf("%s suggests profile %q, but this launch uses profile %q; "+
 		"a repository file never switches identity, so to use it run: aide --profile %s",
-		cfg.ProjectConfigPath, po.Profile, rc.Name, po.Profile)
+		file, po.Profile, rc.Name, po.Profile)
 }

@@ -164,7 +164,7 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 				return config.Context{}, nil, fmt.Errorf("%w: %s sets %s; repository config cannot set provider credentials, "+
 					"selectors or endpoints. Remove it there and set it for %s in your aide config "+
 					"(credentials: for keys, env: for selectors and endpoints)",
-					config.ErrLegacyCredentialEnv, cfg.ProjectConfigPath, k, label)
+					config.ErrLegacyCredentialEnv, projectFileSettingEnv(cfg, k), k, label)
 			}
 		}
 		if po.Secret != "" {
@@ -176,6 +176,14 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
 	}
 	return ctx, legacy, nil
+}
+
+// projectFileSettingEnv names the .aide.yaml whose env: sets key.
+func projectFileSettingEnv(cfg *config.Config, key string) string {
+	return cfg.ProjectFileSetting(func(po *config.ProjectOverride) bool {
+		_, ok := po.Env[key]
+		return ok
+	})
 }
 
 // ownSecret is the secret: store the profile itself declares.

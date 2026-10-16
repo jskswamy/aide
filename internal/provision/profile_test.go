@@ -76,14 +76,14 @@ func TestDriverBaseProfileUnsupportedAgent(t *testing.T) {
 
 func TestValidateProfileAcceptsValidConfig(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Profile: "firmus"}
-	if err := provision.ValidateProfile(ctx, "/home/u", false); err != nil {
+	if err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 }
 
 func TestValidateProfileAcceptsEmpty(t *testing.T) {
 	ctx := config.Context{Agent: "claude"}
-	if err := provision.ValidateProfile(ctx, "/home/u", false); err != nil {
+	if err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false); err != nil {
 		t.Errorf("absent profile should be accepted, got %v", err)
 	}
 }
@@ -91,7 +91,7 @@ func TestValidateProfileAcceptsEmpty(t *testing.T) {
 func TestValidateProfileRejectsBadName(t *testing.T) {
 	for _, bad := range []string{"bad/name", "bad name", "../escape", ".hidden"} {
 		ctx := config.Context{Agent: "claude", Profile: bad}
-		err := provision.ValidateProfile(ctx, "/home/u", false)
+		err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false)
 		if err == nil {
 			t.Errorf("expected rejection for %q", bad)
 			continue
@@ -104,7 +104,7 @@ func TestValidateProfileRejectsBadName(t *testing.T) {
 
 func TestValidateProfileRejectsDirWithoutProfile(t *testing.T) {
 	ctx := config.Context{Agent: "claude", ProfileDir: "/some/dir"}
-	err := provision.ValidateProfile(ctx, "/home/u", false)
+	err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false)
 	if !errors.Is(err, provision.ErrProfileNameInvalid) {
 		t.Errorf("expected ErrProfileNameInvalid, got %v", err)
 	}
@@ -112,7 +112,7 @@ func TestValidateProfileRejectsDirWithoutProfile(t *testing.T) {
 
 func TestValidateProfileRejectsDirOutsideHome(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Profile: "foo", ProfileDir: "/etc/cursed"}
-	err := provision.ValidateProfile(ctx, "/home/u", false)
+	err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false)
 	if !errors.Is(err, provision.ErrProfileDirOutsideHome) {
 		t.Errorf("expected ErrProfileDirOutsideHome, got %v", err)
 	}
@@ -124,7 +124,7 @@ func TestValidateProfileRejectsConflict(t *testing.T) {
 		Profile: "foo",
 		Env:     map[string]string{"CLAUDE_CONFIG_DIR": "/whatever"},
 	}
-	err := provision.ValidateProfile(ctx, "/home/u", false)
+	err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false)
 	if !errors.Is(err, provision.ErrProfileConflict) {
 		t.Errorf("expected ErrProfileConflict, got %v", err)
 	}
@@ -132,7 +132,7 @@ func TestValidateProfileRejectsConflict(t *testing.T) {
 
 func TestValidateProfileRejectsFromProjectOverride(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Profile: "foo"}
-	err := provision.ValidateProfile(ctx, "/home/u", true)
+	err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", true)
 	if !errors.Is(err, provision.ErrProfileNotProjectScoped) {
 		t.Errorf("expected ErrProfileNotProjectScoped, got %v", err)
 	}
@@ -140,7 +140,7 @@ func TestValidateProfileRejectsFromProjectOverride(t *testing.T) {
 
 func TestResolveContextInjectsProfileEnv(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Profile: "firmus"}
-	out, err := provision.ResolveContext("work", ctx, "/home/u", "/p", nil)
+	out, err := provision.ResolveContext("work", ctx.Agent, ctx, "/home/u", "/p", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestResolveContextInjectsProfileEnv(t *testing.T) {
 
 func TestResolveContextLeavesEnvIntactWithoutProfile(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Env: map[string]string{"FOO": "bar"}}
-	out, err := provision.ResolveContext("work", ctx, "/home/u", "/p", ctx.Env)
+	out, err := provision.ResolveContext("work", ctx.Agent, ctx, "/home/u", "/p", ctx.Env)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestWithAgent_DropsPreviousAgentDirKeyWithoutMutatingCaller(t *testing.T) {
 	env := map[string]string{"CLAUDE_CONFIG_DIR": "/elsewhere", "FOO": "bar"}
 	ctx := config.Context{Agent: "claude", Profile: "work", Env: env}
 
-	got := provision.WithAgent(ctx, "codex")
+	got := provision.WithAgent(ctx, "codex", sameName)
 
 	if got.Agent != "codex" {
 		t.Errorf("Agent = %q, want codex", got.Agent)
@@ -228,7 +228,7 @@ func TestWithAgent_DropsPreviousAgentDirKeyWithoutMutatingCaller(t *testing.T) {
 
 func TestWithAgent_KeepsEnvWithoutProfile(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Env: map[string]string{"CLAUDE_CONFIG_DIR": "/x"}}
-	if got := provision.WithAgent(ctx, "codex"); got.Env["CLAUDE_CONFIG_DIR"] != "/x" {
+	if got := provision.WithAgent(ctx, "codex", sameName); got.Env["CLAUDE_CONFIG_DIR"] != "/x" {
 		t.Error("explicit env dropped for a context without profile:")
 	}
 }
@@ -236,7 +236,7 @@ func TestWithAgent_KeepsEnvWithoutProfile(t *testing.T) {
 func TestInjectProfileEnv_UsesPerHarnessConfigDirs(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Profile: "work", ConfigDirs: map[string]string{"claude": "~/claude-home"}}
 
-	env, err := provision.InjectProfileEnv(ctx, nil, "/home/u")
+	env, err := provision.InjectProfileEnv(ctx.Agent, ctx, nil, "/home/u")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestInjectProfileEnv_UsesPerHarnessConfigDirs(t *testing.T) {
 	}
 
 	// --agent codex on the same profile gets codex's derived dir, not claude's.
-	env, err = provision.InjectProfileEnv(provision.WithAgent(ctx, "codex"), nil, "/home/u")
+	env, err = provision.InjectProfileEnv("codex", provision.WithAgent(ctx, "codex", sameName), nil, "/home/u")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,39 @@ func TestInjectProfileEnv_UsesPerHarnessConfigDirs(t *testing.T) {
 
 func TestValidateProfileRejectsConfigDirsOutsideHome(t *testing.T) {
 	ctx := config.Context{Agent: "claude", Profile: "work", ConfigDirs: map[string]string{"claude": "/opt/x"}}
-	if err := provision.ValidateProfile(ctx, "/home/u", false); !errors.Is(err, provision.ErrProfileDirOutsideHome) {
+	if err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false); !errors.Is(err, provision.ErrProfileDirOutsideHome) {
 		t.Errorf("err = %v, want ErrProfileDirOutsideHome", err)
+	}
+}
+
+// sameName is a harnessOf for contexts whose agents are harness names.
+func sameName(agent string) string { return agent }
+
+// An agents: alias switched away from keeps no dir key of its harness:
+// WithAgent resolves both agents through harnessOf.
+func TestWithAgent_ResolvesAgentAliases(t *testing.T) {
+	harnessOf := func(agent string) string {
+		if agent == "work-claude" {
+			return "claude"
+		}
+		return agent
+	}
+	ctx := config.Context{Agent: "work-claude", Profile: "work", Env: map[string]string{"CLAUDE_CONFIG_DIR": "/elsewhere"}}
+
+	if got := provision.WithAgent(ctx, "codex", harnessOf); got.Env["CLAUDE_CONFIG_DIR"] != "" {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q kept after switching from an alias of claude to codex", got.Env["CLAUDE_CONFIG_DIR"])
+	}
+}
+
+// Profile support follows the harness passed in, not the agent name, so
+// an agents: alias of claude injects claude's dir.
+func TestInjectProfileEnv_AgentAliasUsesHarness(t *testing.T) {
+	ctx := config.Context{Agent: "work-claude", Profile: "work"}
+	env, err := provision.InjectProfileEnv("claude", ctx, nil, "/home/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["CLAUDE_CONFIG_DIR"] != "/home/u/.claude-work" {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want /home/u/.claude-work", env["CLAUDE_CONFIG_DIR"])
 	}
 }

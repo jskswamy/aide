@@ -455,9 +455,10 @@ func (p *Plan) HasMutations() bool {
 // ResolveContext builds a provision.Context from the resolved config
 // context. Caller supplies HomeDir, ProjectRoot, and the resolved env
 // map (after template rendering and secret materialization, if any).
-// When ctx.Profile is set, validates and injects the driver's
-// per-profile env var.
-func ResolveContext(name string, ctx config.Context, homeDir, projectRoot string, env map[string]string) (Context, error) {
+// When ctx.Profile is set, validates and injects harnessName's
+// per-profile env var (harnessName is config.Config HarnessOf the
+// context's agent).
+func ResolveContext(name, harnessName string, ctx config.Context, homeDir, projectRoot string, env map[string]string) (Context, error) {
 	out := Context{
 		Name:        name,
 		Agent:       ctx.Agent,
@@ -473,7 +474,7 @@ func ResolveContext(name string, ctx config.Context, homeDir, projectRoot string
 	for k, v := range out.Env {
 		cloned[k] = v
 	}
-	merged, err := InjectProfileEnv(ctx, cloned, homeDir)
+	merged, err := InjectProfileEnv(harnessName, ctx, cloned, homeDir)
 	if err != nil {
 		return out, err
 	}

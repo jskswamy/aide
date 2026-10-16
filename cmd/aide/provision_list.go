@@ -46,9 +46,9 @@ func resolveContextEnv(ctx config.Context, homeDir string) map[string]string {
 // inheritProfileEnv carries an agent config-dir var exported in the
 // shell (e.g. CLAUDE_CONFIG_DIR) into pCtx.Env, since the launched agent
 // inherits it. A value the context already sets, from env: or profile:,
-// wins.
-func inheritProfileEnv(pCtx *provision.Context) {
-	key := provision.ProfileEnvKeyFor(pCtx.Agent)
+// wins. harnessName is the canonical harness pCtx's agent runs.
+func inheritProfileEnv(pCtx *provision.Context, harnessName string) {
+	key := provision.ProfileEnvKeyFor(harnessName)
 	if key == "" {
 		return
 	}
@@ -77,11 +77,12 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 	// Every provisioning entry point resolves its context here, so this
 	// is where the user's scrub_env: reaches provisioning subprocesses.
 	provision.SetScrubEnv(cfg.CredentialScrubNames())
-	pCtx, err := provision.ResolveContext(name, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
+	harnessName := cfg.HarnessOf(ctx.Agent)
+	pCtx, err := provision.ResolveContext(name, harnessName, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
 	if err != nil {
 		return pCtx, err
 	}
-	inheritProfileEnv(&pCtx)
+	inheritProfileEnv(&pCtx, harnessName)
 	if _, disabled, err := sandbox.ResolveSandboxRef(ctx.Sandbox, cfg.Sandboxes); err != nil || disabled {
 		return pCtx, nil
 	}
@@ -93,7 +94,7 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 		env = append(env, k+"="+v)
 	}
 	env = append(env, envscrub.ScrubCredentials(os.Environ(), envscrub.Credentials(), cfg.CredentialScrubNames())...)
-	overrides := launcher.SandboxAgentEnv(ctx.Agent, homeDir, env)
+	overrides := launcher.SandboxAgentEnv(harnessName, homeDir, env)
 	if len(overrides) == 0 {
 		return pCtx, nil
 	}

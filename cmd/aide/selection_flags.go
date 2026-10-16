@@ -196,7 +196,7 @@ func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir strin
 	if notice != "" {
 		p.notices = append(p.notices, notice)
 	}
-	mergedEnv, err := provision.InjectProfileEnv(p.rc.Context, p.rc.Context.Env, homeDir)
+	mergedEnv, err := provision.InjectProfileEnv(cfg.HarnessOf(p.rc.Context.Agent), p.rc.Context, p.rc.Context.Env, homeDir)
 	if err != nil {
 		return p, fmt.Errorf("context %q: %w", p.rc.Name, err)
 	}

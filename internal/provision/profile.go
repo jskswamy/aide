@@ -42,13 +42,15 @@ var (
 var validProfileName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 // ValidateProfile runs all profile-related checks for a single
-// resolved context. ctx.Profile/ProfileDir here are the native config
-// dir selector (config_dir_name/config_dir under profiles:), not the
-// outer profile name. fromProjectOverride is true when that selector
+// resolved context running harnessName (config.Config HarnessOf the
+// context's agent, so an agents: alias counts as its binary's harness).
+// ctx.Profile/ProfileDir here are the native config dir selector
+// (config_dir_name/config_dir under profiles:), not the outer profile
+// name. fromProjectOverride is true when that selector
 // came from a .aide.yaml; it is rejected unconditionally. (The loader
 // already refuses .aide.yaml keys that define a profile or its dir;
 // a top-level profile: there is a legal reference by name.)
-func ValidateProfile(ctx config.Context, homeDir string, fromProjectOverride bool) error {
+func ValidateProfile(harnessName string, ctx config.Context, homeDir string, fromProjectOverride bool) error {
 	if fromProjectOverride && ctx.SelectsConfigDir() {
 		return fmt.Errorf("%w: .aide.yaml may not set profile/profile_dir", ErrProfileNotProjectScoped)
 	}
@@ -62,7 +64,7 @@ func ValidateProfile(ctx config.Context, homeDir string, fromProjectOverride boo
 		return fmt.Errorf("%w: %q (allowed: [a-zA-Z0-9_-]+, max 64 chars)",
 			ErrProfileNameInvalid, ctx.Profile)
 	}
-	envKey, absPath, err := harnessProfile(ctx, homeDir)
+	envKey, absPath, err := harnessProfile(harnessName, ctx, homeDir)
 	if err != nil {
 		return err
 	}
@@ -77,20 +79,21 @@ func ValidateProfile(ctx config.Context, homeDir string, fromProjectOverride boo
 	return nil
 }
 
-// InjectProfileEnv validates and injects the per-profile env var
-// into env when ctx.Profile is set. Returns env unchanged when
+// InjectProfileEnv validates and injects harnessName's per-profile env
+// var into env when ctx.Profile is set. harnessName is the canonical
+// harness the context's agent runs (config.Config HarnessOf). Returns env unchanged when
 // ctx.Profile is empty. Caller is responsible for passing a writable
 // (or nil) env map — when nil, a new map is returned only if profile
 // is set, otherwise nil is returned. Errors propagate from
 // ValidateProfile or the harness table.
-func InjectProfileEnv(ctx config.Context, env map[string]string, homeDir string) (map[string]string, error) {
+func InjectProfileEnv(harnessName string, ctx config.Context, env map[string]string, homeDir string) (map[string]string, error) {
 	if !ctx.SelectsConfigDir() {
 		return env, nil
 	}
-	if err := ValidateProfile(ctx, homeDir, false); err != nil {
+	if err := ValidateProfile(harnessName, ctx, homeDir, false); err != nil {
 		return env, err
 	}
-	envKey, absPath, err := harnessProfile(ctx, homeDir)
+	envKey, absPath, err := harnessProfile(harnessName, ctx, homeDir)
 	if err != nil {
 		return env, err
 	}
@@ -104,15 +107,16 @@ func InjectProfileEnv(ctx config.Context, env map[string]string, homeDir string)
 // WithAgent returns ctx with its agent replaced, as `--agent` does.
 // When ctx selects a profile, the profile owns the config-dir choice,
 // so the previous agent's dir key is dropped from a copy of Env rather
-// than leaking into the new agent's environment.
-func WithAgent(ctx config.Context, agent string) config.Context {
+// than leaking into the new agent's environment. harnessOf maps an
+// agent name to its canonical harness (config.Config HarnessOf).
+func WithAgent(ctx config.Context, agent string, harnessOf func(string) string) config.Context {
 	prev := ctx.Agent
 	ctx.Agent = agent
 	if ctx.Profile == "" || prev == agent {
 		return ctx
 	}
-	prevKey := ProfileEnvKeyFor(prev)
-	if _, ok := ctx.Env[prevKey]; !ok || prevKey == ProfileEnvKeyFor(agent) {
+	prevKey := ProfileEnvKeyFor(harnessOf(prev))
+	if _, ok := ctx.Env[prevKey]; !ok || prevKey == ProfileEnvKeyFor(harnessOf(agent)) {
 		return ctx
 	}
 	env := make(map[string]string, len(ctx.Env))
@@ -137,13 +141,13 @@ func (e *profileUnsupportedError) Error() string {
 func (e *profileUnsupportedError) Unwrap() error { return ErrProfileNotSupported }
 
 // harnessProfile resolves the env var and absolute config-dir path
-// ctx's profile gives its agent's harness (config.Context
-// NativeConfigDir). Agents with no descriptor or no profile support
-// get a profileUnsupportedError.
-func harnessProfile(ctx config.Context, homeDir string) (envKey, absPath string, err error) {
-	d, ok := harness.Lookup(ctx.Agent)
+// ctx's profile gives harnessName (config.Context NativeConfigDir).
+// Harnesses with no descriptor or no profile support get a
+// profileUnsupportedError.
+func harnessProfile(harnessName string, ctx config.Context, homeDir string) (envKey, absPath string, err error) {
+	d, ok := harness.Lookup(harnessName)
 	if !ok || !d.SupportsProfiles() {
-		return "", "", &profileUnsupportedError{harness: ctx.Agent}
+		return "", "", &profileUnsupportedError{harness: harnessName}
 	}
 	return d.ProfileEnvKey, ctx.NativeConfigDir(d.Name, homeDir), nil
 }

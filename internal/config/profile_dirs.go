@@ -163,8 +163,8 @@ func (c *Config) profileDirAliasError(h, a, b, dir, home string) error {
 		nameKey = "profile"
 	}
 	ctxA, ctxB := c.Contexts[a], c.Contexts[b]
-	ha, okA := profileHarness(ctxA.Agent)
-	hb, okB := profileHarness(ctxB.Agent)
+	ha, okA := profileHarness(c.HarnessOf(ctxA.Agent))
+	hb, okB := profileHarness(c.HarnessOf(ctxB.Agent))
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "profiles %q (agent %s) and %q (agent %s) both resolve %s's config dir to %s",
 		a, ctxA.Agent, b, ctxB.Agent, h, tildePath(dir, home))

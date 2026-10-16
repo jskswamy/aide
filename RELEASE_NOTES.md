@@ -410,6 +410,19 @@ are unchanged. `~/.cache/claude` and Claude's install paths stay
 shared: they hold no login state. See "Claude Code's files outside the
 config dir" in `docs/sandbox.md`.
 
+#### Claude profile launches flag an apiKeyHelper aide cannot scrub
+
+When the profile's Claude config dir has a `settings.json` that sets
+`apiKeyHelper`, the launch prints:
+
+```text
+aide: note: ~/.claude-work/settings.json sets apiKeyHelper: Claude Code uses the key it returns ahead of this profile's native login, and aide cannot scrub it
+```
+
+The path is shown absolute; the helper's command is never printed. The
+launch continues. See "Credential-clean environment" in
+`docs/configuration.md` for this limit and for `~/.config/anthropic`.
+
 #### remote_name in match rules now takes effect
 
 A remote rule with `remote_name: upstream` was documented but ignored:

@@ -245,6 +245,24 @@ controls whether the agent can read them. Provisioning subprocesses
 (`aide sync`, plugin/MCP listing) drop the same names, including
 `scrub_env:`.
 
+Claude Code has two authentication sources no environment scrub
+reaches:
+
+- `apiKeyHelper` in Claude's settings is a command Claude runs for a
+  key; that key outranks the profile's native login (only an injected
+  `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, or a `CLAUDE_CODE_USE_*`
+  provider, ranks above it). A profile launch reads the profile dir's
+  `settings.json` and prints `aide: note: <dir>/settings.json sets
+  apiKeyHelper ...` (naming the setting, never its command). aide does
+  not remove it; delete it from that file if the profile should use its
+  login. Managed settings and a project's `.claude/settings.json` can
+  also set it and are not checked.
+- A keyless Claude Console sign-in and `ant` CLI profiles are stored in
+  `~/.config/anthropic`, outside `CLAUDE_CONFIG_DIR`, so every profile
+  that can read it shares them. The sandbox does not grant that dir.
+  To keep them per profile, set `ANTHROPIC_CONFIG_DIR` in the
+  profile's `env:` to a dir inside its config dir.
+
 The no-config passthrough (`aide` with no `config.yaml`) only removes
 `SOPS_AGE_KEY` and `SOPS_AGE_KEY_FILE`; shell API keys still reach the
 agent there. Passthrough is not an isolation guarantee.

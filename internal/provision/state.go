@@ -143,3 +143,31 @@ func SaveState(path string, st *ManagedState) error {
 func DefaultStatePath(homeDir string) string {
 	return statedir.Path(homeDir, "managed.json")
 }
+
+// RehashConfig moves every profile whose recorded config_hash is
+// oldHash to newHash and saves the state, returning how many moved.
+// Used after aide rewrites config.yaml without changing what it
+// declares (profile migration), so the launch drift check does not
+// report a change the user never made. Profiles recorded against
+// other bytes have drifted already and keep their hash. A missing
+// state file is left missing.
+func RehashConfig(path, oldHash, newHash string) (int, error) {
+	if oldHash == "" || oldHash == newHash {
+		return 0, nil
+	}
+	st, err := LoadState(path)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, cs := range st.Contexts {
+		if cs != nil && cs.ConfigHash == oldHash {
+			cs.ConfigHash = newHash
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	return n, SaveState(path, st)
+}

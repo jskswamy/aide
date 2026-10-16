@@ -278,13 +278,14 @@ Pi keeps logins and saved API keys in `auth.json` inside its config
 dir (`PI_CODING_AGENT_DIR`, so one per profile), and uses a stored
 entry ahead of the environment for that provider. A selected
 `credentials:` binding therefore does not win in Pi for a provider the
-profile has logged in to. A Pi profile launch that injects a binding
-reads the profile's `auth.json` (provider names only, never the stored
-values) and prints `aide: note: <dir>/auth.json has a stored Pi login
+profile has logged in to. A Pi launch that injects a binding reads
+the `auth.json` of the config dir it uses (the profile's own dir, else
+an exported `PI_CODING_AGENT_DIR`, else `~/.pi/agent`; provider names
+only, never the stored values) and prints `aide: note: <dir>/auth.json has a stored Pi login
 for <provider>: Pi uses it ahead of the selected API key ...`. The
 launch continues; run `/logout` for that provider in Pi to use the
 key, or launch with `--auth login` to use the login. Providers whose
-`auth.json` id Pi does not document (Bedrock, Vertex, custom names)
+`auth.json` id aide does not know (Bedrock, Vertex, custom names)
 are not checked. Pi's Vertex provider without `GOOGLE_CLOUD_API_KEY` uses gcloud
 application-default credentials
 (`~/.config/gcloud/application_default_credentials.json`). That file
@@ -292,6 +293,27 @@ is one per user, not per profile: aide does not isolate it. The
 sandbox grants `~/.config/gcloud` only with the `gcp` capability, so
 every Pi profile with `gcp` (or launched without the sandbox) shares
 the same Google login.
+
+Codex reads a custom model provider's key from the variable its
+`config.toml` names in `model_providers.<id>.env_key` (and header
+values from `env_http_headers`), so those names are not in the
+registry. aide treats them like credential binding names: every
+configured launch (any harness) and every provisioning subprocess
+scrubs, from the inherited environment, each such name declared in
+any Codex home aide knows of: `~/.codex`, an exported `CODEX_HOME`,
+and every profile's own Codex dir, each with its `config.toml` and
+profile files (`<name>.config.toml`). Only the names are read, never
+values or `experimental_bearer_token`; names of process essentials
+(`PATH`, `HOME`, ...) and `AIDE_*` are ignored. A missing file
+declares nothing. When the Codex home being launched has an
+unreadable or invalid file, the launch prints `aide: note:
+<dir>/config.toml is not valid TOML (line N): custom model provider
+keys it names are not scrubbed from the shell` and continues. To
+inject such a key, bind it with a custom `credentials:` entry
+(`env: [CORP_LLM_KEY]`, `harnesses: [codex]`). Limits: a project's
+`.codex/config.toml` and Codex homes outside these are not read; list
+names you always want removed in `scrub_env:`. MCP server tokens
+(`bearer_token_env_var`) are resource credentials and are left alone.
 
 The no-config passthrough (`aide` with no `config.yaml`) only removes
 `SOPS_AGE_KEY` and `SOPS_AGE_KEY_FILE`; shell API keys still reach the

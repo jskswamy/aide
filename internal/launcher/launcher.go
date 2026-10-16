@@ -313,6 +313,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if notice := nativeAuthNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir); notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
+	// Custom provider keys named in Codex configs, scrubbed from the
+	// inherited env below like credential binding names.
+	nativeScrub := CodexProviderEnvNames(cfg, homeDir, os.Getenv)
+	if notice := codexConfigNoticeFor(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, os.Getenv); notice != "" {
+		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
+	}
 
 	// 5. Look up agent binary
 	agentName := rc.Context.Agent
@@ -336,7 +342,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 	l.printLegacyCredentialHints(profileLabel(cfg, rc.Name), legacyCreds)
-	if notice := selectedKeyNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, credPlan); notice != "" {
+	if notice := selectedKeyNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, os.Getenv, credPlan); notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
 	if len(credPlan.Ignored) > 0 {
@@ -496,7 +502,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if cleanEnv {
 		baseEnv = filterEssentialEnv(baseEnv)
 	}
-	baseEnv = envscrub.ScrubCredentials(baseEnv, launchScrubRegistry(rc.Context, capOverrides.EnvAllow), cfg.CredentialScrubNames())
+	baseEnv = envscrub.ScrubCredentials(baseEnv, launchScrubRegistry(rc.Context, capOverrides.EnvAllow), append(cfg.CredentialScrubNames(), nativeScrub...))
 	env := mergeEnv(baseEnv, resolvedEnv)
 	// Selected credential bindings go on top of the general env.
 	env = mergeEnv(env, credEnv)

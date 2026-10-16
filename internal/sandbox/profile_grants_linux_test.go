@@ -18,7 +18,7 @@ func coversPath(p, target string) bool {
 	return p == target || strings.HasPrefix(target, p+string(filepath.Separator))
 }
 
-// A Pi profile launch under Landlock grants the selected
+// A Pi or Codex profile launch under Landlock grants the selected
 // profile dir and nothing of the harness's default dir (or its ~/.pi
 // parent) or another profile's dir, with the default guards.
 func TestLandlockProfileLaunchGrantsOnlySelectedDir(t *testing.T) {
@@ -28,7 +28,8 @@ func TestLandlockProfileLaunchGrantsOnlySelectedDir(t *testing.T) {
 		work   string
 		others []string
 	}{
-		"pi": {modules.PiAgent, "PI_CODING_AGENT_DIR", ".pi-work", []string{".pi", ".pi/agent", ".pi-personal"}},
+		"pi":    {modules.PiAgent, "PI_CODING_AGENT_DIR", ".pi-work", []string{".pi", ".pi/agent", ".pi-personal"}},
+		"codex": {modules.CodexAgent, "CODEX_HOME", ".codex-work", []string{".codex", ".codex-personal"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()

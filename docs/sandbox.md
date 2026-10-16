@@ -60,8 +60,16 @@ aide auto-detects known agent config directories and adds them to the writable l
 With the env override set (every profile launch sets it to the
 profile's own dir), only that dir is granted, on macOS and Linux: not
 the default dir, Pi's `~/.pi` parent, or another profile's dir. A Pi
-profile's `auth.json` (logins and saved keys) is therefore reachable
-only from that profile.
+profile's `auth.json` (logins and saved keys) and a Codex profile's
+`auth.json` are therefore reachable only from that profile.
+
+Codex also reads personal skills from `~/.agents/skills`, a path
+shared by every Codex profile (and by other harnesses that read it).
+It holds no login state, so it is resource and policy sharing rather
+than an authentication leak. The sandbox does not grant it on either
+platform; if you grant it (`readable_extra`, or a symlink from a
+profile's skills dir), or run without the sandbox, every profile sees
+the same skills. Keep per-profile skills in `$CODEX_HOME/skills`.
 
 ### Claude Code's files outside the config dir
 

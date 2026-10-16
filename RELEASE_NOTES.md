@@ -80,6 +80,21 @@ A profile launch that selects its own config dir also drops an
 exported `PI_CODING_AGENT_SESSION_DIR`, which would otherwise put
 every Pi profile's sessions in one shared dir.
 
+#### Codex profile launches scrub the keys custom providers name
+
+A Codex custom model provider reads its key from the variable named by
+`model_providers.<id>.env_key` in `config.toml` (and header values
+from `env_http_headers`). aide now reads `config.toml` and the
+`<name>.config.toml` profile files in `~/.codex`, an exported
+`CODEX_HOME` and every profile's Codex dir, and removes the variables
+they name from the environment every configured launch and `aide
+sync` subprocess inherits from your shell, so an exported
+`CORP_LLM_KEY` no longer reaches any agent. Bind such a key with a
+custom `credentials:` entry (`env: [CORP_LLM_KEY]`,
+`harnesses: [codex]`). Only names are read. When the Codex home being
+launched has an invalid or unreadable file, the launch prints a note
+naming the file and continues.
+
 #### Profile dirs differing only by case are refused on macOS and Windows
 
 Two profiles whose config dirs differ only by letter case (for example
@@ -461,16 +476,17 @@ The path is shown absolute; the helper's command is never printed. The
 launch continues. See "Credential-clean environment" in
 `docs/configuration.md` for this limit and for `~/.config/anthropic`.
 
-#### Pi profile launches flag a stored login that outranks the selected key
+#### Pi launches flag a stored login that outranks the selected key
 
 Pi uses a provider's entry in its `auth.json` ahead of the
 environment, so a key injected from `credentials:` is ignored for a
-provider the Pi profile has logged in to. When a Pi profile launch
-injects a binding and the profile's `auth.json` holds an entry for
-that provider, it prints:
+provider Pi has a stored login or key for. When a Pi launch injects a
+binding and the `auth.json` of the config dir it uses (the profile's
+own dir, else an exported `PI_CODING_AGENT_DIR`, else `~/.pi/agent`)
+holds an entry for that provider, it prints:
 
 ```text
-aide: note: ~/.pi-work/auth.json has a stored Pi login for anthropic: Pi uses it ahead of the selected API key (remove it with /logout in Pi, or launch with --auth login)
+aide: note: ~/.pi-work/auth.json has a stored Pi login for openai: Pi uses it ahead of the selected API key (remove it with /logout in Pi, or launch with --auth login)
 ```
 
 The path is shown absolute. Only provider names are read and printed,

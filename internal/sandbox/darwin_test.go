@@ -638,7 +638,7 @@ func TestGenerateSeatbeltProfile_BroadSystemReads(t *testing.T) {
 	}
 }
 
-// A Pi profile launch's Seatbelt profile grants the selected
+// A Pi or Codex profile launch's Seatbelt profile grants the selected
 // profile dir and not the default dir, Pi's ~/.pi parent or another
 // profile's dir.
 func TestSeatbeltProfile_PiAndCodexProfileDirsOnly(t *testing.T) {
@@ -648,7 +648,8 @@ func TestSeatbeltProfile_PiAndCodexProfileDirsOnly(t *testing.T) {
 		work   string
 		others []string
 	}{
-		"pi": {modules.PiAgent, "PI_CODING_AGENT_DIR", "/Users/testuser/.pi-work", []string{"/Users/testuser/.pi", "/Users/testuser/.pi-personal"}},
+		"pi":    {modules.PiAgent, "PI_CODING_AGENT_DIR", "/Users/testuser/.pi-work", []string{"/Users/testuser/.pi", "/Users/testuser/.pi-personal"}},
+		"codex": {modules.CodexAgent, "CODEX_HOME", "/Users/testuser/.codex-work", []string{"/Users/testuser/.codex", "/Users/testuser/.codex-personal"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			policy := DefaultPolicy(Paths{ProjectRoot: "/tmp/proj", RuntimeDir: "/tmp/rt", TempDir: "/tmp", HomeDir: "/Users/testuser"},

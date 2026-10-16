@@ -107,3 +107,45 @@ default_profile: work
 		t.Errorf("login launch printed the stored-login notice:\n%s", stderr)
 	}
 }
+
+// A Pi profile without a config dir of its own uses the default
+// ~/.pi/agent (or an exported PI_CODING_AGENT_DIR); its stored logins
+// shadow a selected key just the same.
+func TestLauncher_PiStoredLoginNoticeWithoutProfileDir(t *testing.T) {
+	store, _ := fixtureStore(t)
+	cfg := fmt.Sprintf(`
+profiles:
+  work:
+    agent: pi
+    credentials:
+      anthropic: {backend: age, store: %s, key: anthropic_api_key}
+    default_credentials: [anthropic]
+default_profile: work
+`, store)
+
+	home := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	if err := os.Unsetenv("PI_CODING_AGENT_DIR"); err != nil {
+		t.Fatal(err)
+	}
+	writePiAuth(t, filepath.Join(home, ".pi", "agent"), piAuthWithLogins)
+	_, stderr, err := launchCredentialsIn(t, home, cfg, "", "", true)
+	if err != nil {
+		t.Fatalf("Launch() error = %v", err)
+	}
+	if !strings.Contains(stderr, filepath.Join(home, ".pi", "agent", "auth.json")+" has a stored Pi login for anthropic") {
+		t.Errorf("no notice for the default Pi dir:\n%s", stderr)
+	}
+
+	home = t.TempDir()
+	exported := filepath.Join(home, "my-pi")
+	writePiAuth(t, exported, piAuthWithLogins)
+	t.Setenv("PI_CODING_AGENT_DIR", exported)
+	_, stderr, err = launchCredentialsIn(t, home, cfg, "", "", true)
+	if err != nil {
+		t.Fatalf("Launch() error = %v", err)
+	}
+	if !strings.Contains(stderr, filepath.Join(exported, "auth.json")+" has a stored Pi login") {
+		t.Errorf("no notice for an exported PI_CODING_AGENT_DIR:\n%s", stderr)
+	}
+}

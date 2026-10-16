@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/harness"
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // nativeAuthNotice describes an authentication source in the selected
@@ -43,19 +45,36 @@ func claudeAPIKeyHelperNotice(dir string) string {
 		"this profile's native login, and aide cannot scrub it", path)
 }
 
-// selectedKeyNotice describes a native credential in the selected
-// profile's config that the harness uses ahead of a credential the
-// launch injects from plan, or "" when there is none. Only launches
-// that select their own config dir are checked.
-func selectedKeyNotice(harnessName string, ctx config.Context, home string, plan CredentialPlan) string {
-	if !ctx.SelectsConfigDir() || harnessName != "pi" {
+// selectedKeyNotice describes a native credential in the config dir
+// the launch uses (launchConfigDir) that the harness uses ahead of a
+// credential the launch injects from plan, or "" when there is none.
+func selectedKeyNotice(harnessName string, ctx config.Context, home string, getenv func(string) string, plan CredentialPlan) string {
+	if harnessName != "pi" {
 		return ""
 	}
 	var envNames []string
 	for _, b := range plan.Bindings {
 		envNames = append(envNames, b.Env...)
 	}
-	return piStoredLoginNotice(ctx.NativeConfigDir(harnessName, home), envNames)
+	return piStoredLoginNotice(launchConfigDir(harnessName, ctx, home, getenv), envNames)
+}
+
+// launchConfigDir is the native config dir a launch of harnessName
+// under ctx uses: the profile's own dir when it selects one, else the
+// harness's dir variable from the inherited environment (getenv), else
+// its default dir. "" for a harness without a config dir variable.
+func launchConfigDir(harnessName string, ctx config.Context, home string, getenv func(string) string) string {
+	if ctx.SelectsConfigDir() {
+		return ctx.NativeConfigDir(harnessName, home)
+	}
+	d, ok := harness.Lookup(harnessName)
+	if !ok || d.ProfileEnvKey == "" || d.DefaultConfigDir == "" {
+		return ""
+	}
+	if v := getenv(d.ProfileEnvKey); v != "" {
+		return homepath.Expand(v, home)
+	}
+	return filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))
 }
 
 // piProvidersByEnv maps a provider credential variable to the Pi
@@ -75,6 +94,7 @@ var piProvidersByEnv = map[string][]string{
 	"MISTRAL_API_KEY":               {"mistral"},
 	"GROQ_API_KEY":                  {"groq"},
 	"CEREBRAS_API_KEY":              {"cerebras"},
+	"COPILOT_GITHUB_TOKEN":          {"github-copilot"},
 	"CLOUDFLARE_API_KEY":            {"cloudflare-ai-gateway", "cloudflare-workers-ai"},
 	"XAI_API_KEY":                   {"xai"},
 	"OPENROUTER_API_KEY":            {"openrouter"},

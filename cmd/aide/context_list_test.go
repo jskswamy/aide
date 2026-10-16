@@ -1,4 +1,3 @@
-// cmd/aide/context_list_test.go
 package main
 
 import (
@@ -6,12 +5,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/jskswamy/aide/internal/output"
 )
 
-func TestContextList_JSONFormat(t *testing.T) {
+func writeListConfig(t *testing.T) {
+	t.Helper()
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 	cfgDir := filepath.Join(xdg, "aide")
@@ -31,16 +34,46 @@ contexts:
 		t.Fatal(err)
 	}
 
-	cmd := contextCmd()
-	output.RegisterFlag(cmd)
-	var buf bytes.Buffer
-	cmd.SetOut(&buf)
-	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"list", "--format", "json"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
-	}
+}
 
+// runList runs `<group> list --format json` and returns stdout and
+// stderr separately.
+func runList(t *testing.T, group *cobra.Command) (string, string) {
+	t.Helper()
+	output.RegisterFlag(group)
+	var out, errOut bytes.Buffer
+	group.SetOut(&out)
+	group.SetErr(&errOut)
+	group.SetArgs([]string{"list", "--format", "json"})
+	if err := group.Execute(); err != nil {
+		t.Fatalf("execute: %v\noutput: %s%s", err, out.String(), errOut.String())
+	}
+	return out.String(), errOut.String()
+}
+
+func TestProfileList_JSONFormat(t *testing.T) {
+	writeListConfig(t)
+	stdout, stderr := runList(t, profileCmd())
+	if stderr != "" {
+		t.Errorf("aide profile printed to stderr: %q", stderr)
+	}
+	checkListJSON(t, stdout)
+}
+
+// aide context is the deprecated alias: same output, plus a notice on
+// stderr only, so JSON on stdout stays parseable.
+func TestContextAlias_ListPrintsDeprecationOnStderr(t *testing.T) {
+	writeListConfig(t)
+	stdout, stderr := runList(t, contextCmd())
+	if !strings.Contains(stderr, "aide context is deprecated; use aide profile") {
+		t.Errorf("stderr = %q, want the deprecation notice", stderr)
+	}
+	checkListJSON(t, stdout)
+}
+
+func checkListJSON(t *testing.T, stdout string) {
+	t.Helper()
+	buf := bytes.NewBufferString(stdout)
 	var got []contextEntry
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())

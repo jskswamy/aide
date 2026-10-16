@@ -34,7 +34,7 @@ contexts:
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"list", "--context", "work", "--format", "json"})
+	cmd.SetArgs([]string{"list", "--profile", "work", "--format", "json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
 	}

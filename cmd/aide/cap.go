@@ -738,6 +738,7 @@ func capEnableCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 
@@ -798,6 +799,7 @@ func capDisableCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "Apply to user-level config instead of project")
 	cmd.Flags().StringVar(&contextName, "context", "", "Target context name (requires --global)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 

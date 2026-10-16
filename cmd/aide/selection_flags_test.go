@@ -310,3 +310,49 @@ func TestPassthroughSelectionError(t *testing.T) {
 		}
 	}
 }
+
+// Every command that takes --context also takes --profile, and
+// --context is hidden as the deprecated alias.
+func TestContextFlagIsDeprecatedAliasEverywhere(t *testing.T) {
+	n := 0
+	walkCommands(buildTestRoot(), func(c *cobra.Command) {
+		ctx := c.Flags().Lookup("context")
+		if ctx == nil {
+			return
+		}
+		n++
+		if c.Flags().Lookup("profile") == nil {
+			t.Errorf("%s has --context but no --profile", c.CommandPath())
+		}
+		if !ctx.Hidden {
+			t.Errorf("%s: --context is not hidden", c.CommandPath())
+		}
+	})
+	if n == 0 {
+		t.Fatal("no command has --context; the walk found nothing")
+	}
+}
+
+func TestContextFlagPrintsDeprecationOnStderr(t *testing.T) {
+	selectionEnv(t, `
+profiles:
+  work: {agent: claude, env: {WORK_ONLY: "1"}}
+default_profile: work
+`)
+	cmd := envListCmd()
+	output.RegisterFlag(cmd)
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errOut.String(), "--context is deprecated; use --profile") {
+		t.Errorf("stderr = %q", errOut.String())
+	}
+	var v any
+	if err := json.Unmarshal(out.Bytes(), &v); err != nil {
+		t.Errorf("stdout is not JSON: %v\n%s", err, out.String())
+	}
+}

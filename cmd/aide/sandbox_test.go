@@ -197,7 +197,7 @@ func TestSandboxAllow_ContextFlag_GrantsIntoNamedContextProfile(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeClaudeAgentConfigWithContext(t, dir, "personal", "claude", "~/profile-personal")
 
-	out, err := runSandboxCmd(t, "allow", "/repo/extra", "--global", "--context", "personal")
+	out, err := runSandboxCmd(t, "allow", "/repo/extra", "--global", "--profile", "personal")
 	if err != nil {
 		t.Fatalf("sandbox allow: %v\n%s", err, out)
 	}

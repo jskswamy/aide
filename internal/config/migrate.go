@@ -222,7 +222,7 @@ func (m *Migration) adopt(section *yaml.Node, names []string) (bool, error) {
 		gl := &m.GlobalLogins[i]
 		if prev, ok := pinned[gl.Dir]; ok && prev != name {
 			return false, fmt.Errorf("%w: profiles %q and %q would both use %s, one %s login for two identities; adopt one of them "+
-				"and log the other in under its own config_dir_name:", ErrAdopt, prev, name, gl.Dir, gl.Harness)
+				"and give the other its own config_dir_name, then log in there", ErrAdopt, prev, name, gl.Dir, gl.Harness)
 		}
 		pinned[gl.Dir] = name
 		if gl.Adopted {

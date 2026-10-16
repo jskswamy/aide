@@ -24,6 +24,7 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(configCmd())
 	rootCmd.AddCommand(agentsCmd())
 	rootCmd.AddCommand(useCmd())
+	rootCmd.AddCommand(profileCmd())
 	rootCmd.AddCommand(contextCmd())
 	rootCmd.AddCommand(projectCmd())
 	rootCmd.AddCommand(envCmd())

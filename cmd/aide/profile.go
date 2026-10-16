@@ -1,4 +1,3 @@
-// cmd/aide/context.go
 package main
 
 import (
@@ -20,19 +19,57 @@ import (
 	"github.com/jskswamy/aide/internal/output"
 )
 
+// contextDeprecation is printed to stderr by every aide context
+// subcommand.
+const contextDeprecation = "aide context is deprecated; use aide profile (same subcommands)"
+
+// profileCmd manages profiles: the identities (match rules, secret
+// store, native config dirs, credentials) aide launches under.
+func profileCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "profile",
+		Short: "Manage aide profiles",
+	}
+	addProfileSubcommands(cmd)
+	return cmd
+}
+
+// contextCmd is aide context, the deprecated alias of aide profile.
+// The notice goes to stderr so --format json output stays parseable.
 func contextCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "context",
-		Short: "Manage aide contexts",
+		Use:    "context",
+		Short:  "Deprecated alias of aide profile",
+		Hidden: true,
+		PersistentPreRun: func(c *cobra.Command, _ []string) {
+			fmt.Fprintln(c.ErrOrStderr(), contextDeprecation)
+		},
 	}
+	addProfileSubcommands(cmd)
+	return cmd
+}
+
+func addProfileSubcommands(cmd *cobra.Command) {
 	cmd.AddCommand(contextListCmd())
-	cmd.AddCommand(contextBindCmd())
+	cmd.AddCommand(withProfileArgCompletion(contextBindCmd()))
 	cmd.AddCommand(contextCreateCmd())
-	cmd.AddCommand(contextRenameCmd())
-	cmd.AddCommand(contextRemoveCmd())
+	cmd.AddCommand(withProfileArgCompletion(contextRenameCmd()))
+	cmd.AddCommand(withProfileArgCompletion(contextRemoveCmd()))
 	cmd.AddCommand(contextSetSecretCmd())
 	cmd.AddCommand(contextRemoveSecretCmd())
-	cmd.AddCommand(contextSetDefaultCmd())
+	cmd.AddCommand(withProfileArgCompletion(contextSetDefaultCmd()))
+	cmd.AddCommand(profileMigrateCmd())
+}
+
+// withProfileArgCompletion completes an existing profile name as the
+// first argument.
+func withProfileArgCompletion(cmd *cobra.Command) *cobra.Command {
+	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return profileNamesForCompletion(), cobra.ShellCompDirectiveNoFileComp
+	}
 	return cmd
 }
 
@@ -53,7 +90,7 @@ type contextEntry struct {
 func contextListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "list",
-		Short:        "List all configured contexts",
+		Short:        "List all configured profiles",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			env, err := cmdEnv(cmd)
@@ -100,7 +137,7 @@ func contextListCmd() *cobra.Command {
 			}
 			return output.Emit(out, format, entries, func(w io.Writer) error {
 				if len(entries) == 0 {
-					fmt.Fprintln(w, "No contexts configured.")
+					fmt.Fprintln(w, "No profiles configured.")
 					return nil
 				}
 				for i, e := range entries {
@@ -142,14 +179,14 @@ func contextBindCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "bind [name]",
-		Short: "Attach this folder to an existing context",
-		Long: `Attach the current folder to an existing context.
+		Short: "Attach this folder to an existing profile",
+		Long: `Attach the current folder to an existing profile.
 
 Examples:
-  aide context bind work               # auto-detect: git remote if repo, else folder path
-  aide context bind work --path        # force exact folder path match
-  aide context bind work --remote      # force git remote match (errors if not a git repo)
-  aide context bind                    # interactive picker over existing contexts`,
+  aide profile bind work               # auto-detect: git remote if repo, else folder path
+  aide profile bind work --path        # force exact folder path match
+  aide profile bind work --remote      # force git remote match (errors if not a git repo)
+  aide profile bind                    # interactive picker over existing profiles`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -182,13 +219,13 @@ Examples:
 			if !ok {
 				// TTY: offer to create. Non-TTY: hard error.
 				if isStdinTTY() {
-					fmt.Fprintf(out, "Context %q doesn't exist. Create it now? [y/N]: ", name)
+					fmt.Fprintf(out, "Profile %q doesn't exist. Create it now? [y/N]: ", name)
 					ans, _ := reader.ReadString('\n')
 					if strings.EqualFold(strings.TrimSpace(ans), "y") {
 						return runCreateWizard(cmd, name, createOptions{here: tristateYes})
 					}
 				}
-				return fmt.Errorf("context %q not found.\nRun: aide context create %s", name, name)
+				return fmt.Errorf("profile %q not found.\nRun: aide profile create %s", name, name)
 			}
 
 			var rule config.MatchRule
@@ -208,20 +245,20 @@ Examples:
 				rule, desc = autoDetectMatchRule(cwd)
 			}
 
-			// Dedup: same context already covers this repo.
+			// Dedup: same profile already covers this repo.
 			for _, r := range ctx.Match {
 				if rulesCollide(r, rule) {
-					fmt.Fprintf(out, "This folder is already bound to context %q.\n", name)
+					fmt.Fprintf(out, "This folder is already bound to profile %q.\n", name)
 					return nil
 				}
 			}
 
-			// Cross-context collision: same repo bound to a different context.
+			// Cross-profile collision: same repo bound to a different profile.
 			if existing := findExistingBind(cfg, name, rule); existing != nil {
 				if !isStdinTTY() {
-					return fmt.Errorf("folder already bound to context %q; re-run interactively to move it", existing.ctxName)
+					return fmt.Errorf("folder already bound to profile %q; re-run interactively to move it", existing.ctxName)
 				}
-				fmt.Fprintf(out, "This folder is already bound to context %q.\n[a]bort or [m]ove to %q? [a]: ", existing.ctxName, name)
+				fmt.Fprintf(out, "This folder is already bound to profile %q.\n[a]bort or [m]ove to %q? [a]: ", existing.ctxName, name)
 				ans, _ := reader.ReadString('\n')
 				if strings.ToLower(strings.TrimSpace(ans)) != "m" {
 					return fmt.Errorf("aborted")
@@ -236,7 +273,7 @@ Examples:
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-			fmt.Fprintf(out, "Bound this folder to context %q (matched %s)\n", name, desc)
+			fmt.Fprintf(out, "Bound this folder to profile %q (matched %s)\n", name, desc)
 			return nil
 		},
 	}
@@ -246,15 +283,15 @@ Examples:
 	return cmd
 }
 
-// pickExistingContext shows a numbered menu of existing contexts and
+// pickExistingContext shows a numbered menu of existing profiles and
 // returns the chosen name. Returns an error in non-TTY mode (the
 // caller is expected to require a positional name in that case).
 func pickExistingContext(out io.Writer, reader *bufio.Reader, cfg *config.Config) (string, error) {
 	if !isStdinTTY() {
-		return "", fmt.Errorf("a context name is required in non-interactive mode")
+		return "", fmt.Errorf("a profile name is required in non-interactive mode")
 	}
 	if len(cfg.Contexts) == 0 {
-		return "", fmt.Errorf("no contexts configured. Run: aide context create <name>")
+		return "", fmt.Errorf("no profiles configured. Run: aide profile create <name>")
 	}
 	names := make([]string, 0, len(cfg.Contexts))
 	for n := range cfg.Contexts {
@@ -262,7 +299,7 @@ func pickExistingContext(out io.Writer, reader *bufio.Reader, cfg *config.Config
 	}
 	sort.Strings(names)
 
-	fmt.Fprintln(out, "Existing contexts:")
+	fmt.Fprintln(out, "Existing profiles:")
 	for i, n := range names {
 		fmt.Fprintf(out, "  [%d] %s\n", i+1, n)
 	}
@@ -314,14 +351,14 @@ func contextCreateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create [name]",
-		Short: "Create a new context",
-		Long: `Create a new context.
+		Short: "Create a new profile",
+		Long: `Create a new profile.
 
 Examples:
-  aide context create                                              # interactive wizard
-  aide context create work                                         # name pre-filled
-  aide context create work --agent claude --secret-store firmus --here
-  aide context create work --agent claude --no-here                # skip cwd binding`,
+  aide profile create                                              # interactive wizard
+  aide profile create work                                         # name pre-filled
+  aide profile create work --agent claude --secret-store firmus --here
+  aide profile create work --agent claude --no-here                # skip cwd binding`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -356,7 +393,7 @@ Examples:
 	return cmd
 }
 
-// runCreateWizard creates a new context, optionally binding cwd. The
+// runCreateWizard creates a new profile, optionally binding cwd. The
 // wizard fills in any missing fields by prompting in TTY mode, or by
 // returning a helpful error in non-TTY mode.
 func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOptions) error {
@@ -375,20 +412,20 @@ func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOption
 	name := strings.TrimSpace(prefilledName)
 	if name == "" {
 		if !tty {
-			return fmt.Errorf("a context name is required in non-interactive mode")
+			return fmt.Errorf("a profile name is required in non-interactive mode")
 		}
-		fmt.Fprint(out, "Context name: ")
+		fmt.Fprint(out, "Profile name: ")
 		raw, err := reader.ReadString('\n')
 		if err != nil {
-			return fmt.Errorf("reading context name: %w", err)
+			return fmt.Errorf("reading profile name: %w", err)
 		}
 		name = strings.TrimSpace(raw)
 		if name == "" {
-			return fmt.Errorf("context name cannot be empty")
+			return fmt.Errorf("profile name cannot be empty")
 		}
 	}
 	if _, exists := cfg.Contexts[name]; exists {
-		return fmt.Errorf("context %q already exists", name)
+		return fmt.Errorf("profile %q already exists", name)
 	}
 
 	// 2. Agent
@@ -468,7 +505,7 @@ func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOption
 		return fmt.Errorf("writing config: %w", err)
 	}
 
-	fmt.Fprintf(out, "Created context %q (agent: %s).\n", name, agentName)
+	fmt.Fprintf(out, "Created profile %q (agent: %s).\n", name, agentName)
 	if bindHere {
 		fmt.Fprintf(out, "Bound this folder (matched %s).\n", bindDesc)
 	}
@@ -490,7 +527,7 @@ func singleAgentOnPath() string {
 func contextRenameCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "rename <old-name> <new-name>",
-		Short:        "Rename a context",
+		Short:        "Rename a profile",
 		Args:         cobra.ExactArgs(2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -505,10 +542,10 @@ func contextRenameCmd() *cobra.Command {
 
 			ctx, ok := cfg.Contexts[oldName]
 			if !ok {
-				return fmt.Errorf("context %q not found", oldName)
+				return fmt.Errorf("profile %q not found", oldName)
 			}
 			if _, exists := cfg.Contexts[newName]; exists {
-				return fmt.Errorf("context %q already exists", newName)
+				return fmt.Errorf("profile %q already exists", newName)
 			}
 
 			cfg.Contexts[newName] = ctx
@@ -522,7 +559,7 @@ func contextRenameCmd() *cobra.Command {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Renamed context %q -> %q\n", oldName, newName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Renamed profile %q -> %q\n", oldName, newName)
 			return nil
 		},
 	}
@@ -531,7 +568,7 @@ func contextRenameCmd() *cobra.Command {
 func contextRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "remove <name>",
-		Short:        "Remove a context from configuration",
+		Short:        "Remove a profile from configuration",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -543,7 +580,7 @@ func contextRemoveCmd() *cobra.Command {
 			cfg := env.Config()
 			ctx, ok := cfg.Contexts[name]
 			if !ok {
-				return fmt.Errorf("context %q not found", name)
+				return fmt.Errorf("profile %q not found", name)
 			}
 			removedAgent := ctx.Agent
 			delete(cfg.Contexts, name)
@@ -552,7 +589,7 @@ func contextRemoveCmd() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Removed context %q\n", name)
+			fmt.Fprintf(out, "Removed profile %q\n", name)
 
 			// Check for orphaned agent
 			if removedAgent != "" {
@@ -564,7 +601,7 @@ func contextRemoveCmd() *cobra.Command {
 					}
 				}
 				if !stillUsed {
-					fmt.Fprintf(out, "\nAgent %q is no longer used by any context.\n", removedAgent)
+					fmt.Fprintf(out, "\nAgent %q is no longer used by any profile.\n", removedAgent)
 					fmt.Fprintf(out, "Remove it with: aide agents remove %s\n", removedAgent)
 				}
 			}
@@ -578,7 +615,7 @@ func contextSetSecretCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:          "set-secret <secret-name>",
-		Short:        "Set the secret on the current context",
+		Short:        "Set the secret on the current profile",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -601,12 +638,13 @@ func contextSetSecretCmd() *cobra.Command {
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Set secret %q on context %q\n", secretName, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Set secret %q on profile %q\n", secretName, ctxName)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile (default: CWD-matched)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 
@@ -615,7 +653,7 @@ func contextRemoveSecretCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:          "remove-secret",
-		Short:        "Remove the secret from the current context",
+		Short:        "Remove the secret from the current profile",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -626,7 +664,7 @@ func contextRemoveSecretCmd() *cobra.Command {
 
 			oldSecret := ctx.Secret
 			if oldSecret == "" {
-				return fmt.Errorf("context %q has no secret configured", ctxName)
+				return fmt.Errorf("profile %q has no secret configured", ctxName)
 			}
 
 			// Warn if env vars reference secrets templates
@@ -642,22 +680,25 @@ func contextRemoveSecretCmd() *cobra.Command {
 			if err := config.WriteConfig(cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed secret %q from context %q\n", oldSecret, ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed secret %q from profile %q\n", oldSecret, ctxName)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&contextName, "context", "", "Target context (default: CWD-matched)")
+	cmd.Flags().StringVar(&contextName, "context", "", "Target profile (default: CWD-matched)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 
 func contextSetDefaultCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "set-default [context-name]",
-		Short: "Set a context as the default fallback",
-		Long: `Set a context as the default fallback when no match rules apply.
+	var profile string
+	cmd := &cobra.Command{
+		Use:   "set-default [profile-name]",
+		Short: "Set a profile as the default fallback",
+		Long: `Set a profile as the default fallback when no match rules apply.
 
-If no context name is given, the CWD-matched context is used.`,
+If no profile name is given, --profile names it, else the CWD-matched
+profile is used.`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -668,19 +709,23 @@ If no context name is given, the CWD-matched context is used.`,
 			cwd := env.CWD()
 			cfg := env.Config()
 
-			var ctxName string
+			ctxName := profile
 			if len(args) > 0 {
+				if profile != "" && profile != args[0] {
+					return fmt.Errorf("--profile %q and argument %q name different profiles; pass one", profile, args[0])
+				}
 				ctxName = args[0]
-			} else {
+			}
+			if ctxName == "" {
 				rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
 				if err != nil {
-					return fmt.Errorf("resolving context: %w", err)
+					return fmt.Errorf("resolving profile: %w", err)
 				}
 				ctxName = rc.Name
 			}
 
 			if _, ok := cfg.Contexts[ctxName]; !ok {
-				return fmt.Errorf("context %q not found", ctxName)
+				return fmt.Errorf("profile %q not found", ctxName)
 			}
 
 			cfg.DefaultContext = ctxName
@@ -688,8 +733,11 @@ If no context name is given, the CWD-matched context is used.`,
 				return fmt.Errorf("writing config: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Set default context to %q\n", ctxName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Set default profile to %q\n", ctxName)
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&profile, "profile", "", "Profile to make the default (instead of the CWD-matched one)")
+	registerSelectionCompletions(cmd)
+	return cmd
 }

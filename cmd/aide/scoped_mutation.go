@@ -19,11 +19,12 @@ type scopedMutation struct {
 	successProject func(poPath string) string
 }
 
-// validateContextScope rejects the "--context without --global" combination
-// that 14 cobra commands all guarded against by hand.
+// validateContextScope rejects the "--profile (or --context) without
+// --global" combination that 14 cobra commands all guarded against by
+// hand.
 func validateContextScope(global bool, contextName string) error {
 	if !global && contextName != "" {
-		return fmt.Errorf("the --context flag requires --global")
+		return fmt.Errorf("--profile (or the deprecated --context) requires --global")
 	}
 	return nil
 }

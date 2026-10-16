@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -189,16 +190,29 @@ func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir strin
 	return rc, in, sel, notices, nil
 }
 
+// contextFlagDeprecation is printed to stderr when --context is used.
+const contextFlagDeprecation = "--context is deprecated; use --profile"
+
 // addProfileFlag gives a command that already takes --context a
-// --profile flag selecting the same thing: --profile fills target
+// --profile flag selecting the same thing, and deprecates --context:
+// it is hidden from help and using it prints a notice to stderr (never
+// stdout, so --format json stays parseable). --profile fills target
 // (the --context variable) before RunE, and the two must agree when
 // both are given.
 func addProfileFlag(cmd *cobra.Command, target *string) {
 	var profile string
-	cmd.Flags().StringVar(&profile, "profile", "", "Profile name (same as --context)")
+	usage := "Profile name"
+	if f := cmd.Flags().Lookup("context"); f != nil {
+		usage = strings.NewReplacer("contexts", "profiles", "context", "profile", "Context", "Profile").Replace(f.Usage)
+		f.Hidden = true
+	}
+	cmd.Flags().StringVar(&profile, "profile", "", usage)
 	registerSelectionCompletions(cmd)
 	next := cmd.PreRunE
 	cmd.PreRunE = func(c *cobra.Command, args []string) error {
+		if c.Flags().Changed("context") {
+			fmt.Fprintln(c.ErrOrStderr(), contextFlagDeprecation)
+		}
 		if profile != "" {
 			if *target != "" && *target != profile {
 				return fmt.Errorf("--profile %q and --context %q name different profiles; pass one", profile, *target)

@@ -89,7 +89,7 @@ func TestStatuslineInstall_DefaultContext_WritesToSandboxedClaudeDir(t *testing.
 	dir := isolatedConfigDir(t)
 	writeStatuslineConfig(t, dir, "work", "claude", "")
 
-	out, err := runStatuslineInstall(t, "--context", "work")
+	out, err := runStatuslineInstall(t, "--profile", "work")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -112,7 +112,7 @@ func TestStatuslineInstall_UnsandboxedContext_WritesToDefaultClaudeDir(t *testin
 		t.Fatal(err)
 	}
 
-	if out, err := runStatuslineInstall(t, "--context", "work"); err != nil {
+	if out, err := runStatuslineInstall(t, "--profile", "work"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
@@ -128,7 +128,7 @@ func TestStatuslineInstall_ExportedConfigDir_WritesThere(t *testing.T) {
 	exported := filepath.Join(dir, "claude-elsewhere")
 	t.Setenv("CLAUDE_CONFIG_DIR", exported)
 
-	if out, err := runStatuslineInstall(t, "--context", "work"); err != nil {
+	if out, err := runStatuslineInstall(t, "--profile", "work"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
@@ -142,7 +142,7 @@ func TestStatuslineInstall_ProfileContext_WritesToProfileDir(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeStatuslineConfig(t, dir, "work", "claude", "work")
 
-	out, err := runStatuslineInstall(t, "--context", "work")
+	out, err := runStatuslineInstall(t, "--profile", "work")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -168,7 +168,7 @@ func TestStatuslineInstall_UnknownContext_ReturnsError(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeStatuslineConfig(t, dir, "work", "claude", "")
 
-	_, err := runStatuslineInstall(t, "--context", "nonexistent")
+	_, err := runStatuslineInstall(t, "--profile", "nonexistent")
 	if err == nil {
 		t.Error("expected error for unknown context, got nil")
 	}
@@ -179,11 +179,11 @@ func TestStatuslineRemove_ProfileContext_RemovesFromProfileDir(t *testing.T) {
 	writeStatuslineConfig(t, dir, "work", "claude", "work")
 
 	// Install first.
-	if _, err := runStatuslineInstall(t, "--context", "work"); err != nil {
+	if _, err := runStatuslineInstall(t, "--profile", "work"); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 
-	out, err := runStatuslineRemove(t, "--context", "work")
+	out, err := runStatuslineRemove(t, "--profile", "work")
 	if err != nil {
 		t.Fatalf("remove: %v\n%s", err, out)
 	}
@@ -202,10 +202,10 @@ func TestStatuslineInstall_AlreadyInstalled_ReportsNoOp(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeStatuslineConfig(t, dir, "work", "claude", "")
 
-	if _, err := runStatuslineInstall(t, "--context", "work"); err != nil {
+	if _, err := runStatuslineInstall(t, "--profile", "work"); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
-	out, err := runStatuslineInstall(t, "--context", "work")
+	out, err := runStatuslineInstall(t, "--profile", "work")
 	if err != nil {
 		t.Fatalf("second install: %v\n%s", err, out)
 	}
@@ -717,7 +717,7 @@ func TestRunStatusline_UnknownPositionalAgent_InstallHonorsPositional(t *testing
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"gemini", "--install", "--context", "work"})
+	cmd.SetArgs([]string{"gemini", "--install", "--profile", "work"})
 	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("expected positional agent to be honored for --install, got error: %v\n%s", err, buf.String())
@@ -763,7 +763,7 @@ func TestRunStatusline_ExplicitContext_PreviewsSimulatedSession(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work"})
+	cmd.SetArgs([]string{"--profile", "work"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\n%s", err, buf.String())
 	}
@@ -783,7 +783,7 @@ func TestRunStatusline_ExplicitContext_UnknownNameErrors(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "nonexistent"})
+	cmd.SetArgs([]string{"--profile", "nonexistent"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatalf("expected error for unknown context, got success with output: %s", buf.String())
@@ -802,7 +802,7 @@ func TestRunStatusline_ExplicitContext_AgentFromContextWhenNoAgentFlag(t *testin
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work"})
+	cmd.SetArgs([]string{"--profile", "work"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatalf("expected unsupported-agent error (context's agent is gemini), got success with output: %s", buf.String())

@@ -8,8 +8,8 @@ import (
 )
 
 // emptyStateAdapter implements launcher.EmptyStateActions by routing
-// to the same code paths as the standalone `aide context bind` /
-// `aide context create` commands.
+// to the same code paths as the standalone `aide profile bind` /
+// `aide profile create` commands.
 type emptyStateAdapter struct {
 	cmd *cobra.Command
 }

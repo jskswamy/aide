@@ -33,7 +33,7 @@ func TestAdopt_YesPromotesUnmanaged(t *testing.T) {
 		"extra": {Command: "extra-cmd", Args: []string{"--flag"}},
 	}
 
-	out, err := runAdoptCmd(t, "", "--context", "work", "--yes")
+	out, err := runAdoptCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -97,7 +97,7 @@ func TestAdopt_MarketplaceAgentWritesNestedShape(t *testing.T) {
 		{Key: "steveyegge/beads", Source: "github:steveyegge/beads", Name: "beads-marketplace"},
 	}
 
-	out, err := runAdoptCmd(t, "", "--context", "work", "--yes")
+	out, err := runAdoptCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -147,7 +147,7 @@ func TestAdopt_PromotesUnmanagedMarketplace(t *testing.T) {
 		{Key: "jskswamy/aide", Source: "github:jskswamy/aide", Name: "aide-plugins"},
 	}
 
-	out, err := runAdoptCmd(t, "", "--context", "work", "--yes")
+	out, err := runAdoptCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -194,7 +194,7 @@ func TestAdopt_PromotesUnmanagedMarketplace(t *testing.T) {
 func TestAdopt_NothingToDo(t *testing.T) {
 	fakeProvReset(t)
 	setupProvisionConfig(t, nil, nil, nil, nil)
-	out, err := runAdoptCmd(t, "", "--context", "work", "--yes")
+	out, err := runAdoptCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -215,7 +215,7 @@ func TestAdoptHookRewritesAgentDirPrefix(t *testing.T) {
 		{Event: "pre_tool", Command: "/Users/u/.claude-work/hooks/cbm-gate"},
 	}
 
-	out, err := runAdoptCmd(t, "", "--context", "work", "--yes")
+	out, err := runAdoptCmd(t, "", "--profile", "work", "--yes")
 	if err != nil {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
@@ -260,7 +260,7 @@ func TestAdoptHookDedupAcrossAgentDirs(t *testing.T) {
 	theFakeProv.storedHooks = []provision.Hook{
 		{Event: "SubagentStart", Matcher: "*", Command: "/Users/u/.claude-work/hooks/cbm-subagent-reminder"},
 	}
-	if out, err := runAdoptCmd(t, "", "--context", "work", "--yes"); err != nil {
+	if out, err := runAdoptCmd(t, "", "--profile", "work", "--yes"); err != nil {
 		t.Fatalf("first adopt: %v\n%s", err, out)
 	}
 
@@ -270,7 +270,7 @@ func TestAdoptHookDedupAcrossAgentDirs(t *testing.T) {
 	theFakeProv.storedHooks = []provision.Hook{
 		{Event: "SubagentStart", Matcher: "*", Command: "/Users/u/.claude-hackathon/hooks/cbm-subagent-reminder"},
 	}
-	if out, err := runAdoptCmd(t, "", "--context", "hackathon", "--yes"); err != nil {
+	if out, err := runAdoptCmd(t, "", "--profile", "hackathon", "--yes"); err != nil {
 		t.Fatalf("second adopt: %v\n%s", err, out)
 	}
 

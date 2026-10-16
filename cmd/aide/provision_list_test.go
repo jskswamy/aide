@@ -207,7 +207,7 @@ func TestPluginList_DeclaredInstalledManaged(t *testing.T) {
 	cmd := pluginListCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work"})
+	cmd.SetArgs([]string{"--profile", "work"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\n%s", err, buf.String())
 	}
@@ -241,7 +241,7 @@ func TestPluginList_JSONFormat(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	cmd.SetArgs([]string{"--profile", "work", "--format", "json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
 	}
@@ -278,7 +278,7 @@ func TestPluginList_URLDirectMatchedByInstallRef(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	cmd.SetArgs([]string{"--profile", "work", "--format", "json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
 	}
@@ -301,7 +301,7 @@ func TestMCPList_JSONFormat(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work", "--format", "json"})
+	cmd.SetArgs([]string{"--profile", "work", "--format", "json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\noutput: %s", err, buf.String())
 	}
@@ -356,7 +356,7 @@ func TestPluginList_ShowsMarketplaceColumn(t *testing.T) {
 	cmd := pluginListCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work"})
+	cmd.SetArgs([]string{"--profile", "work"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\n%s", err, buf.String())
 	}
@@ -391,7 +391,7 @@ func TestMCPList_DeclaredInstalledManaged(t *testing.T) {
 	cmd := mcpListCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"--context", "work"})
+	cmd.SetArgs([]string{"--profile", "work"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v\n%s", err, buf.String())
 	}

@@ -70,6 +70,7 @@ Command template variables: {agent} (agent name), {agent_dir} (agent config dire
 	cmd.Flags().StringVar(&matcher, "matcher", "", "Hook matcher (shell, or empty for all tools)")
 	cmd.Flags().StringVar(&command, "command", "", "Command to execute")
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (top-level by default; per-context support in a future release)")
+	addProfileFlag(cmd, &contextName)
 	return cmd
 }
 
@@ -94,6 +95,7 @@ The matcher is optional; if omitted, the first entry matching event and command 
 	cmd.Flags().StringVar(&matcher, "matcher", "", "Tool matcher (optional)")
 	cmd.Flags().StringVar(&command, "command", "", "Command string (must match exactly)")
 	cmd.Flags().StringVar(&contextName, "context", "", "Context name (top-level by default; per-context support in a future release)")
+	addProfileFlag(cmd, &contextName)
 	_ = cmd.MarkFlagRequired("event")
 	_ = cmd.MarkFlagRequired("command")
 	return cmd

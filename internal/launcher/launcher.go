@@ -708,7 +708,7 @@ func wrapTemplateError(err error, contextName string, secret string) error {
 		if secret == "" {
 			return fmt.Errorf(
 				"context %q references secrets in env vars but has no secret configured.\n\n"+
-					"Fix with: aide context set-secret <name> --context %s --global",
+					"Fix with: aide profile set-secret <name> --profile %s",
 				contextName, contextName,
 			)
 		}
@@ -723,7 +723,7 @@ func wrapTemplateError(err error, contextName string, secret string) error {
 	if strings.Contains(msg, "nil pointer") || strings.Contains(msg, "can't evaluate field") {
 		return fmt.Errorf(
 			"context %q references secrets but has no secret configured.\n\n"+
-				"Fix with: aide context set-secret <name> --context %s --global",
+				"Fix with: aide profile set-secret <name> --profile %s",
 			contextName, contextName,
 		)
 	}

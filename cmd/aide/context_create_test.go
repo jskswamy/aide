@@ -26,7 +26,7 @@ func TestContextCreate_FullyScripted_NoHere(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `Created context "work"`) {
+	if !strings.Contains(out, `Created profile "work"`) {
 		t.Errorf("expected create message, got: %s", out)
 	}
 	// Verify the config file was written and the context has no match rules.
@@ -84,5 +84,29 @@ func TestContextCreate_DuplicateName_Errors(t *testing.T) {
 	_, err := runContextCreate(t, "work", "--agent", "claude", "--no-here")
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("expected duplicate error, got: %v", err)
+	}
+}
+
+func TestProfileSetDefault_ProfileFlag(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeConfig(t, dir, "work", "personal")
+	run := func(args ...string) (string, error) {
+		cmd := contextSetDefaultCmd()
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		return buf.String(), err
+	}
+	if out, err := run("--profile", "personal"); err != nil || !strings.Contains(out, `Set default profile to "personal"`) {
+		t.Fatalf("set-default --profile personal: %v\n%s", err, out)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "xdg", "aide", "config.yaml"))
+	if !strings.Contains(string(data), "default_context: personal") {
+		t.Errorf("default not saved (legacy file keeps its schema):\n%s", data)
+	}
+	if _, err := run("work", "--profile", "personal"); err == nil {
+		t.Error("argument and --profile naming different profiles should conflict")
 	}
 }

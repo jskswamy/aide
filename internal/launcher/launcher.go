@@ -305,7 +305,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// must abort the launch — profile mis-config silently launching
 	// against the wrong dir is the exact class of bug this feature
 	// fixes.
-	mergedEnv, perr := provision.InjectProfileEnv(rc.Context, rc.Context.Env, homeDir)
+	mergedEnv, perr := provision.InjectProfileEnv(cfg.HarnessOf(rc.Context.Agent), rc.Context, rc.Context.Env, homeDir)
 	if perr != nil {
 		return fmt.Errorf("profile %q: %w", rc.Name, perr)
 	}
@@ -534,7 +534,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			// 12b. Propagate merged env so modules can inspect env vars.
 			policy.Env = env
 			// 12c. Set agent module for sandbox profile
-			policy.AgentModule = ResolveAgentModule(agentName)
+			policy.AgentModule = ResolveAgentModule(cfg.HarnessOf(agentName))
 			// 12d. Apply agent-module env overrides (e.g. claude's
 			// CLAUDE_CONFIG_DIR redirect to a sandbox-friendly location).
 			// AgentEnv observes the un-injected env via ctx.EnvLookup, so a

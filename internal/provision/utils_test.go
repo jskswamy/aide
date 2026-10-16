@@ -86,7 +86,7 @@ func TestJournalLen(t *testing.T) {
 }
 
 func TestResolveContextPopulatesFields(t *testing.T) {
-	got, err := provision.ResolveContext("work",
+	got, err := provision.ResolveContext("work", "claude",
 		config.Context{Agent: "claude"},
 		"/home/u",
 		"/p/root",

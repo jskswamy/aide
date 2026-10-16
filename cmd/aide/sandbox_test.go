@@ -264,3 +264,24 @@ func TestSandboxTest_ProfileUsesItsOwnClaudeConfigDir(t *testing.T) {
 		}
 	}
 }
+
+// An agents: alias of claude gets claude's sandbox module, so the
+// profile's own config dir is granted as for claude itself.
+func TestSandboxTest_AgentAliasGetsHarnessModule(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	yaml := "agents:\n  work-claude:\n    binary: claude\n" +
+		"profiles:\n" +
+		"  verify-b:\n    agent: work-claude\n    config_dir_name: verify-b\n" +
+		"default_profile: verify-b\n"
+	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runSandboxCmd(t, "test", "--profile", "verify-b")
+	if err != nil {
+		t.Fatalf("sandbox test: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, filepath.Join(dir, ".claude-verify-b")) {
+		t.Errorf("alias profile's claude config dir missing from sandbox profile:\n%s", out)
+	}
+}

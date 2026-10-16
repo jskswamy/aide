@@ -86,7 +86,7 @@ func SelectHarness(cfg *config.Config, rc *aidectx.ResolvedContext, in Selection
 		}
 		return sel, "", err
 	}
-	rc.Context = provision.WithAgent(rc.Context, agent)
+	rc.Context = provision.WithAgent(rc.Context, agent, cfg.HarnessOf)
 	return sel, notice, nil
 }
 

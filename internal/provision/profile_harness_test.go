@@ -20,7 +20,7 @@ func TestProfileUnsupportedHarnesses(t *testing.T) {
 			ctx := config.Context{Agent: agent, Profile: "work"}
 			want := fmt.Sprintf("Profiles are not supported for harness %q", agent)
 
-			err := provision.ValidateProfile(ctx, "/home/u", false)
+			err := provision.ValidateProfile(ctx.Agent, ctx, "/home/u", false)
 			if err == nil || err.Error() != want {
 				t.Errorf("ValidateProfile error = %v, want %q", err, want)
 			}
@@ -28,7 +28,7 @@ func TestProfileUnsupportedHarnesses(t *testing.T) {
 				t.Errorf("ValidateProfile error does not wrap ErrProfileNotSupported: %v", err)
 			}
 
-			_, err = provision.InjectProfileEnv(ctx, nil, "/home/u")
+			_, err = provision.InjectProfileEnv(ctx.Agent, ctx, nil, "/home/u")
 			if err == nil || err.Error() != want {
 				t.Errorf("InjectProfileEnv error = %v, want %q", err, want)
 			}
@@ -38,7 +38,7 @@ func TestProfileUnsupportedHarnesses(t *testing.T) {
 
 func TestInjectProfileEnvForPi(t *testing.T) {
 	ctx := config.Context{Agent: "pi", Profile: "work"}
-	env, err := provision.InjectProfileEnv(ctx, nil, "/home/u")
+	env, err := provision.InjectProfileEnv(ctx.Agent, ctx, nil, "/home/u")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

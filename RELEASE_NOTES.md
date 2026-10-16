@@ -444,6 +444,17 @@ instead of the profile's own (`~/.claude-<name>`). It now injects the
 profile's config dir as a launch does, and stops with the launch's
 error when the profile's dir settings are invalid.
 
+#### Profiles work with agents: aliases of Claude, Codex and Pi
+
+A profile whose `agent:` names an `agents:` entry, such as
+`work-claude` with `binary: claude`, stopped with
+`Profiles are not supported for harness "work-claude"`. Profile
+support now follows the entry's binary, so the launch gets the
+harness's profile dir (`CLAUDE_CONFIG_DIR=~/.claude-<name>`) and its
+sandbox module, which grants that dir. `aide which`, `aide status`,
+`aide sandbox test` and `aide project set` resolve the alias the same
+way.
+
 #### remote_name in match rules now takes effect
 
 A remote rule with `remote_name: upstream` was documented but ignored:

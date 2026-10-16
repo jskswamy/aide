@@ -333,7 +333,7 @@ func sandboxTestCmd() *cobra.Command {
 			// agent-specific path issues (e.g. claude's
 			// CLAUDE_CONFIG_DIR override).
 			if rc.Context.Agent != "" {
-				if m := launcher.ResolveAgentModule(rc.Context.Agent); m != nil {
+				if m := launcher.ResolveAgentModule(cfg.HarnessOf(rc.Context.Agent)); m != nil {
 					policy.AgentModule = m
 				}
 			}
@@ -344,7 +344,7 @@ func sandboxTestCmd() *cobra.Command {
 			// per-profile overrides. Without this, the test command's
 			// diagnostic output diverges from what the launcher
 			// actually generates at run time.
-			ctxEnv, err := provision.InjectProfileEnv(rc.Context, maps.Clone(rc.Context.Env), homeDir)
+			ctxEnv, err := provision.InjectProfileEnv(cfg.HarnessOf(rc.Context.Agent), rc.Context, maps.Clone(rc.Context.Env), homeDir)
 			if err != nil {
 				return fmt.Errorf("profile %q: %w", rc.Name, err)
 			}

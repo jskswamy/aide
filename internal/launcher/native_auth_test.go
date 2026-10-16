@@ -2,6 +2,8 @@ package launcher
 
 import (
 	"os"
+
+	"github.com/jskswamy/aide/internal/config"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,5 +104,43 @@ default_profile: plain
 		if strings.Contains(stderr, "apiKeyHelper") {
 			t.Errorf("unexpected apiKeyHelper notice:\n%s", stderr)
 		}
+	}
+}
+
+func TestNativeAuthNotice_OnlyClaudeProfileDirs(t *testing.T) {
+	home := t.TempDir()
+	helper := `{"apiKeyHelper": "/opt/vault-key"}`
+	writeClaudeSettings(t, filepath.Join(home, ".claude-work"), helper)
+	writeClaudeSettings(t, filepath.Join(home, ".codex-work"), helper)
+	writeClaudeSettings(t, filepath.Join(home, ".claude"), helper)
+
+	work := config.Context{Profile: "work"}
+	for name, tc := range map[string]struct {
+		harness string
+		ctx     config.Context
+		want    bool
+	}{
+		"claude profile":       {"claude", work, true},
+		"codex profile":        {"codex", work, false},
+		"claude without a dir": {"claude", config.Context{}, false},
+		"unknown harness":      {"my-wrapper", work, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := nativeAuthNotice(tc.harness, tc.ctx, home); (got != "") != tc.want {
+				t.Errorf("notice = %q, want notice=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A user-defined agent whose binary is claude is checked like claude:
+// the launcher passes cfg.HarnessOf(agent).
+func TestNativeAuthNotice_AgentAliasOfClaude(t *testing.T) {
+	home := t.TempDir()
+	writeClaudeSettings(t, filepath.Join(home, ".claude-work"), `{"apiKeyHelper": "/opt/vault-key"}`)
+	cfg := &config.Config{Agents: map[string]config.AgentDef{"work-claude": {Binary: "/usr/local/bin/claude"}}}
+	ctx := config.Context{Agent: "work-claude", Profile: "work"}
+	if got := nativeAuthNotice(cfg.HarnessOf(ctx.Agent), ctx, home); !strings.Contains(got, "apiKeyHelper") {
+		t.Errorf("no notice for an agent alias of claude: %q", got)
 	}
 }

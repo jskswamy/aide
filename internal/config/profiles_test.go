@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -441,12 +442,13 @@ func TestLoad_CaseOnlyDirDifferenceIsAliasOnCaseInsensitiveFS(t *testing.T) {
 		fold bool
 		want error
 	}{{true, ErrProfileDirAlias}, {false, nil}} {
-		prev := caseInsensitiveDirs
-		caseInsensitiveDirs = tc.fold
-		_, err := loadYAML(t, cfg)
-		caseInsensitiveDirs = prev
-		if !errors.Is(err, tc.want) {
-			t.Errorf("case-insensitive=%v: Load() error = %v, want %v", tc.fold, err, tc.want)
-		}
+		t.Run(fmt.Sprintf("case-insensitive=%v", tc.fold), func(t *testing.T) {
+			prev := caseInsensitiveDirs
+			caseInsensitiveDirs = tc.fold
+			t.Cleanup(func() { caseInsensitiveDirs = prev })
+			if _, err := loadYAML(t, cfg); !errors.Is(err, tc.want) {
+				t.Errorf("Load() error = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }

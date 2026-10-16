@@ -9,7 +9,7 @@ import (
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
-// With a profile dir selected, the Pi module' Seatbelt rules
+// With a profile dir selected, the Pi and Codex modules' Seatbelt rules
 // (the macOS backend) grant that dir only: not the default dir, Pi's
 // ~/.pi parent, or another profile's dir, even when they exist.
 func TestProfileDirRulesGrantOnlySelectedDir(t *testing.T) {
@@ -19,7 +19,8 @@ func TestProfileDirRulesGrantOnlySelectedDir(t *testing.T) {
 		work   string
 		others []string
 	}{
-		"pi": {PiAgent, "PI_CODING_AGENT_DIR", ".pi-work", []string{".pi", ".pi/agent", ".pi-personal"}},
+		"pi":    {PiAgent, "PI_CODING_AGENT_DIR", ".pi-work", []string{".pi", ".pi/agent", ".pi-personal"}},
+		"codex": {CodexAgent, "CODEX_HOME", ".codex-work", []string{".codex", ".codex-personal"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()

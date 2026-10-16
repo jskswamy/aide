@@ -322,3 +322,17 @@ func TestPiProviderNamesClassified(t *testing.T) {
 		}
 	}
 }
+
+// Codex's credential variables (spec Codex admission row): keys and
+// access tokens are secret-bearing, the endpoint is a selector.
+func TestCodexNamesClassified(t *testing.T) {
+	reg := envscrub.Credentials()
+	for _, n := range []string{"CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_API_KEY"} {
+		if !envscrub.IsProviderSecretName(n) || !reg.Permit(n).Matches(n) {
+			t.Errorf("%s should be a pinned secret-bearing provider name", n)
+		}
+	}
+	if !envscrub.IsProviderSelectorName("OPENAI_BASE_URL") || !reg.Permit("OPENAI_BASE_URL").Matches("OPENAI_BASE_URL") {
+		t.Error("OPENAI_BASE_URL should be a pinned provider selector")
+	}
+}

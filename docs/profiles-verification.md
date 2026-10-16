@@ -19,7 +19,7 @@ be updated.
 | --- | --- | --- |
 | Claude Code | [Claude Code](#claude-code) | Pending verification |
 | Pi | [Pi](#pi) | Pending verification |
-| Codex | Added by the Codex admission task | Not written yet |
+| Codex | [Codex](#codex) | Pending verification |
 
 ## How to record results
 
@@ -869,9 +869,13 @@ Result (Linux): PASS / FAIL / N/A    Notes:
 
 Pi has no shell escape of its own that runs before a model replies,
 so this step swaps in a small script named `pi` that probes the
-sandbox the way Pi would run.
+sandbox the way Pi would run. First make sure the files it probes
+exist, so a denial means something:
 
 ```sh
+for d in ~/.pi-verify-b ~/.pi/agent; do
+  mkdir -p "$d"; [ -f "$d/auth.json" ] || { echo '{}' > "$d/auth.json"; chmod 600 "$d/auth.json"; }
+done
 mkdir -p ~/aide-verify/bin
 cat > ~/aide-verify/bin/pi <<'SH'
 #!/bin/sh
@@ -912,9 +916,8 @@ READ DENIED: <home>/.pi/agent/auth.json
 WRITE OK: own dir
 ```
 
-(`READ DENIED` for a file that does not exist also passes; create it
-first if you want a stronger check.) Remove the `agents: pi` entry
-afterwards.
+Remove the `agents: pi` entry afterwards, and any `{}` `auth.json`
+the first command created.
 
 ```text
 Result (macOS): PASS / FAIL / N/A    Notes:
@@ -962,6 +965,374 @@ Remove the `openai_api_key` entry from the verify store (or the store
 itself) if you created it for P5. Then run the shared cleanup (S4).
 
 ### Pi summary
+
+```text
+Ran by:                 Date:
+macOS: all steps PASS? yes / no     Linux: all steps PASS? yes / no
+Findings to carry into the spec:
+```
+
+---
+
+## Codex
+
+Codex selects its state with `CODEX_HOME` (default `~/.codex`). Per
+OpenAI's docs (https://learn.chatgpt.com/docs/auth),
+`cli_auth_credentials_store` in `config.toml` picks where a login is
+kept: `file` (`$CODEX_HOME/auth.json`), `keyring` (the OS credential
+store; fails if none is available) or `auto` (keyring when available,
+else `auth.json`). Codex keys its keyring entry to a hash of the
+canonical `CODEX_HOME`, so two homes should get two entries; this
+section checks that. ChatGPT logins refresh automatically.
+`CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `OPENAI_API_KEY` and
+`OPENAI_BASE_URL` exported in the shell are scrubbed, and so is any
+variable a custom provider names in `env_key` in any Codex
+`config.toml` aide knows of (`~/.codex`, every profile's Codex dir). Personal skills in `~/.agents/skills` are shared by every
+Codex profile; they are not login state.
+
+You need two ChatGPT accounts that can sign in to Codex (account A and
+account B), and an OpenAI API key for X7. On a machine without a
+browser, add `--device-auth` to `login`.
+
+aide passes arguments after `--` to Codex, so
+`aide --profile verify-a --auth login -- login status` runs Codex's
+own check inside the profile's sandbox.
+
+Record the Codex version:
+
+```sh
+codex --version
+```
+
+```text
+Codex version (macOS):           (Linux):
+```
+
+### X0. Switch the test profiles to Codex
+
+Replace the two S3 entries with:
+
+```yaml
+  verify-a:
+    agent: codex
+    config_dir_name: verify-a      # contexts: users write  profile: verify-a
+  verify-b:
+    agent: codex
+    config_dir_name: verify-b      # contexts: users write  profile: verify-b
+```
+
+Note the global state:
+
+```sh
+ls -la ~/.codex 2>&1 | tee /tmp/codex-global-before.txt
+shasum -a 256 ~/.codex/auth.json 2>/dev/null | tee -a /tmp/codex-global-before.txt
+security dump-keychain 2>/dev/null | grep -A4 '"svce".*Codex' | tee /tmp/codex-keychain-before.txt   # macOS
+secret-tool search --all service 'Codex Auth' 2>&1 | tee /tmp/codex-keyring-before.txt              # Linux (libsecret)
+mkdir -p ~/.codex-verify-a ~/.codex-verify-b
+```
+
+Expected: `aide which --profile verify-a` shows
+`CODEX_HOME = <home>/.codex-verify-a`.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X1. Each profile gets its own home
+
+```sh
+aide which --profile verify-b
+aide sandbox test --profile verify-a > /tmp/verify-a.sb
+grep -c 'codex-verify-a' /tmp/verify-a.sb             # expect 1 or more
+grep -c 'codex-verify-b' /tmp/verify-a.sb             # expect 0
+grep -cE '/\.codex("|$)' /tmp/verify-a.sb             # expect 0: no ~/.codex grant
+grep -c '\.agents' /tmp/verify-a.sb                   # expect 0
+```
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X2. Separate logins, file storage
+
+```sh
+for p in verify-a verify-b; do echo 'cli_auth_credentials_store = "file"' > ~/.codex-$p/config.toml; done
+aide --profile verify-a --auth login -- login     # sign in as account A
+aide --profile verify-b --auth login -- login     # sign in as account B
+aide --profile verify-a --auth login -- login status
+aide --profile verify-b --auth login -- login status
+ls -la ~/.codex-verify-a/auth.json ~/.codex-verify-b/auth.json     # expect both, mode -rw-------
+for p in verify-a verify-b; do jq -r '.tokens.account_id' ~/.codex-$p/auth.json | shasum -a 256; done   # expect two different hashes
+shasum -a 256 ~/.codex/auth.json 2>/dev/null      # compare with /tmp/codex-global-before.txt
+```
+
+Expected: each `login status` says it is logged in using ChatGPT;
+each home holds its own `auth.json` for its own account; `~/.codex`
+is unchanged. If `account_id` is missing from your `auth.json`, hash
+`.tokens.refresh_token` instead and note it.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X3. Separate logins, keyring storage
+
+```sh
+for p in verify-a verify-b; do
+  aide --profile $p --auth login -- logout
+  echo 'cli_auth_credentials_store = "keyring"' > ~/.codex-$p/config.toml
+done
+aide --profile verify-a --auth login -- login     # account A
+aide --profile verify-b --auth login -- login     # account B
+aide --profile verify-a --auth login -- login status
+aide --profile verify-b --auth login -- login status
+ls ~/.codex-verify-a/auth.json ~/.codex-verify-b/auth.json 2>&1   # expect: no such file
+security dump-keychain 2>/dev/null | grep -A4 '"svce".*Codex'      # macOS: compare with the X0 list
+secret-tool search --all service 'Codex Auth' 2>&1 | grep -E 'label|attribute'   # Linux
+```
+
+Expected: two new keyring entries, with different account
+attributes, one per home; the X0 entries are unchanged. If the login
+fails inside the sandbox (for example, no access to the keychain or
+the D-Bus secret service), record the exact error: that is a finding,
+not a reason to stop.
+
+```text
+Keyring service / account names seen:
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X4. Auto storage
+
+```sh
+for p in verify-a verify-b; do
+  aide --profile $p --auth login -- logout
+  echo 'cli_auth_credentials_store = "auto"' > ~/.codex-$p/config.toml
+done
+aide --profile verify-a --auth login -- login     # account A
+aide --profile verify-b --auth login -- login     # account B
+ls ~/.codex-verify-a/auth.json ~/.codex-verify-b/auth.json 2>&1
+```
+
+Expected: both profiles use the same store (keyring on macOS; on
+Linux the keyring if a secret service runs, else `auth.json`), each
+with its own entry or file, and each `login status` reports its own
+account. Record which store was used.
+
+```text
+Store used (macOS):            (Linux):
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X5. Concurrent runs
+
+In two terminals in `~/aide-verify`, run `aide --profile verify-a`
+and `aide --profile verify-b`. Run `/status` in each, send a short
+prompt in each, a second one while both stay open, then exit both and
+relaunch each once.
+
+Expected: each `/status` shows its own account throughout; neither
+asks to sign in again.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X6. Token refresh stays in its own home
+
+Use file storage for this step (repeat X2's `config.toml` line and
+logins if you are on keyring). Codex refreshes a ChatGPT token when it
+is old; make verify-a's look old:
+
+```sh
+for p in verify-a verify-b; do shasum -a 256 ~/.codex-$p/auth.json; done
+cp -f ~/.codex-verify-a/auth.json /tmp/verify-a-codex-auth.bak
+jq '.last_refresh = "2020-01-01T00:00:00Z"' /tmp/verify-a-codex-auth.bak > ~/.codex-verify-a/auth.json
+chmod 600 ~/.codex-verify-a/auth.json
+aide --profile verify-a -- exec "say hi"
+jq -r '.last_refresh' ~/.codex-verify-a/auth.json          # expect a current timestamp
+for p in verify-a verify-b; do shasum -a 256 ~/.codex-$p/auth.json; done   # only verify-a's changes
+```
+
+Optionally run `aide --profile verify-a -- exec "say hi"` in two
+terminals at the same moment after resetting `last_refresh`, and check
+`jq empty ~/.codex-verify-a/auth.json` afterwards (still valid JSON,
+still signed in).
+
+Expected: the prompt succeeds without a new login; only verify-a's
+`auth.json` changes; verify-b's and `~/.codex/auth.json` do not.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X7. API key versus login precedence
+
+Store an OpenAI API key and bind it to verify-a as Codex's API key
+(see `docs/secrets.md`; reuse the C5/P5 store if you have it):
+
+```sh
+aide secrets create verify --age-key <your age1... recipient>   # skip if it exists
+aide secrets edit verify        # add: openai_api_key: <key>
+```
+
+```yaml
+  verify-a:
+    agent: codex
+    config_dir_name: verify-a
+    credentials:
+      codex: {backend: age, store: verify, key: openai_api_key}
+    default_credentials: [codex]
+```
+
+The built-in `codex` binding injects `CODEX_API_KEY`. For each case,
+run `/status` in the session (or `aide ... -- exec "say hi"` and check
+your OpenAI usage page), and check the key inside the session without
+printing it by asking Codex to run `printenv CODEX_API_KEY | wc -c`:
+
+| Case | Command | Expected auth | Expected `wc -c` |
+| --- | --- | --- | --- |
+| a | `aide --profile verify-a -- exec "say hi"` | API key (usage appears on the key's project) | more than 0 |
+| b | `aide --profile verify-a --auth login` | account A's ChatGPT login | 0 |
+| c | `aide --profile verify-a --credential=` | account A's ChatGPT login | 0 |
+| d | `CODEX_API_KEY=sk-not-real OPENAI_API_KEY=sk-not-real aide --profile verify-b` | account B's ChatGPT login | 0 for both names |
+
+Also note whether interactive Codex (not `exec`) in case a uses the
+key or the login; Codex documents `CODEX_API_KEY` for `exec`.
+
+```text
+Interactive codex with CODEX_API_KEY uses: key / login
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X8. Custom provider keys are scrubbed
+
+Add a custom provider to verify-a's `config.toml` (keep the storage
+line):
+
+```sh
+cat >> ~/.codex-verify-a/config.toml <<'TOML'
+
+[model_providers.corp]
+name = "Corp gateway"
+base_url = "https://llm.invalid/v1"
+env_key = "CORP_LLM_KEY"
+TOML
+```
+
+The X9 probe shows whether `CORP_LLM_KEY` reaches the agent. Then
+break the file and check the note:
+
+```sh
+cp -f ~/.codex-verify-a/config.toml /tmp/verify-a-config.bak
+echo 'broken = [' >> ~/.codex-verify-a/config.toml
+aide --profile verify-a --auth login -- login status
+cp -f /tmp/verify-a-config.bak ~/.codex-verify-a/config.toml
+```
+
+Expected: the launch prints `aide: note: <home>/.codex-verify-a/config.toml
+is not valid TOML (line N): custom model provider keys it names are
+not scrubbed from the shell`, shows no file content, and continues
+(Codex itself may then refuse the file; record what it says).
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X9. Sandbox keeps other homes out of reach
+
+As in P7, swap in a probe script named `codex`, after making sure the
+files it probes exist:
+
+```sh
+for d in ~/.codex-verify-a ~/.codex-verify-b ~/.codex ~/.agents/skills; do mkdir -p "$d"; done
+for d in ~/.codex-verify-a ~/.codex-verify-b ~/.codex; do
+  [ -f "$d/auth.json" ] || { echo '{}' > "$d/auth.json"; chmod 600 "$d/auth.json"; }
+done
+mkdir -p ~/aide-verify/bin
+cat > ~/aide-verify/bin/codex <<'SH'
+#!/bin/sh
+echo "CODEX_HOME=$CODEX_HOME"
+echo "CORP_LLM_KEY=${CORP_LLM_KEY:+set}"
+for f in "$CODEX_HOME/auth.json" "$HOME/.codex-verify-b/auth.json" "$HOME/.codex/auth.json" "$HOME/.agents/skills"; do
+  if ls "$f" >/dev/null 2>&1; then echo "READ OK: $f"; else echo "READ DENIED: $f"; fi
+done
+SH
+chmod +x ~/aide-verify/bin/codex
+```
+
+Add at the top level of the config (absolute path; print it with
+`echo "$HOME/aide-verify/bin/codex"`):
+
+```yaml
+agents:
+  codex:
+    binary: /Users/<you>/aide-verify/bin/codex    # Linux: /home/<you>/...
+```
+
+```sh
+cd ~/aide-verify
+CORP_LLM_KEY=not-real aide --profile verify-a --auth login
+CORP_LLM_KEY=not-real aide --profile verify-b --auth login
+```
+
+Expected for verify-a: `CODEX_HOME=<home>/.codex-verify-a`, an empty
+`CORP_LLM_KEY=` line, `READ OK` for its own `auth.json`, `READ DENIED`
+for the other three. For verify-b: its own home and an empty
+`CORP_LLM_KEY=` line too: a name any Codex home declares is scrubbed
+from every launch. Remove the `agents: codex` entry afterwards, and
+any `{}` `auth.json` the first commands created.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X10. Shared ~/.agents/skills
+
+```sh
+mkdir -p ~/.agents/skills/aide-verify-skill
+printf -- '---\nname: aide-verify-skill\ndescription: verification marker\n---\nSay MARKER.\n' \
+  > ~/.agents/skills/aide-verify-skill/SKILL.md
+```
+
+In `aide --profile verify-a` and `aide --profile verify-b`, list
+skills (`/skills`). Then add `sandbox: false` to verify-b and list
+them again.
+
+Expected: with the sandbox, neither profile lists
+`aide-verify-skill` (the path is not granted). Without the sandbox,
+verify-b lists it: personal skills are shared across profiles, which
+is resource sharing, not a login leak. Remove `sandbox: false` and the
+skill afterwards (`rm -rf ~/.agents/skills/aide-verify-skill`).
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
+```
+
+### X11. Codex cleanup
+
+```sh
+aide --profile verify-a --auth login -- logout
+aide --profile verify-b --auth login -- logout
+rm -rf ~/.codex-verify-a ~/.codex-verify-b ~/aide-verify/bin
+```
+
+Check that the keyring entries from X3/X4 are gone (compare with X0)
+and delete any left over. Remove the `openai_api_key` entry from the
+verify store if you added it for X7. Then run the shared cleanup (S4).
+
+### Codex summary
 
 ```text
 Ran by:                 Date:

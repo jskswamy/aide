@@ -89,3 +89,29 @@ func TestResolveProvisionContext_AppliesScrubEnvToProvisionSubprocesses(t *testi
 		t.Error("scrub_env name reached a provisioning subprocess")
 	}
 }
+
+// A custom Codex provider key named in ~/.codex/config.toml is a
+// configured credential name: provisioning subprocesses drop it too.
+func TestResolveProvisionContext_ScrubsCodexProviderKeys(t *testing.T) {
+	t.Cleanup(func() { provision.SetScrubEnv(nil) })
+	home := t.TempDir()
+	unsetEnv(t, "CODEX_HOME")
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"),
+		[]byte("[model_providers.corp]\nenv_key = \"CORP_LLM_KEY\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CORP_LLM_KEY", "corp-shell")
+	if _, err := resolveProvisionContext(&config.Config{}, "c", config.Context{Agent: "claude"}, home, home); err != nil {
+		t.Fatal(err)
+	}
+	out, _, code, err := provision.ExecRunner{}.Run(context.Background(), nil, "env")
+	if err != nil || code != 0 {
+		t.Fatalf("env: code=%d err=%v", code, err)
+	}
+	if strings.Contains(out, "CORP_LLM_KEY=") {
+		t.Error("a Codex env_key name reached a provisioning subprocess")
+	}
+}

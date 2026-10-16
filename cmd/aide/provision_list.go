@@ -75,8 +75,10 @@ func inheritProfileEnv(pCtx *provision.Context, harnessName string) {
 // the context already sets, such as a profile dir, win.
 func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context, homeDir, projectRoot string) (provision.Context, error) {
 	// Every provisioning entry point resolves its context here, so this
-	// is where the user's scrub_env: reaches provisioning subprocesses.
-	provision.SetScrubEnv(cfg.CredentialScrubNames())
+	// is where the user's scrub_env:, binding names and Codex custom
+	// provider names reach provisioning subprocesses.
+	scrubNames := append(cfg.CredentialScrubNames(), launcher.CodexProviderEnvNames(cfg, homeDir, os.Getenv)...)
+	provision.SetScrubEnv(scrubNames)
 	harnessName := cfg.HarnessOf(ctx.Agent)
 	pCtx, err := provision.ResolveContext(name, harnessName, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
 	if err != nil {
@@ -93,7 +95,7 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 	for k, v := range pCtx.Env {
 		env = append(env, k+"="+v)
 	}
-	env = append(env, envscrub.ScrubCredentials(os.Environ(), envscrub.Credentials(), cfg.CredentialScrubNames())...)
+	env = append(env, envscrub.ScrubCredentials(os.Environ(), envscrub.Credentials(), scrubNames)...)
 	overrides := launcher.SandboxAgentEnv(harnessName, homeDir, env)
 	if len(overrides) == 0 {
 		return pCtx, nil

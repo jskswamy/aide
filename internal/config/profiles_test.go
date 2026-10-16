@@ -159,8 +159,8 @@ func TestWriteConfig_KeepsLoadedSchema(t *testing.T) {
 		want, avoid []string
 	}{
 		"profiles": {
-			body:  "profiles:\n  work:\n    agent: claude\n    config_dir_name: acme\n    config_dir: ~/.claude-acme\n    sandbox:\n      profile: strict\ndefault_profile: work\n",
-			want:  []string{"profiles:", "default_profile: work", "config_dir_name: acme", "config_dir: ~/.claude-acme", "profile: strict"},
+			body:  "profiles:\n  work:\n    agent: claude\n    config_dir_name: acme\n    config_dir: ~/.claude-acme\n    config_dirs:\n      codex: ~/.codex-acme\n    sandbox:\n      profile: strict\ndefault_profile: work\n",
+			want:  []string{"profiles:", "default_profile: work", "config_dir_name: acme", "config_dir: ~/.claude-acme", "profile: strict", "codex: ~/.codex-acme"},
 			avoid: []string{"contexts:", "default_context:", "profile: acme", "profile_dir:"},
 		},
 		"contexts": {
@@ -238,7 +238,7 @@ func TestLoad_ProfilesSharingResolvedDirFail(t *testing.T) {
 	}
 }
 
-func TestLoad_CrossAgentProfilesSharingDirExplainAndPinRemedy(t *testing.T) {
+func TestLoad_CrossAgentProfilesSharingDirExplainConfigDirsRemedy(t *testing.T) {
 	_, err := loadYAML(t, "contexts:\n"+
 		"  work-claude:\n    agent: claude\n    profile: work\n"+
 		"  work-codex:\n    agent: codex\n    profile: work\n")
@@ -246,23 +246,86 @@ func TestLoad_CrossAgentProfilesSharingDirExplainAndPinRemedy(t *testing.T) {
 		t.Fatalf("Load() error = %v, want ErrProfileDirAlias", err)
 	}
 	for _, want := range []string{
-		`"work-claude" (agent claude)`, `"work-codex" (agent codex)`, "--agent",
-		"merge", "profile_dir: ~/.claude-work", "profile_dir: ~/.codex-work",
+		`"work-claude" (agent claude)`, `"work-codex" (agent codex)`, "--agent", "merge",
+		`profile: work-codex, config_dirs: {codex: ~/.codex-work} on "work-codex"`,
+		`config_dirs: {codex: ~/.codex-work-claude} on "work-claude"`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %s", err, want)
 		}
 	}
-
-	// Following the pin remedy loads and keeps both existing dirs.
-	cfg, err := loadYAML(t, "contexts:\n"+
-		"  work-claude:\n    agent: claude\n    profile: work\n    profile_dir: ~/.claude-work\n"+
-		"  work-codex:\n    agent: codex\n    profile: work\n    profile_dir: ~/.codex-work\n")
-	if err != nil {
-		t.Fatalf("pinned config: Load() error = %v", err)
+	if strings.Contains(err.Error(), "profile_dir:") {
+		t.Errorf("error %q suggests the all-harness pin", err)
 	}
-	if cfg.Contexts["work-codex"].ProfileDir != "~/.codex-work" {
-		t.Errorf("pinned dir lost: %+v", cfg.Contexts["work-codex"])
+
+	// Following the suggested remedy loads and keeps both logins.
+	cfg, err := loadYAML(t, "contexts:\n"+
+		"  work-claude:\n    agent: claude\n    profile: work\n    config_dirs: {codex: ~/.codex-work-claude}\n"+
+		"  work-codex:\n    agent: codex\n    profile: work-codex\n    config_dirs: {codex: ~/.codex-work}\n")
+	if err != nil {
+		t.Fatalf("remedied config: Load() error = %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	if got := cfg.Contexts["work-claude"].NativeConfigDir("claude", home); got != filepath.Join(home, ".claude-work") {
+		t.Errorf("work-claude claude dir = %q, want its existing login dir", got)
+	}
+	if got := cfg.Contexts["work-codex"].NativeConfigDir("codex", home); got != filepath.Join(home, ".codex-work") {
+		t.Errorf("work-codex codex dir = %q, want its existing login dir", got)
+	}
+}
+
+func TestContextNativeConfigDirResolutionOrder(t *testing.T) {
+	home := "/home/u"
+	ctx := Context{Profile: "work", ProfileDir: "~/pinned", ConfigDirs: map[string]string{"claude": "~/claude-only"}}
+	if got := ctx.NativeConfigDir("claude", home); got != "/home/u/claude-only" {
+		t.Errorf("map entry: got %q", got)
+	}
+	if got := ctx.NativeConfigDir("codex", home); got != "/home/u/pinned" {
+		t.Errorf("single pin: got %q", got)
+	}
+	ctx.ProfileDir = ""
+	if got := ctx.NativeConfigDir("codex", home); got != "/home/u/.codex-work" {
+		t.Errorf("derived: got %q", got)
+	}
+}
+
+func TestLoad_InvalidConfigDirsFail(t *testing.T) {
+	cases := map[string]struct{ entry, want string }{
+		"unknown harness":      {"config_dir_name: w\n    config_dirs: {nosuch: ~/x}", "nosuch"},
+		"harness w/o profiles": {"config_dir_name: w\n    config_dirs: {opencode: ~/x}", "opencode"},
+		"outside home":         {"config_dir_name: w\n    config_dirs: {claude: /opt/x}", "$HOME"},
+		"empty path":           {"config_dir_name: w\n    config_dirs: {claude: \"\"}", "claude"},
+		"without dir name":     {"config_dirs: {claude: ~/x}", "config_dir_name"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadYAML(t, "profiles:\n  work:\n    agent: claude\n    "+tc.entry+"\n")
+			if !errors.Is(err, ErrInvalidConfigDirs) {
+				t.Fatalf("Load() error = %v, want ErrInvalidConfigDirs", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "work") {
+				t.Errorf("error %q should name profile work and %s", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoad_ProjectConfigUnknownProfileWarnsOnce(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var warned bytes.Buffer
+	prev := warnOut
+	warnOut = &warned
+	t.Cleanup(func() { warnOut = prev })
+	configDir, projectDir := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(configDir, "config.yaml"), "profiles:\n  work:\n    agent: claude\n")
+	writeFile(t, filepath.Join(projectDir, ProjectConfigFileName), "profile: nope\n")
+	for range 3 {
+		if _, err := Load(configDir, projectDir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := strings.Count(warned.String(), "warning"); n != 1 {
+		t.Errorf("warned %d times, want once:\n%s", n, warned.String())
 	}
 }
 
@@ -297,7 +360,7 @@ func TestLoad_LegacyContextsSharingNativeDirFail(t *testing.T) {
 	if !errors.Is(err, ErrProfileDirAlias) {
 		t.Fatalf("Load() error = %v, want ErrProfileDirAlias", err)
 	}
-	if !strings.Contains(err.Error(), "profile_dir") {
+	if !strings.Contains(err.Error(), "config_dirs") {
 		t.Errorf("legacy guidance should use legacy key names: %v", err)
 	}
 }
@@ -356,6 +419,7 @@ func TestLoad_ProjectConfigDefiningProfileFails(t *testing.T) {
 		"default_profile:":     "default_profile: work\n",
 		"config_dir_name:":     "config_dir_name: acme\n",
 		"config_dir:":          "config_dir: ~/.claude-acme\n",
+		"config_dirs:":         "config_dirs: {claude: ~/.claude-acme}\n",
 		"profile_dir:":         "profile_dir: ~/.claude-acme\n",
 		"match:":               "match:\n  - path: ~/src\n",
 		"credentials:":         "credentials:\n  openrouter: {}\n",

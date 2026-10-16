@@ -232,3 +232,34 @@ func TestWithAgent_KeepsEnvWithoutProfile(t *testing.T) {
 		t.Error("explicit env dropped for a context without profile:")
 	}
 }
+
+func TestInjectProfileEnv_UsesPerHarnessConfigDirs(t *testing.T) {
+	ctx := config.Context{Agent: "claude", Profile: "work", ConfigDirs: map[string]string{"claude": "~/claude-home"}}
+
+	env, err := provision.InjectProfileEnv(ctx, nil, "/home/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["CLAUDE_CONFIG_DIR"] != "/home/u/claude-home" {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want the config_dirs.claude entry", env["CLAUDE_CONFIG_DIR"])
+	}
+
+	// --agent codex on the same profile gets codex's derived dir, not claude's.
+	env, err = provision.InjectProfileEnv(provision.WithAgent(ctx, "codex"), nil, "/home/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["CODEX_HOME"] != "/home/u/.codex-work" {
+		t.Errorf("CODEX_HOME = %q, want /home/u/.codex-work", env["CODEX_HOME"])
+	}
+	if _, ok := env["CLAUDE_CONFIG_DIR"]; ok {
+		t.Error("CLAUDE_CONFIG_DIR leaked into a codex launch")
+	}
+}
+
+func TestValidateProfileRejectsConfigDirsOutsideHome(t *testing.T) {
+	ctx := config.Context{Agent: "claude", Profile: "work", ConfigDirs: map[string]string{"claude": "/opt/x"}}
+	if err := provision.ValidateProfile(ctx, "/home/u", false); !errors.Is(err, provision.ErrProfileDirOutsideHome) {
+		t.Errorf("err = %v, want ErrProfileDirOutsideHome", err)
+	}
+}

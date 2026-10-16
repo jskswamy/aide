@@ -463,6 +463,34 @@ default_context: work
 	}
 }
 
+func TestLauncher_ConfigDirsPerHarness(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfg := `
+agents:
+  claude:
+    binary: claude
+  pi:
+    binary: pi
+profiles:
+  work:
+    agent: claude
+    config_dir_name: work
+    config_dirs:
+      claude: ~/claude-work-login
+default_profile: work
+`
+	env := launchCapturingEnv(t, cfg, "")
+	if got, _ := envValue(env, "CLAUDE_CONFIG_DIR"); got != filepath.Join(home, "claude-work-login") {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want the config_dirs.claude entry", got)
+	}
+
+	env = launchCapturingEnv(t, cfg, "pi")
+	if got, _ := envValue(env, "PI_CODING_AGENT_DIR"); got != filepath.Join(home, ".pi-work") {
+		t.Errorf("PI_CODING_AGENT_DIR = %q, want the derived pi dir", got)
+	}
+}
+
 func TestLauncher_AgentOverride_DropsOriginalAgentDirKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -10,7 +10,8 @@ import (
 // Config is the top-level configuration, supporting both minimal and
 // full formats. When the YAML contains "agents", "contexts" or
 // "profiles" keys, it is the full (structured) format; profiles:
-// entries load into Contexts. Otherwise it is the minimal (flat) format treated as a single default context.
+// entries load into Contexts. Otherwise it is the minimal (flat)
+// format, treated as a single default context.
 type Config struct {
 	// --- Full format fields ---
 	Agents         map[string]AgentDef      `yaml:"agents,omitempty"`
@@ -103,6 +104,10 @@ type Context struct {
 	// ~/.<agent>-<profile> (or ProfileDir when supplied).
 	Profile    string `yaml:"profile,omitempty"`
 	ProfileDir string `yaml:"profile_dir,omitempty"`
+	// ConfigDirs pins the config dir for individual harnesses, keyed by
+	// canonical harness name; it wins over ProfileDir for that harness.
+	// See NativeConfigDir for the resolution order.
+	ConfigDirs map[string]string `yaml:"config_dirs,omitempty"`
 	// MCPServers retains the v1 list-of-names form for the per-context
 	// selection of which MCP servers (declared at the top level) are
 	// enabled in this context. The v2 ContextOverride[MCPServer]
@@ -147,6 +152,9 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	}
 	if c.ProfileDir != "" {
 		out["profile_dir"] = c.ProfileDir
+	}
+	if len(c.ConfigDirs) > 0 {
+		out["config_dirs"] = c.ConfigDirs
 	}
 	if c.Sandbox != nil {
 		out["sandbox"] = c.Sandbox

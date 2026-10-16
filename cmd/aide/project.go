@@ -61,6 +61,9 @@ func resolveProjectTarget(cmd *cobra.Command, profile string) (*projectTarget, e
 		return nil, fmt.Errorf("resolving home directory: %w", err)
 	}
 	cwd, cfg := env.CWD(), env.Config()
+	// Judge preferences against what a launch applies: an untrusted
+	// .aide.yaml contributes nothing.
+	launcher.GateProjectConfig(cfg)
 	rc, err := aidectx.ResolveSelected(cfg, cwd, aidectx.GitRemotes(cwd), profile)
 	if err != nil {
 		return nil, fmt.Errorf("resolving profile: %w", err)

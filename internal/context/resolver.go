@@ -19,8 +19,8 @@ type ResolvedContext struct {
 	MatchReason string             // human-readable reason for the match
 	Context     config.Context     // the resolved context (with project override merged if applicable)
 	Preferences config.Preferences // resolved display/behavior preferences
-	// Source is how the profile was selected: SourceFlag, SourceMatch
-	// or SourceDefault.
+	// Source is how the profile was selected: SourceFlag, SourceMatch,
+	// SourceDefault or SourcePrompt.
 	Source string
 }
 
@@ -29,6 +29,7 @@ const (
 	SourceFlag    = "flag"    // explicit --profile
 	SourceMatch   = "match"   // a path/remote match rule
 	SourceDefault = "default" // default_profile, or a minimal config
+	SourcePrompt  = "prompt"  // picked at the empty-state prompt
 )
 
 // Specificity tiers. Within a tier, longer pattern string = higher specificity.

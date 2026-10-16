@@ -1072,6 +1072,17 @@ func (l *Launcher) trustStore() *trust.Store {
 	return trust.DefaultStore()
 }
 
+// GateProjectConfig applies the launch's .aide.yaml trust gate to cfg
+// with the default trust store: an untrusted or denied file
+// contributes nothing. Previews (which, status, statusline, aide
+// project) call it so they agree with what a launch would do.
+func GateProjectConfig(cfg *config.Config) *ui.TrustInfo {
+	if cfg.ProjectOverride == nil || cfg.ProjectConfigPath == "" {
+		return nil
+	}
+	return (&Launcher{}).applyTrustGate(cfg)
+}
+
 // applyTrustGate checks the trust status of .aide.yaml and nils out
 // ProjectOverride if the file is not trusted. Returns TrustInfo for
 // banner display when the status is untrusted or denied; nil when trusted.

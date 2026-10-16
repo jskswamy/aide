@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/jskswamy/aide/internal/testutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ func runContextBind(t *testing.T, args ...string) (string, error) {
 // tests cannot read the developer's real config. Returns the dir.
 func isolatedConfigDir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := testutil.CanonicalTempDir(t)
 	t.Chdir(dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
 	t.Setenv("HOME", dir)

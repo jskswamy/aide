@@ -34,6 +34,7 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 	var ctx config.Context
 	var name string
 	var trustInfo *ui.TrustInfo
+	remotes := aidectx.GitRemotes(cwd)
 
 	if contextName != "" {
 		c, ok := cfg.Contexts[contextName]
@@ -43,20 +44,19 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 		ctx = c
 		name = contextName
 	} else {
-		if cfg.ProjectOverride != nil && cfg.ProjectConfigPath != "" {
-			trustInfo = (&Launcher{}).applyTrustGate(cfg)
-		}
-		remotes := aidectx.GitRemotes(cwd)
+		trustInfo = GateProjectConfig(cfg)
 		rc, err := aidectx.Resolve(cfg, cwd, remotes)
 		if err != nil {
 			return nil, fmt.Errorf("resolving context: %w", err)
 		}
 		ctx = rc.Context
 		name = rc.Name
-		// A harness saved for this repository is what a launch runs.
-		if saved, err := SavedPreference(prefs.DefaultPath(homeDir), name, remotes); err == nil && saved.Harness != "" {
-			ctx.Agent = saved.Harness
-		}
+	}
+	// A harness saved for this repository and profile is what a launch
+	// runs. Unreadable preferences are ignored here: a statusline stays
+	// quiet, and the launch itself reports them.
+	if saved, err := SavedPreference(prefs.DefaultPath(homeDir), name, remotes); err == nil && saved.Harness != "" {
+		ctx.Agent = saved.Harness
 	}
 	if agent != "" {
 		ctx.Agent = agent

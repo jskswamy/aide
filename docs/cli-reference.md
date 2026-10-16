@@ -57,6 +57,14 @@ and expanded env values.
 aide which --resolve
 ```
 
+Pass `--agent <name>` to report what `aide --agent <name>` would launch:
+that agent, and the profile directory it gets when the context sets
+`profile:`.
+
+```
+aide which --agent pi
+```
+
 ---
 
 ## aide status
@@ -71,6 +79,8 @@ status for the working directory.
 ```
 aide status
 ```
+
+`--agent <name>` works as for `aide which`.
 
 ---
 

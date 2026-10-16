@@ -21,7 +21,7 @@ agent: /usr/local/bin/my-agent
 		t.Fatalf("config.Load: %v", err)
 	}
 
-	env, err := PreviewSessionEnv(cfg, cwd, "", homeDir)
+	env, err := PreviewSessionEnv(cfg, cwd, "", homeDir, "")
 	if err != nil {
 		t.Fatalf("PreviewSessionEnv: %v", err)
 	}
@@ -57,7 +57,7 @@ contexts:
 		t.Fatalf("config.Load: %v", err)
 	}
 
-	env, err := PreviewSessionEnv(cfg, cwd, "work", homeDir)
+	env, err := PreviewSessionEnv(cfg, cwd, "work", homeDir, "")
 	if err != nil {
 		t.Fatalf("PreviewSessionEnv: %v", err)
 	}
@@ -86,7 +86,7 @@ contexts:
 		t.Fatalf("config.Load: %v", err)
 	}
 
-	_, err = PreviewSessionEnv(cfg, cwd, "nonexistent", homeDir)
+	_, err = PreviewSessionEnv(cfg, cwd, "nonexistent", homeDir, "")
 	if err == nil {
 		t.Fatal("expected error for unknown context name, got nil")
 	}
@@ -106,7 +106,7 @@ sandbox: false
 		t.Fatalf("config.Load: %v", err)
 	}
 
-	env, err := PreviewSessionEnv(cfg, cwd, "", homeDir)
+	env, err := PreviewSessionEnv(cfg, cwd, "", homeDir, "")
 	if err != nil {
 		t.Fatalf("PreviewSessionEnv: %v", err)
 	}
@@ -142,12 +142,38 @@ contexts:
 		t.Fatalf("config.Load: %v", err)
 	}
 
-	env, err := PreviewSessionEnv(cfg, cwd, "work", homeDir)
+	env, err := PreviewSessionEnv(cfg, cwd, "work", homeDir, "")
 	if err != nil {
 		t.Fatalf("PreviewSessionEnv: %v", err)
 	}
 	want := "k8s,ccstatusline"
 	if env["AIDE_CAPS"] != want {
 		t.Errorf("AIDE_CAPS = %q, want %q", env["AIDE_CAPS"], want)
+	}
+}
+
+func TestPreviewSessionEnv_AgentOverride(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+	homeDir := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+contexts:
+  work:
+    agent: claude
+    match:
+      - path: /never/matches
+`)
+	cfg, err := config.Load(configDir, cwd)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+
+	env, err := PreviewSessionEnv(cfg, cwd, "work", homeDir, "pi")
+	if err != nil {
+		t.Fatalf("PreviewSessionEnv: %v", err)
+	}
+	if env["AIDE_AGENT"] != "pi" {
+		t.Errorf("AIDE_AGENT = %q, want pi", env["AIDE_AGENT"])
 	}
 }

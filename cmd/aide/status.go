@@ -189,6 +189,7 @@ func initCmd() *cobra.Command {
 }
 
 func whichCmd() *cobra.Command {
+	var agentOverride string
 	cmd := &cobra.Command{
 		Use:          "which",
 		Short:        "Show which context matches the current directory",
@@ -209,11 +210,9 @@ func whichCmd() *cobra.Command {
 				return err
 			}
 			homeDir, _ := os.UserHomeDir()
-			mergedEnv, perr := provision.InjectProfileEnv(resolved.Context, resolved.Context.Env, homeDir)
-			if perr != nil {
-				return fmt.Errorf("context %q: %w", resolved.Name, perr)
+			if err := applyLaunchAgent(cfg, resolved, agentOverride, homeDir); err != nil {
+				return err
 			}
-			resolved.Context.Env = mergedEnv
 
 			out := cmd.OutOrStdout()
 			prefs := resolved.Preferences
@@ -356,8 +355,27 @@ func whichCmd() *cobra.Command {
 			})
 		},
 	}
-
+	cmd.Flags().StringVar(&agentOverride, "agent", "", agentFlagUsage)
 	return cmd
+}
+
+const agentFlagUsage = "Report as if launched with --agent (agent and profile directory)"
+
+// applyLaunchAgent resolves the final agent and its profile env the way
+// a launch does: --agent first, then profile injection for that agent.
+func applyLaunchAgent(cfg *config.Config, resolved *aidectx.ResolvedContext, agentOverride, homeDir string) error {
+	if agentOverride != "" {
+		if err := launcher.ValidateAgentOverride(cfg, agentOverride, exec.LookPath); err != nil {
+			return err
+		}
+		resolved.Context = provision.WithAgent(resolved.Context, agentOverride)
+	}
+	mergedEnv, err := provision.InjectProfileEnv(resolved.Context, resolved.Context.Env, homeDir)
+	if err != nil {
+		return fmt.Errorf("context %q: %w", resolved.Name, err)
+	}
+	resolved.Context.Env = mergedEnv
+	return nil
 }
 
 func useCmd() *cobra.Command {
@@ -1156,7 +1174,8 @@ type statusResult struct {
 }
 
 func statusCmd() *cobra.Command {
-	return &cobra.Command{
+	var agentOverride string
+	cmd := &cobra.Command{
 		Use:          "status",
 		Short:        "Show detailed view of current context and capabilities",
 		SilenceUsage: true,
@@ -1175,11 +1194,9 @@ func statusCmd() *cobra.Command {
 				return err
 			}
 			homeDir, _ := os.UserHomeDir()
-			mergedEnv, perr := provision.InjectProfileEnv(resolved.Context, resolved.Context.Env, homeDir)
-			if perr != nil {
-				return fmt.Errorf("context %q: %w", resolved.Name, perr)
+			if err := applyLaunchAgent(cfg, resolved, agentOverride, homeDir); err != nil {
+				return err
 			}
-			resolved.Context.Env = mergedEnv
 
 			// Resolve agent path
 			agentName := resolved.Context.Agent
@@ -1401,6 +1418,8 @@ func statusCmd() *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().StringVar(&agentOverride, "agent", "", agentFlagUsage)
+	return cmd
 }
 
 func formatIsolationTierStatus(tier sandbox.IsolationTier) string {

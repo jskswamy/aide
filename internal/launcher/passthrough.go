@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/sandbox"
@@ -44,6 +45,23 @@ func IsKnownAgent(name string) bool {
 		}
 	}
 	return false
+}
+
+// ValidateAgentOverride accepts an --agent value that is a known agent,
+// an agent defined in config, or a name resolvable on PATH.
+func ValidateAgentOverride(cfg *config.Config, agent string, lookPath LookPathFunc) error {
+	if _, inAgentsMap := cfg.Agents[agent]; inAgentsMap || IsKnownAgent(agent) {
+		return nil
+	}
+	if _, err := lookPath(agent); err != nil {
+		return fmt.Errorf(
+			"unknown agent %q (not in known agents, config, or PATH).\n\n"+
+				"Register it first: aide agents add %s --binary /path/to/binary\n"+
+				"Known agents: %s",
+			agent, agent, strings.Join(KnownAgents, ", "),
+		)
+	}
+	return nil
 }
 
 // ScanAgents scans PATH for known agent binaries.

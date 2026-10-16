@@ -95,8 +95,8 @@ capture sandbox-deny events from the failed run.`,
 			// Check if a config file exists.
 			configFile := config.FilePath()
 			if _, err := os.Stat(configFile); os.IsNotExist(err) {
-				if sf.profile != "" || sel.CredentialsSet {
-					return fmt.Errorf("--profile and --credential need profiles in %s; none exists yet (create one with: aide init)", configFile)
+				if err := passthroughSelectionError(&sf, sel, configFile); err != nil {
+					return err
 				}
 				return l.Passthrough(cwd, sf.agent, args)
 			}

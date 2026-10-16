@@ -14,15 +14,14 @@ import (
 )
 
 // Harness and credential selection sources, reported as
-// harness_source and credential_source.
+// harness_source and credential_source. Profile sources
+// (profile_source) are aidectx's Source* constants.
 const (
-	SourceFlag       = "flag"       // --agent, --credential
-	SourceAuthLogin  = "auth"       // --auth login: nothing injected
-	SourcePreference = "preference" // saved with aide project set
-	SourceRepository = "repository" // trusted .aide.yaml agent:
-	SourceProfile    = "profile"    // the profile's agent: / default_credentials:
-	// SourcePrompt is a profile picked at the empty-state prompt.
-	SourcePrompt = "prompt"
+	SourceFlag       = aidectx.SourceFlag // --agent, --credential
+	SourceAuthLogin  = "auth"             // --auth login: nothing injected
+	SourcePreference = "preference"       // saved with aide project set
+	SourceRepository = "repository"       // trusted .aide.yaml agent:
+	SourceProfile    = "profile"          // the profile's agent: / default_credentials:
 )
 
 // SelectionInputs are the inputs to harness and credential selection

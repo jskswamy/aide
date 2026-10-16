@@ -150,7 +150,7 @@ func credentialNamesForCompletion(cmd *cobra.Command) []string {
 }
 
 // previewSelection resolves what a launch from cwd would select with
-// f: the profile, the saved preference, the final harness and its
+// f, after the same .aide.yaml trust gate (it mutates cfg): the profile, the saved preference, the final harness and its
 // profile env. It returns notices a launch would print. Credentials
 // are left to launcher.PreviewCredentials.
 func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir string, f *selectionFlags) (*aidectx.ResolvedContext, launcher.SelectionInputs, launcher.Selection, []string, error) {
@@ -158,6 +158,7 @@ func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir strin
 	if err != nil {
 		return nil, in, launcher.Selection{}, nil, err
 	}
+	launcher.GateProjectConfig(cfg)
 	remotes := aidectx.GitRemotes(cwd)
 	rc, err := aidectx.ResolveSelected(cfg, cwd, remotes, f.profile)
 	if err != nil {
@@ -209,4 +210,15 @@ func addProfileFlag(cmd *cobra.Command, target *string) {
 		}
 		return nil
 	}
+}
+
+// passthroughSelectionError refuses selections that need a config when
+// none exists (passthrough). --auth login is accepted: passthrough
+// injects nothing, so the harness always uses its native login.
+func passthroughSelectionError(f *selectionFlags, in launcher.SelectionInputs, configFile string) error {
+	if f.profile != "" || in.CredentialsSet || in.Auth == launcher.AuthAPI {
+		return fmt.Errorf("--profile, --credential and --auth api need profiles in %s; none exists yet (create one with: aide init). "+
+			"Without a config aide injects no credentials and the harness uses its native login", configFile)
+	}
+	return nil
 }

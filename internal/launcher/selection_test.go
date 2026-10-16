@@ -461,4 +461,49 @@ func TestPreviewSessionEnv_UsesSavedHarness(t *testing.T) {
 	if env["AIDE_AGENT"] != "pi" {
 		t.Errorf("AIDE_AGENT = %q, want the saved harness pi a launch would use", env["AIDE_AGENT"])
 	}
+	// Naming the profile (statusline --profile work) keeps the saved
+	// harness, as aide --profile work would.
+	env, err = PreviewSessionEnv(cfg, cwd, "work", homeDir, "")
+	if err != nil {
+		t.Fatalf("PreviewSessionEnv(work): %v", err)
+	}
+	if env["AIDE_AGENT"] != "pi" {
+		t.Errorf("named profile: AIDE_AGENT = %q, want the saved harness pi", env["AIDE_AGENT"])
+	}
+}
+
+func TestLauncher_CorruptPreferencesStopWithRemedy(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	gitRepo(t, cwd, "git@github.com:org/repo.git")
+	prefsPath := filepath.Join(t.TempDir(), "preferences.json")
+	if err := os.WriteFile(prefsPath, []byte(`{not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := selectionLaunch(t, selectionConfig, cwd, &Launcher{PrefsPath: prefsPath}, "")
+	if !errors.Is(err, prefs.ErrCorrupt) {
+		t.Fatalf("Launch() error = %v, want prefs.ErrCorrupt", err)
+	}
+	if !strings.Contains(err.Error(), prefsPath) || !strings.Contains(err.Error(), "aide project clear --reset") {
+		t.Errorf("error should name the file and the remedy: %v", err)
+	}
+}
+
+func TestLauncher_UntrustedProjectProfileReferencePrintsNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, ".aide.yaml"), []byte("profile: personal\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := trust.NewStore(filepath.Join(t.TempDir(), "trust"))
+	env, stderr, err := selectionLaunch(t, selectionConfig, cwd, &Launcher{TrustStore: store}, "")
+	if err != nil {
+		t.Fatalf("Launch() error = %v", err)
+	}
+	if got, _ := envValue(env, "AIDE_PROFILE"); got != "work" {
+		t.Errorf("AIDE_PROFILE = %q, want work", got)
+	}
+	if strings.Contains(stderr, "--profile personal") {
+		t.Errorf("untrusted .aide.yaml produced a profile notice:\n%s", stderr)
+	}
 }

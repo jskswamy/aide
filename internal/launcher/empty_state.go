@@ -109,7 +109,7 @@ func handleEmptyState(
 			Name:        picked,
 			MatchReason: "empty-state launch-once",
 			Context:     ctx,
-			Source:      SourcePrompt,
+			Source:      aidectx.SourcePrompt,
 		}, nil
 	case "c", "cancel":
 		return nil, ErrEmptyStateCancelled

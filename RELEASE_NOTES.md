@@ -147,8 +147,10 @@ change saved preferences.
   and `aide statusline`. Giving both with different names is an error.
 - `aide prompt` and `aide statusline` show the harness saved for the
   repository, as a launch would run it.
-- Without a `config.yaml`, `--profile` and `--credential` stop with a
-  pointer to `aide init`.
+- Without a `config.yaml`, `--profile`, `--credential` and `--auth api`
+  stop with a pointer to `aide init`; `--auth login` is accepted, since
+  without a config aide injects nothing and the harness uses its own
+  login.
 - When no profile matches and none is the default, the error now
   suggests `aide --profile <name>` for a one-off launch (it suggested
   `aide use`, which saves a match rule).
@@ -172,9 +174,16 @@ prints them.
   the selection so `default_credentials:` applies again.
 - Outside a git repository, or without an `origin` remote, `set` and
   `clear` refuse with `no repository identity`.
-- A preferences file written by a newer aide stops `aide project` and
-  launches with `unsupported preferences file version` instead of being
-  overwritten.
+- A preferences file written by a newer aide, or one aide cannot read,
+  stops `aide project` and launches in repositories with an `origin`
+  remote (`unsupported preferences file version` / `unreadable
+  preferences file`) instead of being overwritten. The error names the
+  file; `aide project clear --reset` moves it aside to
+  `<file>.corrupt-<timestamp>` and starts empty.
+- `aide which`, `aide status`, `aide project set` and the statusline
+  apply the same `.aide.yaml` trust gate as a launch, so an untrusted
+  or denied file contributes nothing to what they report or check.
+  `aide statusline --profile <name>` also shows the saved harness.
 
 ### 🧰 CLI
 

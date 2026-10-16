@@ -15,6 +15,7 @@ import (
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/prefs"
+	"github.com/jskswamy/aide/internal/trust"
 )
 
 const selectionTestConfig = `
@@ -219,5 +220,93 @@ default_profile: work
 	}
 	if out, err := run("--profile", "personal", "--context", "personal"); err != nil {
 		t.Errorf("agreeing --profile and --context: %v\n%s", err, out)
+	}
+}
+
+// writeProjectConfig writes .aide.yaml into the working directory and,
+// when trusted, trusts it in the default store.
+func writeProjectConfig(t *testing.T, body string, trusted bool) {
+	t.Helper()
+	if err := os.WriteFile(".aide.yaml", []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if trusted {
+		abs, _ := filepath.Abs(".aide.yaml")
+		if err := trust.DefaultStore().Trust(abs, []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestWhichStatus_UntrustedProjectConfigContributesNothing(t *testing.T) {
+	selectionEnv(t, strings.Replace(selectionTestConfig,
+		"openai: {backend: age, store: work, key: openai_api_key}",
+		"openai: {backend: age, store: work, key: openai_api_key, harnesses: [claude]}", 1))
+	writeProjectConfig(t, "agent: pi\nprofile: personal\n", false)
+
+	for name, cmd := range map[string]*cobra.Command{"which": whichCmd(), "status": statusCmd()} {
+		got := runSelectionJSON(t, cmd)
+		agent := got["agent_name"]
+		if agent == nil {
+			agent = got["agent"]
+		}
+		if agent != "claude" || got["harness_source"] != "profile" {
+			t.Errorf("%s: agent %v from %v, want claude from profile as at launch", name, agent, got["harness_source"])
+		}
+		for _, key := range []string{"warnings", "notices"} {
+			for _, w := range names(got[key]) {
+				if strings.Contains(w, "personal") || strings.Contains(w, `"pi"`) {
+					t.Errorf("%s: untrusted .aide.yaml produced %s %q", name, key, w)
+				}
+			}
+		}
+	}
+
+	// openai allows only claude: judged against the untrusted pi it
+	// would be refused.
+	if out, err := runProject(t, "set", "--credential", "openai"); err != nil {
+		t.Errorf("project set judged against the untrusted agent: %v\n%s", err, out)
+	}
+}
+
+func TestWhichStatus_ReportNotices(t *testing.T) {
+	path := selectionEnv(t, selectionTestConfig)
+	if err := prefs.Update(path, func(f *prefs.File) error {
+		f.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: "claude"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectConfig(t, "agent: pi\nprofile: personal\n", true)
+
+	which := runSelectionJSON(t, whichCmd())
+	status := runSelectionJSON(t, statusCmd())
+	for name, list := range map[string][]string{"which warnings": names(which["warnings"]), "status notices": names(status["notices"])} {
+		joined := strings.Join(list, "\n")
+		if !strings.Contains(joined, "--profile personal") {
+			t.Errorf("%s lack the profile notice:\n%s", name, joined)
+		}
+		if !strings.Contains(joined, `harness "claude" saved`) {
+			t.Errorf("%s lack the saved-harness notice:\n%s", name, joined)
+		}
+	}
+}
+
+func TestPassthroughSelectionError(t *testing.T) {
+	for name, tc := range map[string]struct {
+		f       selectionFlags
+		in      launcher.SelectionInputs
+		refused bool
+	}{
+		"none":       {},
+		"profile":    {f: selectionFlags{profile: "work"}, refused: true},
+		"credential": {in: launcher.SelectionInputs{CredentialsSet: true}, refused: true},
+		"auth api":   {in: launcher.SelectionInputs{Auth: launcher.AuthAPI}, refused: true},
+		"auth login": {in: launcher.SelectionInputs{Auth: launcher.AuthLogin}},
+	} {
+		err := passthroughSelectionError(&tc.f, tc.in, "/cfg/config.yaml")
+		if (err != nil) != tc.refused {
+			t.Errorf("%s: err = %v, refused want %v", name, err, tc.refused)
+		}
 	}
 }

@@ -13,7 +13,14 @@ import (
 
 // StateVersion is the current managed.json schema version. Bump on
 // breaking changes and add a migration in LoadState.
-const StateVersion = 1
+//
+// Version 2 keys ownership under "profiles" (version 1 used
+// "contexts"; LoadState still reads it).
+const StateVersion = 2
+
+// ErrStateVersion reports a state file written by a newer aide. It is
+// never overwritten.
+var ErrStateVersion = errors.New("unsupported provisioning state version")
 
 // ManagedItem records that aide installed a plugin or MCP server.
 // Version is empty for MCP entries (they have no version concept).
@@ -58,9 +65,36 @@ type ContextState struct {
 
 // ManagedState is the on-disk shape of managed.json (DefaultStatePath).
 // Only updated when a sync run completes successfully end-to-end.
+// Contexts is keyed by profile name and written as "profiles".
 type ManagedState struct {
 	Version  int                      `json:"version"`
-	Contexts map[string]*ContextState `json:"contexts,omitempty"`
+	Contexts map[string]*ContextState `json:"profiles,omitempty"`
+}
+
+// UnmarshalJSON reads both the "profiles" key and the version 1
+// "contexts" key, so ownership, drift hashes and agent dirs recorded
+// before the rename are kept. An entry under "profiles" wins over one
+// of the same name under "contexts".
+func (s *ManagedState) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Version  int                      `json:"version"`
+		Profiles map[string]*ContextState `json:"profiles"`
+		Contexts map[string]*ContextState `json:"contexts"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	s.Version = raw.Version
+	s.Contexts = raw.Profiles
+	if s.Contexts == nil {
+		s.Contexts = map[string]*ContextState{}
+	}
+	for name, cs := range raw.Contexts {
+		if _, ok := s.Contexts[name]; !ok {
+			s.Contexts[name] = cs
+		}
+	}
+	return nil
 }
 
 // LoadState reads the state file at path. If the file is missing,
@@ -78,18 +112,21 @@ func LoadState(path string) (*ManagedState, error) {
 	if err := json.Unmarshal(data, &st); err != nil {
 		return nil, fmt.Errorf("provision: parsing state %s: %w", path, err)
 	}
+	if st.Version > StateVersion {
+		return nil, fmt.Errorf("%w: %s has version %d, but this aide reads up to version %d; upgrade aide "+
+			"(the file is left unchanged)", ErrStateVersion, path, st.Version, StateVersion)
+	}
 	if st.Contexts == nil {
 		st.Contexts = map[string]*ContextState{}
 	}
 	return &st, nil
 }
 
-// SaveState atomically writes st to path. Parents are created with
-// 0o750, the file ends at 0o600 (via fsutil.AtomicWrite).
+// SaveState atomically writes st to path in the current format
+// (StateVersion, "profiles" key). Parents are created with 0o750, the
+// file ends at 0o600 (via fsutil.AtomicWrite).
 func SaveState(path string, st *ManagedState) error {
-	if st.Version == 0 {
-		st.Version = StateVersion
-	}
+	st.Version = StateVersion
 	if st.Contexts == nil {
 		st.Contexts = map[string]*ContextState{}
 	}

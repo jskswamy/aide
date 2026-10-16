@@ -1,10 +1,15 @@
 package harness_test
 
 import (
+	"fmt"
+	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/harness"
+	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
 func TestAllIsSortedAndNamesAreUnique(t *testing.T) {
@@ -123,5 +128,26 @@ func TestProfileConfigDir(t *testing.T) {
 	}
 	if got := harness.ProfileConfigDir("claude", "work", "~/x/y", home); got != "/home/u/x/y" {
 		t.Errorf("override dir = %q", got)
+	}
+}
+
+// pkg/seatbelt modules hard-code their config-dir variable because they
+// cannot import internal/. This keeps them agreeing with the table: a
+// module must grant the dir its harness's ProfileEnvKey points at.
+func TestSandboxModulesHonorProfileEnvKey(t *testing.T) {
+	for _, d := range harness.All() {
+		if !d.SupportsProfiles() || !d.Launchable() {
+			continue
+		}
+		home := t.TempDir()
+		dir := filepath.Join(home, "sentinel-"+d.Name)
+		ctx := &seatbelt.Context{
+			HomeDir: home,
+			GOOS:    runtime.GOOS,
+			Env:     []string{d.ProfileEnvKey + "=" + dir},
+		}
+		if got := fmt.Sprint(d.Sandbox().Rules(ctx)); !strings.Contains(got, dir) {
+			t.Errorf("%s module ignores %s=%s", d.Name, d.ProfileEnvKey, dir)
+		}
 	}
 }

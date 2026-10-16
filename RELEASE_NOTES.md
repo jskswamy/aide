@@ -396,6 +396,22 @@ target. Approvals recorded through a symlinked directory, and
 approvals of a `.aide.yaml` that is itself a symlink, made before this
 release are asked for again once.
 
+#### aide skillshare targets points Skillshare at your profile dirs
+
+`aide skillshare targets` generates Skillshare account targets
+(`agent:` + `config_dir:`), named `aide-<profile>-<harness>`, for every
+profile and harness (`claude`, `codex`, `pi`) that launches from a
+config dir of its own, using the same dirs the launch uses. It
+previews by default; `--write` merges them into Skillshare's config
+(`$SKILLSHARE_CONFIG`, else `$XDG_CONFIG_HOME/skillshare/config.yaml`,
+else `~/.config/skillshare/config.yaml`) atomically with a `.bak`,
+keeping everything else and removing only stale `aide-*` targets. Run
+`skillshare sync` afterwards; aide never runs it. Default dirs, dirs
+two targets would share and harnesses without Skillshare account
+targets are listed, not written. No credential is written, and MCP
+assignments are not generated yet (see `docs/skillshare.md`). `aide
+sync` provisioning is unchanged.
+
 ### 🧰 CLI
 
 #### --format json adds profile keys beside context keys

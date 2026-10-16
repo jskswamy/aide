@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -37,14 +38,24 @@ func newDirUse(profile, dir string) dirUse {
 	return u
 }
 
+// caseInsensitiveDirs reports whether dir names that differ only by
+// case name one dir, as on default macOS and Windows filesystems. A var
+// so tests can exercise both. On a case-sensitive macOS volume this
+// refuses a case-only difference that would have worked.
+var caseInsensitiveDirs = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+
 // sameDir compares existing dirs by identity (os.SameFile catches
 // symlinks, case-insensitive filesystems and hard links) and dirs that
-// do not exist yet by their nearest-ancestor-resolved path.
+// do not exist yet by their nearest-ancestor-resolved path, case-folded
+// where the filesystem ignores case.
 func (u dirUse) sameDir(o dirUse) bool {
 	switch {
 	case u.info != nil && o.info != nil:
 		return os.SameFile(u.info, o.info)
 	case u.info == nil && o.info == nil:
+		if caseInsensitiveDirs {
+			return strings.EqualFold(u.path, o.path)
+		}
 		return u.path == o.path
 	}
 	return false

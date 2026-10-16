@@ -546,6 +546,16 @@ that save the config write back whichever form the file used.
   config: it failed to load`. Before, some of them wrote an empty
   config over your `config.yaml`.
 
+#### Profile dirs differing only by case are refused on macOS and Windows
+
+Two profiles whose config dirs differ only by letter case (for example
+`config_dir_name: work` and `config_dir_name: Work`) name one dir on a
+case-insensitive filesystem, so they would share a login. The loader
+already refused them once the dir existed; it now refuses them before
+either dir is created, with the usual "profiles share a native config
+dir" error. On a case-sensitive macOS volume such a pair is refused
+too; give one of them a different name.
+
 ### 🔧 Internal
 
 #### Multi-agent profile design

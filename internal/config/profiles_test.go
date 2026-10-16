@@ -429,3 +429,24 @@ func symlink(t *testing.T, target, link string) {
 		t.Fatal(err)
 	}
 }
+
+// On a case-insensitive filesystem (macOS and Windows defaults), config
+// dirs that differ only by case are one dir. Before either exists there
+// is no inode to compare, so names are compared case-folded there.
+func TestLoad_CaseOnlyDirDifferenceIsAliasOnCaseInsensitiveFS(t *testing.T) {
+	cfg := "profiles:\n" +
+		"  a:\n    agent: claude\n    config_dir_name: work\n" +
+		"  b:\n    agent: claude\n    config_dir_name: Work\n"
+	for _, tc := range []struct {
+		fold bool
+		want error
+	}{{true, ErrProfileDirAlias}, {false, nil}} {
+		prev := caseInsensitiveDirs
+		caseInsensitiveDirs = tc.fold
+		_, err := loadYAML(t, cfg)
+		caseInsensitiveDirs = prev
+		if !errors.Is(err, tc.want) {
+			t.Errorf("case-insensitive=%v: Load() error = %v, want %v", tc.fold, err, tc.want)
+		}
+	}
+}

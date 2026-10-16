@@ -33,6 +33,25 @@ key exported in your shell, the agent now falls back to its own login.
   that cloud variables point at, are not scrubbed. See
   "Credential-clean environment" in `docs/configuration.md`.
 
+#### More Claude Code and Azure credential variables are scrubbed
+
+The credential-clean environment now also removes Claude Code's
+remaining authentication inputs exported in your shell:
+`CLAUDE_CODE_OAUTH_REFRESH_TOKEN`, `ANTHROPIC_IDENTITY_TOKEN`,
+`ANTHROPIC_FOUNDRY_AUTH_TOKEN`, `ANTHROPIC_AWS_API_KEY`,
+`ANTHROPIC_CUSTOM_HEADERS`, `CLAUDE_CODE_CLIENT_KEY` and its
+passphrase (secret-bearing: set them through `credentials:`), plus
+`ANTHROPIC_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_SCOPES`,
+`CLAUDE_CODE_CLIENT_CERT`, `CLAUDE_CODE_USE_ANTHROPIC_AWS`,
+`CLAUDE_CODE_USE_MANTLE`, the `CLAUDE_CODE_SKIP_*_AUTH` switches,
+`ANTHROPIC_AWS_BASE_URL`, `ANTHROPIC_AWS_WORKSPACE_ID` and
+`ANTHROPIC_BEDROCK_MANTLE_BASE_URL` (selectors: set them in your
+profile's `env:`). The Azure default-credential variables
+(`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`,
+`AZURE_CLIENT_CERTIFICATE_PATH`, `AZURE_CLIENT_CERTIFICATE_PASSWORD`,
+`AZURE_FEDERATED_TOKEN_FILE`, `AZURE_USERNAME`, `AZURE_PASSWORD`) are
+scrubbed like `AWS_*`; a capability's `env_allow` can re-admit them.
+
 #### Provider keys in a profile's env: stop the launch unless translatable
 
 A secret-bearing provider credential in a profile's `env:` (API keys

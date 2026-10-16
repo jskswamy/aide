@@ -208,3 +208,65 @@ func TestEndpointSelectorsAndProviderNames(t *testing.T) {
 		t.Error("SOPS_AGE_KEY_CMD is not secret material")
 	}
 }
+
+// Claude Code's authentication variables, from the spec's Claude
+// admission row and Anthropic's docs (code.claude.com/docs/en/env-vars,
+// /authentication; platform.claude.com/docs/en/manage-claude/wif-reference).
+func TestClaudeCodeAuthNamesClassified(t *testing.T) {
+	secrets := []string{
+		"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+		"CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "ANTHROPIC_PROFILE",
+		"ANTHROPIC_IDENTITY_TOKEN_FILE", "ANTHROPIC_IDENTITY_TOKEN",
+		"ANTHROPIC_FOUNDRY_API_KEY", "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+		"ANTHROPIC_AWS_API_KEY", "AWS_BEARER_TOKEN_BEDROCK",
+		"ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_CLIENT_KEY",
+		"CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+	}
+	selectors := []string{
+		"ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID",
+		"ANTHROPIC_SERVICE_ACCOUNT_ID", "ANTHROPIC_WORKSPACE_ID",
+		"ANTHROPIC_CONFIG_DIR", "CLAUDE_CODE_OAUTH_SCOPES",
+		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+		"CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_MANTLE",
+		"CLAUDE_CODE_SKIP_BEDROCK_AUTH", "CLAUDE_CODE_SKIP_VERTEX_AUTH",
+		"CLAUDE_CODE_SKIP_FOUNDRY_AUTH", "CLAUDE_CODE_SKIP_MANTLE_AUTH",
+		"CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH",
+		"ANTHROPIC_AWS_BASE_URL", "ANTHROPIC_AWS_WORKSPACE_ID",
+		"ANTHROPIC_BEDROCK_MANTLE_BASE_URL", "CLAUDE_CODE_CLIENT_CERT",
+	}
+	cloud := []string{
+		"AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+		"GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_CONFIG",
+		"AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_CLIENT_SECRET",
+		"AZURE_CLIENT_CERTIFICATE_PATH", "AZURE_CLIENT_CERTIFICATE_PASSWORD",
+		"AZURE_FEDERATED_TOKEN_FILE", "AZURE_USERNAME", "AZURE_PASSWORD",
+	}
+	reg := envscrub.Credentials()
+	for _, n := range secrets {
+		if !envscrub.IsProviderSecretName(n) || envscrub.IsProviderSelectorName(n) {
+			t.Errorf("%s should be a secret-bearing provider name", n)
+		}
+		if !reg.Permit(n).Matches(n) {
+			t.Errorf("%s is not pinned in the scrub registry", n)
+		}
+	}
+	for _, n := range selectors {
+		if !envscrub.IsProviderSelectorName(n) || envscrub.IsProviderSecretName(n) {
+			t.Errorf("%s should be a provider selector", n)
+		}
+		if !reg.Permit(n).Matches(n) {
+			t.Errorf("%s is not pinned in the scrub registry", n)
+		}
+	}
+	for _, n := range cloud {
+		if envscrub.IsProviderName(n) {
+			t.Errorf("%s should be an ambient cloud name, not a provider name", n)
+		}
+		if !reg.Matches(n) {
+			t.Errorf("%s is not scrubbed", n)
+		}
+		if reg.Permit(n).Matches(n) {
+			t.Errorf("%s should be re-admittable by a capability's env_allow", n)
+		}
+	}
+}

@@ -107,10 +107,12 @@ func parseProjectOverride(path string, data []byte) (*ProjectOverride, error) {
 func (c *Config) loadProjectConfig(projectDir string) error {
 	d := DiscoverProject(projectDir)
 	c.ProjectConfigErr = d.Err
-	c.ProjectConfigWarning = d.Warning
-	for _, l := range []struct{ source, path, root string }{
-		{LayerInherited, d.MainPath, d.MainCheckoutRoot},
-		{LayerLocal, d.LocalPath, d.localRewriteRoot()},
+	if d.Warning != "" {
+		c.ProjectConfigWarnings = append(c.ProjectConfigWarnings, d.Warning)
+	}
+	for _, l := range []struct{ source, path string }{
+		{LayerInherited, d.MainPath},
+		{LayerLocal, d.LocalPath},
 	} {
 		if l.path == "" {
 			continue
@@ -127,7 +129,16 @@ func (c *Config) loadProjectConfig(projectDir string) error {
 		if err != nil {
 			return fmt.Errorf("loading project config %s: %w", l.path, err)
 		}
-		rewriteRelativePaths(po, l.root)
+		if hasRelativePaths(po) {
+			root, err := anchorRoot(l.path)
+			if err != nil {
+				c.ProjectConfigWarnings = append(c.ProjectConfigWarnings, fmt.Sprintf(
+					"%s not applied: it has relative paths and the checkout holding it cannot be determined (%v); "+
+						"use absolute or ~/ paths there", l.path, err))
+				continue
+			}
+			rewriteRelativePaths(po, root)
+		}
 		c.ProjectLayers = append(c.ProjectLayers, ProjectLayer{Source: l.source, Path: l.path, Contents: data, Override: po})
 		c.ProjectConfigPath = l.path
 	}

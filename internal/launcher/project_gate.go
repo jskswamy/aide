@@ -76,9 +76,7 @@ func (l *Launcher) applyTrustGate(cfg *config.Config) (ProjectGate, error) {
 		return ProjectGate{}, err
 	}
 	var gate ProjectGate
-	if w := cfg.ProjectConfigWarning; w != "" {
-		gate.Warnings = append(gate.Warnings, w)
-	}
+	gate.Warnings = append(gate.Warnings, cfg.ProjectConfigWarnings...)
 	if !l.ensureProjectLayers(cfg) {
 		cfg.DropProjectConfig()
 		return gate, nil

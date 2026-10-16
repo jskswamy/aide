@@ -62,7 +62,7 @@ func (c *Config) DropProjectConfig() {
 	c.ProjectOverride = nil
 	c.ProjectLayers = nil
 	c.ProjectConfigErr = nil
-	c.ProjectConfigWarning = ""
+	c.ProjectConfigWarnings = nil
 }
 
 // ProjectFileSetting names the .aide.yaml whose setting applies: the
@@ -245,6 +245,21 @@ func mergeStatusline(base, top *StatuslineConfig) *StatuslineConfig {
 		}
 	}
 	return out
+}
+
+// hasRelativePaths reports whether po has sandbox paths that
+// rewriteRelativePaths would anchor.
+func hasRelativePaths(po *ProjectOverride) bool {
+	if po == nil || po.Sandbox == nil {
+		return false
+	}
+	sb := po.Sandbox
+	for _, list := range [][]string{sb.Writable, sb.Readable, sb.Denied, sb.WritableExtra, sb.ReadableExtra, sb.DeniedExtra} {
+		if slices.ContainsFunc(list, isRelativeConfigPath) {
+			return true
+		}
+	}
+	return false
 }
 
 // rewriteRelativePaths makes po's relative sandbox paths absolute

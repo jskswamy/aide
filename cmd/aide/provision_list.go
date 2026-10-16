@@ -283,7 +283,7 @@ func runPluginList(cmd *cobra.Command, contextName string) error {
 		return ferr
 	}
 	return output.Emit(out, format, result, func(w io.Writer) error {
-		fmt.Fprintf(w, "Context: %s (agent: %s)\n\n", result.Context, result.Agent)
+		fmt.Fprintf(w, "Profile: %s (agent: %s)\n\n", result.Context, result.Agent)
 		if result.Marketplaces != nil {
 			fmt.Fprintln(w, "MARKETPLACES")
 			renderMarketplaceTable(w, result.Marketplaces)
@@ -433,7 +433,7 @@ func runMCPList(cmd *cobra.Command, contextName string) error {
 		return ferr
 	}
 	return output.Emit(out, format, result, func(w io.Writer) error {
-		fmt.Fprintf(w, "Context: %s (agent: %s)\n\n", result.Context, result.Agent)
+		fmt.Fprintf(w, "Profile: %s (agent: %s)\n\n", result.Context, result.Agent)
 		renderMCPTable(w, result.Servers)
 		return nil
 	})

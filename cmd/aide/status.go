@@ -192,7 +192,7 @@ func whichCmd() *cobra.Command {
 	var sf selectionFlags
 	cmd := &cobra.Command{
 		Use:          "which",
-		Short:        "Show which context matches the current directory",
+		Short:        "Show which profile matches the current directory",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			resolve, _ := cmd.Flags().GetBool("resolve")
@@ -377,7 +377,7 @@ func useCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "use [agent-name]",
-		Short: "Bind current directory to an agent or context",
+		Short: "Bind current directory to an agent or profile",
 		Long: `Bind current directory (or a glob pattern) to an agent/context in global config.
 
 Examples:
@@ -394,7 +394,7 @@ Examples:
 			}
 
 			if agentName == "" && contextName == "" {
-				return fmt.Errorf("either an agent name or --context is required")
+				return fmt.Errorf("either an agent name or --profile is required")
 			}
 
 			env, _ := cmdEnv(cmd)
@@ -422,7 +422,7 @@ Examples:
 			if contextName != "" {
 				ctx, ok := cfg.Contexts[contextName]
 				if !ok {
-					return fmt.Errorf("context %q not found in config", contextName)
+					return fmt.Errorf("profile %q not found in config", contextName)
 				}
 				ctx.Match = append(ctx.Match, newRule)
 				if secretFlag != "" {
@@ -439,7 +439,7 @@ Examples:
 					return fmt.Errorf("writing config: %w", err)
 				}
 
-				fmt.Fprintf(out, "Added match rule to context %q:\n", contextName)
+				fmt.Fprintf(out, "Added match rule to profile %q:\n", contextName)
 				fmt.Fprintf(out, "  path: %s\n", matchPath)
 				if secretFlag != "" {
 					fmt.Fprintf(out, "  secret: %s\n", secretFlag)
@@ -515,9 +515,9 @@ Examples:
 			}
 
 			if exists {
-				fmt.Fprintf(out, "Updated context %q:\n", ctxName)
+				fmt.Fprintf(out, "Updated profile %q:\n", ctxName)
 			} else {
-				fmt.Fprintf(out, "Created context %q:\n", ctxName)
+				fmt.Fprintf(out, "Created profile %q:\n", ctxName)
 			}
 			fmt.Fprintf(out, "  agent: %s\n", agentName)
 			fmt.Fprintf(out, "  match: %s\n", matchPath)
@@ -569,7 +569,7 @@ func setupCmd() *cobra.Command {
 				}
 				sort.Strings(ctxNames)
 
-				fmt.Fprintln(out, "\nExisting contexts:")
+				fmt.Fprintln(out, "\nExisting profiles:")
 				for i, name := range ctxNames {
 					ctx := cfg.Contexts[name]
 					envCount := len(ctx.Env)
@@ -579,7 +579,7 @@ func setupCmd() *cobra.Command {
 				}
 				createIdx := len(ctxNames) + 1
 				inheritIdx := len(ctxNames) + 2
-				fmt.Fprintf(out, "  [%d] Create new context\n", createIdx)
+				fmt.Fprintf(out, "  [%d] Create new profile\n", createIdx)
 				fmt.Fprintf(out, "  [%d] Inherit from existing + customize\n", inheritIdx)
 				fmt.Fprint(out, "Select [1]: ")
 
@@ -602,7 +602,7 @@ func setupCmd() *cobra.Command {
 					selectedName := ctxNames[choice-1]
 					ctx := cfg.Contexts[selectedName]
 
-					fmt.Fprintf(out, "\nAdding match rule to context %q\n", selectedName)
+					fmt.Fprintf(out, "\nAdding match rule to profile %q\n", selectedName)
 					rule, err := askMatchRule(out, reader, cwd)
 					if err != nil {
 						return err
@@ -614,7 +614,7 @@ func setupCmd() *cobra.Command {
 						return fmt.Errorf("writing config: %w", err)
 					}
 
-					fmt.Fprintf(out, "\nUpdated context %q:\n", selectedName)
+					fmt.Fprintf(out, "\nUpdated profile %q:\n", selectedName)
 					fmt.Fprintf(out, "  Agent:    %s\n", ctx.Agent)
 					fmt.Fprintf(out, "  Match:    %d rules\n", len(ctx.Match))
 					fmt.Fprintf(out, "\nRun `aide` to launch %s.\n", ctx.Agent)
@@ -622,7 +622,7 @@ func setupCmd() *cobra.Command {
 
 				case choice == inheritIdx:
 					// Inherit from existing + customize
-					fmt.Fprintln(out, "\nWhich context to inherit from?")
+					fmt.Fprintln(out, "\nWhich profile to inherit from?")
 					for i, name := range ctxNames {
 						fmt.Fprintf(out, "  [%d] %s\n", i+1, name)
 					}
@@ -745,7 +745,7 @@ func setupCmd() *cobra.Command {
 						return fmt.Errorf("writing config: %w", err)
 					}
 
-					fmt.Fprintf(out, "\nCreated context %q (inherited from %q):\n", ctxName, parentName)
+					fmt.Fprintf(out, "\nCreated profile %q (inherited from %q):\n", ctxName, parentName)
 					fmt.Fprintf(out, "  Agent:    %s\n", newAgent)
 					if newSecrets != "" {
 						fmt.Fprintf(out, "  Secrets:  %s\n", newSecrets)
@@ -1089,7 +1089,7 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 		return fmt.Errorf("writing config: %w", err)
 	}
 
-	fmt.Fprintf(out, "\nCreated context %q:\n", ctxName)
+	fmt.Fprintf(out, "\nCreated profile %q:\n", ctxName)
 	fmt.Fprintf(out, "  Agent:    %s\n", agentName)
 	if selectedSecret != "" {
 		fmt.Fprintf(out, "  Secret:   %s\n", selectedSecret)
@@ -1180,7 +1180,7 @@ func statusCmd() *cobra.Command {
 	var sf selectionFlags
 	cmd := &cobra.Command{
 		Use:          "status",
-		Short:        "Show detailed view of current context and capabilities",
+		Short:        "Show detailed view of current profile and capabilities",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
@@ -1363,7 +1363,7 @@ func statusCmd() *cobra.Command {
 				line := strings.Repeat("\u2500", 40)
 				fmt.Fprintln(w, line)
 
-				fmt.Fprintf(w, "Context:      %s\n", result.Context)
+				fmt.Fprintf(w, "Profile:      %s\n", result.Context)
 				fmt.Fprintf(w, "Agent:        %s \u2192 %s\n", result.Agent, result.AgentPath)
 				fmt.Fprintf(w, "Matched:      %s\n", result.Matched)
 				if line := statusSelectionLine(result); line != "" {
@@ -1406,7 +1406,7 @@ func statusCmd() *cobra.Command {
 						if len(cap.EnvAllow) > 0 {
 							fmt.Fprintf(w, "    env:       %s\n", strings.Join(cap.EnvAllow, ", "))
 						}
-						fmt.Fprintf(w, "    source:    context config\n")
+						fmt.Fprintf(w, "    source:    profile config\n")
 						fmt.Fprintln(w)
 					}
 				}

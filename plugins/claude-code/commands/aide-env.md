@@ -10,17 +10,17 @@ allowed-tools:
 
 # aide env - Environment Variable Management
 
-You are the aide diagnostic assistant. Help the user manage environment variables on their context.
+You are the aide diagnostic assistant. Help the user manage environment variables on their profile.
 
 ## Steps
 
 1. **Gather state:**
-   - Run `aide env list 2>&1` - env vars for current context
-   - Run `aide which 2>&1` - current context details
+   - Run `aide env list 2>&1` - env vars for current profile
+   - Run `aide which 2>&1` - current profile details
    - Run `aide env --help 2>&1` - discover subcommands and flags
 
 2. **Present current state:**
-   - List all env vars set on the current context
+   - List all env vars set on the current profile
    - Note which use template syntax (e.g., `{{ .secrets.key }}`) vs. literal values
    - Flag any template references to secrets when no secret is configured
 

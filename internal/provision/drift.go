@@ -102,9 +102,9 @@ func hasShortfall(desired Desired, cs *ContextState, homeDir string) bool {
 func DriftMessage(d DriftKind, contextName string) string {
 	switch d {
 	case DriftConfigChanged:
-		return "⚠ context \"" + contextName + "\": config changed since last sync — run `aide sync`"
+		return "⚠ profile \"" + contextName + "\": config changed since last sync — run `aide sync`"
 	case DriftNeverSynced:
-		return "⚠ context \"" + contextName + "\": never synced — run `aide sync` to install declared plugins/MCP servers"
+		return "⚠ profile \"" + contextName + "\": never synced — run `aide sync` to install declared plugins/MCP servers"
 	default:
 		return ""
 	}

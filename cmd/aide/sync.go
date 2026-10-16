@@ -193,10 +193,10 @@ func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes, for
 
 func renderPlan(out io.Writer, plan provision.Plan) {
 	if len(plan.Ops) == 0 {
-		fmt.Fprintf(out, "Plan for context %s: no changes\n", plan.Context.Name)
+		fmt.Fprintf(out, "Plan for profile %s: no changes\n", plan.Context.Name)
 		return
 	}
-	fmt.Fprintf(out, "Plan for context %s (agent: %s):\n\n", plan.Context.Name, plan.Context.Agent)
+	fmt.Fprintf(out, "Plan for profile %s (agent: %s):\n\n", plan.Context.Name, plan.Context.Agent)
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, op := range plan.Ops {
 		sym := opSymbol(op.OpKind)

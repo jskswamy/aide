@@ -1,5 +1,5 @@
 {{- boldGreen "aide" -}}
-{{- if .ContextName}} · context: {{boldGreen (contextIconDisplay .)}}{{end}}
+{{- if .ContextName}} · profile: {{boldGreen (contextIconDisplay .)}}{{end}}
   {{cyan "Agent     "}}{{agentIconPrefix .}}{{agentDisplay .}}
 {{- if .MatchReason}}
   {{cyan "Matched   "}}{{.MatchReason}}

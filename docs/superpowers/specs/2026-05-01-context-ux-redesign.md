@@ -1,6 +1,6 @@
 # `aide context` UX Redesign
 
-**Status:** Draft
+**Status:** Superseded by [Multi-harness profiles and repository configuration](2026-10-16-multi-harness-profiles-design.md) (contexts are now profiles; `aide context` is a deprecated alias of `aide profile`)
 **Date:** 2026-05-01
 
 ## Problem

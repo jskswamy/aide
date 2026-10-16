@@ -77,7 +77,7 @@ func Resolve(cfg *config.Config, cwd string, remotes RemoteLookup) (*ResolvedCon
 	}
 	if rc == nil {
 		return nil, fmt.Errorf(
-			"no context matched for cwd=%s remote=%s and no default_context configured",
+			"no profile matched for cwd=%s remote=%s and no default profile configured",
 			cwd, ParseRemoteHost(lookupRemote(remotes, DefaultRemoteName)),
 		)
 	}

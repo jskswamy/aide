@@ -95,6 +95,16 @@ scrubbed.
 - Hints that pointed at `aide context ...` now point at `aide profile
   ...`; the `set-secret` hint no longer suggests a `--global` flag that
   command never had.
+- Human-readable output says "profile" where it said "context": the
+  `Profile` row in the `aide which` banner, `Profile: <name>` headers in
+  `aide status`, `env list`, `cap audit`, `plugin list`, `mcp list` and
+  `hook list`, `aide use`, `aide validate`, `aide sync --plan`, the
+  drift banner (`⚠ profile "work": ...`) and the no-match menu. JSON
+  keys are unchanged (see below). The statusline module keeps its name,
+  `context`.
+- The Claude Code plugin's `/aide context` command is now `/aide
+  profile`; the docs and plugin text say "profile" throughout, and
+  `docs/contexts.md` is now `docs/profiles.md`.
 
 #### aide profile migrate converts config.yaml to profiles:
 

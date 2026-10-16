@@ -148,7 +148,7 @@ From that point, a compact status bar appears at the bottom of Claude Code on ev
 🔒 | 🌐 | ⚡ k8s,docker
 ```
 
-Each indicator reflects live session state - sandbox mode, network mode, active capabilities, trust status, matched context - injected via env vars before the handoff, inherited through the exec chain, no file-based IPC needed.
+Each indicator reflects live session state - sandbox mode, network mode, active capabilities, trust status, matched profile - injected via env vars before the handoff, inherited through the exec chain, no file-based IPC needed.
 
 **What it shows by default:**
 
@@ -158,7 +158,7 @@ Each indicator reflects live session state - sandbox mode, network mode, active 
 | `🌐` / `🌍` | Network outbound / unrestricted |
 | `⚡ k8s,docker` | Active capabilities (hidden when none) |
 | `⚠️` | Untrusted `.aide.yaml` (hidden when trusted) |
-| `📁 work` | Matched context name (hidden when none) |
+| `📁 work` | Matched profile name (hidden when none) |
 | `🚨` | Auto-approve active (always shown when set) |
 
 **If you already have a statusline configured**, `--install` wraps it instead of replacing it - your existing tool keeps running and aide's output appears alongside it.
@@ -208,7 +208,7 @@ cd aide && make build   # Binary at ./bin/aide
 Four commands to know:
 
 ```bash
-aide                        # Resolve context and launch the agent (sandboxed)
+aide                        # Resolve profile and launch the agent (sandboxed)
 aide setup                  # Interactive first-time configuration
 aide --with k8s docker      # Enable capabilities for this session
 aide cap list               # See all available capabilities
@@ -237,13 +237,13 @@ aide -- --resume
 aide --with docker -- -p "build and push the image"
 ```
 
-This works with any agent - aide resolves context and sandbox, then execs the agent with your args appended.
+This works with any agent - aide resolves profile and sandbox, then execs the agent with your args appended.
 
 ## How It Works
 
 1. Run `aide` in any project directory.
 2. aide matches the git remote URL and directory path against your config.
-3. It resolves the context: agent, credentials, capabilities, and sandbox policy.
+3. It resolves the profile: agent, credentials, capabilities, and sandbox policy.
 4. Secrets decrypt in-process via [sops](https://github.com/getsops/sops) (Mozilla's secrets-encryption tool) using [age](https://github.com/FiloSottile/age) keys. Nothing hits disk.
 5. Capabilities translate to sandbox rules - each `--with` flag unlocks specific tool access while keeping everything else locked.
 6. aide applies the sandbox via the platform-native enforcer - macOS Seatbelt, or Linux Landlock + seccomp (kernel ≥ 5.13, with full network port enforcement on kernel ≥ 6.7) - and execs the agent inside it. When Landlock is unavailable, bubblewrap provides filesystem-only isolation. **If neither Landlock nor bubblewrap is available, aide logs a warning and launches the agent without OS-level isolation rather than refusing to run** - run `aide sandbox show` to confirm your active tier before trusting it. See [Supported Linux tier](docs/sandbox.md#supported-linux-tier-minimum-system-requirements) for details.
@@ -280,17 +280,18 @@ Capabilities are task-oriented permission bundles. Instead of configuring low-le
 aide --with k8s docker
 ```
 
-**Context-scoped** (always for this project):
+**Profile-scoped** (always for this project):
 
 ```yaml
 # ~/.config/aide/config.yaml
-contexts:
+profiles:
   work:
     agent: claude
     capabilities: [docker, k8s, gcp]
     secret: work
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+    credentials:
+      anthropic: {backend: age, store: work, key: anthropic_api_key}
+    default_credentials: [anthropic]
 ```
 
 **Need something not in the list?** Create your own in one command:
@@ -344,10 +345,10 @@ env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 ```
 
-**Multi-context config:**
+**Multi-profile config:**
 
 ```yaml
-contexts:
+profiles:
   work:
     match:
       - remote: "github.com/work-org/*"
@@ -364,21 +365,25 @@ contexts:
       - remote: "github.com/myuser/*"
     agent: codex
     secret: personal
-    env:
-      OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
+    credentials:
+      openai: {backend: age, store: personal, key: openai_api_key}
+    default_credentials: [openai]
 
   oss:
     match:
       - remote: "github.com/*"
     agent: aider
     secret: personal
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+    credentials:
+      anthropic: {backend: age, store: personal, key: anthropic_api_key}
+    default_credentials: [anthropic]
 
-default_context: personal
+default_profile: personal
 ```
 
-Contexts match git remote URL patterns and directory path globs. The most specific match wins. `default_context` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.
+Profiles match git remote URL patterns and directory path globs. The most specific match wins. `default_profile` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.
+
+Profiles were called contexts before. A `config.yaml` with `contexts:` and `default_context:` still loads; `aide profile migrate` previews the conversion and `--write` applies it. `aide context ...` and `--context` remain as deprecated aliases of `aide profile ...` and `--profile`.
 
 ## Secrets
 
@@ -401,10 +406,10 @@ Declare it once in `config.yaml` and reconcile with one command:
 plugins:
   jskswamy/claude-plugins: [commit-tools, craft, refactor]
 
-contexts:
+profiles:
   work:
     agent: claude
-    profile: work          # → CLAUDE_CONFIG_DIR=~/.claude-work
+    config_dir_name: work  # → CLAUDE_CONFIG_DIR=~/.claude-work
 ```
 
 ```bash
@@ -414,15 +419,17 @@ aide plugin list           # declared / installed / managed view
 aide adopt                 # bring hand-installed items under management
 ```
 
-The state file at `~/.local/state/aide/managed.json` is per-context,
-so syncing your `work` context never disturbs your `personal` plugin
+The state file `managed.json` in aide's state directory
+(`$XDG_STATE_HOME/aide`, default `~/.local/state/aide`) is per-profile,
+so syncing your `work` profile never disturbs your `personal` plugin
 set. `aide which` shows a drift banner whenever your config drifts
 ahead of what's installed, so the gap doesn't go unnoticed.
 
-### The other half: profiles
+### The other half: per-profile config dirs
 
 The reason you can declare different plugin sets for different
-projects is that each agent context can carry a `profile:` name.
+projects is that each profile can carry a `config_dir_name:`
+(`profile:` under the legacy `contexts:`).
 Without it, every claude invocation reads from one shared
 `~/.claude/` directory - your work plugins and your personal plugins
 fight for the same slot, your client A's session history shows up
@@ -430,16 +437,16 @@ when you're working on client B's repo, and your "experimental"
 MCP servers leak into the project where you're supposed to be on
 your best behaviour.
 
-`profile: work` tells aide's claude driver to set
+`config_dir_name: work` tells aide's claude driver to set
 `CLAUDE_CONFIG_DIR=~/.claude-work` everywhere: at launch, during
 `aide sync`, during `aide adopt`, during plugin/MCP list. The
 agent reads from and writes to that directory and that directory
 only. Your personal claude state in `~/.claude/` stays untouched.
-Switch context and it's a different dir entirely.
+Switch profile and it's a different dir entirely.
 
 The same idea works for gemini (`GEMINI_HOME`), codex
 (`CODEX_HOME`), copilot (`COPILOT_HOME`) - different env-var name,
-same shape from your point of view. You write `profile: <name>`,
+same shape from your point of view. You write `config_dir_name: <name>`,
 aide handles the per-agent env quirks.
 
 See [docs/provisioning.md](docs/provisioning.md) for the full
@@ -522,7 +529,7 @@ make lint                   # Run golangci-lint
 
 - [Getting Started](docs/getting-started.md)
 - [Capabilities](docs/capabilities.md)
-- [Contexts](docs/contexts.md)
+- [Profiles](docs/profiles.md)
 - [Environment Variables](docs/environment.md)
 - [Secrets](docs/secrets.md)
 - [Sandbox](docs/sandbox.md)

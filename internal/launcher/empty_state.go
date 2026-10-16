@@ -68,12 +68,12 @@ func handleEmptyState(
 
 	reader := bufio.NewReader(in)
 
-	fmt.Fprintln(out, "aide: no context matches this folder.")
+	fmt.Fprintln(out, "aide: no profile matches this folder.")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "What do you want to do?")
-	fmt.Fprintln(out, "  [1] Bind this folder to an existing context")
-	fmt.Fprintln(out, "  [2] Create a new context for this folder")
-	fmt.Fprintln(out, "  [3] Launch once with an existing context (don't save)")
+	fmt.Fprintln(out, "  [1] Bind this folder to an existing profile")
+	fmt.Fprintln(out, "  [2] Create a new profile for this folder")
+	fmt.Fprintln(out, "  [3] Launch once with an existing profile (don't save)")
 	fmt.Fprintln(out, "  [c] Cancel")
 	fmt.Fprintln(out, "")
 	fmt.Fprint(out, "Choose [1]: ")
@@ -131,7 +131,7 @@ func pickContextForLaunchOnce(cfg *config.Config, reader *bufio.Reader, out io.W
 	sort.Strings(names)
 
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "Existing contexts:")
+	fmt.Fprintln(out, "Existing profiles:")
 	for i, n := range names {
 		fmt.Fprintf(out, "  [%d] %s\n", i+1, n)
 	}

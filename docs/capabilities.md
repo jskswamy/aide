@@ -96,7 +96,7 @@ full permissions.
 
 ## Activation
 
-Capabilities can be activated for a single session or persisted in your context
+Capabilities can be activated for a single session or persisted in your profile
 config.
 
 ### Session-scoped: --with
@@ -109,15 +109,15 @@ aide --with my-deploy          # works with custom capabilities too
 `--with` does not modify your config. When the session ends, the capabilities
 are gone.
 
-### Context-scoped: config
+### Profile-scoped: config
 
 ```yaml
-contexts:
+profiles:
   work:
     capabilities: [k8s-dev, docker]
 ```
 
-Every time you run `aide` in a directory matching the `work` context, these
+Every time you run `aide` in a directory matching the `work` profile, these
 capabilities activate automatically.
 
 ### Excluding: --without
@@ -126,13 +126,13 @@ capabilities activate automatically.
 aide --without docker          # disable docker for this session
 ```
 
-If your context config includes `docker` but you don't need it right now,
+If your profile config includes `docker` but you don't need it right now,
 `--without` removes it for this session only. Config is never modified.
 
 ### How they combine
 
-CLI `--with` appends to context capabilities. CLI `--without` removes from
-context capabilities. The result is resolved once at session start and baked
+CLI `--with` appends to profile capabilities. CLI `--without` removes from
+profile capabilities. The result is resolved once at session start and baked
 into the immutable Seatbelt profile. The agent cannot escalate permissions
 mid-session - this is a hard security constraint. To change capabilities, start
 a new session.
@@ -204,8 +204,8 @@ aide cap edit k8s-dev \        # modify an existing capability
   --remove-deny "~/.kube/old-config" \
   --add-env-allow KUBECONFIG_EXTRA
 
-aide cap enable k8s-dev        # persist in current context config
-aide cap disable k8s-dev       # remove from current context config
+aide cap enable k8s-dev        # persist in current profile config
+aide cap disable k8s-dev       # remove from current profile config
 ```
 
 ## Protection
@@ -324,8 +324,8 @@ All capability management lives under `aide cap`.
 
 | Command | Purpose |
 |---------|---------|
-| `aide cap enable <name>` | Persist capability in current context config |
-| `aide cap disable <name>` | Remove capability from current context config |
+| `aide cap enable <name>` | Persist capability in current profile config |
+| `aide cap disable <name>` | Remove capability from current profile config |
 
 ### Protection
 

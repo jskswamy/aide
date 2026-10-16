@@ -213,7 +213,7 @@ func TestPluginList_DeclaredInstalledManaged(t *testing.T) {
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"Context: work",
+		"Profile: work",
 		"agent: fakeagent",
 		"linear",
 		"github linear@1.2",
@@ -397,7 +397,7 @@ func TestMCPList_DeclaredInstalledManaged(t *testing.T) {
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"Context: work",
+		"Profile: work",
 		"agent: fakeagent",
 		"shared",
 		"shared-mcp",

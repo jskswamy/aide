@@ -114,6 +114,38 @@ profiles:
   (`name`, `env`) and `auth_mode`; `aide status` also gains
   `credential_error`.
 
+#### Choose the profile, credentials and auth mode for one launch
+
+`aide --profile <name>` launches with that profile instead of the one
+matched for the directory. `aide --credential <name>` (repeatable)
+injects those credential bindings for this run, replacing the saved
+and default selection rather than adding to it; `--credential=` selects
+none. `aide --auth login` injects no credentials so the harness uses
+its own login; `--auth api` is the default. None of these flags ever
+change saved preferences.
+
+- Precedence: profile from `--profile`, else match rules, else
+  `default_profile`. Harness from `--agent`, else the repository's
+  saved preference (`aide project set`), else a trusted `.aide.yaml`
+  `agent:`, else the profile's `agent:`. Credentials from
+  `--credential`/`--auth login`, else the saved selection, else
+  `default_credentials:`. A note is printed when a saved harness
+  overrides a different `.aide.yaml` harness.
+- `aide which` and `aide status` accept the same four flags and report
+  how each choice was made: `--format json` gains `profile_source`
+  (`flag`, `match`, `default`, `prompt`), `harness_source` (`flag`,
+  `preference`, `repository`, `profile`), `credential_source` (`flag`,
+  `auth`, `preference`, `profile`) and `credential_selection` (binding
+  names only); `aide status` also gains `notices` and a `Selected by:`
+  line.
+- `--profile`, `--agent` and `--credential` complete profile, harness
+  and credential names in shells; `--auth` completes `api`/`login`.
+- Without a `config.yaml`, `--profile` and `--credential` stop with a
+  pointer to `aide init`.
+- When no profile matches and none is the default, the error now
+  suggests `aide --profile <name>` for a one-off launch (it suggested
+  `aide use`, which saves a match rule).
+
 ### 🧰 CLI
 
 #### --agent now gets its own profile directory
@@ -240,10 +272,10 @@ that save the config write back whichever form the file used.
   gemini, pi), paths must be under `$HOME`, and the profile must also
   set `config_dir_name:` (`profile:` under `contexts:`); otherwise
   loading stops with `invalid config_dirs`.
-- `.aide.yaml` may name an existing profile with `profile: <name>`. A
-  name your config does not define prints a warning (once per run)
-  naming the file and the profile, and aide carries on. Selecting that profile from
-  `.aide.yaml` is not wired in yet.
+- `.aide.yaml` may name a profile with `profile: <name>`, but it never
+  selects or switches the profile. When the launch resolves a
+  different profile, or your config does not define that name, aide
+  prints a note suggesting `aide --profile <name>` and carries on.
 - `.aide.yaml` can never define a profile: `profiles:`, `contexts:`,
   `default_profile:`, `default_context:`, `config_dir_name:`,
   `config_dir:`, `config_dirs:`, `profile_dir:`, `match:`, `credentials:` and

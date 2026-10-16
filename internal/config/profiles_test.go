@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -310,25 +309,6 @@ func TestLoad_InvalidConfigDirsFail(t *testing.T) {
 	}
 }
 
-func TestLoad_ProjectConfigUnknownProfileWarnsOnce(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	var warned bytes.Buffer
-	prev := warnOut
-	warnOut = &warned
-	t.Cleanup(func() { warnOut = prev })
-	configDir, projectDir := t.TempDir(), t.TempDir()
-	writeFile(t, filepath.Join(configDir, "config.yaml"), "profiles:\n  work:\n    agent: claude\n")
-	writeFile(t, filepath.Join(projectDir, ProjectConfigFileName), "profile: nope\n")
-	for range 3 {
-		if _, err := Load(configDir, projectDir); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if n := strings.Count(warned.String(), "warning"); n != 1 {
-		t.Errorf("warned %d times, want once:\n%s", n, warned.String())
-	}
-}
-
 func TestLoad_ExistingDirsComparedByIdentity(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -389,26 +369,20 @@ func TestLoad_ProjectConfigMayReferenceProfile(t *testing.T) {
 	}
 }
 
-func TestLoad_ProjectConfigUnknownProfileWarns(t *testing.T) {
+// An unknown profile named in .aide.yaml loads without complaint: the
+// reference never selects a profile, and the launch notice (see
+// launcher.ProjectProfileNotice) explains it once, after resolution.
+func TestLoad_ProjectConfigUnknownProfileLoads(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	var warned bytes.Buffer
-	prev := warnOut
-	warnOut = &warned
-	t.Cleanup(func() { warnOut = prev })
 	configDir, projectDir := t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(configDir, "config.yaml"), "profiles:\n  work:\n    agent: claude\n")
 	writeFile(t, filepath.Join(projectDir, ProjectConfigFileName), "profile: nope\n")
 	cfg, err := Load(configDir, projectDir)
 	if err != nil {
-		t.Fatalf("Load() error = %v, want a warning only", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.ProjectOverride.Profile != "nope" {
 		t.Errorf("ProjectOverride.Profile = %q, want nope", cfg.ProjectOverride.Profile)
-	}
-	for _, want := range []string{ProjectConfigFileName, `"nope"`, "work", "profiles:"} {
-		if !strings.Contains(warned.String(), want) {
-			t.Errorf("warning %q does not mention %s", warned.String(), want)
-		}
 	}
 }
 

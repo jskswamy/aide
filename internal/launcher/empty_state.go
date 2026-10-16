@@ -61,7 +61,7 @@ func handleEmptyState(
 				"To proceed, run one of:\n" +
 				"  aide context bind <name>            # attach this folder to existing context\n" +
 				"  aide context create [name]          # create a new context for this folder\n" +
-				"  aide use <name> -- <agent-args>     # launch once without persisting\n" +
+				"  aide --profile <name>               # launch once with a profile, without saving\n" +
 				"  aide context set-default <name>     # use a fallback for unmatched folders",
 		)
 	}
@@ -109,6 +109,7 @@ func handleEmptyState(
 			Name:        picked,
 			MatchReason: "empty-state launch-once",
 			Context:     ctx,
+			Source:      SourcePrompt,
 		}, nil
 	case "c", "cancel":
 		return nil, ErrEmptyStateCancelled

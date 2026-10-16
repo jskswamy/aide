@@ -244,6 +244,16 @@ prints them.
 
 ### 🧰 CLI
 
+#### --format json adds profile keys beside context keys
+
+JSON output now names the profile under new keys with the same value
+as the existing ones, which stay: `profile` beside `context` (`aide
+status`, `env list`, `hook list`, `plugin list`, `mcp list`, `sandbox
+show`, `cap audit`), `profile_name`/`profile_icon` beside
+`context_name`/`context_icon` (`aide which`), and
+`default_profile`/`profiles` beside `default_context`/`contexts`
+(`aide explain`).
+
 #### Provisioning state records ownership per profile
 
 `managed.json` (aide's record of the plugins, MCP servers,

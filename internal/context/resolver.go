@@ -19,7 +19,17 @@ type ResolvedContext struct {
 	MatchReason string             // human-readable reason for the match
 	Context     config.Context     // the resolved context (with project override merged if applicable)
 	Preferences config.Preferences // resolved display/behavior preferences
+	// Source is how the profile was selected: SourceFlag, SourceMatch
+	// or SourceDefault.
+	Source string
 }
+
+// Profile selection sources, reported as profile_source.
+const (
+	SourceFlag    = "flag"    // explicit --profile
+	SourceMatch   = "match"   // a path/remote match rule
+	SourceDefault = "default" // default_profile, or a minimal config
+)
 
 // Specificity tiers. Within a tier, longer pattern string = higher specificity.
 //
@@ -73,6 +83,44 @@ func Resolve(cfg *config.Config, cwd string, remotes RemoteLookup) (*ResolvedCon
 	return finishResolved(cfg, rc), nil
 }
 
+// ResolveSelected selects the profile by precedence: the explicit name
+// (--profile) when set, otherwise Resolve's matcher and default.
+func ResolveSelected(cfg *config.Config, cwd string, remotes RemoteLookup, name string) (*ResolvedContext, error) {
+	if name != "" {
+		return ResolveByName(cfg, name)
+	}
+	return Resolve(cfg, cwd, remotes)
+}
+
+// ResolveByName selects the named profile regardless of match rules,
+// then applies preferences and the project override as Resolve does.
+// A minimal config has only the profile "default".
+func ResolveByName(cfg *config.Config, name string) (*ResolvedContext, error) {
+	if cfg.IsMinimal() {
+		if name != "default" {
+			return nil, fmt.Errorf("profile %q not found: this config defines no profiles (only %q)", name, "default")
+		}
+		rc := minimalContext(cfg)
+		rc.Source = SourceFlag
+		rc.MatchReason = "--profile default"
+		return finishResolved(cfg, rc), nil
+	}
+	ctx, ok := cfg.Contexts[name]
+	if !ok {
+		defined := strings.Join(slices.Sorted(maps.Keys(cfg.Contexts)), ", ")
+		if defined == "" {
+			defined = "none"
+		}
+		return nil, fmt.Errorf("profile %q not found (defined: %s)", name, defined)
+	}
+	return finishResolved(cfg, &ResolvedContext{
+		Name:        name,
+		MatchReason: "--profile " + name,
+		Context:     ctx,
+		Source:      SourceFlag,
+	}), nil
+}
+
 // minimalContext builds the synthetic "default" context of a minimal
 // (flat) config.
 func minimalContext(cfg *config.Config) *ResolvedContext {
@@ -88,6 +136,7 @@ func minimalContext(cfg *config.Config) *ResolvedContext {
 	return &ResolvedContext{
 		Name:        "default",
 		MatchReason: "minimal config (default)",
+		Source:      SourceDefault,
 		Context: config.Context{
 			Agent:      cfg.Agent,
 			Env:        cfg.Env,
@@ -126,6 +175,7 @@ func bestMatch(cfg *config.Config, cwd string, remotes RemoteLookup) *ResolvedCo
 		Name:        bestName,
 		MatchReason: describeMatch(bestRule, bestScore),
 		Context:     cfg.Contexts[bestName],
+		Source:      SourceMatch,
 	}
 }
 
@@ -143,6 +193,7 @@ func defaultContext(cfg *config.Config) *ResolvedContext {
 		Name:        cfg.DefaultContext,
 		MatchReason: fmt.Sprintf("default_context (%s)", cfg.DefaultContext),
 		Context:     ctx,
+		Source:      SourceDefault,
 	}
 }
 

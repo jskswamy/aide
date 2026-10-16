@@ -205,3 +205,29 @@ func TestClaudeAgent_AugmentLinuxPaths_NilOrEmptyContext(t *testing.T) {
 		t.Errorf("augmentLinuxPaths with nil/empty context must not append paths; got %v", result.Writable)
 	}
 }
+
+// A profile launch grants only the profile's own config dir under
+// Landlock: not ~/.claude, ~/.claude.json, ~/.cache/claude, another
+// profile's dir or ~/.config/anthropic. Claude keeps .claude.json and
+// .credentials.json inside CLAUDE_CONFIG_DIR.
+func TestClaudeAgent_LinuxProfileDirGrantsNoOtherAccountState(t *testing.T) {
+	homeDir := t.TempDir()
+	work := filepath.Join(homeDir, ".claude-work")
+	personal := filepath.Join(homeDir, ".claude-personal")
+	for _, d := range []string{work, personal, filepath.Join(homeDir, ".claude"), filepath.Join(homeDir, ".config", "anthropic")} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := &seatbelt.Context{HomeDir: homeDir, GOOS: "linux", Env: []string{"CLAUDE_CONFIG_DIR=" + work}}
+	result := ClaudeAgent().Rules(ctx)
+
+	if !slices.Equal(result.Writable, []string{work}) {
+		t.Errorf("Writable = %v, want only %s", result.Writable, work)
+	}
+	for _, p := range append(slices.Clone(result.Writable), result.Readable...) {
+		if p != work && !strings.HasPrefix(p, work+string(filepath.Separator)) {
+			t.Errorf("profile launch grants %s outside its config dir", p)
+		}
+	}
+}

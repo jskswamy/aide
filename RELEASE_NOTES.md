@@ -398,6 +398,18 @@ directory now belongs to the agent that actually launches
 - `aide which` and `aide status` accept `--agent` to show what such a
   launch would use.
 
+#### Claude profile launches no longer reach the global ~/.claude.json on macOS
+
+When `CLAUDE_CONFIG_DIR` is set (every Claude profile launch), Claude
+Code keeps its account and project state in that dir's `.claude.json`.
+The macOS sandbox now stops granting the global `~/.claude.json` and
+`~/.claude.lock` in that case and grants the profile dir's own lock
+(`~/.claude-<profile>.lock`) instead, so one profile cannot read
+another login's account state. Launches without `CLAUDE_CONFIG_DIR`
+are unchanged. `~/.cache/claude` and Claude's install paths stay
+shared: they hold no login state. See "Claude Code's files outside the
+config dir" in `docs/sandbox.md`.
+
 #### remote_name in match rules now takes effect
 
 A remote rule with `remote_name: upstream` was documented but ignored:

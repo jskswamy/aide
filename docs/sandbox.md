@@ -56,6 +56,35 @@ aide auto-detects known agent config directories and adds them to the writable l
 | Gemini       | `GEMINI_HOME`       | `~/.gemini`                           |
 | Goose        | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
 
+### Claude Code's files outside the config dir
+
+When `CLAUDE_CONFIG_DIR` is set (every profile launch sets it to the
+profile's own dir), Claude Code keeps `.claude.json` (account and
+project state), `settings.json` and `.credentials.json` inside that
+dir, and keys its macOS Keychain entry to it. The sandbox then grants:
+
+- the profile's config dir, and on macOS its sibling lock
+  (`~/.claude-<profile>.lock`) used while refreshing a login;
+- shared install and cache paths that hold no login state:
+  `~/.local/bin/claude`, `~/.local/share/claude`,
+  `~/.local/state/claude`, `~/.cache/claude` (also inside the general
+  `~/.cache` grant) and `~/.mcp.json`;
+- read-only managed settings under `/Library/Application Support/ClaudeCode`.
+
+It does **not** grant the global `~/.claude.json`, `~/.claude.lock`,
+`~/.claude` or another profile's dir; Claude does not read them while
+`CLAUDE_CONFIG_DIR` is set. Without `CLAUDE_CONFIG_DIR` (no profile),
+macOS keeps granting `~/.claude.json` and `~/.claude.lock`.
+
+Neither platform grants `~/.config/anthropic`, where Claude Code
+stores a keyless Claude Console sign-in and `ant` CLI profiles. Those
+sign-ins live outside the config dir, so they are shared by every
+profile that can read them. To keep one per profile, set
+`ANTHROPIC_CONFIG_DIR` in the profile's `env:` to a path inside its
+config dir (for example `~/.claude-work/anthropic`). See
+[profiles-verification.md](profiles-verification.md) for what is still
+being verified.
+
 ## Customizing Per-Profile
 
 The preferred way to customize is through capabilities in your profile config. For fine-grained control, you can also work with guards directly:

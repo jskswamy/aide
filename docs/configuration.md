@@ -200,9 +200,16 @@ not `--clean-env` is set:
   `ANTHROPIC_BASE_URL`, `ANTHROPIC_BEDROCK_BASE_URL`,
   `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`,
   `AWS_BEARER_TOKEN_BEDROCK`, Anthropic federation variables, ...);
+- Claude Code's other authentication inputs: `CLAUDE_CODE_OAUTH_REFRESH_TOKEN`,
+  `ANTHROPIC_PROFILE`, `ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_IDENTITY_TOKEN[_FILE]`,
+  the workload-identity federation IDs, `ANTHROPIC_CUSTOM_HEADERS`,
+  the mTLS client certificate and key (`CLAUDE_CODE_CLIENT_*`), and every
+  `CLAUDE_CODE_USE_*` / `CLAUDE_CODE_SKIP_*_AUTH` provider switch;
 - ambient cloud credentials: `AWS_*`, `CLOUDSDK_*`,
   `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
-  `GCLOUD_PROJECT`;
+  `GCLOUD_PROJECT`, and the Azure default-credential variables
+  (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`,
+  `AZURE_CLIENT_CERTIFICATE_PATH`, `AZURE_FEDERATED_TOKEN_FILE`, ...);
 - aide's own secret material: `SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`;
 - names you list in `scrub_env:`;
 - when the profile selects its own config dir (`profile:`,

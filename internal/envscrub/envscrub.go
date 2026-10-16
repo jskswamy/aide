@@ -27,15 +27,28 @@ import (
 // providerSecretNames are secret-bearing provider credentials: API
 // keys, bearer/OAuth tokens and auth-file/profile selectors. In a
 // profile they are set only through credentials: bindings.
+//
+// Claude Code names follow https://code.claude.com/docs/en/env-vars,
+// https://code.claude.com/docs/en/authentication and
+// https://platform.claude.com/docs/en/manage-claude/wif-reference.
 var providerSecretNames = []string{
 	// Anthropic / Claude Code
 	"ANTHROPIC_API_KEY",
 	"ANTHROPIC_AUTH_TOKEN",
 	"CLAUDE_CODE_OAUTH_TOKEN",
+	"CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
 	"ANTHROPIC_PROFILE",
+	"ANTHROPIC_IDENTITY_TOKEN",
 	"ANTHROPIC_IDENTITY_TOKEN_FILE",
 	"ANTHROPIC_FOUNDRY_API_KEY",
+	"ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+	"ANTHROPIC_AWS_API_KEY",
 	"AWS_BEARER_TOKEN_BEDROCK",
+	// May carry an Authorization header.
+	"ANTHROPIC_CUSTOM_HEADERS",
+	// mTLS client key and its passphrase.
+	"CLAUDE_CODE_CLIENT_KEY",
+	"CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
 	// OpenAI / Codex
 	"CODEX_API_KEY",
 	"CODEX_ACCESS_TOKEN",
@@ -59,14 +72,29 @@ var providerSelectorNames = []string{
 	"ANTHROPIC_ORGANIZATION_ID",
 	"ANTHROPIC_SERVICE_ACCOUNT_ID",
 	"ANTHROPIC_WORKSPACE_ID",
+	"ANTHROPIC_AWS_WORKSPACE_ID",
 	"ANTHROPIC_VERTEX_PROJECT_ID",
+	"CLAUDE_CODE_OAUTH_SCOPES",
+	"CLAUDE_CODE_CLIENT_CERT",
+	// Where Anthropic profiles (keyless Console sign-in, ant CLI) live;
+	// a profile may point it inside its own config dir.
+	"ANTHROPIC_CONFIG_DIR",
 	"CLAUDE_CODE_USE_BEDROCK",
 	"CLAUDE_CODE_USE_VERTEX",
 	"CLAUDE_CODE_USE_FOUNDRY",
+	"CLAUDE_CODE_USE_ANTHROPIC_AWS",
+	"CLAUDE_CODE_USE_MANTLE",
+	"CLAUDE_CODE_SKIP_BEDROCK_AUTH",
+	"CLAUDE_CODE_SKIP_VERTEX_AUTH",
+	"CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
+	"CLAUDE_CODE_SKIP_MANTLE_AUTH",
+	"CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH",
 	"OPENAI_BASE_URL",
 	// Endpoints a key can be redirected to.
 	"ANTHROPIC_BASE_URL",
 	"ANTHROPIC_BEDROCK_BASE_URL",
+	"ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
+	"ANTHROPIC_AWS_BASE_URL",
 	"ANTHROPIC_VERTEX_BASE_URL",
 	"ANTHROPIC_FOUNDRY_BASE_URL",
 	"ANTHROPIC_FOUNDRY_RESOURCE",
@@ -85,6 +113,15 @@ var cloudNames = []string{
 	"GOOGLE_APPLICATION_CREDENTIALS",
 	"GOOGLE_CLOUD_PROJECT",
 	"GCLOUD_PROJECT",
+	// Azure default credential chain (Microsoft Foundry).
+	"AZURE_CLIENT_ID",
+	"AZURE_TENANT_ID",
+	"AZURE_CLIENT_SECRET",
+	"AZURE_CLIENT_CERTIFICATE_PATH",
+	"AZURE_CLIENT_CERTIFICATE_PASSWORD",
+	"AZURE_FEDERATED_TOKEN_FILE",
+	"AZURE_USERNAME",
+	"AZURE_PASSWORD",
 }
 
 // secretMaterialNames are aide's own secret-decryption inputs. They are

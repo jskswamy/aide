@@ -218,6 +218,9 @@ Per-profile login isolation for each harness is being verified by hand
 on macOS and Linux; the steps and their status are in
 [profiles-verification.md](profiles-verification.md).
 
+To install skills and other Skillshare resources into each profile's
+own config dirs, see [Skillshare](skillshare.md).
+
 ## Migrating from contexts
 
 `aide profile migrate` prints your config converted to the `profiles:`

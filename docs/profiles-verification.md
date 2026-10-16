@@ -20,6 +20,7 @@ be updated.
 | Claude Code | [Claude Code](#claude-code) | Pending verification |
 | Pi | [Pi](#pi) | Pending verification |
 | Codex | [Codex](#codex) | Pending verification |
+| Skillshare targets (optional) | [Skillshare](#skillshare) | Pending verification |
 
 ## How to record results
 
@@ -1338,4 +1339,51 @@ verify store if you added it for X7. Then run the shared cleanup (S4).
 Ran by:                 Date:
 macOS: all steps PASS? yes / no     Linux: all steps PASS? yes / no
 Findings to carry into the spec:
+```
+
+---
+
+## Skillshare
+
+Optional; needs [Skillshare](https://skillshare.runkids.cc) installed
+and at least one skill in its source. Run it with the S3 profiles in
+place (before S4), on each platform. It checks that `skillshare sync`
+fills the dirs aide launches with and that the sandbox can read the
+linked skills (Seatbelt on macOS is the part only you can run). See
+[skillshare.md](skillshare.md).
+
+### K1. Targets match the launch dirs and the sandbox reads linked skills
+
+```sh
+SS=${SKILLSHARE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/skillshare/config.yaml}
+cp -f "$SS" "$SS.before-verify"
+aide skillshare targets            # preview: lists aide-verify-a-claude, ...; writes nothing
+aide skillshare targets --write
+skillshare sync
+aide which --profile verify-a      # CLAUDE_CONFIG_DIR
+ls -l ~/.claude-verify-a/skills    # symlinks into Skillshare's source
+cd ~/aide-verify && aide --profile verify-a
+# In Claude: "list your skills" and ask it to read one SKILL.md.
+aide skillshare targets --write    # again: reports the file is up to date
+```
+
+Expected: the preview writes nothing and shows
+`config_dir: ~/.claude-verify-a` (and `~/.codex-verify-a`,
+`~/.pi-verify-a`), the same dir `aide which` prints; `--write` keeps
+`$SS.bak` and every other key and target of yours; `skillshare sync`
+reports the `aide-verify-*` targets without errors; the sandboxed
+Claude lists and reads a Skillshare skill; the second `--write`
+changes nothing. No key or token appears in `$SS`
+(`grep -iE 'key|token' "$SS"` shows only your own entries).
+
+Cleanup: `mv -f "$SS.before-verify" "$SS"`, and remove `$SS.bak` once
+you have compared it. The links Skillshare made live inside the
+`*-verify-*` dirs, which the harness cleanups remove. `skillshare sync`
+also creates `skills/` in the Codex and Pi dirs; if you are not running
+those sections, remove them:
+`rm -rf ~/.codex-verify-a ~/.codex-verify-b ~/.pi-verify-a ~/.pi-verify-b`.
+
+```text
+Result (macOS): PASS / FAIL / N/A    Notes:
+Result (Linux): PASS / FAIL / N/A    Notes:
 ```

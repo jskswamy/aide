@@ -23,6 +23,7 @@ type Config struct {
 	Capabilities   map[string]CapabilityDef `yaml:"capabilities,omitempty"`
 	NeverAllow     []string                 `yaml:"never_allow,omitempty"`
 	NeverAllowEnv  []string                 `yaml:"never_allow_env,omitempty"`
+	ScrubEnv       []string                 `yaml:"scrub_env,omitempty"` // extra names for internal/envscrub
 	Plugins        PluginMap                `yaml:"plugins,omitempty"`
 	// MCPServers is the v2 top-level mcp_servers map. The custom
 	// MCPServerMap unmarshaller also accepts the legacy minimal-format

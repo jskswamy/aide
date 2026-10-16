@@ -130,6 +130,7 @@ func normalizeMinimal(cfg *Config) *Config {
 		},
 		NeverAllow:     cfg.NeverAllow,
 		NeverAllowEnv:  cfg.NeverAllowEnv,
+		ScrubEnv:       cfg.ScrubEnv,
 		MCPServers:     cfg.MCPServers,
 		DefaultContext: "default",
 		Preferences:    cfg.Preferences,

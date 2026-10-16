@@ -1,5 +1,41 @@
 ## Unreleased
 
+### 💥 Breaking changes
+
+#### Shell-exported API keys no longer reach agents launched with a config
+
+With a `config.yaml`, aide now starts the agent from a credential-clean
+environment, with or without `--clean-env`. Provider API keys and tokens
+(`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`OPENAI_API_KEY`, `CODEX_API_KEY`, ...), provider and federation
+selectors (`OPENAI_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, ...), ambient
+cloud credentials (`AWS_*`, `CLOUDSDK_*`, `GOOGLE_APPLICATION_CREDENTIALS`)
+and `SOPS_AGE_KEY` / `SOPS_AGE_KEY_FILE` exported in your shell are
+removed before the context's `env:` is applied. If you relied on an API
+key exported in your shell, the agent now falls back to its own login.
+
+- The replacement is the upcoming `credentials:` bindings, which select
+  a key from your age-encrypted secrets per profile. Until then, a
+  profile's `env:` entry still passes a key through, with a
+  deprecation warning naming the profile and the variable (never its
+  value).
+- The built-in `aws` and `gcp` capabilities re-admit the cloud
+  variables they list in `env_allow`. Provider keys (including
+  `AWS_BEARER_TOKEN_BEDROCK`) and your `scrub_env:` names are never
+  re-admitted.
+- New top-level `scrub_env:` adds your own names (or `PREFIX_*`
+  patterns) to the scrubbed list.
+- A context that selects its own config dir (`profile:`,
+  `config_dir_name:`, `config_dir:`, `config_dirs:`) also drops exported
+  harness dir redirects (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `PI_CODING_AGENT_DIR`, ...) so they cannot bypass the profile.
+- `aide sync` subprocesses drop the same names, `scrub_env:` included.
+- Without a `config.yaml` (passthrough), only `SOPS_AGE_KEY` and
+  `SOPS_AGE_KEY_FILE` are removed; passthrough is not isolation.
+- aide matches names: unknown variable names, and files or keychains
+  that cloud variables point at, are not scrubbed. See
+  "Credential-clean environment" in `docs/configuration.md`.
+
 ### 🧰 CLI
 
 #### --agent now gets its own profile directory

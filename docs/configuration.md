@@ -127,6 +127,8 @@ capabilities:
 
 - `never_allow:` (list) - Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
 - `never_allow_env:` (list) - Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
+- `scrub_env:` (list) - Extra variable names added to the credential scrub registry (see [Credential-clean environment](#credential-clean-environment)). An entry ending in `*` matches a prefix (`CORP_LLM_*`).
+
 - `hooks:` (map) - Declarative hook set. Keys are normalized event names (`pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`); values are lists of hook entries:
 
 ```yaml
@@ -175,6 +177,57 @@ explicitly disabled." Defaults to `"💀"` for `sandbox` and `"🌫️"` for
 
 - `sandboxes:` (map) - Named sandbox profiles referenced from contexts (`sandbox: <name>`).
 - `custom_guards:` and `guard_types:` (advanced) - Define custom seatbelt guard modules. Most users should not need these.
+
+---
+
+## Credential-clean environment
+
+A configured launch (any `config.yaml`) does not hand the agent the
+credentials exported in your shell. Before the context/profile `env:`
+is applied, aide removes from the inherited environment, whether or
+not `--clean-env` is set:
+
+- provider API keys and tokens (`ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`,
+  `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `GEMINI_API_KEY`, ...) and
+  provider selectors (`OPENAI_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`,
+  `CLAUDE_CODE_USE_VERTEX`, `AWS_BEARER_TOKEN_BEDROCK`, Anthropic
+  federation variables, ...);
+- ambient cloud credentials: `AWS_*`, `CLOUDSDK_*`,
+  `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
+  `GCLOUD_PROJECT`;
+- aide's own secret material: `SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`;
+- names you list in `scrub_env:`;
+- when the context selects its own config dir (`profile:`,
+  `config_dir_name:`, `config_dir:` or `config_dirs:`), every harness
+  config-dir redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `PI_CODING_AGENT_DIR`, `COPILOT_HOME`, `OPENCODE_CONFIG`, ...).
+  Without one, a redirect you export is kept as your global choice.
+
+The full list lives in `internal/envscrub`. What still reaches the
+agent:
+
+- values the context sets in `env:`. A credential name there (for
+  example `OPENAI_API_KEY: "{{ .secrets.openai }}"`) is passed on but
+  prints a deprecation warning naming the variable (never its value).
+- cloud variables a capability grants through `env_allow` (the
+  built-in `aws` and `gcp` capabilities re-admit their variables).
+  Provider keys (including those in a cloud namespace, such as
+  `AWS_BEARER_TOKEN_BEDROCK`), secret material and `scrub_env:` names
+  are never re-admitted this way.
+
+Limits: aide matches names. A credential exported under a name the
+registry does not know passes through unless you add it to
+`scrub_env:`, and files or keychains a scrubbed variable would have
+pointed at (`~/.aws/credentials`, gcloud application-default
+credentials, system keychains) are not removed; only the sandbox
+controls whether the agent can read them. Provisioning subprocesses
+(`aide sync`, plugin/MCP listing) drop the same names, including
+`scrub_env:`.
+
+The no-config passthrough (`aide` with no `config.yaml`) only removes
+`SOPS_AGE_KEY` and `SOPS_AGE_KEY_FILE`; shell API keys still reach the
+agent there. Passthrough is not an isolation guarantee.
 
 ---
 

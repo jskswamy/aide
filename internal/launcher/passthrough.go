@@ -10,6 +10,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/ui"
@@ -168,10 +169,14 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 
 	tempDir := os.TempDir()
 
-	policy := sandbox.DefaultPolicy(sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDir.Path(), HomeDir: homeDir, TempDir: tempDir}, os.Environ())
+	// Without a config there is no profile and no credential selection,
+	// so only aide's own secret material is scrubbed: shell API keys
+	// still reach the agent. Passthrough is not an isolation guarantee.
+	env := envscrub.ScrubCredentials(os.Environ(), envscrub.SecretMaterial(), nil)
+	policy := sandbox.DefaultPolicy(sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDir.Path(), HomeDir: homeDir, TempDir: tempDir}, env)
 	policy.AgentModule = ResolveAgentModule(name)
 
-	env := applyAgentEnv(os.Environ(), &policy)
+	env = applyAgentEnv(env, &policy)
 	// Sync policy.Env with the post-injection env so the Landlock re-exec
 	// child builds its allow-list from the same env that cmd.Env carries.
 	// Mirrors step 12e in launcher.go; without this the child evaluates

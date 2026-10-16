@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
@@ -73,6 +74,9 @@ func inheritProfileEnv(pCtx *provision.Context) {
 // config dir while the sandboxed agent reads the redirected one. Values
 // the context already sets, such as a profile dir, win.
 func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context, homeDir, projectRoot string) (provision.Context, error) {
+	// Every provisioning entry point resolves its context here, so this
+	// is where the user's scrub_env: reaches provisioning subprocesses.
+	provision.SetScrubEnv(cfg.ScrubEnv)
 	pCtx, err := provision.ResolveContext(name, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
 	if err != nil {
 		return pCtx, err
@@ -82,12 +86,13 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 		return pCtx, nil
 	}
 	// Context values go first: the module's env lookup returns the first
-	// match, so they must shadow the host environment.
+	// match, so they must shadow the host environment, which is
+	// credential-scrubbed like every other launch-side env.
 	env := make([]string, 0, len(pCtx.Env))
 	for k, v := range pCtx.Env {
 		env = append(env, k+"="+v)
 	}
-	env = append(env, os.Environ()...)
+	env = append(env, envscrub.ScrubCredentials(os.Environ(), envscrub.Credentials(), cfg.ScrubEnv)...)
 	overrides := launcher.SandboxAgentEnv(ctx.Agent, homeDir, env)
 	if len(overrides) == 0 {
 		return pCtx, nil

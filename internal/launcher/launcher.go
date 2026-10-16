@@ -20,6 +20,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/diag"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/provision"
@@ -330,16 +331,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		resolvedEnv[k] = homepath.Expand(v, homeDir)
 	}
 
-	// 10. Build environment
-	var baseEnv []string
-	if cleanEnv {
-		baseEnv = filterEssentialEnv(os.Environ())
-	} else {
-		baseEnv = os.Environ()
-	}
-
-	// Merge resolved env on top of base
-	env := mergeEnv(baseEnv, resolvedEnv)
+	warnLegacyCredentialEnv(l.stderr(), profileLabel(cfg, rc.Name), rc.Context.Env, cfg.ScrubEnv)
 
 	// 11. Resolve binary to absolute path (syscall.Exec requires it).
 	// Must happen before sandbox wrapping since sandbox rewrites cmd.Path.
@@ -412,6 +404,18 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		sandboxCfg.Network.AllowPorts = nil
 		sandboxCfg.Network.DenyPorts = nil
 	}
+
+	// Build environment: the inherited env with credentials
+	// scrubbed (independent of --clean-env), then the context/profile
+	// env, which already carries the profile dir, on top. It is built
+	// after capability resolution because a capability's env_allow
+	// re-admits the ambient cloud variables it grants.
+	baseEnv := os.Environ()
+	if cleanEnv {
+		baseEnv = filterEssentialEnv(baseEnv)
+	}
+	baseEnv = envscrub.ScrubCredentials(baseEnv, launchScrubRegistry(rc.Context, capOverrides.EnvAllow), cfg.ScrubEnv)
+	env := mergeEnv(baseEnv, resolvedEnv)
 
 	// Filter never-allow env vars from the agent's environment.
 	// Combine top-level config and capability-resolved never-allow vars.
@@ -649,6 +653,41 @@ func wrapTemplateError(err error, contextName string, secret string) error {
 	}
 
 	return fmt.Errorf("context %q: %w", contextName, err)
+}
+
+// launchScrubRegistry is the credential registry for a configured
+// launch. permitted (capability env_allow) re-admits ambient cloud
+// variables only. Harness config-dir redirects are scrubbed only when
+// the context selects its own native config dir; otherwise a
+// shell-exported redirect is the user's global choice.
+func launchScrubRegistry(ctx config.Context, permitted []string) envscrub.Registry {
+	reg := envscrub.Credentials().Permit(permitted...)
+	if ctx.SelectsConfigDir() {
+		reg = reg.With(envscrub.ConfigDirRedirects()...)
+	}
+	return reg
+}
+
+// warnLegacyCredentialEnv flags context env: entries whose names are
+// credentials. They still reach the agent; only names are printed,
+// never values.
+func warnLegacyCredentialEnv(w io.Writer, label string, env map[string]string, custom []string) {
+	names := envscrub.Credentials().With(custom...).MatchingNames(env)
+	if len(names) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "warning: %s passes credential variables through env: (%s); "+
+		"credentials in env: are deprecated and will move to credentials: bindings\n",
+		label, strings.Join(names, ", "))
+}
+
+// profileLabel names a resolved profile for messages: `profile "x"`,
+// or `profile (context) "x"` when the config uses legacy contexts:.
+func profileLabel(cfg *config.Config, name string) string {
+	if cfg.ProfileSchema {
+		return fmt.Sprintf("profile %q", name)
+	}
+	return fmt.Sprintf("profile (context) %q", name)
 }
 
 // filterEssentialEnv keeps only essential environment variables.

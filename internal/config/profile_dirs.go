@@ -178,6 +178,8 @@ func onGlobalDir(ctx Context, d harness.Descriptor, home string) bool {
 // templated or relative, or it names d's default dir (onGlobalDir).
 func envDir(ctx Context, d harness.Descriptor, home string) string {
 	v := ctx.Env[d.ProfileEnvKey]
+	// A templated value ({{ .ProjectRoot }}) resolves per launch, so
+	// there is no one dir to compare at load.
 	dir := homepath.Expand(v, home)
 	if ctx.SelectsConfigDir() || v == "" || strings.Contains(v, "{{") || !filepath.IsAbs(dir) || onGlobalDir(ctx, d, home) {
 		return ""

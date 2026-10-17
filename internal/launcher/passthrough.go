@@ -12,6 +12,7 @@ import (
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/harness"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/ui"
 )
@@ -256,12 +257,8 @@ func (l *Launcher) lookPath() LookPathFunc {
 
 // firstRunHintDir returns the directory for the sentinel file.
 func firstRunHintDir() string {
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		home, _ := os.UserHomeDir()
-		configHome = filepath.Join(home, ".config")
-	}
-	return filepath.Join(configHome, "aide")
+	home, _ := os.UserHomeDir()
+	return filepath.Join(homepath.XDG(os.Getenv("XDG_CONFIG_HOME"), home, ".config"), "aide")
 }
 
 // writeFirstRunHint writes a sentinel file to suppress future hints.

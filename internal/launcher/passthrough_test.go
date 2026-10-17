@@ -623,3 +623,12 @@ func TestPassthrough_AmbiguousIncludesCursorAgent(t *testing.T) {
 		t.Errorf("error message should mention cursor-agent, got: %s", err.Error())
 	}
 }
+
+func TestFirstRunHintDir_IgnoresRelativeXDGConfigHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "rel/config")
+	if got, want := firstRunHintDir(), filepath.Join(home, ".config", "aide"); got != want {
+		t.Errorf("firstRunHintDir() = %q, want %q", got, want)
+	}
+}

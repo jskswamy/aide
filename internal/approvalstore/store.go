@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // Store is a content-addressed set backed by a directory of files.
@@ -41,15 +42,11 @@ func (s *Store) Sub(name string) *Store {
 }
 
 // DefaultRoot returns XDG_DATA_HOME/aide (or ~/.local/share/aide when
-// XDG_DATA_HOME is unset). Aggregates should nest their namespaces
-// underneath this root.
+// XDG_DATA_HOME is unset or relative). Aggregates should nest their
+// namespaces underneath this root.
 func DefaultRoot() string {
-	base := os.Getenv("XDG_DATA_HOME")
-	if base == "" {
-		home, _ := os.UserHomeDir()
-		base = filepath.Join(home, ".local", "share")
-	}
-	return filepath.Join(base, "aide")
+	home, _ := os.UserHomeDir()
+	return filepath.Join(homepath.XDG(os.Getenv("XDG_DATA_HOME"), home, ".local/share"), "aide")
 }
 
 // Has reports whether a record with the given key exists.

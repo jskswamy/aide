@@ -334,3 +334,24 @@ func TestWriteConfig_RefusesConfigThatFailedToLoad(t *testing.T) {
 		t.Errorf("config.yaml changed:\n%s", got)
 	}
 }
+
+// A write that Load would then refuse would lock aide out of the config
+// (even `aide env remove` loads it first), so it is refused up front.
+func TestWriteConfig_RefusesConfigLoadWouldRefuse(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	const before = "profiles:\n  a: {agent: claude, config_dir_name: work}\n  b: {agent: claude}\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{ProfileSchema: true, Contexts: map[string]Context{
+		"a": {Agent: "claude", Profile: "work"},
+		"b": {Agent: "claude", Env: map[string]string{"CLAUDE_CONFIG_DIR": "~/.claude-work"}},
+	}}
+	if err := WriteConfigTo(cfg, path); !errors.Is(err, ErrProfileDirAlias) {
+		t.Fatalf("WriteConfigTo() error = %v, want ErrProfileDirAlias", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != before {
+		t.Errorf("refused write changed the file:\n%s", got)
+	}
+}

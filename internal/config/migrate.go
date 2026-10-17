@@ -167,7 +167,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	if err := enc.Close(); err != nil {
 		return nil, fmt.Errorf("encoding migrated config: %w", err)
 	}
-	if err := validateMigrated(buf.Bytes(), opts.Home); err != nil {
+	if err := validateLoadable(buf.Bytes(), opts.Home, "migrated config"); err != nil {
 		return nil, err
 	}
 	if err := checkEnvKept(&cfg, buf.Bytes(), moves); err != nil {
@@ -295,12 +295,13 @@ func (m *Migration) adopt(cfg *Config, section *yaml.Node, names []string, home 
 	return len(pinned) > 0, nil
 }
 
-// validateMigrated loads the migrated text the way Load would check
-// profiles, so a migration never writes a config aide then refuses.
-func validateMigrated(data []byte, home string) error {
+// validateLoadable checks config text (what names it in errors) the
+// way Load checks profiles, so aide never writes a config it would then
+// refuse to load.
+func validateLoadable(data []byte, home, what string) error {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("migrated config does not parse: %w", err)
+		return fmt.Errorf("%s does not parse: %w", what, err)
 	}
 	checks := []func() error{cfg.validateCredentials}
 	if home != "" {
@@ -309,7 +310,7 @@ func validateMigrated(data []byte, home string) error {
 	}
 	for _, check := range checks {
 		if err := check(); err != nil {
-			return fmt.Errorf("migrated config would not load: %w", err)
+			return fmt.Errorf("%s would not load: %w", what, err)
 		}
 	}
 	return nil

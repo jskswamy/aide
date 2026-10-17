@@ -371,8 +371,17 @@ profiles:
   are: a profile without a key does not borrow one from another
   profile.
 - A launch stops before anything runs when a selected binding is not
-  defined in the profile, is restricted to other agents (for example
-  after `--agent`), or its store or key is missing.
+  defined in the profile, or its store or key is missing, or
+  `--credential` names one restricted to other agents.
+- `default_credentials:` and a saved selection (`aide project set
+  --credential`) skip bindings restricted to other agents, so a profile
+  that runs several agents lists one binding per agent:
+  `default_credentials: [anthropic, openrouter]` with `anthropic`
+  restricted to `harnesses: [claude]` and `openrouter` to
+  `harnesses: [pi]` gives Claude only `ANTHROPIC_API_KEY` and Pi only
+  `OPENROUTER_API_KEY`. `aide which --format json` shows the full
+  selection under `credential_selection` and the injected bindings
+  under `credentials`.
 - Selected bindings are set after the profile's `env:`, so they win
   over a general `env:` value; `never_allow_env:` still removes them.
 - The banner, `aide which` and `aide status` show binding names and

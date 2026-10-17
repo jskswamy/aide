@@ -53,7 +53,9 @@ One-time flags never change saved preferences. Precedence:
   `aide project set`, else a trusted `.aide.yaml` `agent:`, else the
   profile's `agent:`.
 - Credentials: `--credential` / `--auth login`, else the saved
-  selection, else `default_credentials:`.
+  selection, else `default_credentials:`. The saved selection and
+  `default_credentials:` skip bindings restricted to other agents;
+  `--credential` naming one stops the launch.
 
 ---
 

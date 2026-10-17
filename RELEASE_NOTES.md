@@ -316,8 +316,10 @@ profiles:
 - Only selected bindings are injected and only their stores are
   decrypted. Bindings resolve from the selected profile only.
 - The launch stops before anything runs when a selected binding is
-  undefined, does not allow the launching agent, or its store or key
-  is missing.
+  undefined, its store or key is missing, or `--credential` names one
+  that does not allow the launching agent. `default_credentials:` and a
+  saved selection skip bindings restricted to other agents, so one
+  profile can list a key for each harness it runs.
 - A config with a malformed binding fails to load with `invalid
   credentials` (backend other than `age`, missing `store:`/`key:`,
   custom name without `env:`/`harnesses:`, unknown agent, undefined

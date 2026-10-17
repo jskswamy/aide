@@ -61,18 +61,26 @@ func (d ProjectDiscovery) LocalWritePath(startDir string) string {
 }
 
 // anchorRoot is the directory relative paths in the .aide.yaml at path
-// are interpreted against: the root of the checkout containing the
-// file's symlink-resolved directory (the location trust keys on),
-// asked of git from there, never the lexical path aide reached it by.
-// Outside any repository it is that resolved directory. It fails when
-// neither can be determined.
+// are interpreted against: CheckoutRoot of the file's directory, the
+// location trust keys on, never the lexical path aide reached it by.
 func anchorRoot(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
 	}
-	dir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	return CheckoutRoot(filepath.Dir(abs))
+}
+
+// CheckoutRoot is the root of the checkout containing dir's
+// symlink-resolved path, asked of git from there (an inherited GIT_DIR
+// or GIT_WORK_TREE is ignored). Outside any repository it is that
+// resolved directory. It fails when neither can be determined.
+func CheckoutRoot(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
 	if err != nil {
+		return "", err
+	}
+	if dir, err = filepath.EvalSymlinks(abs); err != nil {
 		return "", err
 	}
 	out, err := gitOutput(dir, "rev-parse", "--show-toplevel")

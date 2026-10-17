@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os/exec"
 	"strings"
+
+	"github.com/jskswamy/aide/internal/config"
 )
 
 // DefaultRemoteName is the git remote that identifies a repository: it is
@@ -261,13 +263,12 @@ func isPort(s string) bool {
 	return true
 }
 
-// ProjectRoot returns the root directory of the git repository containing cwd.
-// If cwd is not inside a git repository, it returns cwd as a fallback.
+// ProjectRoot returns the root the .aide.yaml trust gate anchors on
+// (config.CheckoutRoot): the symlink-resolved checkout containing cwd,
+// or cwd itself when that cannot be determined.
 func ProjectRoot(cwd string) string {
-	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
-	if err != nil {
-		return cwd
+	if root, err := config.CheckoutRoot(cwd); err == nil {
+		return root
 	}
-	return strings.TrimSpace(string(out))
+	return cwd
 }

@@ -157,6 +157,24 @@ func TestProjectRoot_NotGitRepo(t *testing.T) {
 	}
 }
 
+// ProjectRoot is the root the .aide.yaml trust gate anchors on: the
+// checkout holding cwd's resolved path, not one an inherited GIT_DIR
+// or GIT_WORK_TREE points at, and never the symlink aide reached it by.
+func TestProjectRoot_AgreesWithTrustGateAnchor(t *testing.T) {
+	skipIfNoGit(t)
+	repo, other := initGitRepo(t), initGitRepo(t)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(repo, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+	want, _ := filepath.EvalSymlinks(repo)
+	if got := ProjectRoot(link); got != want {
+		t.Errorf("ProjectRoot = %q, want the resolved checkout %q", got, want)
+	}
+}
+
 func TestParseRemoteHost_Normalizes(t *testing.T) {
 	cases := []struct {
 		name string

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -20,47 +19,11 @@ import (
 // config dir, so their logins would not be isolated.
 var ErrProfileDirAlias = errors.New("profiles share a native config dir")
 
-// resolveDir canonicalizes a dir that may not exist yet. A var so tests
-// can prove existing dirs are compared by identity, not by path.
-var resolveDir = fsutil.ResolveNearest
-
 // dirUse is one profile's native config dir for one harness.
 type dirUse struct {
 	profile string
-	path    string      // resolveDir of the dir
-	info    os.FileInfo // nil when the dir does not exist (yet)
-	global  bool        // the profile selects no dir: the harness default
-}
-
-func newDirUse(profile, dir string) dirUse {
-	u := dirUse{profile: profile, path: resolveDir(dir)}
-	if info, err := os.Stat(dir); err == nil {
-		u.info = info
-	}
-	return u
-}
-
-// caseInsensitiveDirs reports whether dir names that differ only by
-// case name one dir, as on default macOS and Windows filesystems. A var
-// so tests can exercise both. On a case-sensitive macOS volume this
-// refuses a case-only difference that would have worked.
-var caseInsensitiveDirs = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
-
-// sameDir compares existing dirs by identity (os.SameFile catches
-// symlinks, case-insensitive filesystems and hard links) and dirs that
-// do not exist yet by their nearest-ancestor-resolved path, case-folded
-// where the filesystem ignores case.
-func (u dirUse) sameDir(o dirUse) bool {
-	switch {
-	case u.info != nil && o.info != nil:
-		return os.SameFile(u.info, o.info)
-	case u.info == nil && o.info == nil:
-		if caseInsensitiveDirs {
-			return strings.EqualFold(u.path, o.path)
-		}
-		return u.path == o.path
-	}
-	return false
+	dir     string
+	global  bool // the profile selects no dir: the harness default
 }
 
 // NativeConfigDir is the config dir harness h (canonical name) uses
@@ -153,10 +116,9 @@ func (c *Config) validateProfileDirs(home string) error {
 			default:
 				continue
 			}
-			use := newDirUse(name, dir)
-			use.global = global
+			use := dirUse{profile: name, dir: dir, global: global}
 			for _, prev := range seen {
-				if prev.sameDir(use) && (!prev.global || !use.global) {
+				if fsutil.SameDir(prev.dir, use.dir) && (!prev.global || !use.global) {
 					return c.profileDirAliasError(h, prev.profile, name, dir, home)
 				}
 			}
@@ -211,7 +173,7 @@ func pinsGlobalDir(ctx Context, h, home string) bool {
 }
 
 func sameDirPath(a, b string) bool {
-	return filepath.IsAbs(a) && newDirUse("", a).sameDir(newDirUse("", b))
+	return filepath.IsAbs(a) && fsutil.SameDir(a, b)
 }
 
 // configDirName is name as a valid config_dir_name: value.

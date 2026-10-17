@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/jskswamy/aide/internal/fsutil"
 )
 
 // ErrMainCheckoutUnavailable reports a linked worktree whose main
@@ -170,7 +172,7 @@ func mainCheckoutOf(root, gitFile string) (main, warning string, err error) {
 		return "", "", fmt.Errorf("unexpected git rev-parse output in %s: %q", root, out)
 	}
 	gitDir, commonDir := absUnder(root, lines[0]), absUnder(root, lines[1])
-	if sameDir(gitDir, commonDir) {
+	if fsutil.SameDir(gitDir, commonDir) {
 		return "", "", nil // not a linked worktree: a submodule
 	}
 	list, err := gitOutput(root, "worktree", "list", "--porcelain")
@@ -201,15 +203,15 @@ func mainCheckoutOf(root, gitFile string) (main, warning string, err error) {
 // file must point back at root's .git, and git worktree list must name
 // root.
 func registeredWorktree(root, gitDir, commonDir, porcelain string) bool {
-	if !sameDir(filepath.Dir(gitDir), filepath.Join(commonDir, "worktrees")) {
+	if !fsutil.SameDir(filepath.Dir(gitDir), filepath.Join(commonDir, "worktrees")) {
 		return false
 	}
 	back, err := os.ReadFile(filepath.Join(gitDir, "gitdir")) // #nosec G304 -- git's own worktree record
-	if err != nil || !sameDir(absUnder(gitDir, strings.TrimSpace(string(back))), filepath.Join(root, ".git")) {
+	if err != nil || !fsutil.SameDir(absUnder(gitDir, strings.TrimSpace(string(back))), filepath.Join(root, ".git")) {
 		return false
 	}
 	for _, line := range strings.Split(porcelain, "\n") {
-		if p, ok := strings.CutPrefix(line, "worktree "); ok && sameDir(p, root) {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && fsutil.SameDir(p, root) {
 			return true
 		}
 	}
@@ -307,13 +309,4 @@ func absUnder(base, p string) string {
 		return filepath.Clean(p)
 	}
 	return filepath.Join(base, p)
-}
-
-func sameDir(a, b string) bool {
-	ra, errA := filepath.EvalSymlinks(a)
-	rb, errB := filepath.EvalSymlinks(b)
-	if errA != nil || errB != nil {
-		return filepath.Clean(a) == filepath.Clean(b)
-	}
-	return ra == rb
 }

@@ -136,7 +136,7 @@ func planTarget(profile, agent string, ctx config.Context, home string) (Target,
 	}
 	dir := env[d.ProfileEnvKey]
 	shown := homepath.Tilde(dir, home)
-	if sameDir(dir, filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))) {
+	if fsutil.SameDir(dir, filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))) {
 		return Target{}, &Skip{Profile: profile, Agent: agent,
 			Reason: fmt.Sprintf("%s is %s's default dir, which Skillshare's plain %s target covers", shown, agent, agent)}
 	}
@@ -151,7 +151,7 @@ func splitShared(candidates []Target, home string) ([]Target, []Skip) {
 	for i, t := range candidates {
 		var others []string
 		for j, o := range candidates {
-			if i != j && sameDir(expand(t.ConfigDir, home), expand(o.ConfigDir, home)) {
+			if i != j && fsutil.SameDir(expand(t.ConfigDir, home), expand(o.ConfigDir, home)) {
 				others = append(others, o.Profile+"/"+o.Agent)
 			}
 		}
@@ -164,10 +164,4 @@ func splitShared(candidates []Target, home string) ([]Target, []Skip) {
 				t.ConfigDir, strings.Join(others, ", "))})
 	}
 	return kept, skipped
-}
-
-// sameDir compares dirs that may not exist yet by their
-// nearest-ancestor-resolved paths.
-func sameDir(a, b string) bool {
-	return fsutil.ResolveNearest(filepath.Clean(a)) == fsutil.ResolveNearest(filepath.Clean(b))
 }

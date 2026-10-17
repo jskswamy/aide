@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -319,11 +318,8 @@ func TestLoad_ExistingDirsComparedByIdentity(t *testing.T) {
 	writeFile(t, filepath.Join(configDir, "config.yaml"), "profiles:\n"+
 		"  a:\n    agent: claude\n    config_dir_name: a\n    config_dir: ~/real\n"+
 		"  b:\n    agent: claude\n    config_dir_name: b\n    config_dir: ~/link\n")
-	resolveNearest := resolveDir
-	resolveDir = func(p string) string { return p } // path comparison alone would miss this
-	t.Cleanup(func() { resolveDir = resolveNearest })
 	if _, err := Load(configDir, t.TempDir()); !errors.Is(err, ErrProfileDirAlias) {
-		t.Fatalf("Load() error = %v, want ErrProfileDirAlias via os.SameFile", err)
+		t.Fatalf("Load() error = %v, want ErrProfileDirAlias", err)
 	}
 }
 
@@ -443,28 +439,6 @@ func symlink(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// On a case-insensitive filesystem (macOS and Windows defaults), config
-// dirs that differ only by case are one dir. Before either exists there
-// is no inode to compare, so names are compared case-folded there.
-func TestLoad_CaseOnlyDirDifferenceIsAliasOnCaseInsensitiveFS(t *testing.T) {
-	cfg := "profiles:\n" +
-		"  a:\n    agent: claude\n    config_dir_name: work\n" +
-		"  b:\n    agent: claude\n    config_dir_name: Work\n"
-	for _, tc := range []struct {
-		fold bool
-		want error
-	}{{true, ErrProfileDirAlias}, {false, nil}} {
-		t.Run(fmt.Sprintf("case-insensitive=%v", tc.fold), func(t *testing.T) {
-			prev := caseInsensitiveDirs
-			caseInsensitiveDirs = tc.fold
-			t.Cleanup(func() { caseInsensitiveDirs = prev })
-			if _, err := loadYAML(t, cfg); !errors.Is(err, tc.want) {
-				t.Errorf("Load() error = %v, want %v", err, tc.want)
-			}
-		})
 	}
 }
 

@@ -202,14 +202,19 @@ func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []strin
 // covers every harness the profile runs, so it skips bindings
 // restricted to other harnesses; --credential stays strict.
 func (s *Selection) PlanCredentials(profile string, ctx config.Context, harnessName string, auth AuthMode) (CredentialPlan, error) {
-	requested := s.requested
+	requested, skipped := s.requested, []string(nil)
 	if s.CredentialSource == SourcePreference || s.CredentialSource == SourceProfile {
 		requested = slices.DeleteFunc(slices.Clone(requested), func(name string) bool {
 			b, ok := ctx.Credentials[name]
-			return ok && !b.AllowsHarness(harnessName)
+			if ok && !b.AllowsHarness(harnessName) {
+				skipped = append(skipped, name)
+				return true
+			}
+			return false
 		})
 	}
 	plan, err := PlanCredentials(profile, ctx, harnessName, requested, auth)
+	plan.Skipped = skipped
 	return plan, s.explainSavedSelection(err)
 }
 

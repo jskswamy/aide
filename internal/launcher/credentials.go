@@ -32,6 +32,7 @@ var (
 	ErrCredentialNotFound     = errors.New("credential binding not found")
 	ErrCredentialIncompatible = errors.New("credential binding not usable with harness")
 	ErrCredentialKeyMissing   = errors.New("credential key missing from secret store")
+	ErrEndpointOutsideRoute   = errors.New("provider endpoint outside the credential route")
 )
 
 // CredentialPlan is what a launch injects: binding and env var names,
@@ -41,14 +42,20 @@ type CredentialPlan struct {
 	Bindings []PlannedCredential
 	// Ignored is the selection a login launch did not inject.
 	Ignored []string
+	// Skipped is the saved or default selection that has no route for
+	// the launched harness.
+	Skipped []string
 }
 
-// PlannedCredential is one selected binding.
+// PlannedCredential is one selected binding's route for the launched
+// harness. Store is empty for a keyless route.
 type PlannedCredential struct {
-	Name  string
-	Env   []string
-	Store string
-	Key   string
+	Name         string
+	Env          []string
+	Set          map[string]string
+	Store        string
+	Key          string
+	Capabilities []string
 }
 
 // PlanCredentials checks selection (binding names, from whatever
@@ -78,22 +85,32 @@ func PlanCredentials(profile string, ctx config.Context, harnessName string, sel
 				"credentials resolve only from the selected profile, so define it in that profile's credentials map",
 				ErrCredentialNotFound, profile, name, defined)
 		}
-		if !b.AllowsHarness(harnessName) {
+		route, ok := b.Route(name, harnessName)
+		if !ok {
 			return CredentialPlan{}, fmt.Errorf("%w: profile %q credential %q is for harnesses %s, not %s; "+
 				"select another credential or launch a listed harness",
-				ErrCredentialIncompatible, profile, name, strings.Join(b.Harnesses, ", "), harnessName)
+				ErrCredentialIncompatible, profile, name, strings.Join(servedHarnesses(b), ", "), harnessName)
 		}
-		env := b.EnvNames(name)
-		for _, e := range env {
+		for _, e := range append(slices.Clone(route.Env), slices.Sorted(maps.Keys(route.Set))...) {
 			if other, dup := injectedBy[e]; dup {
 				return CredentialPlan{}, fmt.Errorf("profile %q credentials %q and %q both set %s; select only one",
 					profile, other, name, e)
 			}
 			injectedBy[e] = name
 		}
-		plan.Bindings = append(plan.Bindings, PlannedCredential{Name: name, Env: env, Store: b.Store, Key: b.Key})
+		plan.Bindings = append(plan.Bindings, PlannedCredential{
+			Name: name, Env: route.Env, Set: route.Set, Store: b.Store, Key: b.Key, Capabilities: slices.Clone(b.Capabilities),
+		})
 	}
 	return plan, nil
+}
+
+// servedHarnesses names the harnesses b has a route for.
+func servedHarnesses(b config.CredentialBinding) []string {
+	if len(b.For) > 0 {
+		return slices.Sorted(maps.Keys(b.For))
+	}
+	return b.Harnesses
 }
 
 // StoreLoader returns the decrypted key/value map of the secret store
@@ -108,6 +125,10 @@ func ResolveCredentialEnv(plan CredentialPlan, load StoreLoader) (map[string]str
 	env := map[string]string{}
 	stores := map[string]map[string]string{}
 	for _, b := range plan.Bindings {
+		maps.Copy(env, b.Set)
+		if b.Store == "" {
+			continue
+		}
 		data, ok := stores[b.Store]
 		if !ok {
 			var err error
@@ -210,6 +231,9 @@ func (l *Launcher) printLegacyCredentialHints(label string, legacy []config.Lega
 func (p CredentialPlan) storePaths() []string {
 	var out []string
 	for _, b := range p.Bindings {
+		if b.Store == "" {
+			continue
+		}
 		if path := config.ResolveSecretPath(b.Store); !slices.Contains(out, path) {
 			out = append(out, path)
 		}
@@ -228,8 +252,51 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 		return rc.Context, nil, CredentialPlan{}, err
 	}
 	sel.SelectCredentials(in, ctx.DefaultCredentials)
-	plan, err := sel.PlanCredentials(rc.Name, ctx, cfg.HarnessOf(ctx.Agent), in.Auth)
-	return ctx, legacy, plan, err
+	harnessName := cfg.HarnessOf(ctx.Agent)
+	plan, err := sel.PlanCredentials(rc.Name, ctx, harnessName, in.Auth)
+	if err == nil {
+		err = checkEndpointsRouted(profileLabel(cfg, rc.Name), ctx, harnessName, plan, legacy)
+	}
+	if err != nil {
+		return ctx, legacy, plan, err
+	}
+	for _, b := range plan.Bindings {
+		for _, c := range b.Capabilities {
+			if !slices.Contains(ctx.Capabilities, c) {
+				ctx.Capabilities = append(slices.Clip(ctx.Capabilities), c)
+			}
+		}
+	}
+	return ctx, legacy, plan, nil
+}
+
+// checkEndpointsRouted stops a launch that would send a selected key to
+// a provider endpoint set in the profile's general env: rather than in
+// a selected route's set:. Keys translated from legacy env: entries
+// keep the endpoint the user paired them with there.
+func checkEndpointsRouted(label string, ctx config.Context, harnessName string, plan CredentialPlan, legacy []config.LegacyCredential) error {
+	keyed := ""
+	routed := map[string]bool{}
+	for _, b := range plan.Bindings {
+		for k := range b.Set {
+			routed[k] = true
+		}
+		isLegacy := slices.ContainsFunc(legacy, func(l config.LegacyCredential) bool { return l.Name == b.Name })
+		if keyed == "" && b.Store != "" && !isLegacy {
+			keyed = b.Name
+		}
+	}
+	if keyed == "" {
+		return nil
+	}
+	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
+		if envscrub.IsProviderEndpointName(k) && !routed[k] {
+			return fmt.Errorf("%w: %s: env: %s is a provider endpoint and credential %q would send its key there. "+
+				"Move it into the route that uses it: credentials.%s.for.%s.set.%s",
+				ErrEndpointOutsideRoute, label, k, keyed, keyed, harnessName, k)
+		}
+	}
+	return nil
 }
 
 // SetBannerCredentials records plan on data by name only. A launch
@@ -240,6 +307,7 @@ func SetBannerCredentials(data *ui.BannerData, plan CredentialPlan) {
 	}
 	data.Credentials = nil
 	for _, b := range plan.Bindings {
-		data.Credentials = append(data.Credentials, ui.CredentialInfo{Name: b.Name, Env: slices.Clone(b.Env)})
+		names := append(slices.Clone(b.Env), slices.Sorted(maps.Keys(b.Set))...)
+		data.Credentials = append(data.Credentials, ui.CredentialInfo{Name: b.Name, Env: names})
 	}
 }

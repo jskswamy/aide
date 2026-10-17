@@ -290,6 +290,10 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if notice := selectedKeyNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, os.Getenv, credPlan); notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
+	if len(credPlan.Bindings) == 0 && len(credPlan.Skipped) > 0 {
+		fmt.Fprintf(l.stderr(), "aide: note: %s has no credential for %s (%s: other harnesses only); %s uses its own login\n",
+			profileLabel(cfg, rc.Name), cfg.HarnessOf(agentName), strings.Join(credPlan.Skipped, ", "), cfg.HarnessOf(agentName))
+	}
 	if len(credPlan.Ignored) > 0 {
 		fmt.Fprintf(l.stderr(), "aide: note: native login: not injecting credentials %s\n", strings.Join(credPlan.Ignored, ", "))
 	}

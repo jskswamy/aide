@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/yamlnode"
@@ -37,6 +39,10 @@ type MigratedCredential struct {
 	Store     string
 	Key       string
 	Harnesses []string
+	// Set are the profile's provider endpoints moved into this
+	// binding's route for Harness, so the key keeps its endpoint.
+	Set     map[string]string
+	Harness string
 }
 
 // GlobalLogin is a profile that selects no native config dir, so its
@@ -120,6 +126,11 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 				}
 				mc.Harnesses = []string{h}
 			}
+			if len(moves[name]) == 0 {
+				if err := attachEndpoints(&mc, ctx, cfg.HarnessOf(ctx.Agent)); err != nil {
+					return nil, fmt.Errorf("profiles.%s: %w", name, err)
+				}
+			}
 			moves[name] = append(moves[name], mc)
 		}
 	}
@@ -202,6 +213,31 @@ func (m *Migration) renameTopLevel(root *yaml.Node) {
 	}
 }
 
+// attachEndpoints moves ctx's provider endpoints into mc's route for h,
+// where a launch requires them (they decide where the key is sent).
+// shortcut: with several legacy keys the endpoints go to the first one;
+// a launch then names any other key that needs them.
+func attachEndpoints(mc *MigratedCredential, ctx Context, h string) error {
+	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
+		if !envscrub.IsProviderEndpointName(k) {
+			continue
+		}
+		if _, ok := harness.Lookup(h); !ok {
+			return fmt.Errorf("%w: env: %s is a provider endpoint for %s, but the profile's agent %q is not a known harness; "+
+				"move both to credentials.%s.for.<harness> by hand", ErrLegacyCredentialEnv, k, mc.EnvVar, ctx.Agent, mc.Name)
+		}
+		if strings.Contains(ctx.Env[k], "{{") {
+			return fmt.Errorf("%w: env: %s is a templated provider endpoint; a route's set: holds plain values, "+
+				"so move it to credentials.%s.for.%s.set by hand", ErrLegacyCredentialEnv, k, mc.Name, h)
+		}
+		if mc.Set == nil {
+			mc.Set, mc.Harness = map[string]string{}, h
+		}
+		mc.Set[k] = ctx.Env[k]
+	}
+	return nil
+}
+
 // moveCredential removes mc's env: entry from a profile entry node and
 // adds the matching credentials: binding and default_credentials:
 // selection.
@@ -211,6 +247,9 @@ func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
 		return fmt.Errorf("env: %s not found in the profile's own env: map; move it to credentials: by hand", mc.EnvVar)
 	}
 	deleteKey(env, mc.EnvVar)
+	for k := range mc.Set {
+		deleteKey(env, k)
+	}
 	if len(env.Content) == 0 {
 		deleteKey(entry, "env")
 	}
@@ -218,6 +257,10 @@ func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
 	if !IsBuiltinCredential(mc.Name) {
 		binding.Env = []string{mc.EnvVar}
 		binding.Harnesses = mc.Harnesses
+	}
+	if len(mc.Set) > 0 {
+		binding.For = map[string]CredentialRoute{mc.Harness: {Env: binding.Env, Set: mc.Set}}
+		binding.Env, binding.Harnesses = nil, nil
 	}
 	var value yaml.Node
 	if err := value.Encode(binding); err != nil {
@@ -407,6 +450,9 @@ func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCr
 		want := maps.Clone(ctx.Env)
 		for _, mc := range moves[name] {
 			delete(want, mc.EnvVar)
+			for k := range mc.Set {
+				delete(want, k)
+			}
 		}
 		if len(want) == 0 {
 			want = nil

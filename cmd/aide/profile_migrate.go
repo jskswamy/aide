@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -150,6 +152,9 @@ func printMigrationSummary(out io.Writer, m *config.Migration) {
 			fmt.Fprintf(out, "  profile %s: %s -> credential %s (store %s, key %s)", c.Profile, c.EnvVar, c.Name, c.Store, c.Key)
 			if len(c.Harnesses) > 0 {
 				fmt.Fprintf(out, "; custom name, limited to harnesses: [%s]", strings.Join(c.Harnesses, ", "))
+			}
+			if len(c.Set) > 0 {
+				fmt.Fprintf(out, "; endpoint %s moved into its %s route", strings.Join(slices.Sorted(maps.Keys(c.Set)), ", "), c.Harness)
 			}
 			fmt.Fprintln(out)
 		}

@@ -396,6 +396,61 @@ profiles:
   endpoint in its `env:` stops the launch (an endpoint there could
   redirect the profile's key to a host the repository chose).
 
+### Routes: one binding, every harness
+
+Pick a harness and the profile picks the credential: give a binding a
+route per harness with `for:`. Each route says which variables carry
+the key (`env:`) and which non-secret settings travel with it
+(`set:`), such as the endpoint. Switching with `--agent` then needs no
+`--credential`.
+
+```yaml
+profiles:
+  work:
+    agent: claude
+    credentials:
+      openrouter:
+        backend: age
+        store: work
+        key: openrouter_api_key
+        for:
+          claude:                      # Claude via OpenRouter's Anthropic API
+            env: [ANTHROPIC_AUTH_TOKEN]
+            set: {ANTHROPIC_BASE_URL: "https://openrouter.ai/api", ANTHROPIC_API_KEY: ""}
+          pi:
+            env: [OPENROUTER_API_KEY]
+      bedrock:                         # keyless: AWS login via the capability
+        capabilities: [aws]
+        for:
+          claude: {set: {CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: us-east-1}}
+    default_credentials: [openrouter]
+```
+
+`aide` runs Claude through OpenRouter, `aide --agent pi` runs Pi
+through OpenRouter, and `aide --credential bedrock` switches Claude to
+Bedrock. `aide --agent codex` notes that Codex has no route and uses
+its own login.
+
+- The `for:` keys are the harnesses the binding serves. `for:` replaces
+  `env:` and `harnesses:` on that binding (those remain shorthand for
+  the same `env:` on every listed harness). A built-in name's route
+  without `env:` uses the built-in variable.
+- A binding without `backend:`, `store:` and `key:` is keyless: it
+  injects only `set:` values and adds its `capabilities:` to the
+  launch.
+- `set:` takes plain values (no templates). It cannot set reserved
+  variables, and a provider key variable only to `""` (to blank it).
+- Endpoints travel with the key: when a selected binding injects a key
+  and the profile's `env:` sets a provider endpoint (`ANTHROPIC_BASE_URL`,
+  `OPENAI_BASE_URL`, `AZURE_OPENAI_ENDPOINT`, ...) that no selected
+  route sets, the launch stops and names where to move it. Keys still
+  in legacy `env:` form keep their `env:` endpoint;
+  `aide profile migrate` moves both into a route.
+- Loading fails when two `default_credentials:` entries serving the
+  same harness set the same variable.
+- The banner and `aide which` list each route's variable names,
+  including `set:` names, never values.
+
 ### Legacy credentials in `env:`
 
 A secret-bearing provider credential in a profile's `env:` (API keys

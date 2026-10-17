@@ -79,6 +79,36 @@ A profile-local named credential binding, such as `openrouter`, referring to an 
 
 One account per provider per profile is sufficient initially. API authentication and native subscription login are distinct modes, not interchangeable credentials. Alternate identities can use separate profiles.
 
+#### Credential routes (revision 2026-10-17)
+
+Goal: choosing a harness must never require choosing a credential. The profile decides, per harness, how its provider is reached; `--credential` is a rare override. A binding is therefore a provider route, not only a key:
+
+```yaml
+credentials:
+  openrouter:
+    backend: age
+    store: work
+    key: openrouter_api_key
+    for:
+      claude: { env: [ANTHROPIC_AUTH_TOKEN], set: { ANTHROPIC_BASE_URL: https://openrouter.ai/api, ANTHROPIC_API_KEY: "" } }
+      pi:     { env: [OPENROUTER_API_KEY] }
+  bedrock:                      # keyless: no backend/store/key
+    capabilities: [aws]
+    for:
+      claude: { set: { CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: us-east-1 } }
+      pi:     { set: { AWS_REGION: us-east-1 } }
+default_credentials: [openrouter]
+```
+
+- `for:` keys are the harnesses a binding serves; each entry gives that harness's key variables (`env:`) and non-secret settings (`set:`). Top-level `env:`/`harnesses:` remain as shorthand for the same `env:` on every listed harness and cannot be combined with `for:`.
+- A keyless binding (no `backend:`/`store:`/`key:`) injects no secret; its entries carry `set:` only, and it needs `set:` or `capabilities:`.
+- `set:` may not name reserved variables (process essentials, `AIDE_*`, age key material, harness config-dir variables). A secret-bearing provider variable may appear in `set:` only with an empty value (to blank it).
+- `capabilities:` on a binding are added to the launch's capabilities when it is selected.
+- Defaults and a saved repository selection skip bindings that do not serve the launched harness; an explicit `--credential` naming one stops the launch. When nothing applicable remains, the launch notes that the harness uses its own login.
+- Endpoints travel with the key: when a selected binding injects a key, a provider endpoint in the profile's `env:` that no selected binding sets stops the launch with guidance to move it into the binding's `set:`. Implicit bindings translated from legacy `env:` credentials are exempt (the user paired key and endpoint in the same block).
+- Configuration load fails when two default bindings serving the same harness set the same variable (as a key or in `set:`).
+- `aide which --agent <h>` shows the route a harness gets (binding names, variable names, `set:` names; never values).
+
 ### Repository preferences
 
 User-local preferences keyed by `(profile, normalized Git remote)`, containing a default harness and explicitly selected credential references. They contain no resolved secrets and no model preferences.

@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -378,5 +380,44 @@ func TestMigrateProfiles_AdoptReportsOtherHarnessDirs(t *testing.T) {
 	if !strings.Contains(joined, "codex=~/.codex-personal") || !strings.Contains(joined, "pi=~/.pi-personal") ||
 		strings.Contains(joined, "claude=") {
 		t.Errorf("OtherDirs = %v", got)
+	}
+}
+
+func TestMigrateProfiles_EndpointMovesIntoTheKeysRoute(t *testing.T) {
+	m := migrate(t, `profiles:
+  work:
+    agent: claude
+    secret: work
+    env:
+      ANTHROPIC_AUTH_TOKEN: "{{ .secrets.or_key }}"
+      ANTHROPIC_BASE_URL: https://openrouter.ai/api
+      EDITOR: vim
+`)
+	work := decodeMigrated(t, m).Contexts["work"]
+	if _, ok := work.Env["ANTHROPIC_BASE_URL"]; ok || work.Env["EDITOR"] != "vim" {
+		t.Errorf("env = %v, want the endpoint moved and EDITOR kept", work.Env)
+	}
+	b := work.Credentials["anthropic_auth_token"]
+	r := b.For["claude"]
+	if r.Set["ANTHROPIC_BASE_URL"] != "https://openrouter.ai/api" || !slices.Equal(r.Env, []string{"ANTHROPIC_AUTH_TOKEN"}) ||
+		len(b.Env) != 0 || len(b.Harnesses) != 0 {
+		t.Errorf("binding = %+v, want the key and endpoint in for.claude", b)
+	}
+	if !strings.Contains(fmt.Sprint(m.Credentials), "ANTHROPIC_BASE_URL") {
+		t.Errorf("report should name the moved endpoint: %+v", m.Credentials)
+	}
+}
+
+func TestMigrateProfiles_TemplatedEndpointStops(t *testing.T) {
+	_, err := MigrateProfiles([]byte(`profiles:
+  work:
+    agent: claude
+    secret: work
+    env:
+      ANTHROPIC_API_KEY: "{{ .secrets.k }}"
+      ANTHROPIC_BASE_URL: "{{ .secrets.url }}"
+`), MigrateOptions{})
+	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_BASE_URL") {
+		t.Fatalf("error = %v, want a refusal naming the templated endpoint", err)
 	}
 }

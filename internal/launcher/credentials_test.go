@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -603,5 +604,133 @@ func TestLauncher_DiagnoseListsBindingStores(t *testing.T) {
 	want := []string{config.ResolveSecretPath("work"), config.ResolveSecretPath("router")}
 	if !slices.Equal(dc.SecretSourcePaths, want) {
 		t.Errorf("SecretSourcePaths = %v, want %v", dc.SecretSourcePaths, want)
+	}
+}
+
+func routeProfile() config.Context {
+	return config.Context{
+		Agent: "claude",
+		Env:   map[string]string{"AWS_REGION": "us-east-1"},
+		Credentials: map[string]config.CredentialBinding{
+			"anthropic": {Backend: "age", Store: "/stores/work", Key: "anthropic_api_key", For: map[string]config.CredentialRoute{"claude": {}}},
+			"openrouter": {Backend: "age", Store: "/stores/router", Key: "openrouter_api_key", For: map[string]config.CredentialRoute{
+				"claude": {Env: []string{"ANTHROPIC_AUTH_TOKEN"}, Set: map[string]string{"ANTHROPIC_BASE_URL": "https://openrouter.ai/api", "ANTHROPIC_API_KEY": ""}},
+				"pi":     {Env: []string{"OPENROUTER_API_KEY"}},
+			}},
+			"bedrock": {Capabilities: []string{"aws"}, For: map[string]config.CredentialRoute{
+				"claude": {Set: map[string]string{"CLAUDE_CODE_USE_BEDROCK": "1"}},
+			}},
+		},
+		DefaultCredentials: []string{"openrouter"},
+	}
+}
+
+func TestResolveCredentials_RoutePerHarness(t *testing.T) {
+	for _, tt := range []struct {
+		harness string
+		want    map[string]string
+	}{
+		{"claude", map[string]string{"ANTHROPIC_AUTH_TOKEN": "sk-or-router", "ANTHROPIC_BASE_URL": "https://openrouter.ai/api", "ANTHROPIC_API_KEY": ""}},
+		{"pi", map[string]string{"OPENROUTER_API_KEY": "sk-or-router"}},
+	} {
+		plan, err := PlanCredentials("work", routeProfile(), tt.harness, []string{"openrouter"}, AuthAPI)
+		if err != nil {
+			t.Fatalf("%s: PlanCredentials() error = %v", tt.harness, err)
+		}
+		env, err := ResolveCredentialEnv(plan, newFakeStores().load)
+		if err != nil || !maps.Equal(env, tt.want) {
+			t.Errorf("%s: env = %v err = %v, want %v", tt.harness, env, err, tt.want)
+		}
+	}
+}
+
+func TestResolveCredentials_KeylessRouteOpensNoStore(t *testing.T) {
+	plan, err := PlanCredentials("work", routeProfile(), "claude", []string{"bedrock"}, AuthAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stores := newFakeStores()
+	env, err := ResolveCredentialEnv(plan, stores.load)
+	if err != nil || !maps.Equal(env, map[string]string{"CLAUDE_CODE_USE_BEDROCK": "1"}) || len(stores.opened) != 0 {
+		t.Errorf("env = %v opened = %v err = %v, want only the setting and no store", env, stores.opened, err)
+	}
+	if len(plan.storePaths()) != 0 {
+		t.Errorf("storePaths = %v, want none for a keyless route", plan.storePaths())
+	}
+}
+
+func TestPlanCredentials_RouteSettingCollidesWithOtherKey(t *testing.T) {
+	_, err := PlanCredentials("work", routeProfile(), "claude", []string{"anthropic", "openrouter"}, AuthAPI)
+	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Fatalf("error = %v, want a clash on ANTHROPIC_API_KEY", err)
+	}
+}
+
+func planProfile(t *testing.T, ctx config.Context, agent string, in SelectionInputs) (config.Context, CredentialPlan, Selection, error) {
+	t.Helper()
+	ctx.Agent = agent
+	cfg := &config.Config{Contexts: map[string]config.Context{"work": ctx}}
+	var sel Selection
+	out, _, plan, err := PlanProfileCredentials(cfg, &aidectx.ResolvedContext{Name: "work", Context: ctx}, in, &sel)
+	return out, plan, sel, err
+}
+
+func TestPlanProfileCredentials_RouteCapabilitiesJoinTheLaunch(t *testing.T) {
+	ctx, _, _, err := planProfile(t, routeProfile(), "claude", SelectionInputs{Credentials: []string{"bedrock"}, CredentialsSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(ctx.Capabilities, "aws") {
+		t.Errorf("capabilities = %v, want aws from the bedrock route", ctx.Capabilities)
+	}
+}
+
+func TestPlanProfileCredentials_EndpointMustTravelWithTheKey(t *testing.T) {
+	ctx := routeProfile()
+	ctx.Env = map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.example"}
+	_, _, _, err := planProfile(t, ctx, "claude", SelectionInputs{Credentials: []string{"anthropic"}, CredentialsSet: true})
+	if !errors.Is(err, ErrEndpointOutsideRoute) || !strings.Contains(err.Error(), "credentials.anthropic.for.claude.set") {
+		t.Fatalf("error = %v, want ErrEndpointOutsideRoute naming where to move it", err)
+	}
+	// The selected route sets the endpoint itself: allowed.
+	if _, _, _, err := planProfile(t, ctx, "claude", SelectionInputs{}); err != nil {
+		t.Errorf("openrouter route sets ANTHROPIC_BASE_URL itself: %v", err)
+	}
+	// Keyless and login launches send no key anywhere.
+	for name, in := range map[string]SelectionInputs{
+		"keyless": {Credentials: []string{"bedrock"}, CredentialsSet: true},
+		"login":   {Auth: AuthLogin},
+	} {
+		if _, _, _, err := planProfile(t, ctx, "claude", in); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestPlanProfileCredentials_LegacyKeyKeepsItsEndpoint(t *testing.T) {
+	ctx := config.Context{Secret: "work", Env: map[string]string{
+		"ANTHROPIC_API_KEY":  "{{ .secrets.anthropic_api_key }}",
+		"ANTHROPIC_BASE_URL": "https://proxy.example",
+	}}
+	if _, plan, _, err := planProfile(t, ctx, "claude", SelectionInputs{}); err != nil || len(plan.Bindings) != 1 {
+		t.Errorf("legacy env: key with endpoint: plan = %+v err = %v, want it to launch", plan, err)
+	}
+}
+
+func TestLauncher_HarnessWithoutRouteNotesOwnLogin(t *testing.T) {
+	_, stderr, err := launchCredentialsAs(t, `
+profiles:
+  work:
+    agent: claude
+    credentials:
+      corp: {backend: age, store: work, key: corp, for: {pi: {env: [CORP_LLM_TOKEN]}}}
+    default_credentials: [corp]
+default_profile: work
+`, "claude", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr, "no credential for claude") || !strings.Contains(stderr, "own login") {
+		t.Errorf("stderr should note claude uses its own login:\n%s", stderr)
 	}
 }

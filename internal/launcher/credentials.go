@@ -210,19 +210,19 @@ func (p CredentialPlan) storePaths() []string {
 	return out
 }
 
-// PreviewCredentials plans rc's credentials the way a launch does,
-// without decrypting anything, for which/status: it applies in's
+// PreviewCredentials plans rc's credentials without decrypting
+// anything, for a launch and for which/status: it applies in's
 // credential precedence to sel. It returns the profile with legacy
 // env: credentials translated (so their values are not displayed as
-// env) and the plan. Legacy hints are not printed.
-func PreviewCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in SelectionInputs, sel *Selection) (config.Context, CredentialPlan, error) {
-	ctx, _, err := profileCredentials(cfg, rc)
+// env), the legacy credentials translated, and the plan.
+func PreviewCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in SelectionInputs, sel *Selection) (config.Context, []config.LegacyCredential, CredentialPlan, error) {
+	ctx, legacy, err := profileCredentials(cfg, rc)
 	if err != nil {
-		return rc.Context, CredentialPlan{}, err
+		return rc.Context, nil, CredentialPlan{}, err
 	}
 	sel.SelectCredentials(in, ctx.DefaultCredentials)
 	plan, err := sel.PlanCredentials(rc.Name, ctx, cfg.HarnessOf(ctx.Agent), in.Auth)
-	return ctx, plan, err
+	return ctx, legacy, plan, err
 }
 
 // SetBannerCredentials records plan on data by name only. A launch

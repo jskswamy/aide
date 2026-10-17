@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/jskswamy/aide/internal/yamlnode"
 )
 
 // Profile schema errors. Callers branch with errors.Is.
@@ -51,7 +53,7 @@ var projectDefiningKeys = []string{
 // UnmarshalYAML decodes either profile schema. A profiles: file sets
 // ProfileSchema so writers keep that shape; mixing schemas fails.
 func (c *Config) UnmarshalYAML(node *yaml.Node) error {
-	if err := rejectProfileDirKeysInContexts(mappingValue(node, keyContexts)); err != nil {
+	if err := rejectProfileDirKeysInContexts(yamlnode.Value(node, keyContexts)); err != nil {
 		return err
 	}
 	type plain Config
@@ -100,7 +102,7 @@ func (c Config) MarshalYAML() (interface{}, error) {
 	}
 	renameKey(&node, keyContexts, keyProfiles)
 	renameKey(&node, keyDefaultContext, keyDefaultProfile)
-	if profiles := mappingValue(&node, keyProfiles); profiles != nil {
+	if profiles := yamlnode.Value(&node, keyProfiles); profiles != nil {
 		for i := 1; i < len(profiles.Content); i += 2 {
 			for _, k := range profileDirKeys {
 				renameKey(profiles.Content[i], k[1], k[0])
@@ -206,21 +208,6 @@ func presentKeys(keys []string, want ...string) []string {
 		}
 	}
 	return out
-}
-
-func mappingValue(node *yaml.Node, key string) *yaml.Node {
-	if node == nil {
-		return nil
-	}
-	if node.Kind == yaml.DocumentNode && len(node.Content) == 1 {
-		node = node.Content[0]
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			return node.Content[i+1]
-		}
-	}
-	return nil
 }
 
 func renameKey(node *yaml.Node, from, to string) {

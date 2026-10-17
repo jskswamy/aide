@@ -11,6 +11,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/yamlnode"
 )
 
 // ErrAdopt reports an --adopt choice migration cannot apply.
@@ -130,16 +131,16 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	if !cfg.ProfileSchema {
 		sectionKey = keyContexts
 	}
-	if err := refuseSharedNodes(mappingValue(root, sectionKey), sectionKey); err != nil {
+	if err := refuseSharedNodes(yamlnode.Value(root, sectionKey), sectionKey); err != nil {
 		return nil, err
 	}
 
 	if !cfg.ProfileSchema {
 		m.renameTopLevel(root)
 	}
-	section := mappingValue(root, keyProfiles)
+	section := yamlnode.Value(root, keyProfiles)
 	for _, name := range names {
-		entry := mappingValue(section, name)
+		entry := yamlnode.Value(section, name)
 		for _, mc := range moves[name] {
 			if err := moveCredential(entry, mc); err != nil {
 				return nil, fmt.Errorf("profiles.%s: %w", name, err)
@@ -181,19 +182,19 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 // native config dir keys.
 func (m *Migration) renameTopLevel(root *yaml.Node) {
 	for _, k := range [][2]string{{keyContexts, keyProfiles}, {keyDefaultContext, keyDefaultProfile}} {
-		if mappingValue(root, k[0]) != nil {
+		if yamlnode.Value(root, k[0]) != nil {
 			renameKey(root, k[0], k[1])
 			m.Renamed = append(m.Renamed, k[0]+": -> "+k[1]+":")
 		}
 	}
-	section := mappingValue(root, keyProfiles)
+	section := yamlnode.Value(root, keyProfiles)
 	if section == nil || section.Kind != yaml.MappingNode {
 		return
 	}
 	for i := 0; i+1 < len(section.Content); i += 2 {
 		name, entry := section.Content[i].Value, section.Content[i+1]
 		for _, k := range profileDirKeys {
-			if mappingValue(entry, k[1]) != nil {
+			if yamlnode.Value(entry, k[1]) != nil {
 				renameKey(entry, k[1], k[0])
 				m.Renamed = append(m.Renamed, fmt.Sprintf("profiles.%s.%s: -> %s:", name, k[1], k[0]))
 			}
@@ -205,8 +206,8 @@ func (m *Migration) renameTopLevel(root *yaml.Node) {
 // adds the matching credentials: binding and default_credentials:
 // selection.
 func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
-	env := mappingValue(entry, "env")
-	if env == nil || mappingValue(env, mc.EnvVar) == nil {
+	env := yamlnode.Value(entry, "env")
+	if env == nil || yamlnode.Value(env, mc.EnvVar) == nil {
 		return fmt.Errorf("env: %s not found in the profile's own env: map; move it to credentials: by hand", mc.EnvVar)
 	}
 	deleteKey(env, mc.EnvVar)
@@ -223,9 +224,9 @@ func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
 		return err
 	}
 	creds := ensureValue(entry, "credentials", yaml.MappingNode)
-	creds.Content = append(creds.Content, scalar(mc.Name), &value)
+	creds.Content = append(creds.Content, yamlnode.Str(mc.Name), &value)
 	defaults := ensureValue(entry, "default_credentials", yaml.SequenceNode)
-	defaults.Content = append(defaults.Content, scalar(mc.Name))
+	defaults.Content = append(defaults.Content, yamlnode.Str(mc.Name))
 	return nil
 }
 
@@ -264,7 +265,7 @@ func (m *Migration) adopt(cfg *Config, section *yaml.Node, names []string, home 
 	for _, name := range names {
 		i := slices.IndexFunc(m.GlobalLogins, func(g GlobalLogin) bool { return g.Profile == name })
 		if i < 0 {
-			if mappingValue(section, name) == nil {
+			if yamlnode.Value(section, name) == nil {
 				return false, fmt.Errorf("%w: no profile named %q", ErrAdopt, name)
 			}
 			return false, fmt.Errorf("%w: profile %q already selects its own config dir; only profiles on a harness's global login can be adopted", ErrAdopt, name)
@@ -285,10 +286,10 @@ func (m *Migration) adopt(cfg *Config, section *yaml.Node, names []string, home 
 		if gl.Adopted {
 			continue
 		}
-		entry := mappingValue(section, name)
+		entry := yamlnode.Value(section, name)
 		ensureValue(entry, "config_dir_name", yaml.ScalarNode).Value = name
 		dirs := ensureValue(entry, "config_dirs", yaml.MappingNode)
-		dirs.Content = append(dirs.Content, scalar(gl.Harness), scalar(gl.Dir))
+		dirs.Content = append(dirs.Content, yamlnode.Str(gl.Harness), yamlnode.Str(gl.Dir))
 		gl.Adopted = true
 	}
 	return len(pinned) > 0, nil
@@ -317,7 +318,7 @@ func validateMigrated(data []byte, home string) error {
 // ensureValue returns the value of key in mapping, adding an empty
 // node of kind when absent.
 func ensureValue(mapping *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
-	if v := mappingValue(mapping, key); v != nil {
+	if v := yamlnode.Value(mapping, key); v != nil {
 		if v.Kind == kind || kind == yaml.ScalarNode {
 			return v
 		}
@@ -329,7 +330,7 @@ func ensureValue(mapping *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
 	if kind == yaml.ScalarNode {
 		v.Tag = "!!str"
 	}
-	mapping.Content = append(mapping.Content, scalar(key), v)
+	mapping.Content = append(mapping.Content, yamlnode.Str(key), v)
 	return v
 }
 
@@ -343,10 +344,6 @@ func deleteKey(mapping *yaml.Node, key string) {
 			return
 		}
 	}
-}
-
-func scalar(v string) *yaml.Node {
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v}
 }
 
 // refuseSharedNodes stops a migration over a profiles/contexts section

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/yamlnode"
 )
 
 // ConfigPath is the Skillshare config file: $SKILLSHARE_CONFIG when
@@ -106,7 +107,7 @@ func Merge(existing []byte, p Plan, home string) (*Result, error) {
 		if present[t.Name] {
 			continue
 		}
-		kept = append(kept, strNode(t.Name), targetNode(t))
+		kept = append(kept, yamlnode.Str(t.Name), targetNode(t))
 		res.Added = append(res.Added, t.Name)
 	}
 	targets.Content = kept
@@ -132,9 +133,9 @@ func Merge(existing []byte, p Plan, home string) (*Result, error) {
 func RenderTargets(targets []Target) ([]byte, error) {
 	m := &yaml.Node{Kind: yaml.MappingNode}
 	for _, t := range targets {
-		m.Content = append(m.Content, strNode(t.Name), targetNode(t))
+		m.Content = append(m.Content, yamlnode.Str(t.Name), targetNode(t))
 	}
-	root := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{strNode("targets"), m}}
+	root := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{yamlnode.Str("targets"), m}}
 	return encode(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{root}})
 }
 
@@ -181,59 +182,48 @@ func parseDoc(data []byte) (*yaml.Node, error) {
 
 // targetsMapping returns root's targets: mapping, adding it if absent.
 func targetsMapping(root *yaml.Node) (*yaml.Node, error) {
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value != "targets" {
-			continue
-		}
-		v := root.Content[i+1]
-		switch {
-		case v.Kind == yaml.MappingNode:
-			return v, nil
-		case v.Kind == yaml.ScalarNode && v.Tag == "!!null":
-			*v = yaml.Node{Kind: yaml.MappingNode}
-			return v, nil
-		default:
-			return nil, errors.New("skillshare config: targets: is not a mapping")
-		}
+	switch v := yamlnode.Value(root, "targets"); {
+	case v == nil:
+		v = &yaml.Node{Kind: yaml.MappingNode}
+		root.Content = append(root.Content, yamlnode.Str("targets"), v)
+		return v, nil
+	case v.Kind == yaml.MappingNode:
+		return v, nil
+	case v.Kind == yaml.ScalarNode && v.Tag == "!!null":
+		*v = yaml.Node{Kind: yaml.MappingNode}
+		return v, nil
+	default:
+		return nil, errors.New("skillshare config: targets: is not a mapping")
 	}
-	v := &yaml.Node{Kind: yaml.MappingNode}
-	root.Content = append(root.Content, strNode("targets"), v)
-	return v, nil
 }
 
 func targetNode(t Target) *yaml.Node {
 	return &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
-		strNode("agent"), strNode(t.Agent),
-		strNode("config_dir"), strNode(t.ConfigDir),
+		yamlnode.Str("agent"), yamlnode.Str(t.Agent),
+		yamlnode.Str("config_dir"), yamlnode.Str(t.ConfigDir),
 	}}
 }
-
-func strNode(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v} }
 
 func scalarValue(m *yaml.Node, key string) string {
 	if m == nil || m.Kind != yaml.MappingNode {
 		return ""
 	}
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key && m.Content[i+1].Kind == yaml.ScalarNode {
-			return m.Content[i+1].Value
-		}
+	if v := yamlnode.Value(m, key); v != nil && v.Kind == yaml.ScalarNode {
+		return v.Value
 	}
 	return ""
 }
 
 // setScalar sets key in mapping m to v, reporting whether it changed.
 func setScalar(m *yaml.Node, key, v string) bool {
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			if n := m.Content[i+1]; n.Kind == yaml.ScalarNode && n.Value == v {
-				return false
-			}
-			m.Content[i+1] = strNode(v)
-			return true
-		}
+	switch n := yamlnode.Value(m, key); {
+	case n == nil:
+		m.Content = append(m.Content, yamlnode.Str(key), yamlnode.Str(v))
+	case n.Kind == yaml.ScalarNode && n.Value == v:
+		return false
+	default:
+		*n = *yamlnode.Str(v)
 	}
-	m.Content = append(m.Content, strNode(key), strNode(v))
 	return true
 }
 

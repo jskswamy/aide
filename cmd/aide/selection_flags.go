@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 
@@ -13,8 +12,6 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
-	"github.com/jskswamy/aide/internal/prefs"
-	"github.com/jskswamy/aide/internal/provision"
 )
 
 const (
@@ -150,61 +147,22 @@ func credentialNamesForCompletion(cmd *cobra.Command) []string {
 	return slices.Sorted(maps.Keys(rc.Context.Credentials))
 }
 
-// selectionPreview is what a launch from cwd would select.
-type selectionPreview struct {
-	rc      *aidectx.ResolvedContext
-	inputs  launcher.SelectionInputs
-	sel     launcher.Selection
-	notices []string
-	// gate is the .aide.yaml trust gate's outcome: untrusted files and
-	// grants inherited from a main checkout.
-	gate launcher.ProjectGate
-}
-
 // previewSelection resolves what a launch from cwd would select with
-// f, after the same .aide.yaml trust gate (it mutates cfg): the
-// profile, the saved preference, the final harness and its profile
-// env. It returns notices a launch would print. Credentials are left
-// to launcher.PreviewCredentials.
-func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir string, f *selectionFlags) (selectionPreview, error) {
-	var p selectionPreview
-	var err error
-	if p.inputs, err = f.inputs(cmd); err != nil {
-		return p, err
-	}
-	if p.gate, err = launcher.GateProjectConfig(cfg); err != nil {
-		return p, err
-	}
-	p.notices = append(p.notices, p.gate.Warnings...)
-	remotes := aidectx.GitRemotes(cwd)
-	if p.rc, err = aidectx.ResolveSelected(cfg, cwd, remotes, f.profile); err != nil {
-		return p, err
-	}
-	if n := launcher.ProjectProfileNotice(cfg, p.rc); n != "" {
-		p.notices = append(p.notices, n)
-	}
-	if homeDir != "" {
-		if p.inputs.Saved, err = launcher.SavedPreference(prefs.DefaultPath(homeDir), p.rc.Name, remotes); err != nil {
-			return p, err
-		}
-	}
-	sel, notice, err := launcher.SelectHarness(cfg, p.rc, p.inputs, exec.LookPath)
-	p.sel = sel
+// f (launcher.ResolveSelection; it mutates cfg). Its Notices hold
+// everything a launch would print before starting, including the
+// gate's warnings and why the launch would be refused. Credentials are
+// left to launcher.PreviewCredentials.
+func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir string, f *selectionFlags) (launcher.Resolution, error) {
+	in, err := f.inputs(cmd)
 	if err != nil {
-		return p, err
+		return launcher.Resolution{}, err
 	}
-	if notice != "" {
-		p.notices = append(p.notices, notice)
+	res, err := (&launcher.Launcher{Profile: f.profile}).ResolveSelection(cfg, cwd, homeDir, in)
+	res.Notices = append(slices.Clone(res.Gate.Warnings), res.Notices...)
+	if res.Refused != nil {
+		res.Notices = append(res.Notices, "launch would fail: "+res.Refused.Error())
 	}
-	mergedEnv, err := provision.InjectProfileEnv(cfg.HarnessOf(p.rc.Context.Agent), p.rc.Context, p.rc.Context.Env, homeDir)
-	if err != nil {
-		return p, fmt.Errorf("context %q: %w", p.rc.Name, err)
-	}
-	p.rc.Context.Env = mergedEnv
-	if err := cfg.GlobalLoginError(p.rc.Name, cfg.HarnessOf(p.rc.Context.Agent), homeDir); err != nil {
-		p.notices = append(p.notices, "launch would fail: "+err.Error())
-	}
-	return p, nil
+	return res, err
 }
 
 // contextFlagDeprecation is printed to stderr when --context is used.

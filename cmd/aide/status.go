@@ -209,14 +209,14 @@ func whichCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resolved, inputs, sel, notices := preview.rc, preview.inputs, preview.sel, preview.notices
+			resolved, inputs, sel, notices := preview.RC, preview.Inputs, preview.Sel, preview.Notices
 
 			out := cmd.OutOrStdout()
 			prefs := resolved.Preferences
 
 			// Credentials by binding and env var name; translated legacy
 			// env: credentials leave the env listing.
-			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
+			credCtx, _, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
 			resolved.Context = credCtx
 
 			// Build BannerData
@@ -235,7 +235,7 @@ func whichCmd() *cobra.Command {
 
 			launcher.SetBannerCredentials(data, credPlan)
 			launcher.SetBannerSelection(data, sel)
-			preview.gate.SetBanner(data)
+			preview.Gate.SetBanner(data)
 			data.Warnings = append(data.Warnings, notices...)
 			if credErr != nil {
 				data.Warnings = append(data.Warnings, credErr.Error())
@@ -1208,10 +1208,10 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resolved, inputs, sel, notices := preview.rc, preview.inputs, preview.sel, preview.notices
+			resolved, inputs, sel, notices := preview.RC, preview.Inputs, preview.Sel, preview.Notices
 
 			var credData ui.BannerData
-			credCtx, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
+			credCtx, _, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
 			resolved.Context = credCtx
 			launcher.SetBannerCredentials(&credData, credPlan)
 			launcher.SetBannerSelection(&credData, sel)
@@ -1371,8 +1371,8 @@ func statusCmd() *cobra.Command {
 				CredentialSource:    credData.CredentialSource,
 				CredentialSelection: credData.CredentialSelection,
 				Notices:             notices,
-				ProjectTrust:        preview.gate.Files,
-				InheritedGrants:     preview.gate.InheritedGrants,
+				ProjectTrust:        preview.Gate.Files,
+				InheritedGrants:     preview.Gate.InheritedGrants,
 			}
 
 			format, ferr := output.FromCmd(cmd)

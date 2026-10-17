@@ -24,7 +24,6 @@ import (
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/prefs"
-	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/trust"
@@ -228,43 +227,6 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// 1b. Trust-gate: judge each .aide.yaml before applying any.
-	var gate ProjectGate
-	if l.IgnoreProjectConfig {
-		cfg.DropProjectConfig()
-	} else if gate, err = l.applyTrustGate(cfg); err != nil {
-		return err
-	}
-	for _, w := range gate.Warnings {
-		fmt.Fprintf(l.stderr(), "aide: warning: %s\n", w)
-	}
-
-	// 2. Detect git remote + project root
-	remotes := aidectx.GitRemotes(cwd)
-	projectRoot := aidectx.ProjectRoot(cwd)
-
-	// 3. Resolve the profile: --profile, else match rules, else default.
-	rc, err := aidectx.ResolveSelected(cfg, cwd, remotes, l.Profile)
-	if err != nil {
-		if l.Profile != "" || cfg.DefaultContext != "" || l.EmptyStateActions == nil {
-			return fmt.Errorf("resolving profile: %w", err)
-		}
-		rc, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remotes)
-		if err != nil {
-			return err
-		}
-		// The reloaded config was gated; refresh what the banner and
-		// AIDE_TRUST report from it (the gate is idempotent).
-		if !l.IgnoreProjectConfig {
-			if gate, err = l.applyTrustGate(cfg); err != nil {
-				return err
-			}
-		}
-	}
-	if notice := ProjectProfileNotice(cfg, rc); notice != "" {
-		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
-	}
-
 	// Resolve the user's home directory once. Every downstream caller
 	// (tilde expansion, sandbox policy, agent-env injection) reads this
 	// value rather than calling os.UserHomeDir() independently. A missing
@@ -275,44 +237,29 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return fmt.Errorf("resolving home directory: %w", err)
 	}
 
-	// 3a. Repository preferences saved for this profile and origin
-	// remote. Launches only read them.
-	saved, err := SavedPreference(l.prefsPath(homeDir), rc.Name, remotes)
-	if err != nil {
-		return err
-	}
-	inputs := SelectionInputs{
+	// 2. Select: trust gate, profile, saved repository preference, final
+	// harness and its profile env, as every preview does.
+	res, err := l.ResolveSelection(cfg, cwd, homeDir, SelectionInputs{
 		Agent:          agentOverride,
 		Credentials:    l.Credentials,
 		CredentialsSet: l.CredentialsSet,
 		Auth:           l.Auth,
-		Saved:          saved,
+	})
+	for _, w := range res.Gate.Warnings {
+		fmt.Fprintf(l.stderr(), "aide: warning: %s\n", w)
 	}
-
-	// 3b. Decide the final harness. This must precede profile injection
-	// so the profile directory is the final harness's, not the
-	// profile's original one.
-	sel, notice, err := SelectHarness(cfg, rc, inputs, l.lookPath())
+	for _, n := range res.Notices {
+		fmt.Fprintf(l.stderr(), "aide: note: %s\n", n)
+	}
 	if err != nil {
 		return err
 	}
-	if notice != "" {
-		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
+	if res.Refused != nil {
+		return res.Refused
 	}
+	cfg, gate, rc, inputs, sel := res.Config, res.Gate, res.RC, res.Inputs, res.Sel
+	projectRoot := aidectx.ProjectRoot(cwd)
 
-	// 4. Validate + inject per-profile env (CLAUDE_CONFIG_DIR etc.)
-	// when ctx.Profile is set. Errors here are config errors and
-	// must abort the launch — profile mis-config silently launching
-	// against the wrong dir is the exact class of bug this feature
-	// fixes.
-	mergedEnv, perr := provision.InjectProfileEnv(cfg.HarnessOf(rc.Context.Agent), rc.Context, rc.Context.Env, homeDir)
-	if perr != nil {
-		return fmt.Errorf("profile %q: %w", rc.Name, perr)
-	}
-	rc.Context.Env = mergedEnv
-	if err := cfg.GlobalLoginError(rc.Name, cfg.HarnessOf(rc.Context.Agent), homeDir); err != nil {
-		return err
-	}
 	if notice := nativeAuthNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir); notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
@@ -334,16 +281,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// selection against the final harness, and decrypt only the selected
 	// bindings' stores, all before any side effect: a missing binding,
 	// store or key stops the launch here.
-	profileCtx, legacyCreds, err := profileCredentials(cfg, rc)
+	profileCtx, legacyCreds, credPlan, err := PreviewCredentials(cfg, rc, inputs, &sel)
 	if err != nil {
 		return err
 	}
 	rc.Context = profileCtx
-	sel.SelectCredentials(inputs, rc.Context.DefaultCredentials)
-	credPlan, err := sel.PlanCredentials(rc.Name, rc.Context, cfg.HarnessOf(rc.Context.Agent), l.Auth)
-	if err != nil {
-		return err
-	}
 	l.printLegacyCredentialHints(profileLabel(cfg, rc.Name), legacyCreds)
 	if notice := selectedKeyNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, os.Getenv, credPlan); notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)

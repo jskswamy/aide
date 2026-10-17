@@ -340,10 +340,10 @@ func sandboxSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir, prof
 	if err != nil {
 		return nil, err
 	}
-	for _, n := range p.notices {
+	for _, n := range p.Notices {
 		fmt.Fprintf(cmd.ErrOrStderr(), "aide: note: %s\n", n)
 	}
-	return p.rc, nil
+	return p.RC, nil
 }
 
 type sandboxProfileEntry struct {

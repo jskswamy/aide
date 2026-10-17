@@ -48,6 +48,91 @@ type Selection struct {
 	requested []string
 }
 
+// Resolution is what a launch from a directory selects before it
+// decrypts anything.
+type Resolution struct {
+	// Config is the config selected from; an empty-state action may
+	// have reloaded it.
+	Config *config.Config
+	// Gate is the .aide.yaml trust gate's outcome.
+	Gate ProjectGate
+	// RC is the selected profile with the final harness and its
+	// profile env; nil when no profile was resolved.
+	RC *aidectx.ResolvedContext
+	// Inputs are the selection inputs with the saved repository
+	// preference filled in.
+	Inputs SelectionInputs
+	Sel    Selection
+	// Notices are the notes a launch prints (Gate.Warnings aside).
+	Notices []string
+	// Refused is why a launch would refuse the selection: its
+	// harness's global login is another profile's too.
+	Refused error
+}
+
+// ResolveSelection makes a launch's selection from cwd: the .aide.yaml
+// trust gate (it mutates cfg), the profile (l.Profile, else matched,
+// else default, else l.EmptyStateActions), the saved repository
+// preference (not read when homeDir is empty), the final harness and
+// its profile env. Launch and the previews (which, status, prompt,
+// statusline, sandbox) all call it, so they agree. On error the
+// Resolution holds what was resolved so far.
+func (l *Launcher) ResolveSelection(cfg *config.Config, cwd, homeDir string, in SelectionInputs) (Resolution, error) {
+	res := Resolution{Config: cfg, Inputs: in}
+	var err error
+	if l.IgnoreProjectConfig {
+		cfg.DropProjectConfig()
+	} else if res.Gate, err = l.applyTrustGate(cfg); err != nil {
+		return res, err
+	}
+	remotes := aidectx.GitRemotes(cwd)
+	if res.RC, err = aidectx.ResolveSelected(cfg, cwd, remotes, l.Profile); err != nil {
+		if l.Profile != "" || cfg.DefaultContext != "" || l.EmptyStateActions == nil {
+			return res, fmt.Errorf("resolving profile: %w", err)
+		}
+		if res.RC, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remotes); err != nil {
+			return res, err
+		}
+		res.Config = cfg
+		// The reloaded config was gated; refresh what the banner and
+		// AIDE_TRUST report from it (the gate is idempotent).
+		if !l.IgnoreProjectConfig {
+			if res.Gate, err = l.applyTrustGate(cfg); err != nil {
+				return res, err
+			}
+		}
+	}
+	rc := res.RC
+	if n := ProjectProfileNotice(cfg, rc); n != "" {
+		res.Notices = append(res.Notices, n)
+	}
+	if homeDir != "" {
+		if res.Inputs.Saved, err = SavedPreference(l.prefsPath(homeDir), rc.Name, remotes); err != nil {
+			return res, err
+		}
+	}
+	// The final harness precedes profile-env injection so the profile
+	// directory is the final harness's, not the profile's original one.
+	sel, notice, err := SelectHarness(cfg, rc, res.Inputs, l.lookPath())
+	res.Sel = sel
+	if err != nil {
+		return res, err
+	}
+	if notice != "" {
+		res.Notices = append(res.Notices, notice)
+	}
+	// A profile mis-config must stop the launch rather than silently
+	// run against the wrong directory.
+	h := cfg.HarnessOf(rc.Context.Agent)
+	env, err := provision.InjectProfileEnv(h, rc.Context, rc.Context.Env, homeDir)
+	if err != nil {
+		return res, fmt.Errorf("profile %q: %w", rc.Name, err)
+	}
+	rc.Context.Env = env
+	res.Refused = cfg.GlobalLoginError(rc.Name, h, homeDir)
+	return res, nil
+}
+
 // SelectHarness sets rc's final harness by precedence: --agent, then
 // the saved repository preference, then the trusted .aide.yaml agent
 // (already merged into rc by Resolve), then the profile default. It

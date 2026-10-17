@@ -39,7 +39,7 @@ state file so future syncs reconcile them.`,
 }
 
 func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
-	env, err := loadProvisionEnv(contextName)
+	env, err := loadProvisionEnv(contextName, out)
 	if err != nil {
 		return err
 	}

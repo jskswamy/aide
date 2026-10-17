@@ -55,7 +55,7 @@ Flags:
 }
 
 func runSync(out io.Writer, in io.Reader, contextName string, planOnly, yes, forceSecrets bool) error {
-	env, err := loadProvisionEnv(contextName)
+	env, err := loadProvisionEnv(contextName, out)
 	if err != nil {
 		return err
 	}

@@ -389,3 +389,63 @@ default_profile: work
 		t.Errorf("validate: err = %v, want a shared-login error\n%s", err, out.String())
 	}
 }
+
+// sandbox show/test resolve the harness as a launch does: the saved
+// repository harness wins over the profile's agent, and the profile
+// env carries that harness's config dir.
+func TestSandboxSelection_AppliesSavedHarness(t *testing.T) {
+	path := selectionEnv(t, strings.Replace(selectionTestConfig, "  work:\n    agent: claude\n",
+		"  work:\n    agent: claude\n    config_dir_name: work\n", 1))
+	if err := prefs.Update(path, func(f *prefs.File) error {
+		f.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: "pi"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := sandboxTestCmd()
+	env, err := cmdEnv(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	rc, err := sandboxSelection(cmd, env.Config(), env.CWD(), home, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc.Context.Agent != "pi" {
+		t.Errorf("agent = %q, want the saved pi", rc.Context.Agent)
+	}
+	if got := rc.Context.Env["PI_CODING_AGENT_DIR"]; got != filepath.Join(home, ".pi-work") {
+		t.Errorf("PI_CODING_AGENT_DIR = %q, want ~/.pi-work", got)
+	}
+	if _, ok := rc.Context.Env["CLAUDE_CONFIG_DIR"]; ok {
+		t.Errorf("profile env still carries CLAUDE_CONFIG_DIR: %v", rc.Context.Env)
+	}
+}
+
+// Provisioning commands act on the profile's own agent; when the
+// repository saved another harness they say so on stderr.
+func TestProvisioningCommands_NoteSavedHarness(t *testing.T) {
+	path := selectionEnv(t, selectionTestConfig)
+	if err := prefs.Update(path, func(f *prefs.File) error {
+		f.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: "pi"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for name, cmd := range map[string]*cobra.Command{"mcp list": mcpListCmd(), "hook list": hookListCmd()} {
+		var out, errOut bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&errOut)
+		cmd.SetArgs(nil)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), `saved harness is "pi"`) || !strings.Contains(errOut.String(), `"claude"`) {
+			t.Errorf("%s: no saved-harness note on stderr:\n%s", name, errOut.String())
+		}
+		if strings.Contains(out.String(), "saved harness") {
+			t.Errorf("%s: note went to stdout", name)
+		}
+	}
+}

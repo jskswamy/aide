@@ -174,6 +174,40 @@ func TestPrompt_ShowsSavedHarness(t *testing.T) {
 	}
 }
 
+// The prompt shows the harness a launch runs: a saved agents: alias,
+// and never a saved harness a launch refuses (it falls back to the one
+// the launch would otherwise use).
+func TestPrompt_AgreesWithLaunchSelection(t *testing.T) {
+	const cfgYAML = `
+agents:
+  claude: {binary: claude}
+  work-claude: {binary: claude, icon: "W"}
+profiles:
+  work:
+    agent: claude
+default_profile: work
+`
+	claude := launcher.ResolveAgentIcon("claude", nil)
+	for name, tc := range map[string]struct{ saved, want string }{
+		"alias":   {saved: "work-claude", want: "W"},
+		"refused": {saved: "aide-no-such-harness", want: claude},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := selectionEnv(t, cfgYAML)
+			if err := prefs.Update(path, func(f *prefs.File) error {
+				f.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: tc.saved})
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			got := runSelectionJSON(t, promptCmd())
+			if line, _ := got["line"].(string); tc.want == "" || !strings.Contains(line, tc.want) {
+				t.Errorf("prompt %q should show icon %q", line, tc.want)
+			}
+		})
+	}
+}
+
 func TestProfileScopedCommandsAcceptProfile(t *testing.T) {
 	for name, cmd := range map[string]*cobra.Command{
 		"cap list":          capListCmd(),

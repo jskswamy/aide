@@ -169,7 +169,9 @@ func selectionLaunch(t *testing.T, configYAML, cwd string, l *Launcher, agentFla
 	l.Execer = mockExec
 	l.ConfigDir = configDir
 	l.Stderr = &stderr
-	l.LookPath = okLookPath
+	if l.LookPath == nil {
+		l.LookPath = okLookPath
+	}
 	err := l.Launch(cwd, agentFlag, nil, false, false, nil, nil)
 	return env, stderr.String(), err
 }
@@ -519,5 +521,61 @@ func TestPreferenceKey_ProfileAndNormalizedOrigin(t *testing.T) {
 	}
 	if got := PreferenceKey("work", nil); got != (prefs.Key{Profile: "work"}) {
 		t.Errorf("PreferenceKey without remotes = %+v, want no remote", got)
+	}
+}
+
+// The statusline preview shows the harness a launch runs: a saved
+// agents: alias as the launch names it, and never a saved harness the
+// launch refuses.
+func TestPreviewSessionEnv_AgreesWithLaunch(t *testing.T) {
+	const cfgYAML = `
+agents:
+  claude: {binary: claude}
+  work-claude: {binary: /opt/bin/claude}
+profiles:
+  work:
+    agent: claude
+default_profile: work
+`
+	lookPath := func(f string) (string, error) {
+		if f == "nosuch" {
+			return "", exec.ErrNotFound
+		}
+		return okLookPath(f)
+	}
+	for name, tc := range map[string]struct{ saved, want string }{
+		"alias":   {saved: "work-claude", want: "work-claude"},
+		"refused": {saved: "nosuch", want: "claude"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			cwd := t.TempDir()
+			gitRepo(t, cwd, "git@github.com:org/repo.git")
+			savePreference(t, prefs.DefaultPath(home), prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: tc.saved})
+
+			env, _, launchErr := selectionLaunch(t, cfgYAML, cwd, &Launcher{LookPath: lookPath}, "")
+			launched, _ := envValue(env, "AIDE_AGENT")
+
+			configDir := t.TempDir()
+			writeMinimalConfig(t, configDir, cfgYAML)
+			cfg, err := config.Load(configDir, cwd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			preview, err := PreviewSessionEnv(cfg, cwd, "", home, "")
+			if err != nil {
+				t.Fatalf("PreviewSessionEnv: %v", err)
+			}
+			if got := preview["AIDE_AGENT"]; got != tc.want {
+				t.Errorf("preview AIDE_AGENT = %q, want %q", got, tc.want)
+			}
+			if launchErr == nil && launched != preview["AIDE_AGENT"] {
+				t.Errorf("launch ran %q but the preview shows %q", launched, preview["AIDE_AGENT"])
+			}
+			if (launchErr != nil) != (tc.saved == "nosuch") {
+				t.Errorf("launch error = %v, want a refusal only for the unknown saved harness", launchErr)
+			}
+		})
 	}
 }

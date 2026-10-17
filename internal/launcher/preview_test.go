@@ -39,7 +39,7 @@ agent: /usr/local/bin/my-agent
 	}
 }
 
-func TestPreviewSessionEnv_NamedContext_NoProjectOverrideMerge(t *testing.T) {
+func TestPreviewSessionEnv_NamedContext_UsesThatProfile(t *testing.T) {
 	configDir := t.TempDir()
 	cwd := t.TempDir()
 	homeDir := t.TempDir()

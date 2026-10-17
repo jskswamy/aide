@@ -6,69 +6,36 @@ import (
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
-	aidectx "github.com/jskswamy/aide/internal/context"
-	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/sandbox"
-	"github.com/jskswamy/aide/internal/ui"
 )
 
 // PreviewSessionEnv resolves the AIDE_* env vars a real `aide launch`
 // would set for a context, without actually launching: no secret
 // decryption, no interactive capability-variant prompts, no process exec.
 //
-// When contextName is empty, the context is resolved by matching cwd
-// (mirroring Launch, including its trust gate on .aide.yaml); otherwise
-// the named context is looked up directly with no project-override merge,
-// matching the existing precedent in cmd/aide's resolveEffectiveCapabilities
-// for inspecting a named context that may not be the one active at cwd.
+// The selection is Launch's (ResolveSelection, which gates cfg's
+// .aide.yaml): contextName stands in for --profile and agent for
+// --agent; otherwise the context matched from cwd and a harness saved
+// for the repository apply, as at launch. A selection step a launch
+// would stop on is tolerated once the profile is resolved (a
+// statusline stays quiet; the launch reports it): the preview shows
+// the harness selected before that step, never a saved or --agent
+// harness the launch rejects.
 //
 // Capability names are resolved via the same context/--without/
 // auto-include logic Launch uses, but not expanded through
 // extends/combines/variants, so AIDE_CAPS may differ from a real launch's
 // fully-resolved set in edge cases — good enough for a statusline preview,
 // not a byte-exact simulation.
-//
-// A non-empty agent stands in for `--agent`, replacing the context's
-// agent; otherwise a harness saved for the repository (aide project
-// set) does, as at launch.
 func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent string) (map[string]string, error) {
-	var ctx config.Context
-	var name string
-	var trustInfo *ui.TrustInfo
+	res, err := (&Launcher{Profile: contextName}).ResolveSelection(cfg, cwd, homeDir, SelectionInputs{Agent: agent})
+	if res.RC == nil {
+		return nil, err
+	}
+	ctx, name := res.RC.Context, res.RC.Name
 	var disabledCaps []string
-	remotes := aidectx.GitRemotes(cwd)
-
-	if contextName != "" {
-		c, ok := cfg.Contexts[contextName]
-		if !ok {
-			return nil, fmt.Errorf("context %q not found", contextName)
-		}
-		ctx = c
-		name = contextName
-	} else {
-		gate, err := GateProjectConfig(cfg)
-		if err != nil {
-			return nil, err
-		}
-		trustInfo = gate.Primary()
-		rc, err := aidectx.Resolve(cfg, cwd, remotes)
-		if err != nil {
-			return nil, fmt.Errorf("resolving profile: %w", err)
-		}
-		ctx = rc.Context
-		name = rc.Name
-		if cfg.ProjectOverride != nil {
-			disabledCaps = cfg.ProjectOverride.DisabledCapabilities
-		}
-	}
-	// A harness saved for this repository and profile is what a launch
-	// runs. Unreadable preferences are ignored here: a statusline stays
-	// quiet, and the launch itself reports them.
-	if saved, err := SavedPreference(prefs.DefaultPath(homeDir), name, remotes); err == nil && saved.Harness != "" {
-		ctx.Agent = saved.Harness
-	}
-	if agent != "" {
-		ctx.Agent = agent
+	if cfg.ProjectOverride != nil {
+		disabledCaps = cfg.ProjectOverride.DisabledCapabilities
 	}
 
 	sandboxCfg, sbDisabled, err := sandbox.ResolveSandboxRef(ctx.Sandbox, cfg.Sandboxes)
@@ -89,7 +56,7 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 	}
 	autoApprove := config.ResolveYolo(prefYolo, ctx.Yolo, nil)
 
-	envSlice := injectAideSessionEnv(nil, sbDisabled, sandboxCfg, autoApprove, caps, name, ctx.Agent, trustInfo)
+	envSlice := injectAideSessionEnv(nil, sbDisabled, sandboxCfg, autoApprove, caps, name, ctx.Agent, res.Gate.Primary())
 	return envSliceToMap(envSlice), nil
 }
 

@@ -66,7 +66,8 @@ func resolveProjectTarget(cmd *cobra.Command, profile string) (*projectTarget, e
 	if _, err := launcher.GateProjectConfig(cfg); err != nil {
 		return nil, err
 	}
-	rc, err := aidectx.ResolveSelected(cfg, cwd, aidectx.GitRemotes(cwd), profile)
+	remotes := aidectx.GitRemotes(cwd)
+	rc, err := aidectx.ResolveSelected(cfg, cwd, remotes, profile)
 	if err != nil {
 		return nil, fmt.Errorf("resolving profile: %w", err)
 	}
@@ -74,7 +75,7 @@ func resolveProjectTarget(cmd *cobra.Command, profile string) (*projectTarget, e
 		cfg:  cfg,
 		home: home,
 		rc:   rc,
-		key:  prefs.Key{Profile: rc.Name, Remote: aidectx.CurrentRemote(cwd)},
+		key:  launcher.PreferenceKey(rc.Name, remotes),
 		path: prefs.DefaultPath(home),
 	}, nil
 }

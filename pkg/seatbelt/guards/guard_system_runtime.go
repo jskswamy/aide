@@ -6,7 +6,11 @@
 
 package guards
 
-import "github.com/jskswamy/aide/pkg/seatbelt"
+import (
+	"path/filepath"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
+)
 
 type systemRuntimeGuard struct{}
 
@@ -51,6 +55,7 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 )`),
 		seatbelt.AllowRule(`(allow file-read-data
     (literal "/")
+    (literal "/Users")
 )`),
 
 		// 3. Process rules
@@ -151,6 +156,12 @@ func (g *systemRuntimeGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		rules = append(rules, seatbelt.AllowRule("(allow process-fork)"))
 	} else {
 		rules = append(rules, seatbelt.DenyRule("(deny process-fork)"))
+	}
+
+	// A home outside /Users (an external volume): its parent must be
+	// openable too. Literal only; "/" and /Users are already granted.
+	if parent := filepath.Dir(filepath.Clean(ctx.HomeDir)); ctx.HomeDir != "" && parent != "/" && parent != "." && parent != "/Users" {
+		rules = append(rules, seatbelt.AllowLiteral(parent, "file-read-data"))
 	}
 
 	return seatbelt.GuardResult{Rules: rules}

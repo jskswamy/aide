@@ -198,3 +198,55 @@ func TestSystemRuntime_BroadSystemReads(t *testing.T) {
 		t.Error("expected mach-lookup rules")
 	}
 }
+
+// codebase-memory-mcp opens each ancestor of its cache dir for reading,
+// which needs file-read-data on the directory holding $HOME. The grant
+// must stay a literal: a subpath would expose every account's files.
+func TestSystemRuntime_HomeParentIsOpenableAsALiteral(t *testing.T) {
+	for _, tc := range []struct {
+		name, home string
+		want       []string
+	}{
+		{"users", "/Users/testuser", []string{`(literal "/Users")`}},
+		{"home outside /Users", "/Volumes/ext/jane", []string{`(literal "/Users")`, `(literal "/Volumes/ext")`}},
+		{"path with a space", "/Volumes/My Disk/jane", []string{`(literal "/Volumes/My Disk")`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &seatbelt.Context{HomeDir: tc.home, AllowSubprocess: true}
+			out := renderTestRules(guards.SystemRuntimeGuard().Rules(ctx).Rules)
+			for _, want := range tc.want {
+				if !fileReadDataRuleHas(out, want) {
+					t.Errorf("no (allow file-read-data ...) rule contains %s in:\n%s", want, out)
+				}
+			}
+			for _, bad := range []string{`(subpath "/Users")`, `(subpath "/Volumes")`} {
+				if strings.Contains(out, bad) {
+					t.Errorf("policy must not grant %s", bad)
+				}
+			}
+		})
+	}
+}
+
+func TestSystemRuntime_NoExtraGrantWhenHomeParentIsRoot(t *testing.T) {
+	ctx := &seatbelt.Context{HomeDir: "/root", AllowSubprocess: true}
+	out := renderTestRules(guards.SystemRuntimeGuard().Rules(ctx).Rules)
+	if strings.Contains(out, `(literal "")`) || strings.Count(out, `(literal "/")`) != 2 {
+		t.Errorf("a home directly under / must add no parent literal (/ is already granted):\n%s", out)
+	}
+}
+
+// fileReadDataRuleHas reports whether any "(allow file-read-data ...)"
+// rule in the rendered policy mentions needle.
+func fileReadDataRuleHas(policy, needle string) bool {
+	for _, block := range strings.Split(policy, "(allow ")[1:] {
+		end := strings.Index(block, "\n)")
+		if end < 0 {
+			end = len(block)
+		}
+		if strings.HasPrefix(block, "file-read-data") && strings.Contains(block[:end], needle) {
+			return true
+		}
+	}
+	return false
+}

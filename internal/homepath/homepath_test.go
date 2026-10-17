@@ -70,3 +70,23 @@ func TestCollapse(t *testing.T) {
 		})
 	}
 }
+
+func TestTilde(t *testing.T) {
+	cases := []struct {
+		name, path, home, want string
+	}{
+		{"under home", "/Users/alice/.claude-work", "/Users/alice", "~/.claude-work"},
+		{"nested", "/Users/alice/.pi/agent", "/Users/alice", "~/.pi/agent"},
+		{"home itself is unchanged", "/Users/alice", "/Users/alice", "/Users/alice"},
+		{"sibling prefix is not under home", "/Users/alice-other/x", "/Users/alice", "/Users/alice-other/x"},
+		{"outside home", "/opt/x", "/Users/alice", "/opt/x"},
+		{"empty home", "/Users/alice/x", "", "/Users/alice/x"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := homepath.Tilde(tc.path, tc.home); got != tc.want {
+				t.Errorf("Tilde(%q, %q) = %q, want %q", tc.path, tc.home, got, tc.want)
+			}
+		})
+	}
+}

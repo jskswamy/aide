@@ -17,6 +17,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/harness"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/provision"
 )
 
@@ -134,7 +135,7 @@ func planTarget(profile, agent string, ctx config.Context, home string) (Target,
 		return Target{}, &Skip{Profile: profile, Agent: agent, Reason: err.Error()}
 	}
 	dir := env[d.ProfileEnvKey]
-	shown := tildePath(dir, home)
+	shown := homepath.Tilde(dir, home)
 	if sameDir(dir, filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))) {
 		return Target{}, &Skip{Profile: profile, Agent: agent,
 			Reason: fmt.Sprintf("%s is %s's default dir, which Skillshare's plain %s target covers", shown, agent, agent)}
@@ -169,15 +170,4 @@ func splitShared(candidates []Target, home string) ([]Target, []Skip) {
 // nearest-ancestor-resolved paths.
 func sameDir(a, b string) bool {
 	return fsutil.ResolveNearest(filepath.Clean(a)) == fsutil.ResolveNearest(filepath.Clean(b))
-}
-
-// tildePath writes path relative to ~ when it is under home.
-func tildePath(path, home string) string {
-	if home != "" && fsutil.IsUnderDir(path, home) && filepath.Clean(path) != filepath.Clean(home) {
-		rel, err := filepath.Rel(home, path)
-		if err == nil {
-			return "~/" + filepath.ToSlash(rel)
-		}
-	}
-	return path
 }

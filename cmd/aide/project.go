@@ -160,7 +160,7 @@ func (t *projectTarget) check(p prefs.Preference) error {
 	if _, err := provision.InjectProfileEnv(t.cfg.HarnessOf(rc.Context.Agent), rc.Context, rc.Context.Env, t.home); err != nil {
 		return fmt.Errorf("profile %q: %w", rc.Name, err)
 	}
-	_, _, _, err = launcher.PreviewCredentials(t.cfg, &rc, in, &sel)
+	_, _, _, err = launcher.PlanProfileCredentials(t.cfg, &rc, in, &sel)
 	return err
 }
 

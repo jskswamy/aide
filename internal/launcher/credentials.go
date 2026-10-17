@@ -217,12 +217,12 @@ func (p CredentialPlan) storePaths() []string {
 	return out
 }
 
-// PreviewCredentials plans rc's credentials without decrypting
+// PlanProfileCredentials plans rc's credentials without decrypting
 // anything, for a launch and for which/status: it applies in's
 // credential precedence to sel. It returns the profile with legacy
 // env: credentials translated (so their values are not displayed as
 // env), the legacy credentials translated, and the plan.
-func PreviewCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in SelectionInputs, sel *Selection) (config.Context, []config.LegacyCredential, CredentialPlan, error) {
+func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in SelectionInputs, sel *Selection) (config.Context, []config.LegacyCredential, CredentialPlan, error) {
 	ctx, legacy, err := profileCredentials(cfg, rc)
 	if err != nil {
 		return rc.Context, nil, CredentialPlan{}, err

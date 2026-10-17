@@ -151,7 +151,7 @@ func credentialNamesForCompletion(cmd *cobra.Command) []string {
 // f (launcher.ResolveSelection; it mutates cfg). Its Notices hold
 // everything a launch would print before starting, including the
 // gate's warnings and why the launch would be refused. Credentials are
-// left to launcher.PreviewCredentials.
+// left to launcher.PlanProfileCredentials.
 func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir string, f *selectionFlags) (launcher.Resolution, error) {
 	in, err := f.inputs(cmd)
 	if err != nil {

@@ -27,6 +27,13 @@ var codexNeverScrubbed = []string{
 	"XDG_RUNTIME_DIR", "XDG_CONFIG_HOME",
 }
 
+// ScrubNames is every configured custom credential name a launch or a
+// provisioning subprocess scrubs from the inherited environment: the
+// config's credential names plus the Codex provider names.
+func ScrubNames(cfg *config.Config, home string) []string {
+	return append(cfg.CredentialScrubNames(), CodexProviderEnvNames(cfg, home, os.Getenv)...)
+}
+
 // CodexProviderEnvNames returns, sorted, the custom model provider key
 // and header variables named in every Codex home aide can derive from
 // cfg: the default ~/.codex, an exported CODEX_HOME (getenv reads the

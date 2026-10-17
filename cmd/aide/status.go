@@ -216,7 +216,7 @@ func whichCmd() *cobra.Command {
 
 			// Credentials by binding and env var name; translated legacy
 			// env: credentials leave the env listing.
-			credCtx, _, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
+			credCtx, _, credPlan, credErr := launcher.PlanProfileCredentials(cfg, resolved, inputs, &sel)
 			resolved.Context = credCtx
 
 			// Build BannerData
@@ -1211,7 +1211,7 @@ func statusCmd() *cobra.Command {
 			resolved, inputs, sel, notices := preview.RC, preview.Inputs, preview.Sel, preview.Notices
 
 			var credData ui.BannerData
-			credCtx, _, credPlan, credErr := launcher.PreviewCredentials(cfg, resolved, inputs, &sel)
+			credCtx, _, credPlan, credErr := launcher.PlanProfileCredentials(cfg, resolved, inputs, &sel)
 			resolved.Context = credCtx
 			launcher.SetBannerCredentials(&credData, credPlan)
 			launcher.SetBannerSelection(&credData, sel)

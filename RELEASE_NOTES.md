@@ -363,7 +363,8 @@ change saved preferences.
   repository, as a launch would run it. They select exactly as a
   launch does: a saved harness the launch would reject is not shown,
   and `aide statusline --profile <name>` applies the trusted
-  `.aide.yaml` the way `aide --profile <name>` does.
+  `.aide.yaml` the way `aide --profile <name>` does, so a malformed
+  `.aide.yaml` now makes it fail as the launch would.
 - `aide sandbox show` and `aide sandbox test` select the profile and
   harness the way a launch does, including the harness saved for the
   repository, and print the notices a launch would print. `aide sync`,
@@ -447,6 +448,13 @@ file, once. See "Linked git worktrees" in `docs/configuration.md`.
   or a repository that merely links to it. If that checkout cannot be
   determined, a file with relative paths is not applied and aide
   warns.
+- The project root (`{{ .ProjectRoot }}` in `env:` templates, the
+  sandbox's writable root, the banner and variant consent) is now
+  found the way the trust gate finds a checkout: symlinks resolved,
+  and ignoring an inherited `GIT_DIR`/`GIT_WORK_TREE`. A non-git dir
+  reached through a symlink gets its resolved path, and a bare-dotfiles
+  setup (`GIT_DIR=~/.dotfiles GIT_WORK_TREE=~`) no longer makes all of
+  `$HOME` the writable root.
 - `aide cap enable|disable` and `aide env set|remove` in a worktree
   edit the worktree's own `.aide.yaml` (created if absent); `--main`
   edits the main checkout's. Project edits now keep a file as written

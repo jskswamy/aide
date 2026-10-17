@@ -79,7 +79,7 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 	// Every provisioning entry point resolves its context here, so this
 	// is where the user's scrub_env:, binding names and Codex custom
 	// provider names reach provisioning subprocesses.
-	scrubNames := append(cfg.CredentialScrubNames(), launcher.CodexProviderEnvNames(cfg, homeDir, os.Getenv)...)
+	scrubNames := launcher.ScrubNames(cfg, homeDir)
 	harnessName := cfg.HarnessOf(ctx.Agent)
 	pCtx, err := provision.ResolveContext(name, harnessName, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
 	if err != nil {

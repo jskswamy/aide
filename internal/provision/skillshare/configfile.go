@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
 )
 
@@ -149,7 +150,7 @@ func conflict(t Target, taken map[string]bool, userDirs map[string]string, home 
 	}
 	slices.Sort(names)
 	for _, name := range names {
-		if sameDir(userDirs[name], dir) {
+		if fsutil.SameDir(userDirs[name], dir) {
 			return &Skip{Profile: t.Profile, Agent: t.Agent, Reason: fmt.Sprintf(
 				"%s is already the config_dir of your Skillshare target %s", t.ConfigDir, name)}
 		}

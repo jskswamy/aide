@@ -61,4 +61,8 @@ repos:
     rev: v0.5.1
     hooks:
       - id: go-unit-tests
+        # The script already runs ./...; one batch per changed-file chunk
+        # would run the suite in parallel and blow its 30s timeout.
+        pass_filenames: false
+        require_serial: true
         stages: [pre-push]

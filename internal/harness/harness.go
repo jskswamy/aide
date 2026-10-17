@@ -58,6 +58,15 @@ func (d Descriptor) Names() []string { return append([]string{d.Name}, d.Aliases
 // SupportsProfiles reports whether the harness can run under a profile.
 func (d Descriptor) SupportsProfiles() bool { return d.ProfileEnvKey != "" }
 
+// DefaultDir is the harness's default config dir under home, or ""
+// when it is not known.
+func (d Descriptor) DefaultDir(home string) string {
+	if d.DefaultConfigDir == "" {
+		return ""
+	}
+	return filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))
+}
+
 // Launchable reports whether aide can discover, sandbox and launch the
 // harness.
 func (d Descriptor) Launchable() bool { return d.Sandbox != nil }

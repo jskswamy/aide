@@ -10,7 +10,6 @@ package skillshare
 import (
 	"fmt"
 	"maps"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -136,7 +135,7 @@ func planTarget(profile, agent string, ctx config.Context, home string) (Target,
 	}
 	dir := env[d.ProfileEnvKey]
 	shown := homepath.Tilde(dir, home)
-	if fsutil.SameDir(dir, filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))) {
+	if fsutil.SameDir(dir, d.DefaultDir(home)) {
 		return Target{}, &Skip{Profile: profile, Agent: agent,
 			Reason: fmt.Sprintf("%s is %s's default dir, which Skillshare's plain %s target covers", shown, agent, agent)}
 	}

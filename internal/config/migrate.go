@@ -243,7 +243,7 @@ func globalLogins(cfg *Config, names []string, home string) []GlobalLogin {
 		if !ok || !d.SupportsProfiles() || d.DefaultConfigDir == "" {
 			continue
 		}
-		gl := GlobalLogin{Profile: name, Harness: d.Name, Dir: "~/" + d.DefaultConfigDir}
+		gl := GlobalLogin{Profile: name, Harness: d.Name, Dir: homepath.Tilde(d.DefaultDir(home), home)}
 		for _, other := range profileHarnesses() {
 			if other != d.Name {
 				gl.OtherDirs = append(gl.OtherDirs, OtherHarnessDir{Harness: other,

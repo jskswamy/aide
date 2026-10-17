@@ -112,7 +112,8 @@ func (c *Config) validateProfileDirs(home string) error {
 					continue // provisioning rejects it; never resolve against the cwd
 				}
 			case slices.Contains(globals, name):
-				dir, global = harnessDefaultDir(h, home), true
+				d, _ := harness.Lookup(h)
+				dir, global = d.DefaultDir(home), true
 			default:
 				continue
 			}
@@ -163,13 +164,13 @@ func onGlobalDir(ctx Context, d harness.Descriptor, home string) bool {
 		return false
 	}
 	v, redirected := ctx.Env[d.ProfileEnvKey]
-	return !redirected || home != "" && sameDirPath(homepath.Expand(v, home), harnessDefaultDir(d.Name, home))
+	return !redirected || home != "" && sameDirPath(homepath.Expand(v, home), d.DefaultDir(home))
 }
 
 // pinsGlobalDir reports whether ctx selects its own dirs but pins
-// harness h's to h's default dir.
-func pinsGlobalDir(ctx Context, h, home string) bool {
-	return ctx.SelectsConfigDir() && home != "" && sameDirPath(ctx.NativeConfigDir(h, home), harnessDefaultDir(h, home))
+// harness d's to d's default dir.
+func pinsGlobalDir(ctx Context, d harness.Descriptor, home string) bool {
+	return ctx.SelectsConfigDir() && home != "" && sameDirPath(ctx.NativeConfigDir(d.Name, home), d.DefaultDir(home))
 }
 
 func sameDirPath(a, b string) bool {
@@ -222,11 +223,6 @@ func (c *Config) dirNameTaken(name, dirName string) bool {
 	return false
 }
 
-func harnessDefaultDir(h, home string) string {
-	d, _ := harness.Lookup(h)
-	return filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))
-}
-
 // GlobalLoginError reports, wrapping ErrProfileDirAlias, that launching
 // profile name under harness h (the launch's final harness) would run
 // h from its default dir while another profile uses that dir too, so
@@ -240,7 +236,7 @@ func (c *Config) GlobalLoginError(name, h, home string) error {
 	d, ok := harness.Lookup(h)
 	ctx, known := c.Contexts[name]
 	if !ok || !d.SupportsProfiles() || d.DefaultConfigDir == "" || !known ||
-		!onGlobalDir(ctx, d, home) && !pinsGlobalDir(ctx, d.Name, home) {
+		!onGlobalDir(ctx, d, home) && !pinsGlobalDir(ctx, d, home) {
 		return nil
 	}
 	ownLaunch := c.HarnessOf(ctx.Agent) == d.Name || ctx.Agent == ""
@@ -250,10 +246,10 @@ func (c *Config) GlobalLoginError(name, h, home string) error {
 		qc := c.Contexts[q]
 		switch {
 		case q == name:
-			if pinsGlobalDir(qc, d.Name, home) {
+			if pinsGlobalDir(qc, d, home) {
 				pinned = append(pinned, q)
 			}
-		case pinsGlobalDir(qc, d.Name, home):
+		case pinsGlobalDir(qc, d, home):
 			users, pinned = append(users, q), append(pinned, q)
 		case onGlobalDir(qc, d, home) && (c.canSelectDir(qc) || !ownLaunch):
 			users = append(users, q)
@@ -274,7 +270,7 @@ func (c *Config) GlobalLoginError(name, h, home string) error {
 	case slices.Contains(users, c.DefaultContext):
 		keep = c.DefaultContext
 	}
-	defaultDir := homepath.Tilde(harnessDefaultDir(d.Name, home), home)
+	defaultDir := homepath.Tilde(d.DefaultDir(home), home)
 	var fixes []string
 	for _, u := range users {
 		switch uc := c.Contexts[u]; {

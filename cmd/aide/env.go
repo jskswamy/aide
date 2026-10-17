@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,6 +91,10 @@ Examples:
 			}
 			if !global && envscrub.IsProviderSelectorName(key) {
 				return fmt.Errorf("%s is a provider selector or endpoint, which repository config (.aide.yaml) cannot set; "+
+					"set it on your profile with --global", key)
+			}
+			if !global && slices.Contains(envscrub.ConfigDirRedirects(), key) {
+				return fmt.Errorf("%s chooses a harness's config dir (its login), which repository config (.aide.yaml) cannot set; "+
 					"set it on your profile with --global", key)
 			}
 

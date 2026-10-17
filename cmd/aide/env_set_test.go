@@ -163,3 +163,14 @@ func TestEnvSet_ProviderSelectorsOnlyInUserConfig(t *testing.T) {
 		t.Fatalf("global selector refused: %v\n%s", err, out)
 	}
 }
+
+func TestEnvSet_HarnessConfigDirOnlyInUserConfig(t *testing.T) {
+	dir := projectTempDir(t)
+	_, err := runEnvSet(t, "CLAUDE_CONFIG_DIR", "~/.claude-shared")
+	if err == nil || !strings.Contains(err.Error(), "--global") {
+		t.Fatalf("project-level config dir error = %v, want a refusal pointing to --global", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, ".aide.yaml")); statErr == nil {
+		t.Error("refused command still wrote .aide.yaml")
+	}
+}

@@ -152,6 +152,17 @@ trusted. Before, it replaced the profile's own store, so a repository
 could make a work launch decrypt your personal secrets. Move the
 `secret:` line into the profile in your aide config.
 
+#### `.aide.yaml` can no longer set an agent's config dir
+
+A repository `.aide.yaml` whose `env:` sets an agent's config-dir
+variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`,
+`COPILOT_HOME`, ...) now stops the launch with `repository config
+cannot choose a harness's config dir`: that dir holds the login, so a
+repository could otherwise pick, or share, the login a profile runs
+under. `aide env set` refuses those names without `--global`. Give the
+profile its dir in your aide config (`config_dir_name:`, `config_dir:`
+or `config_dirs:`).
+
 #### Profiles sharing an agent's global login no longer launch
 
 Profiles with no config dir of their own (no `config_dir_name:`,

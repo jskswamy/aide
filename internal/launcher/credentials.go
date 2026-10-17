@@ -154,7 +154,8 @@ var loadSecretStore StoreLoader = secrets.LoadSecretsMap
 // entries use the profile's own secret: store (.aide.yaml cannot set
 // one; the loader rejects it), and .aide.yaml may not set provider credentials,
 // selectors or endpoints at all (an endpoint could redirect the
-// profile's key to a repository-chosen host).
+// profile's key to a repository-chosen host), nor a harness config-dir
+// variable (that picks the login the profile runs under).
 func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config.Context, []config.LegacyCredential, error) {
 	label := profileLabel(cfg, rc.Name)
 	if po := cfg.ProjectOverride; po != nil {
@@ -164,6 +165,12 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 					"selectors or endpoints. Remove it there and set it for %s in your aide config "+
 					"(credentials: for keys, env: for selectors and endpoints)",
 					config.ErrLegacyCredentialEnv, projectFileSettingEnv(cfg, k), k, label)
+			}
+			if slices.Contains(envscrub.ConfigDirRedirects(), k) {
+				return config.Context{}, nil, fmt.Errorf("%s sets %s; repository config cannot choose a harness's config dir, "+
+					"which holds its login. Remove it there and give %s its dir in your aide config "+
+					"(config_dir_name:, config_dir: or config_dirs:)",
+					projectFileSettingEnv(cfg, k), k, label)
 			}
 		}
 	}

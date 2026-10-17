@@ -411,6 +411,33 @@ default_context: work
 	}
 }
 
+// A repository choosing a harness's config dir would choose which
+// login the profile runs under, and could share one between profiles.
+func TestLauncher_ProjectConfigCannotSetHarnessConfigDir(t *testing.T) {
+	for _, key := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			configDir, cwd := t.TempDir(), t.TempDir()
+			writeMinimalConfig(t, configDir, "profiles:\n  work:\n    agent: claude\ndefault_profile: work\n")
+			if err := os.WriteFile(filepath.Join(cwd, ".aide.yaml"), []byte("env:\n  "+key+": ~/.shared\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := config.Load(configDir, cwd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rc, err := aidectx.Resolve(cfg, cwd, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = profileCredentials(cfg, rc)
+			if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "aide config") {
+				t.Fatalf("profileCredentials() error = %v, want a refusal naming %s with guidance", err, key)
+			}
+		})
+	}
+}
+
 func TestLauncher_ScrubsCustomCredentialEnvFromShell(t *testing.T) {
 	t.Setenv("CORP_LLM_TOKEN", "corp-shell")
 	env, _, err := launchCredentials(t, `

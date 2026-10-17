@@ -195,6 +195,10 @@ A config that pins a profile to an agent's global dir (for example
 `config_dirs: {claude: ~/.claude}`) while another profile still has no
 config dir no longer loads: the pinned profile would look isolated
 while sharing that login. The error names both profiles and the fix.
+The same holds for a dir variable in a profile's `env:`: two profiles
+setting `CLAUDE_CONFIG_DIR: ~/.claude-shared`, or one naming another
+profile's dir (such as `~/.claude-work` from `config_dir_name: work`),
+no longer load; the error names the profile whose `env:` to change.
 
 ### ✨ New
 

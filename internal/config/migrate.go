@@ -148,7 +148,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	}
 
 	m.GlobalLogins = globalLogins(&cfg, names, opts.Home)
-	adopted, err := m.adopt(section, opts.Adopt)
+	adopted, err := m.adopt(&cfg, section, opts.Adopt, opts.Home)
 	if err != nil {
 		return nil, err
 	}
@@ -255,9 +255,10 @@ func globalLogins(cfg *Config, names []string, home string) []GlobalLogin {
 }
 
 // adopt pins each named profile to its harness's global dir. Two
-// profiles cannot both be pinned to the same dir: they would share one
-// login while appearing isolated.
-func (m *Migration) adopt(section *yaml.Node, names []string) (bool, error) {
+// profiles cannot both be pinned to the same dir, nor one while another
+// profile still runs from it: they would share one login while the
+// pinned one appeared isolated.
+func (m *Migration) adopt(cfg *Config, section *yaml.Node, names []string, home string) (bool, error) {
 	pinned := map[string]string{} // dir -> profile
 	for _, name := range names {
 		i := slices.IndexFunc(m.GlobalLogins, func(g GlobalLogin) bool { return g.Profile == name })
@@ -273,6 +274,13 @@ func (m *Migration) adopt(section *yaml.Node, names []string) (bool, error) {
 				"and give the other its own config_dir_name, then log in there", ErrAdopt, prev, name, gl.Dir, gl.Harness)
 		}
 		pinned[gl.Dir] = name
+		for _, other := range cfg.globalLoginProfiles(gl.Harness, home) {
+			if !slices.Contains(names, other) {
+				return false, fmt.Errorf("%w: profile %q selects no config dir, so it would still run %s from %s, sharing the login "+
+					"%q adopts; give %q its own config_dir_name: first (it will need a fresh %s login there), then adopt %q",
+					ErrAdopt, other, gl.Harness, gl.Dir, name, other, gl.Harness, name)
+			}
+		}
 		if gl.Adopted {
 			continue
 		}

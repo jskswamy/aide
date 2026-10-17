@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -28,6 +29,7 @@ type dirUse struct {
 	profile string
 	path    string      // resolveDir of the dir
 	info    os.FileInfo // nil when the dir does not exist (yet)
+	global  bool        // the profile selects no dir: the harness default
 }
 
 func newDirUse(profile, dir string) dirUse {
@@ -129,23 +131,32 @@ func profileHarnesses() []string {
 // validateProfileDirs fails when two profiles would run any
 // profile-capable harness from the same config dir. Every harness is
 // checked, not just each profile's agent:, because --agent can launch
-// any profile under any harness.
+// any profile under any harness. A profile selecting no dir runs from
+// the harness's default dir; several such profiles sharing it load
+// (GlobalLoginError refuses their launch), but a profile pinned to
+// that dir would look isolated while sharing their login, so it fails.
 func (c *Config) validateProfileDirs(home string) error {
 	names := sortedKeys(c.Contexts)
 	for _, h := range profileHarnesses() {
+		globals := c.globalLoginProfiles(h, home)
 		var seen []dirUse
 		for _, name := range names {
 			ctx := c.Contexts[name]
-			if ctx.Profile == "" {
+			dir, global := ctx.NativeConfigDir(h, home), false
+			switch {
+			case ctx.SelectsConfigDir():
+				if !filepath.IsAbs(dir) {
+					continue // provisioning rejects it; never resolve against the cwd
+				}
+			case slices.Contains(globals, name):
+				dir, global = harnessDefaultDir(h, home), true
+			default:
 				continue
 			}
-			dir := ctx.NativeConfigDir(h, home)
-			if !filepath.IsAbs(dir) {
-				continue // provisioning rejects it; never resolve against the cwd
-			}
 			use := newDirUse(name, dir)
+			use.global = global
 			for _, prev := range seen {
-				if prev.sameDir(use) {
+				if prev.sameDir(use) && (!prev.global || !use.global) {
 					return c.profileDirAliasError(h, prev.profile, name, dir, home)
 				}
 			}
@@ -153,6 +164,171 @@ func (c *Config) validateProfileDirs(home string) error {
 		}
 	}
 	return nil
+}
+
+// globalLoginProfiles lists, sorted, the profiles that run harness h
+// from its default (global) config dir (onGlobalDir) and could select
+// a dir of their own: a profile whose own agent has no profile support
+// is left out, and reaches h only through --agent (see
+// GlobalLoginError). nil for a harness without profile support.
+func (c *Config) globalLoginProfiles(h, home string) []string {
+	d, ok := harness.Lookup(h)
+	if !ok || !d.SupportsProfiles() || d.DefaultConfigDir == "" {
+		return nil
+	}
+	var out []string
+	for _, name := range sortedKeys(c.Contexts) {
+		ctx := c.Contexts[name]
+		if c.canSelectDir(ctx) && onGlobalDir(ctx, d, home) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// canSelectDir reports whether ctx's own agent supports a config dir
+// of its own (or names none, so its harness is not known yet).
+func (c *Config) canSelectDir(ctx Context) bool {
+	own, ok := harness.Lookup(c.HarnessOf(ctx.Agent))
+	return ctx.Agent == "" || ok && own.SupportsProfiles()
+}
+
+// onGlobalDir reports whether ctx runs harness d from its default dir:
+// it selects no config dir, and sets d's dir variable in env: either
+// not at all or to the default dir itself.
+func onGlobalDir(ctx Context, d harness.Descriptor, home string) bool {
+	if ctx.SelectsConfigDir() {
+		return false
+	}
+	v, redirected := ctx.Env[d.ProfileEnvKey]
+	return !redirected || home != "" && sameDirPath(homepath.Expand(v, home), harnessDefaultDir(d.Name, home))
+}
+
+// pinsGlobalDir reports whether ctx selects its own dirs but pins
+// harness h's to h's default dir.
+func pinsGlobalDir(ctx Context, h, home string) bool {
+	return ctx.SelectsConfigDir() && home != "" && sameDirPath(ctx.NativeConfigDir(h, home), harnessDefaultDir(h, home))
+}
+
+func sameDirPath(a, b string) bool {
+	return filepath.IsAbs(a) && newDirUse("", a).sameDir(newDirUse("", b))
+}
+
+// configDirName is name as a valid config_dir_name: value.
+func configDirName(name string) string {
+	s := invalidDirNameChars.ReplaceAllString(name, "-")
+	if len(s) > 64 {
+		s = s[:64]
+	}
+	return s
+}
+
+var invalidDirNameChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// IsolateNewProfile gives ctx, a profile about to be added as name,
+// its own config dirs (config_dir_name:) when another profile already
+// runs its harness from the global default dir, so the two never share
+// one login. The dir name gets a numeric suffix when another profile
+// already uses it. It returns those other profiles (nil when ctx is
+// left on the global dir).
+func (c *Config) IsolateNewProfile(name string, ctx *Context) []string {
+	if ctx.SelectsConfigDir() {
+		return nil
+	}
+	home, _ := userHome()
+	others := slices.DeleteFunc(c.globalLoginProfiles(c.HarnessOf(ctx.Agent), home), func(n string) bool { return n == name })
+	if len(others) == 0 {
+		return nil
+	}
+	base := configDirName(name)
+	ctx.Profile = base
+	for n := 2; c.dirNameTaken(name, ctx.Profile); n++ {
+		suffix := fmt.Sprintf("-%d", n)
+		ctx.Profile = base[:min(len(base), 64-len(suffix))] + suffix
+	}
+	return others
+}
+
+// dirNameTaken reports whether a profile other than name uses dir
+// name dirName.
+func (c *Config) dirNameTaken(name, dirName string) bool {
+	for n, ctx := range c.Contexts {
+		if n != name && ctx.Profile == dirName {
+			return true
+		}
+	}
+	return false
+}
+
+func harnessDefaultDir(h, home string) string {
+	d, _ := harness.Lookup(h)
+	return filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))
+}
+
+// GlobalLoginError reports, wrapping ErrProfileDirAlias, that launching
+// profile name under harness h (the launch's final harness) would run
+// h from its default dir while another profile uses that dir too, so
+// they would share one login. Another profile counts when it pins h's
+// dir to the default, or runs h from it as a profile that could select
+// a dir of its own; one that cannot (its own agent has no profile
+// support) counts only against a launch under a harness other than
+// name's own agent, so creating such a profile never blocks the
+// others' own launches. Launches refuse it; the config still loads.
+func (c *Config) GlobalLoginError(name, h, home string) error {
+	d, ok := harness.Lookup(h)
+	ctx, known := c.Contexts[name]
+	if !ok || !d.SupportsProfiles() || d.DefaultConfigDir == "" || !known ||
+		!onGlobalDir(ctx, d, home) && !pinsGlobalDir(ctx, d.Name, home) {
+		return nil
+	}
+	ownLaunch := c.HarnessOf(ctx.Agent) == d.Name || ctx.Agent == ""
+	users := []string{name}
+	var pinned []string
+	for _, q := range sortedKeys(c.Contexts) {
+		qc := c.Contexts[q]
+		switch {
+		case q == name:
+			if pinsGlobalDir(qc, d.Name, home) {
+				pinned = append(pinned, q)
+			}
+		case pinsGlobalDir(qc, d.Name, home):
+			users, pinned = append(users, q), append(pinned, q)
+		case onGlobalDir(qc, d, home) && (c.canSelectDir(qc) || !ownLaunch):
+			users = append(users, q)
+		}
+	}
+	if len(users) < 2 {
+		return nil
+	}
+	slices.Sort(users)
+	section, nameKey := "profiles", "config_dir_name"
+	if !c.ProfileSchema {
+		section, nameKey = "contexts", "profile"
+	}
+	keep := users[0]
+	switch {
+	case len(pinned) > 0:
+		keep = pinned[0]
+	case slices.Contains(users, c.DefaultContext):
+		keep = c.DefaultContext
+	}
+	defaultDir := tildePath(harnessDefaultDir(d.Name, home), home)
+	var fixes []string
+	for _, u := range users {
+		switch uc := c.Contexts[u]; {
+		case u == keep:
+		case slices.Contains(pinned, u):
+			fixes = append(fixes, fmt.Sprintf("%s.%s: point its %s dir away from %s", section, u, d.Name, defaultDir))
+		case !c.canSelectDir(uc):
+			fixes = append(fixes, fmt.Sprintf("%s.%s: launch it without --agent %s, or add `env: {%s: ~/.%s-%s}` (its agent %s cannot select a config dir)",
+				section, u, d.Name, d.ProfileEnvKey, d.Name, configDirName(u), uc.Agent))
+		default:
+			fixes = append(fixes, fmt.Sprintf("%s.%s: add `%s: %s`", section, u, nameKey, configDirName(u)))
+		}
+	}
+	return fmt.Errorf("%w: profiles %q all run %s from its global login %s, so they would share one %s login. "+
+		"To keep %q on that login, edit your aide config: %s. Each of those then needs a fresh %s login in its own dir",
+		ErrProfileDirAlias, users, d.Name, defaultDir, d.Name, keep, strings.Join(fixes, "; "), d.Name)
 }
 
 // profileDirAliasError explains why profiles a and b collide on
@@ -163,6 +339,16 @@ func (c *Config) profileDirAliasError(h, a, b, dir, home string) error {
 		nameKey = "profile"
 	}
 	ctxA, ctxB := c.Contexts[a], c.Contexts[b]
+	if !ctxA.SelectsConfigDir() || !ctxB.SelectsConfigDir() {
+		pinned, global := a, b
+		if !ctxA.SelectsConfigDir() {
+			pinned, global = b, a
+		}
+		return fmt.Errorf("%w: profile %q pins %s's config dir to %s, its global login, which profile %q also uses because it "+
+			"selects no config dir, so the two would share one %s login while %q looks isolated. Keep the global login for one "+
+			"of them: give %q its own %s: (it will need a fresh %s login there), or remove the pin from %q",
+			ErrProfileDirAlias, pinned, h, tildePath(dir, home), global, h, pinned, global, nameKey, h, pinned)
+	}
 	ha, okA := profileHarness(c.HarnessOf(ctxA.Agent))
 	hb, okB := profileHarness(c.HarnessOf(ctxB.Agent))
 	var msg strings.Builder

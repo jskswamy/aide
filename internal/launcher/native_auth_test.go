@@ -1,12 +1,17 @@
 package launcher
 
 import (
+	"bytes"
+	"errors"
 	"os"
-
-	"github.com/jskswamy/aide/internal/config"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"go.uber.org/mock/gomock"
+
+	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/launcher/mocks"
 )
 
 func writeClaudeSettings(t *testing.T, dir, body string) {
@@ -142,5 +147,64 @@ func TestNativeAuthNotice_AgentAliasOfClaude(t *testing.T) {
 	ctx := config.Context{Agent: "work-claude", Profile: "work"}
 	if got := nativeAuthNotice(cfg.HarnessOf(ctx.Agent), ctx, home); !strings.Contains(got, "apiKeyHelper") {
 		t.Errorf("no notice for an agent alias of claude: %q", got)
+	}
+}
+
+// Two profiles on Claude's global login would share it: launching
+// either is refused, while a profile with its own dir still launches.
+func TestLauncher_RefusesProfileSharingGlobalLogin(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	configDir, cwd := t.TempDir(), t.TempDir()
+	writeMinimalConfig(t, configDir, `
+agents:
+  claude:
+    binary: claude
+profiles:
+  work:
+    agent: claude
+  personal:
+    agent: claude
+  oss:
+    agent: claude
+    config_dir_name: oss
+default_profile: work
+`)
+	l := &Launcher{ConfigDir: configDir, Stderr: &bytes.Buffer{},
+		LookPath: func(file string) (string, error) { return "/usr/local/bin/" + file, nil }}
+	err := l.Launch(cwd, "", nil, false, false, nil, nil)
+	if !errors.Is(err, config.ErrProfileDirAlias) {
+		t.Fatalf("Launch err = %v, want ErrProfileDirAlias", err)
+	}
+	if !strings.Contains(err.Error(), `"personal"`) {
+		t.Errorf("error does not name the other profile: %v", err)
+	}
+
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	l.Execer, l.Profile = mockExec, "oss"
+	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("isolated profile: Launch err = %v", err)
+	}
+}
+
+// The refusal follows the launch's final harness: two aider profiles
+// may not both run Claude from ~/.claude through --agent claude.
+func TestLauncher_RefusesAgentOverrideOntoSharedGlobalLogin(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	configDir, cwd := t.TempDir(), t.TempDir()
+	writeMinimalConfig(t, configDir, `
+agents:
+  aider: {binary: aider}
+  claude: {binary: claude}
+profiles:
+  a: {agent: aider}
+  b: {agent: aider}
+default_profile: a
+`)
+	l := &Launcher{ConfigDir: configDir, Stderr: &bytes.Buffer{},
+		LookPath: func(file string) (string, error) { return "/usr/local/bin/" + file, nil }}
+	if err := l.Launch(cwd, "claude", nil, false, false, nil, nil); !errors.Is(err, config.ErrProfileDirAlias) {
+		t.Fatalf("Launch --agent claude: err = %v, want ErrProfileDirAlias", err)
 	}
 }

@@ -2,11 +2,14 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jskswamy/aide/internal/config"
 )
 
 func runContextCreate(t *testing.T, args ...string) (string, error) {
@@ -108,5 +111,87 @@ func TestProfileSetDefault_ProfileFlag(t *testing.T) {
 	}
 	if _, err := run("work", "--profile", "personal"); err == nil {
 		t.Error("argument and --profile naming different profiles should conflict")
+	}
+}
+
+// The first profile on a harness keeps its global login; a second one
+// gets its own config dirs, so neither launch is refused for sharing.
+func TestContextCreate_SecondProfileGetsOwnConfigDir(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	out, err := runContextCreate(t, "work", "--agent", "claude", "--no-here")
+	if err != nil || strings.Contains(out, "own config dirs") {
+		t.Fatalf("first profile: err=%v\n%s", err, out)
+	}
+	out, err = runContextCreate(t, "personal", "--agent", "claude", "--no-here")
+	if err != nil {
+		t.Fatalf("second profile: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `Profile "personal" gets its own config dirs (`) {
+		t.Errorf("no isolation note:\n%s", out)
+	}
+	cfg, err := config.Load(filepath.Join(dir, "xdg", "aide"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Contexts["work"].SelectsConfigDir() || cfg.Contexts["personal"].Profile != "personal" {
+		t.Errorf("profiles = %+v", cfg.Contexts)
+	}
+	if err := cfg.GlobalLoginError("work", "claude", dir); err != nil {
+		t.Errorf("launch would still be refused: %v", err)
+	}
+}
+
+// aide use and the setup wizard create profiles the same way.
+func TestUseAndSetup_SecondProfileGetsOwnConfigDir(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	runIn := func(sub string, run func() (string, error)) string {
+		t.Helper()
+		wd := filepath.Join(dir, sub)
+		if err := os.MkdirAll(wd, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(wd)
+		out, err := run()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", sub, err, out)
+		}
+		return out
+	}
+	use := func() (string, error) {
+		cmd := useCmd()
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs([]string{"claude"})
+		err := cmd.Execute()
+		return buf.String(), err
+	}
+	if out := runIn("first", use); strings.Contains(out, "own config dirs") {
+		t.Errorf("first profile isolated:\n%s", out)
+	}
+	if out := runIn("second", use); !strings.Contains(out, `Profile "second" gets its own config dirs`) {
+		t.Errorf("aide use: no isolation note:\n%s", out)
+	}
+	out := runIn("third", func() (string, error) {
+		cfg, err := config.Load(filepath.Join(dir, "xdg", "aide"), dir)
+		if err != nil {
+			return "", err
+		}
+		wd, _ := os.Getwd()
+		var buf bytes.Buffer
+		err = setupCreateNew(&buf, bufio.NewReader(strings.NewReader(strings.Repeat("claude\n", 1)+strings.Repeat("\n", 20))), cfg, wd)
+		return buf.String(), err
+	})
+	if !strings.Contains(out, `Profile "third" gets its own config dirs`) {
+		t.Errorf("setup: no isolation note:\n%s", out)
+	}
+	cfg, err := config.Load(filepath.Join(dir, "xdg", "aide"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"first": "", "second": "second", "third": "third"} {
+		if got := cfg.Contexts[name].Profile; got != want {
+			t.Errorf("%s: config_dir_name = %q, want %q", name, got, want)
+		}
 	}
 }

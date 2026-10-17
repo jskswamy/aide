@@ -31,6 +31,7 @@ profiles:
     default_credentials: [anthropic]
   personal:
     agent: pi
+    config_dir_name: personal
 default_profile: work
 `
 
@@ -354,5 +355,37 @@ default_profile: work
 	var v any
 	if err := json.Unmarshal(out.Bytes(), &v); err != nil {
 		t.Errorf("stdout is not JSON: %v\n%s", err, out.String())
+	}
+}
+
+// which/status report a launch the shared global login would refuse,
+// and validate fails on it, while the config itself still loads.
+func TestWhichStatusValidate_ReportSharedGlobalLogin(t *testing.T) {
+	selectionEnv(t, `
+profiles:
+  work: {agent: claude}
+  personal: {agent: claude}
+default_profile: work
+`)
+	for name, cmd := range map[string]*cobra.Command{"which": whichCmd(), "status": statusCmd()} {
+		got := runSelectionJSON(t, cmd)
+		var found bool
+		for _, key := range []string{"warnings", "notices"} {
+			for _, w := range names(got[key]) {
+				found = found || (strings.Contains(w, "launch would fail") && strings.Contains(w, `"personal"`))
+			}
+		}
+		if !found {
+			t.Errorf("%s: no shared global login notice in %v", name, got)
+		}
+	}
+
+	cmd := validateCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(nil)
+	if err := cmd.Execute(); err == nil || !strings.Contains(out.String(), "~/.claude") {
+		t.Errorf("validate: err = %v, want a shared-login error\n%s", err, out.String())
 	}
 }

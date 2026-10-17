@@ -239,7 +239,10 @@ it, keeping the original as `config.yaml.bak`:
   of its own agent for one of them by adding `config_dir_name:
   <profile>` and `config_dirs: {claude: ~/.claude}`. Launched under
   another agent (`--agent codex`), that profile then uses a fresh
-  `~/.codex-<profile>` dir with its own login.
+  `~/.codex-<profile>` dir with its own login. Adopting is refused
+  while another profile still has no config dir of its own.
+- aide refuses to launch a profile that shares a global login with
+  another profile; give all but one of them a `config_dir_name:`.
 - A section that uses YAML anchors, aliases or merge keys is refused;
   expand it by hand and re-run.
 - Provisioning state is updated so the rewrite is not reported as

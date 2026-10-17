@@ -247,3 +247,22 @@ func TestProfileMigrate_NeverTouchesProjectConfig(t *testing.T) {
 		t.Errorf(".aide.yaml modified:\n%s", got)
 	}
 }
+
+// Several profiles on one global login: the preview says launches are
+// refused and that the others need their own dirs before any adoption.
+func TestProfileMigrate_PreviewReportsSharedGlobalLogin(t *testing.T) {
+	home := isolatedConfigDir(t)
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("profiles:\n  work: {agent: claude}\n  personal: {agent: claude}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := execProfileMigrate(t)
+	if err != nil {
+		t.Fatalf("migrate: %v\n%s", err, out)
+	}
+	for _, want := range []string{"refuses to launch", "all but one", "personal", "work"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("preview missing %q:\n%s", want, out)
+		}
+	}
+}

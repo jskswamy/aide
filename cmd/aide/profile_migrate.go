@@ -181,8 +181,12 @@ func printGlobalLogins(out io.Writer, logins []config.GlobalLogin) {
 				"a fresh dir that needs its own login instead of that harness's global login: %s\n", g.Profile, strings.Join(others, ", "))
 		}
 	}
+	if len(pending) > 1 {
+		fmt.Fprintf(out, "Profiles %s share a global login, so aide refuses to launch them: give all but one of them their own "+
+			"config_dir_name: and log in there.\n", strings.Join(pending, ", "))
+	}
 	if len(pending) > 0 {
-		fmt.Fprintf(out, "To keep the global login of its own harness for one profile, re-run with --adopt <profile> (one of: %s); "+
-			"give the others their own config_dir_name: and log in there. No login dir is copied.\n", strings.Join(pending, ", "))
+		fmt.Fprintf(out, "To keep the global login of its own harness for one profile, re-run with --adopt <profile> (one of: %s) "+
+			"once no other profile is left on that login. No login dir is copied.\n", strings.Join(pending, ", "))
 	}
 }

@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -370,7 +371,6 @@ func TestProjectOverride_Unmarshal(t *testing.T) {
 agent: codex
 env:
   PROJECT_KEY: "proj-val"
-secret: project
 mcp_servers: [context7]
 sandbox:
   writable: ["/tmp/project"]
@@ -386,9 +386,6 @@ sandbox:
 	if po.Env["PROJECT_KEY"] != "proj-val" {
 		t.Errorf("Env[PROJECT_KEY] = %q, want %q", po.Env["PROJECT_KEY"], "proj-val")
 	}
-	if po.Secret != "project" {
-		t.Errorf("Secret = %q, want %q", po.Secret, "project")
-	}
 	if len(po.MCPServers) != 1 || po.MCPServers[0] != "context7" {
 		t.Errorf("MCPServers = %v, want [context7]", po.MCPServers)
 	}
@@ -397,6 +394,15 @@ sandbox:
 	}
 	if po.Sandbox.Network == nil || po.Sandbox.Network.Mode != "none" {
 		t.Errorf("Sandbox.Network.Mode = %v, want %q", po.Sandbox.Network, "none")
+	}
+}
+
+// The secret store belongs to the profile: .aide.yaml cannot pick one.
+func TestProjectOverride_RejectsSecret(t *testing.T) {
+	var po config.ProjectOverride
+	err := yaml.Unmarshal([]byte("secret: personal\n"), &po)
+	if !errors.Is(err, config.ErrProfileNotProjectScoped) {
+		t.Fatalf("err = %v, want ErrProfileNotProjectScoped", err)
 	}
 }
 

@@ -96,7 +96,6 @@ func MergeProjectOverrides(base, top *ProjectOverride) *ProjectOverride {
 	out := &ProjectOverride{
 		Profile:     firstNonEmpty(top.Profile, base.Profile),
 		Agent:       firstNonEmpty(top.Agent, base.Agent),
-		Secret:      firstNonEmpty(top.Secret, base.Secret),
 		Yolo:        firstNonNil(top.Yolo, base.Yolo),
 		MCPServers:  slices.Clone(base.MCPServers),
 		Env:         mergeMaps(base.Env, top.Env),

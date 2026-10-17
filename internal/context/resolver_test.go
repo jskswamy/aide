@@ -915,29 +915,6 @@ func TestResolve_ProjectOverrideYoloNil_PreservesContext(t *testing.T) {
 	}
 }
 
-func TestResolve_ProjectOverrideReplacesSecret(t *testing.T) {
-	cfg := &config.Config{
-		Contexts: map[string]config.Context{
-			"work": {
-				Agent:  "work-agent",
-				Secret: "global",
-			},
-		},
-		DefaultContext: "work",
-		ProjectOverride: &config.ProjectOverride{
-			Secret: "project",
-		},
-	}
-
-	rc, err := Resolve(cfg, "/tmp/somedir", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if rc.Context.Secret != "project" {
-		t.Errorf("expected secret 'project', got %q", rc.Context.Secret)
-	}
-}
-
 func TestResolve_ProjectOverrideCapabilities(t *testing.T) {
 	cwd := t.TempDir()
 	cfg := &config.Config{

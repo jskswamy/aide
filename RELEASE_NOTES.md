@@ -143,6 +143,15 @@ scrubbed.
   `GOOGLE_GEMINI_BASE_URL`. If you export one (for example a proxy
   URL), set it in the profile's `env:`.
 
+#### `.aide.yaml` can no longer choose the secret store
+
+A repository `.aide.yaml` (main checkout or worktree) that sets
+`secret:` now fails to load with `profile not allowed in project
+override: secret: belongs to a profile`, whether or not the file is
+trusted. Before, it replaced the profile's own store, so a repository
+could make a work launch decrypt your personal secrets. Move the
+`secret:` line into the profile in your aide config.
+
 ### ✨ New
 
 #### aide profile manages profiles; aide context is a deprecated alias
@@ -659,10 +668,10 @@ that save the config write back whichever form the file used.
   prints a note suggesting `aide --profile <name>` and carries on.
 - `.aide.yaml` can never define a profile: `profiles:`, `contexts:`,
   `default_profile:`, `default_context:`, `config_dir_name:`,
-  `config_dir:`, `config_dirs:`, `profile_dir:`, `match:`, `credentials:` and
-  `default_credentials:` stop with `profile not allowed in project
-  override: <key>: defines a profile`, whether or not the file is
-  trusted.
+  `config_dir:`, `config_dirs:`, `profile_dir:`, `match:`, `credentials:`,
+  `default_credentials:` and `secret:` stop with `profile not allowed
+  in project override: <key>: belongs to a profile`, whether or not the
+  file is trusted.
 - Commands that save the config (such as `aide agents add`) now refuse
   to write when the config failed to load, with `refusing to write
   config: it failed to load`. Before, some of them wrote an empty

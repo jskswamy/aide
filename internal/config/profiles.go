@@ -41,11 +41,11 @@ var profileDirKeys = [][2]string{
 }
 
 // projectDefiningKeys are .aide.yaml keys that would define a profile
-// rather than reference one.
+// (or pick its secret store) rather than reference one.
 var projectDefiningKeys = []string{
 	keyProfiles, keyDefaultProfile, keyContexts, keyDefaultContext,
 	"config_dir_name", "config_dir", "config_dirs", "profile_dir",
-	"match", "credentials", "default_credentials",
+	"match", "credentials", "default_credentials", "secret",
 }
 
 // UnmarshalYAML decodes either profile schema. A profiles: file sets
@@ -174,8 +174,8 @@ func rejectProfileDirKeysInContexts(contexts *yaml.Node) error {
 func (p *ProjectOverride) UnmarshalYAML(node *yaml.Node) error {
 	for _, key := range mappingKeys(node) {
 		if slices.Contains(projectDefiningKeys, key) {
-			return fmt.Errorf("%w: %s: defines a profile; .aide.yaml may only name an existing one "+
-				"with profile: <name> (define profiles in the user config)", ErrProfileNotProjectScoped, key)
+			return fmt.Errorf("%w: %s: belongs to a profile; set it in your profile in the user config "+
+				"(.aide.yaml may only name an existing profile with profile: <name>)", ErrProfileNotProjectScoped, key)
 		}
 	}
 	type plain ProjectOverride

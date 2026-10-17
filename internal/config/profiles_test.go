@@ -399,6 +399,7 @@ func TestLoad_ProjectConfigDefiningProfileFails(t *testing.T) {
 		"match:":               "match:\n  - path: ~/src\n",
 		"credentials:":         "credentials:\n  openrouter: {}\n",
 		"default_credentials:": "default_credentials: [openrouter]\n",
+		"secret:":              "secret: personal\n",
 	}
 	for key, body := range bodies {
 		t.Run(key, func(t *testing.T) {
@@ -413,7 +414,21 @@ func TestLoad_ProjectConfigDefiningProfileFails(t *testing.T) {
 			if !strings.Contains(err.Error(), key) {
 				t.Errorf("error %q does not name %s", err, key)
 			}
+			if !strings.Contains(err.Error(), "in your profile") {
+				t.Errorf("error %q does not point at the profile", err)
+			}
 		})
+	}
+}
+
+// A worktree-local .aide.yaml gets the same check: it may not pick
+// the profile's secret store either.
+func TestLoad_WorktreeFileMayNotSetSecret(t *testing.T) {
+	_, wtDir := worktreeFixture(t)
+	writeFile(t, filepath.Join(wtDir, ProjectConfigFileName), "secret: personal\n")
+	_, err := Load(writeGlobal(t), wtDir)
+	if !errors.Is(err, ErrProfileNotProjectScoped) {
+		t.Fatalf("err = %v, want ErrProfileNotProjectScoped", err)
 	}
 }
 

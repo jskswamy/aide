@@ -421,6 +421,16 @@ func TestResolveSecretsPath(t *testing.T) {
 			t.Errorf("resolveSecretsPath() = %q, want suffix .config/aide/secrets/personal.enc.yaml", got)
 		}
 	})
+
+	t.Run("relative XDG_CONFIG_HOME is ignored", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_CONFIG_HOME", "rel/config")
+		want := filepath.Join(home, ".config", "aide", "secrets", "work.enc.yaml")
+		if got := resolveSecretsPath("work.enc.yaml"); got != want {
+			t.Errorf("resolveSecretsPath() = %q, want %q", got, want)
+		}
+	})
 }
 
 func TestSetupDecryptEnv(t *testing.T) {

@@ -9,6 +9,8 @@ import (
 	sops "github.com/getsops/sops/v3"
 	"github.com/getsops/sops/v3/decrypt"
 	"gopkg.in/yaml.v3"
+
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // DecryptSecretsFile decrypts a sops-encrypted YAML file and returns
@@ -67,16 +69,11 @@ func resolveSecretsPath(filePath string) string {
 		return filePath
 	}
 
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			home = "~"
-		}
-		configHome = filepath.Join(home, ".config")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "~"
 	}
-
-	return filepath.Join(configHome, "aide", "secrets", filePath)
+	return filepath.Join(homepath.XDG(os.Getenv("XDG_CONFIG_HOME"), home, ".config"), "aide", "secrets", filePath)
 }
 
 // sopsErrorDetail extracts the detailed error message from a sops decryption

@@ -198,9 +198,18 @@ func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []strin
 
 // PlanCredentials plans s's selection for profile ctx and harnessName
 // (see the package-level PlanCredentials). In login mode the displaced
-// selection is reported as ignored.
+// selection is reported as ignored. A saved or default selection
+// covers every harness the profile runs, so it skips bindings
+// restricted to other harnesses; --credential stays strict.
 func (s *Selection) PlanCredentials(profile string, ctx config.Context, harnessName string, auth AuthMode) (CredentialPlan, error) {
-	plan, err := PlanCredentials(profile, ctx, harnessName, s.requested, auth)
+	requested := s.requested
+	if s.CredentialSource == SourcePreference || s.CredentialSource == SourceProfile {
+		requested = slices.DeleteFunc(slices.Clone(requested), func(name string) bool {
+			b, ok := ctx.Credentials[name]
+			return ok && !b.AllowsHarness(harnessName)
+		})
+	}
+	plan, err := PlanCredentials(profile, ctx, harnessName, requested, auth)
 	return plan, s.explainSavedSelection(err)
 }
 

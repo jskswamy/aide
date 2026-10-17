@@ -490,18 +490,55 @@ default_context: work
 	}
 }
 
-func TestLauncher_AgentOverrideIncompatibleWithBindingStopsBeforeExec(t *testing.T) {
-	_, _, err := launchCredentialsAs(t, `
+// One profile serving two harnesses: default_credentials lists a
+// binding per harness, and each launch injects only its own.
+func TestLauncher_DefaultCredentialsSkipOtherHarnessBindings(t *testing.T) {
+	store, values := fixtureStore(t)
+	cfg := fmt.Sprintf(`
 profiles:
   work:
-    agent: pi
+    agent: claude
     credentials:
-      corp: {backend: age, store: work, key: corp, env: [CORP_LLM_TOKEN], harnesses: [pi]}
-    default_credentials: [corp]
+      openrouter: {backend: age, store: %[1]s, key: anthropic_api_key, harnesses: [pi]}
+      anthropic: {backend: age, store: %[1]s, key: anthropic_api_key, harnesses: [claude]}
+    default_credentials: [openrouter, anthropic]
 default_profile: work
-`, "claude", "", false)
-	if !errors.Is(err, ErrCredentialIncompatible) {
-		t.Fatalf("Launch(--agent claude) error = %v, want ErrCredentialIncompatible", err)
+`, store)
+	for _, tt := range []struct{ agent, want, notWant string }{
+		{"claude", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"},
+		{"pi", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"},
+	} {
+		t.Run(tt.agent, func(t *testing.T) {
+			env, _, err := launchCredentialsAs(t, cfg, tt.agent, "", false)
+			if err != nil {
+				t.Fatalf("Launch(--agent %s) error = %v", tt.agent, err)
+			}
+			if got, _ := envValue(env, tt.want); got != values["anthropic_api_key"] {
+				t.Errorf("%s not injected for %s", tt.want, tt.agent)
+			}
+			if _, ok := envValue(env, tt.notWant); ok {
+				t.Errorf("%s injected for %s; it belongs to the other harness", tt.notWant, tt.agent)
+			}
+		})
+	}
+}
+
+func TestPlanCredentials_ExplicitFlagIncompatibleStillFails(t *testing.T) {
+	sel := Selection{}
+	sel.SelectCredentials(SelectionInputs{Credentials: []string{"corp"}, CredentialsSet: true}, nil)
+	if _, err := sel.PlanCredentials("work", credentialProfile(), "claude", AuthAPI); !errors.Is(err, ErrCredentialIncompatible) {
+		t.Fatalf("--credential corp on claude: error = %v, want ErrCredentialIncompatible", err)
+	}
+	sel = Selection{}
+	sel.SelectCredentials(SelectionInputs{}, []string{"corp"})
+	plan, err := sel.PlanCredentials("work", credentialProfile(), "claude", AuthAPI)
+	if err != nil || len(plan.Bindings) != 0 {
+		t.Fatalf("default corp on claude: plan=%+v err=%v, want skipped", plan, err)
+	}
+	sel = Selection{}
+	sel.SelectCredentials(SelectionInputs{}, []string{"missing"})
+	if _, err := sel.PlanCredentials("work", credentialProfile(), "claude", AuthAPI); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("undefined default: error = %v, want ErrCredentialNotFound", err)
 	}
 }
 

@@ -1348,11 +1348,13 @@ Findings to carry into the spec:
 Optional; needs [Skillshare](https://skillshare.runkids.cc) installed
 and at least one skill in its source. Run it with the S3 profiles in
 place (before S4), on each platform. It checks that `skillshare sync`
-fills the dirs aide launches with and that the sandbox can read the
-linked skills (Seatbelt on macOS is the part only you can run). See
+fills the dirs aide launches with and that the auto-included
+`skillshare` capability lets the sandbox read the linked skills, and
+nothing else of Skillshare's (Seatbelt on macOS is the part only you
+can run). See
 [skillshare.md](skillshare.md).
 
-### K1. Targets match the launch dirs and the sandbox reads linked skills
+### K1. Targets match the launch dirs and the skillshare capability reads linked skills
 
 ```sh
 SS=${SKILLSHARE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/skillshare/config.yaml}
@@ -1362,8 +1364,10 @@ aide skillshare targets --write
 skillshare sync
 aide which --profile verify-a      # CLAUDE_CONFIG_DIR
 ls -l ~/.claude-verify-a/skills    # symlinks into Skillshare's source
-cd ~/aide-verify && aide --profile verify-a
-# In Claude: "list your skills" and ask it to read one SKILL.md.
+cd ~/aide-verify && aide cap list  # skillshare: enabled
+aide --profile verify-a
+# In Claude: "list your skills" and ask it to read one SKILL.md, then
+# to read Skillshare's config.yaml and to write a file into a skill.
 aide skillshare targets --write    # again: reports the file is up to date
 ```
 
@@ -1372,7 +1376,12 @@ Expected: the preview writes nothing and shows
 `~/.pi-verify-a`), the same dir `aide which` prints; `--write` keeps
 `$SS.bak` and every other key and target of yours; `skillshare sync`
 reports the `aide-verify-*` targets without errors; the sandboxed
-Claude lists and reads a Skillshare skill; the second `--write`
+Claude lists and reads a Skillshare skill but cannot read
+`config.yaml` or write the skill (both denied by the sandbox); with
+`disabled_capabilities: [skillshare]` in `~/aide-verify/.aide.yaml`
+(then `aide trust`),
+`aide cap list` shows it disabled and the skill read is denied too;
+the second `--write`
 changes nothing. No key or token appears in `$SS`
 (`grep -iE 'key|token' "$SS"` shows only your own entries).
 

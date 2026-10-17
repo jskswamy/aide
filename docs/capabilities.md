@@ -28,7 +28,7 @@ The sandbox remains deny-default. Capabilities punch precise holes in it.
 
 ## Built-in Capabilities
 
-aide ships with 23 built-in capabilities covering cloud providers, containers,
+aide ships with 24 built-in capabilities covering cloud providers, containers,
 orchestration, infrastructure tools, language runtimes, developer tools, and
 network access.
 
@@ -78,11 +78,24 @@ network access.
 | `gpg` | GPG keys and signing | `~/.gnupg/` | `GNUPGHOME` |
 | `clipboard` | Read/write access to the system clipboard (macOS only) | - | - |
 | `ccstatusline` | Read access to ccstatusline's settings, for `aide statusline` invoked from a ccstatusline Custom Command widget | `~/.config/ccstatusline/settings.json` | - |
+| `skillshare` | Read-only access to the skills, agents and plugins [Skillshare](skillshare.md) links into agent config dirs | `skills/` and `agents/` in `$XDG_CONFIG_HOME/skillshare` (else `~/.config/skillshare`), `$XDG_STATE_HOME/skillshare/plugins` (else `~/.local/state/skillshare/plugins`), and the safe `sources:` paths of Skillshare's config | - |
 
-`ccstatusline` is the one built-in that can auto-enable itself: if its
-settings file exists on disk at context-resolution time, it's added to the
-effective capability set automatically, without needing `--with ccstatusline`
-or a `capabilities:` entry. Every other built-in requires explicit opt-in.
+Two built-ins auto-enable themselves when their tool is set up:
+`ccstatusline` when its settings file exists, and `skillshare` when
+Skillshare's config dir (`$XDG_CONFIG_HOME/skillshare`, else
+`~/.config/skillshare`) exists. They are added to the effective capability
+set (and shown as enabled by `aide cap list`) without `--with` or a
+`capabilities:` entry. Opt out like any other capability: `--without
+skillshare` for a session, or `disabled_capabilities: [skillshare]` in
+`.aide.yaml`. Every other built-in requires explicit opt-in.
+
+`skillshare` grants read access only, to the symlink-resolved paths (and
+the literal path when it differs), and skips dirs that do not exist. It
+never grants Skillshare's `config.yaml`, its `hooks/`, `mcp/` or `logs/`
+state, its backups (`~/.local/share/skillshare`) or its cache. A `sources:`
+path is refused when it is relative, `$HOME`, `/`, outside `$HOME`, or
+overlaps a sensitive dir (`~/.ssh`, `~/.aws`, ...), a harness's default
+config dir, any profile's config dir, or aide's config dir.
 
 ### Network
 

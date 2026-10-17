@@ -282,6 +282,12 @@ func init() {
 			Description: "Beautiful highly customizable statusline for Claude Code CLI with powerline support, themes, and more.",
 			Readable:    []string{"~/.config/ccstatusline/settings.json"},
 		},
+		// Readable paths depend on XDG dirs and Skillshare's config, so
+		// sandbox.ResolveCapabilitiesWithVariants adds them at launch.
+		"skillshare": {
+			Name:        "skillshare",
+			Description: "Read-only access to Skillshare's skills, agents, plugins and configured sources (auto-included when Skillshare is set up).",
+		},
 
 		// Network
 		"network": {

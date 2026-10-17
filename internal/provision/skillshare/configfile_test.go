@@ -176,6 +176,7 @@ func TestConfigPath(t *testing.T) {
 	}{
 		"default":  {nil, filepath.Join(home, ".config", "skillshare", "config.yaml")},
 		"xdg":      {map[string]string{"XDG_CONFIG_HOME": "/x"}, "/x/skillshare/config.yaml"},
+		"relative": {map[string]string{"XDG_CONFIG_HOME": "x"}, filepath.Join(home, ".config", "skillshare", "config.yaml")},
 		"override": {map[string]string{"SKILLSHARE_CONFIG": "~/ss.yaml", "XDG_CONFIG_HOME": "/x"}, "/home/u/ss.yaml"},
 	} {
 		t.Run(name, func(t *testing.T) {

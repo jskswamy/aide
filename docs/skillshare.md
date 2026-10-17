@@ -134,26 +134,31 @@ existing resources.
 
 Skillshare links skills (and Claude agents) into
 `<config_dir>/skills/` and `<config_dir>/agents/` as symlinks to its
-source (`~/.config/skillshare/skills/...`). macOS Seatbelt and Linux
-Landlock check the resolved path, so for claude, codex and pi launches
-the sandbox grants read-only access to the resolved target of such a
-link, on both platforms, when all of these hold:
+source tree. macOS Seatbelt and Linux Landlock check the resolved path,
+so the sandboxed agent needs read access to that tree. The built-in
+`skillshare` [capability](capabilities.md) gives it, on both platforms
+and for every harness. It is auto-included whenever Skillshare's config
+dir (`$XDG_CONFIG_HOME/skillshare`, else `~/.config/skillshare`) exists,
+and grants read-only access, never write, to:
 
-- it resolves inside a Skillshare source root: `skills/` or `agents/`
-  under `$XDG_CONFIG_HOME/skillshare` (else `~/.config/skillshare`), or
-  a `sources.skills`, `sources.agents` or `source` path in Skillshare's
-  config file (located as in [Where](#where));
-- it is under `$HOME`;
-- it neither contains nor lies in any harness's default dir
-  (`~/.claude`, `~/.codex`, `~/.pi/agent`, ...), any profile's config
-  dir, `~/.config/aide`, or a sensitive dir (`~/.ssh`, `~/.aws`,
-  `~/.gnupg`, `~/.config/gcloud`, ...).
+- `skills/` and `agents/` in that dir;
+- `$XDG_STATE_HOME/skillshare/plugins` (else
+  `~/.local/state/skillshare/plugins`), which Claude's settings and Pi's
+  settings reference;
+- every path under `sources:` (or the older `source:`) in Skillshare's
+  config file (located as in [Where](#where)), unless it is relative,
+  `$HOME`, `/`, outside `$HOME`, or overlaps a sensitive dir (`~/.ssh`,
+  `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, ...), a harness's default
+  dir (`~/.claude`, `~/.codex`, `~/.pi/agent`, ...), any profile's
+  config dir, or aide's config dir. Such a path is skipped.
 
-The agent can write its own config dir, so it could plant a link
-there; these rules keep such a link from opening another profile's
-login or anything outside Skillshare's sources. Other harnesses get no
-linked-resource grant. Skillshare's `symlink` mode, which links the
-whole `skills/` dir, goes through the config dir's own symlink
-handling instead. Pi's default dir is granted as `~/.pi`, so links
-inside `~/.pi/agent/skills` of a launch without a profile are not
-followed.
+Each path is granted by its symlink-resolved location (and its literal
+one when that differs); missing dirs are skipped. Nothing else of
+Skillshare's is readable through the capability: not `config.yaml`, the
+`hooks/`, `mcp/` and `logs/` state, the backups in
+`~/.local/share/skillshare` or `~/.cache/skillshare`.
+
+To turn it off, add `disabled_capabilities: [skillshare]` to a project's
+`.aide.yaml`, or launch with `--without skillshare`. `aide cap list`
+shows it as enabled when it is active; `aide cap show skillshare` and
+`aide status` list the paths it grants on this machine.

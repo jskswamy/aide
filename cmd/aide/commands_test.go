@@ -4,6 +4,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -140,5 +141,37 @@ func TestResolveEffectiveCapabilities_AutoIncludesCcstatusline(t *testing.T) {
 		if !want[c] {
 			t.Errorf("unexpected capability %q in %v", c, caps)
 		}
+	}
+}
+
+// skillshare is auto-included when Skillshare's config dir exists, and
+// the project's disabled_capabilities opts out of it like any other
+// capability.
+func TestResolveEffectiveCapabilities_SkillshareAutoIncludedUnlessDisabled(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "skillshare"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Contexts:       map[string]config.Context{"work": {Capabilities: []string{"go"}}},
+		DefaultContext: "work",
+	}
+
+	_, caps, err := resolveEffectiveCapabilities(cfg, t.TempDir(), "", homeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(caps, "skillshare") {
+		t.Errorf("caps = %v, want skillshare auto-included", caps)
+	}
+
+	cfg.ProjectOverride = &config.ProjectOverride{DisabledCapabilities: []string{"skillshare"}}
+	_, caps, err = resolveEffectiveCapabilities(cfg, t.TempDir(), "", homeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(caps, "skillshare") {
+		t.Errorf("caps = %v, want skillshare dropped by disabled_capabilities", caps)
 	}
 }

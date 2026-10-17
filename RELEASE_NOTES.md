@@ -412,6 +412,23 @@ targets are listed, not written. No credential is written, and MCP
 assignments are not generated yet (see `docs/skillshare.md`). `aide
 sync` provisioning is unchanged.
 
+#### skillshare capability lets sandboxed agents read Skillshare's skills
+
+A new built-in `skillshare` capability is auto-included whenever
+Skillshare's config dir (`$XDG_CONFIG_HOME/skillshare`, else
+`~/.config/skillshare`) exists. It grants read-only access, on macOS
+and Linux, to Skillshare's `skills/` and `agents/`,
+`~/.local/state/skillshare/plugins` (or `$XDG_STATE_HOME`'s), and the
+`sources:` paths in Skillshare's config, by their symlink-resolved
+paths, so the skills Skillshare links into a config dir are readable.
+A `sources:` path that is relative, `$HOME`, `/`, outside `$HOME`, or
+overlaps a sensitive dir, a harness default dir, a profile's config dir
+or aide's config dir is not granted. Skillshare's `config.yaml`,
+hooks, MCP state, logs, backups and cache are never granted. Opt out
+with `disabled_capabilities: [skillshare]` in `.aide.yaml` or
+`--without skillshare`. `disabled_capabilities:` now also stops the
+`ccstatusline` capability's auto-inclusion.
+
 ### 🧰 CLI
 
 #### --format json adds profile keys beside context keys

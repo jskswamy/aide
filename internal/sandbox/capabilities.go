@@ -10,10 +10,14 @@ package sandbox
 import (
 	"fmt"
 	"io/fs"
+	"os"
+	"slices"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/consent"
+	"github.com/jskswamy/aide/internal/provision/skillshare"
+	"github.com/jskswamy/aide/internal/sliceutil"
 )
 
 // ApplyOverrides merges external overrides (from capabilities or other
@@ -91,6 +95,8 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 		return nil, config.SandboxOverrides{}, nil, err
 	}
 
+	AddSkillsharePaths(capSet.Capabilities, cfg)
+
 	provenance := make(map[string]capability.Provenance)
 	// For each resolved capability, if its defining built-in (or user
 	// def) has Variants, run selection and replace the resolved entry
@@ -120,6 +126,25 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 		capSet.Capabilities[i] = *merged
 	}
 	return capSet, capSet.ToSandboxOverrides(), provenance, nil
+}
+
+// AddSkillsharePaths fills in the read paths of every capability in caps
+// that is or extends "skillshare": they depend on XDG dirs, Skillshare's
+// config and the profile dirs in cfg its sources: must not reach, so the
+// built-in cannot declare them. Every caller that resolves capabilities
+// for a launch or for display calls it, so what `aide cap show` and
+// `aide status` print is what the sandbox grants. Without a home dir it
+// adds nothing.
+func AddSkillsharePaths(caps []capability.ResolvedCapability, cfg *config.Config) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return
+	}
+	for i := range caps {
+		if rc := &caps[i]; slices.Contains(rc.Sources, "skillshare") {
+			rc.Readable = sliceutil.Dedup(append(rc.Readable, skillshare.ReadableDirs(cfg, home, os.Getenv)...))
+		}
+	}
 }
 
 // ResolveCapabilities is a backward-compatible wrapper that runs the

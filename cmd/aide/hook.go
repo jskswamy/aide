@@ -142,7 +142,7 @@ func buildHookEntries(desired []provision.Hook, managed []provision.ManagedHook)
 }
 
 func runHookList(cmd *cobra.Command, contextName string) error {
-	env, err := loadProvisionEnv(contextName)
+	env, err := loadProvisionEnv(contextName, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -288,7 +288,7 @@ func runHookAdd(out io.Writer, in io.Reader, event, matcher, command, _ string) 
 }
 
 func runHookRemove(out io.Writer, event, matcher, command, contextName string) error {
-	env, err := loadProvisionEnv(contextName)
+	env, err := loadProvisionEnv(contextName, out)
 	if err != nil {
 		return err
 	}

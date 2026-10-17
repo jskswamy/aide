@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"sort"
 	"strconv"
@@ -17,7 +16,6 @@ import (
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
-	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -118,27 +116,10 @@ func sandboxShowCmd() *cobra.Command {
 			}
 			cwd := env.CWD()
 			cfg := env.Config()
-			// Show what a launch applies: untrusted .aide.yaml files
-			// contribute nothing.
-			if _, err := launcher.GateProjectConfig(cfg); err != nil {
-				return err
-			}
-
-			// Resolve context
-			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
+			homeDir, _ := os.UserHomeDir()
+			rc, err := sandboxSelection(cmd, cfg, cwd, homeDir, contextName)
 			if err != nil {
-				return fmt.Errorf("resolving profile: %w", err)
-			}
-
-			if contextName != "" {
-				ctx, ok := cfg.Contexts[contextName]
-				if !ok {
-					return fmt.Errorf("context %q not found", contextName)
-				}
-				rc = &aidectx.ResolvedContext{
-					Name:    contextName,
-					Context: ctx,
-				}
+				return err
 			}
 
 			// Resolve sandbox ref
@@ -167,7 +148,6 @@ func sandboxShowCmd() *cobra.Command {
 			}
 			sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
 
-			homeDir, _ := os.UserHomeDir()
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
 
@@ -271,27 +251,10 @@ func sandboxTestCmd() *cobra.Command {
 			}
 			cwd := env.CWD()
 			cfg := env.Config()
-			// Show what a launch applies: untrusted .aide.yaml files
-			// contribute nothing.
-			if _, err := launcher.GateProjectConfig(cfg); err != nil {
-				return err
-			}
-
-			// Resolve context
-			rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
+			homeDir, _ := os.UserHomeDir()
+			rc, err := sandboxSelection(cmd, cfg, cwd, homeDir, contextName)
 			if err != nil {
-				return fmt.Errorf("resolving profile: %w", err)
-			}
-
-			if contextName != "" {
-				ctx, ok := cfg.Contexts[contextName]
-				if !ok {
-					return fmt.Errorf("context %q not found", contextName)
-				}
-				rc = &aidectx.ResolvedContext{
-					Name:    contextName,
-					Context: ctx,
-				}
+				return err
 			}
 
 			// Resolve sandbox ref
@@ -313,7 +276,6 @@ func sandboxTestCmd() *cobra.Command {
 			}
 			sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
 
-			homeDir, _ := os.UserHomeDir()
 			tempDir := os.TempDir()
 			projectRoot := aidectx.ProjectRoot(cwd)
 
@@ -339,16 +301,13 @@ func sandboxTestCmd() *cobra.Command {
 			}
 
 			// Project the context's env, with the profile's own config
-			// dir injected as at launch, into policy.Env so the agent
-			// module's EnvLookup can see CLAUDE_CONFIG_DIR and similar
-			// per-profile overrides. Without this, the test command's
-			// diagnostic output diverges from what the launcher
-			// actually generates at run time.
-			ctxEnv, err := provision.InjectProfileEnv(cfg.HarnessOf(rc.Context.Agent), rc.Context, maps.Clone(rc.Context.Env), homeDir)
-			if err != nil {
-				return fmt.Errorf("profile %q: %w", rc.Name, err)
-			}
-			if len(ctxEnv) > 0 {
+			// dir injected as at launch (sandboxSelection), into
+			// policy.Env so the agent module's EnvLookup can see
+			// CLAUDE_CONFIG_DIR and similar per-profile overrides.
+			// Without this, the test command's diagnostic output
+			// diverges from what the launcher actually generates at
+			// run time.
+			if ctxEnv := rc.Context.Env; len(ctxEnv) > 0 {
 				envSlice := make([]string, 0, len(ctxEnv))
 				for k, v := range ctxEnv {
 					envSlice = append(envSlice, k+"="+homepath.Expand(v, homeDir))
@@ -371,6 +330,20 @@ func sandboxTestCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
 	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
 	return cmd
+}
+
+// sandboxSelection resolves the profile and harness a launch from cwd
+// would use, with that harness's profile env injected
+// (previewSelection), and prints the notices a launch would print.
+func sandboxSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir, profile string) (*aidectx.ResolvedContext, error) {
+	p, err := previewSelection(cmd, cfg, cwd, homeDir, &selectionFlags{profile: profile})
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range p.notices {
+		fmt.Fprintf(cmd.ErrOrStderr(), "aide: note: %s\n", n)
+	}
+	return p.rc, nil
 }
 
 type sandboxProfileEntry struct {

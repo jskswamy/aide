@@ -344,6 +344,12 @@ change saved preferences.
   and `aide statusline`. Giving both with different names is an error.
 - `aide prompt` and `aide statusline` show the harness saved for the
   repository, as a launch would run it.
+- `aide sandbox show` and `aide sandbox test` select the profile and
+  harness the way a launch does, including the harness saved for the
+  repository, and print the notices a launch would print. `aide sync`,
+  `aide adopt`, `aide plugin list`, `aide mcp list` and `aide hook
+  list|remove` still act on the profile's own agent, and print a note
+  when the repository saved a different harness.
 - Without a `config.yaml`, `--profile`, `--credential` and `--auth api`
   stop with a pointer to `aide init`; `--auth login` is accepted, since
   without a config aide injects nothing and the harness uses its own

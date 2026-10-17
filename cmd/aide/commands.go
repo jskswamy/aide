@@ -161,9 +161,8 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 // of the matched context — this answers "what's actually active here."
 //
 // When contextName is non-empty, it looks up that context by name
-// directly, with no project-override merge, matching the existing
-// precedent in sandboxTestCmd's --context handling: project overrides
-// are tied to cwd, not to an arbitrary named context being inspected.
+// directly, with no project-override merge: project overrides are
+// tied to cwd, not to an arbitrary named context being inspected.
 //
 // The result also auto-includes "ccstatusline" and "skillshare" when
 // their tools are set up (capability.AutoInclude), mirroring what

@@ -14,10 +14,12 @@ import (
 	"text/tabwriter"
 
 	"github.com/jskswamy/aide/internal/config"
+	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
+	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/spf13/cobra"
@@ -201,7 +203,10 @@ type provisionEnv struct {
 	homeDir     string
 }
 
-func loadProvisionEnv(contextName string) (*provisionEnv, error) {
+// loadProvisionEnv resolves the profile a provisioning command acts on.
+// It acts on the profile's own agent; when this repository saved
+// another harness (aide project set --agent), it says so on errOut.
+func loadProvisionEnv(contextName string, errOut io.Writer) (*provisionEnv, error) {
 	cfg, name, ctx, err := resolveContextForMutation(contextName)
 	if err != nil {
 		return nil, err
@@ -217,6 +222,11 @@ func loadProvisionEnv(contextName string) (*provisionEnv, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("resolving working directory: %w", err)
+	}
+	if saved, err := launcher.SavedPreference(prefs.DefaultPath(home), name, aidectx.GitRemotes(cwd)); err == nil &&
+		saved.Harness != "" && cfg.HarnessOf(saved.Harness) != cfg.HarnessOf(ctx.Agent) {
+		fmt.Fprintf(errOut, "aide: note: this repository's saved harness is %q, but this command acts on profile %q's agent %q\n",
+			saved.Harness, name, ctx.Agent)
 	}
 	pCtx, err := resolveProvisionContext(cfg, name, ctx, home, cwd)
 	if err != nil {
@@ -240,7 +250,7 @@ func loadProvisionEnv(contextName string) (*provisionEnv, error) {
 }
 
 func runPluginList(cmd *cobra.Command, contextName string) error {
-	env, err := loadProvisionEnv(contextName)
+	env, err := loadProvisionEnv(contextName, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -401,7 +411,7 @@ func marketplaceNote(declared map[string]provision.Marketplace, installed map[st
 }
 
 func runMCPList(cmd *cobra.Command, contextName string) error {
-	env, err := loadProvisionEnv(contextName)
+	env, err := loadProvisionEnv(contextName, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}

@@ -130,6 +130,11 @@ type Context struct {
 	// to Runner.Run; subprocesses inherit the parent process env first
 	// and Env values then override per-key.
 	Env map[string]string
+	// ScrubEnv names the user's scrub_env:, credential binding and
+	// custom provider variables (exact, or a prefix ending in "*")
+	// that subprocesses run for this context drop on top of the
+	// built-in credential registry.
+	ScrubEnv []string
 }
 
 // Provisioner is implemented per agent. The driver knows how to talk

@@ -27,7 +27,7 @@ import (
 func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map[string]provision.MCPServer, error) {
 	out := map[string]provision.MCPServer{}
 	for _, name := range names {
-		stdout, _, code, err := d.runner.Run(context.Background(), ctx.Env, "claude", "mcp", "get", name)
+		stdout, _, code, err := d.runner.Run(context.Background(), ctx, "claude", "mcp", "get", name)
 		if err != nil {
 			// Binary missing or unrunnable — treat all queries as misses
 			// rather than spamming the same error per name.
@@ -58,7 +58,7 @@ func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map
 // --transport http` writes, 2026-05-21), so there's no `-- arg`
 // separator parsing or `--scope` positional ambiguity.
 func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) error {
-	return provision.InstallMCP(context.Background(), d.runner, ctx.Env, "claude", s,
+	return provision.InstallMCP(context.Background(), d.runner, ctx, "claude", s,
 		func(s provision.MCPServer) ([]string, error) {
 			body, err := claudeMCPAddJSONBody(s)
 			if err != nil {
@@ -80,7 +80,7 @@ func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) 
 // (it says "No ... found"), so the claude-specific phrase is
 // appended explicitly.
 func (d *Driver) UninstallMCPServer(ctx provision.Context, name string) error {
-	return provision.UninstallMCP(context.Background(), d.runner, ctx.Env, "claude", name,
+	return provision.UninstallMCP(context.Background(), d.runner, ctx, "claude", name,
 		[]string{"mcp", "remove", name, "-s", "user"},
 		"No user-scoped MCP server found", "No MCP server found")
 }

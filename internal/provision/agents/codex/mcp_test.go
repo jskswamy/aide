@@ -21,7 +21,7 @@ type scriptedResponse struct {
 	err    error
 }
 
-func (r *scriptedRunner) Run(_ context.Context, _ map[string]string, name string, args ...string) (string, string, int, error) {
+func (r *scriptedRunner) Run(_ context.Context, _ provision.Context, name string, args ...string) (string, string, int, error) {
 	call := append([]string{name}, args...)
 	r.calls = append(r.calls, call)
 	key := name

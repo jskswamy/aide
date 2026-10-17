@@ -26,7 +26,7 @@ import (
 func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map[string]provision.MCPServer, error) {
 	out := map[string]provision.MCPServer{}
 	for _, name := range names {
-		stdout, stderr, code, err := d.runner.Run(context.Background(), ctx.Env, "codex", "mcp", "get", name, "--json")
+		stdout, stderr, code, err := d.runner.Run(context.Background(), ctx, "codex", "mcp", "get", name, "--json")
 		if err != nil {
 			return map[string]provision.MCPServer{}, nil
 		}
@@ -57,7 +57,7 @@ func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map
 // the config. We pre-remove (tolerating not-found) so re-syncs and
 // rollback replays succeed.
 func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) error {
-	return provision.InstallMCP(context.Background(), d.runner, ctx.Env, "codex", s,
+	return provision.InstallMCP(context.Background(), d.runner, ctx, "codex", s,
 		func(s provision.MCPServer) ([]string, error) {
 			args := []string{"mcp", "add", s.Key}
 			if s.URL != "" && s.Command == "" {
@@ -80,7 +80,7 @@ func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) 
 // "not found" / "not installed" / "not configured" substrings plus a
 // codex-specific "no MCP server" pattern as a defensive guess.
 func (d *Driver) UninstallMCPServer(ctx provision.Context, name string) error {
-	return provision.UninstallMCP(context.Background(), d.runner, ctx.Env, "codex", name,
+	return provision.UninstallMCP(context.Background(), d.runner, ctx, "codex", name,
 		[]string{"mcp", "remove", name},
 		"no MCP server", "No MCP server")
 }

@@ -80,12 +80,12 @@ func resolveProvisionContext(cfg *config.Config, name string, ctx config.Context
 	// is where the user's scrub_env:, binding names and Codex custom
 	// provider names reach provisioning subprocesses.
 	scrubNames := append(cfg.CredentialScrubNames(), launcher.CodexProviderEnvNames(cfg, homeDir, os.Getenv)...)
-	provision.SetScrubEnv(scrubNames)
 	harnessName := cfg.HarnessOf(ctx.Agent)
 	pCtx, err := provision.ResolveContext(name, harnessName, ctx, homeDir, projectRoot, resolveContextEnv(ctx, homeDir))
 	if err != nil {
 		return pCtx, err
 	}
+	pCtx.ScrubEnv = scrubNames
 	inheritProfileEnv(&pCtx, harnessName)
 	if _, disabled, err := sandbox.ResolveSandboxRef(ctx.Sandbox, cfg.Sandboxes); err != nil || disabled {
 		return pCtx, nil

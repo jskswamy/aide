@@ -22,8 +22,8 @@ var DefaultTolerateStderr = []string{"not installed", "not found", "not configur
 //
 // Codex is intentionally not migrated to this helper: it edits TOML
 // directly and never shells out.
-func RunCLI(ctx context.Context, r Runner, env map[string]string, opDesc string, bin string, args []string, tolerate ...string) error {
-	_, stderr, code, err := r.Run(ctx, env, bin, args...)
+func RunCLI(ctx context.Context, r Runner, pctx Context, opDesc string, bin string, args []string, tolerate ...string) error {
+	_, stderr, code, err := r.Run(ctx, pctx, bin, args...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", opDesc, err)
 	}

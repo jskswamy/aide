@@ -23,7 +23,7 @@ import (
 // Binary missing → (empty, nil), matching the InstalledPlugins
 // convention.
 func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map[string]provision.MCPServer, error) {
-	stdout, stderr, code, err := d.runner.Run(context.Background(), ctx.Env, "gemini", "mcp", "list")
+	stdout, stderr, code, err := d.runner.Run(context.Background(), ctx, "gemini", "mcp", "list")
 	if err != nil {
 		return map[string]provision.MCPServer{}, nil
 	}
@@ -50,7 +50,7 @@ func (d *Driver) InstalledMCPServers(ctx provision.Context, names []string) (map
 // to make re-install idempotent (gemini errors when a name in the same
 // scope already exists).
 func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) error {
-	return provision.InstallMCP(context.Background(), d.runner, ctx.Env, "gemini", s,
+	return provision.InstallMCP(context.Background(), d.runner, ctx, "gemini", s,
 		func(s provision.MCPServer) ([]string, error) {
 			args := []string{"mcp", "add", "--scope", "user"}
 			if s.URL != "" && s.Command == "" {
@@ -77,7 +77,7 @@ func (d *Driver) InstallMCPServer(ctx provision.Context, s provision.MCPServer) 
 // uses the phrase "not found" in its stderr for missing entries,
 // which DefaultTolerateStderr already covers.
 func (d *Driver) UninstallMCPServer(ctx provision.Context, name string) error {
-	return provision.UninstallMCP(context.Background(), d.runner, ctx.Env, "gemini", name,
+	return provision.UninstallMCP(context.Background(), d.runner, ctx, "gemini", name,
 		[]string{"mcp", "remove", name, "-s", "user"})
 }
 

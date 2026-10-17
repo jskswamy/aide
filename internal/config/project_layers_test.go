@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -115,4 +116,126 @@ func TestRewriteRelativePaths(t *testing.T) {
 	check("WritableExtra", sb.WritableExtra, []string{filepath.Join(root, "cache"), "~/.npm", "{{ .project_root }}/x", "$HOME/y"})
 	check("ReadableExtra", sb.ReadableExtra, []string{filepath.Join(root, "../shared")})
 	check("DeniedExtra", sb.DeniedExtra, []string{filepath.Join(root, "secrets/*.pem")})
+}
+
+func TestDropProjectConfig_ClearsEverything(t *testing.T) {
+	c := &Config{
+		ProjectOverride:       &ProjectOverride{Agent: "claude"},
+		ProjectLayers:         []ProjectLayer{{Path: "/a/.aide.yaml"}},
+		ProjectConfigErr:      errors.New("boom"),
+		ProjectConfigWarnings: []string{"warn"},
+	}
+	c.DropProjectConfig()
+	if c.ProjectOverride != nil || c.ProjectLayers != nil || c.ProjectConfigErr != nil || c.ProjectConfigWarnings != nil {
+		t.Errorf("DropProjectConfig left state behind: %+v", c)
+	}
+}
+
+func TestProjectFileSetting_LastAcceptedLayerWithTheSettingWins(t *testing.T) {
+	hasAgent := func(po *ProjectOverride) bool { return po.Agent != "" }
+	c := &Config{
+		ProjectConfigPath: "/fallback/.aide.yaml",
+		ProjectLayers: []ProjectLayer{
+			{Path: "/main/.aide.yaml", Override: &ProjectOverride{Agent: "claude"}},
+			{Path: "/wt/.aide.yaml", Override: &ProjectOverride{}},
+			{Path: "/rejected/.aide.yaml", Override: &ProjectOverride{Agent: "codex"}, Rejected: true},
+		},
+	}
+	if got := c.ProjectFileSetting(hasAgent); got != "/main/.aide.yaml" {
+		t.Errorf("ProjectFileSetting = %q, want the last accepted layer that sets it", got)
+	}
+	if got := c.ProjectFileSetting(func(*ProjectOverride) bool { return false }); got != "/fallback/.aide.yaml" {
+		t.Errorf("ProjectFileSetting with no match = %q, want ProjectConfigPath", got)
+	}
+}
+
+func TestMergeProjectOverrides_NilSides(t *testing.T) {
+	if got := MergeProjectOverrides(nil, nil); got != nil {
+		t.Errorf("both nil = %+v, want nil", got)
+	}
+	po := &ProjectOverride{Agent: "claude", MCPServers: []string{"a"}}
+	if got := MergeProjectOverrides(nil, po); got.Agent != "claude" {
+		t.Errorf("nil base: Agent = %q", got.Agent)
+	}
+	if got := MergeProjectOverrides(po, nil); got.Agent != "claude" {
+		t.Errorf("nil top: Agent = %q", got.Agent)
+	}
+}
+
+func TestMergeProjectOverrides_MCPServersAndVariants(t *testing.T) {
+	base := &ProjectOverride{MCPServers: []string{"a"}, CapabilityVariants: map[string][]string{"go": {"1.22"}, "node": {"20"}}}
+	top := &ProjectOverride{MCPServers: []string{"b"}, CapabilityVariants: map[string][]string{"go": {"1.23"}}}
+	got := MergeProjectOverrides(base, top)
+	if !reflect.DeepEqual(got.MCPServers, []string{"b"}) {
+		t.Errorf("MCPServers = %v, want the local list to replace", got.MCPServers)
+	}
+	want := map[string][]string{"go": {"1.23"}, "node": {"20"}}
+	if !reflect.DeepEqual(got.CapabilityVariants, want) {
+		t.Errorf("CapabilityVariants = %v, want %v", got.CapabilityVariants, want)
+	}
+}
+
+func TestMergeProjectOverrides_SandboxFields(t *testing.T) {
+	no, yes := boolPtr(false), boolPtr(true)
+	base := &ProjectOverride{Sandbox: &SandboxPolicy{
+		Writable: []string{"/w"}, WritableExtra: []string{"/we"}, Network: &NetworkPolicy{}, AllowSubprocess: yes,
+	}}
+	top := &ProjectOverride{Sandbox: &SandboxPolicy{
+		Writable: []string{"/w2"}, Readable: []string{"/r"}, Denied: []string{"/d"}, Guards: []string{"g"},
+		WritableExtra: []string{"/we2"}, ReadableExtra: []string{"/re"}, DeniedExtra: []string{"/de"},
+		GuardsExtra: []string{"ge"}, Unguard: []string{"ug"}, Allow: []string{"al"},
+		AllowSubprocess: no, CleanEnv: yes,
+	}}
+	got := MergeProjectOverrides(base, top).Sandbox
+	if !reflect.DeepEqual(got.Writable, []string{"/w2"}) || !reflect.DeepEqual(got.WritableExtra, []string{"/we", "/we2"}) {
+		t.Errorf("writable: replace/extend wrong: %v %v", got.Writable, got.WritableExtra)
+	}
+	if !reflect.DeepEqual(got.Readable, []string{"/r"}) || !reflect.DeepEqual(got.Denied, []string{"/d"}) || !reflect.DeepEqual(got.Guards, []string{"g"}) {
+		t.Errorf("replaced lists wrong: %v %v %v", got.Readable, got.Denied, got.Guards)
+	}
+	if !reflect.DeepEqual(got.ReadableExtra, []string{"/re"}) || !reflect.DeepEqual(got.DeniedExtra, []string{"/de"}) ||
+		!reflect.DeepEqual(got.GuardsExtra, []string{"ge"}) || !reflect.DeepEqual(got.Unguard, []string{"ug"}) || !reflect.DeepEqual(got.Allow, []string{"al"}) {
+		t.Errorf("extra lists wrong: %+v", got)
+	}
+	if got.Network == nil {
+		t.Error("inherited Network was dropped")
+	}
+	if got.AllowSubprocess == nil || *got.AllowSubprocess || got.CleanEnv == nil || !*got.CleanEnv {
+		t.Errorf("scalar pointers: AllowSubprocess=%v CleanEnv=%v", got.AllowSubprocess, got.CleanEnv)
+	}
+}
+
+func TestMergeProjectOverrides_SandboxOneSided(t *testing.T) {
+	p := &SandboxPolicy{WritableExtra: []string{"/x"}}
+	if got := MergeProjectOverrides(&ProjectOverride{Sandbox: p}, &ProjectOverride{}).Sandbox; !reflect.DeepEqual(got.WritableExtra, []string{"/x"}) || got == p {
+		t.Errorf("inherited-only sandbox: want a copy of the policy, got %+v (same pointer: %v)", got, got == p)
+	}
+	off := &SandboxPolicy{Disabled: true}
+	if got := MergeProjectOverrides(&ProjectOverride{Sandbox: p}, &ProjectOverride{Sandbox: off}).Sandbox; !got.Disabled {
+		t.Error("sandbox: false in the worktree must stand")
+	}
+}
+
+func TestMergeProjectOverrides_PreferencesAndStatusline(t *testing.T) {
+	yes, no := boolPtr(true), boolPtr(false)
+	base := &ProjectOverride{
+		Preferences: &Preferences{ShowInfo: yes, InfoStyle: "compact", Yolo: yes},
+		Statusline:  &StatuslineConfig{Order: []string{"sandbox"}},
+	}
+	top := &ProjectOverride{
+		Preferences: &Preferences{ShowInfo: no, InfoDetail: "full"},
+		Statusline:  &StatuslineConfig{Order: []string{"caps", "sandbox"}},
+	}
+	got := MergeProjectOverrides(base, top)
+	p := got.Preferences
+	if p.ShowInfo == nil || *p.ShowInfo || p.InfoStyle != "compact" || p.InfoDetail != "full" || p.Yolo == nil || !*p.Yolo {
+		t.Errorf("Preferences = %+v", p)
+	}
+	if !reflect.DeepEqual(got.Statusline.Order, []string{"caps", "sandbox"}) {
+		t.Errorf("Statusline.Order = %v, want the local order", got.Statusline.Order)
+	}
+	// A side with neither set stays unset.
+	if m := MergeProjectOverrides(&ProjectOverride{}, &ProjectOverride{}); m.Preferences != nil || m.Statusline != nil {
+		t.Errorf("empty merge invented preferences/statusline: %+v", m)
+	}
 }

@@ -659,3 +659,42 @@ func TestLoad_DistinctEnvRedirectedDirsLoad(t *testing.T) {
 		t.Fatalf("Load() error = %v, want nil (distinct or templated dirs)", err)
 	}
 }
+
+// The profile told to keep the global login is one that can select a
+// dir, so the native profile is never asked to move off it because of
+// a default profile whose agent cannot.
+func TestGlobalLoginError_KeepsAProfileThatCanSelectADir(t *testing.T) {
+	cfg, err := loadYAML(t, "profiles:\n  a: {agent: aider}\n  w: {agent: claude}\ndefault_profile: a\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	err = cfg.GlobalLoginError("a", "claude", home)
+	if !errors.Is(err, ErrProfileDirAlias) {
+		t.Fatalf("a --agent claude: err = %v, want ErrProfileDirAlias", err)
+	}
+	if !strings.Contains(err.Error(), `To keep "w"`) || strings.Contains(err.Error(), "config_dir_name: w") {
+		t.Errorf("err = %v, want w kept on the login and a told to move", err)
+	}
+}
+
+// A derived dir name is taken when another profile already runs a
+// harness from the dir it would derive, however that profile got there.
+func TestIsolateNewProfile_DirNameTakenByResolvedDir(t *testing.T) {
+	for name, other := range map[string]Context{
+		"env dir":    {Agent: "claude", Env: map[string]string{"CLAUDE_CONFIG_DIR": "~/.claude-new"}},
+		"pinned dir": {Agent: "codex", Profile: "x", ConfigDirs: map[string]string{"codex": "~/.codex-new"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cfg := &Config{ProfileSchema: true, Contexts: map[string]Context{
+				"global": {Agent: "claude"},
+				"other":  other,
+			}}
+			ctx := Context{Agent: "claude"}
+			if cfg.IsolateNewProfile("new", &ctx); ctx.Profile != "new-2" {
+				t.Errorf("config_dir_name = %q, want new-2", ctx.Profile)
+			}
+		})
+	}
+}

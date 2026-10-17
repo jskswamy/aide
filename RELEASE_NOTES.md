@@ -24,7 +24,7 @@ key exported in your shell, the agent now falls back to its own login.
   patterns) to the scrubbed list.
 - A context that selects its own config dir (`profile:`,
   `config_dir_name:`, `config_dir:`, `config_dirs:`) also drops exported
-  harness dir redirects (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  agent dir redirects (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
   `PI_CODING_AGENT_DIR`, ...) so they cannot bypass the profile.
 - `aide sync` subprocesses drop the same names, `scrub_env:` included.
 - Without a `config.yaml` (passthrough), only `SOPS_AGE_KEY` and
@@ -73,7 +73,7 @@ settable in a profile's `env:`: `AZURE_OPENAI_BASE_URL`,
 `AZURE_OPENAI_RESOURCE_NAME`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`,
 `AZURE_OPENAI_API_VERSION`, `CLOUDFLARE_ACCOUNT_ID`,
 `CLOUDFLARE_GATEWAY_ID` and `GOOGLE_CLOUD_LOCATION`. This applies to
-every harness: if another tool the agent runs needed an exported
+every agent: if another tool the agent runs needed an exported
 `HF_TOKEN` or `CLOUDFLARE_API_KEY`, bind it with `credentials:`.
 
 A profile launch that selects its own config dir also drops an
@@ -159,8 +159,8 @@ variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`,
 `COPILOT_HOME`, `GEMINI_HOME`), or another variable that moves an
 agent's config or state (`AMP_HOME`, `CURSOR_CONFIG_DIR`,
 `GOOSE_PATH_ROOT`, `OPENCODE_CONFIG`, `PI_CODING_AGENT_SESSION_DIR`),
-now stops the launch with `repository config
-cannot choose a harness's config dir`: that dir holds the login, so a
+now stops the launch with a `repository config cannot choose`
+error: that agent config dir holds the login, so a
 repository could otherwise pick, or share, the login a profile runs
 under. `aide env set` refuses those names without `--global`. Give the
 profile its dir in your aide config (`config_dir_name:`, `config_dir:`
@@ -261,7 +261,7 @@ and writes the new file atomically.
   (`ANTHROPIC_API_KEY: "{{ .secrets.anthropic_key }}"`) become
   `credentials:` bindings selected by `default_credentials:`. Custom
   names are limited to the profile's agent with `harnesses:` (a
-  profile whose agent is not a known harness stops with a message to
+  profile whose agent is not a known agent stops with a message to
   move that key by hand). Values are never read or printed. A key that
   cannot be translated stops the migration with the replacement block
   to write.
@@ -319,7 +319,7 @@ profiles:
   undefined, its store or key is missing, or `--credential` names one
   that does not allow the launching agent. `default_credentials:` and a
   saved selection skip bindings restricted to other agents, so one
-  profile can list a key for each harness it runs.
+  profile can list a key for each agent it runs.
 - A config with a malformed binding fails to load with `invalid
   credentials` (backend other than `age`, missing `store:`/`key:`,
   custom name without `env:`/`harnesses:`, unknown agent, undefined
@@ -331,7 +331,7 @@ profiles:
 - `harnesses:` matches the agent an `agents:` entry runs, so an alias
   such as `my-claude` with `binary: claude` counts as `claude`.
 - Routes: `for: {claude: {env: [...], set: {...}}, pi: {...}}` gives one
-  binding a route per harness, carrying the endpoint and provider
+  binding a route per agent, carrying the endpoint and provider
   switches with the key, so `--agent` alone picks the right credential.
   A binding without `store:`/`key:` is keyless (e.g. Bedrock with
   `capabilities: [aws]`). A provider endpoint in a profile's `env:`
@@ -339,7 +339,7 @@ profiles:
   selected route sets it (`provider endpoint outside the credential
   route`); `aide profile migrate` moves legacy endpoints into the
   route. `default_credentials:` that collide on a variable for the
-  same harness fail to load, and a harness with no route prints a note
+  same agent fail to load, and an agent with no route prints a note
   that it uses its own login.
 - `aide --diagnose` lists the secret stores of the selected bindings
   (paths only).
@@ -354,17 +354,17 @@ profiles:
 matched for the directory. `aide --credential <name>` (repeatable)
 injects those credential bindings for this run, replacing the saved
 and default selection rather than adding to it; `--credential=` selects
-none. `aide --auth login` injects no credentials so the harness uses
+none. `aide --auth login` injects no credentials so the agent uses
 its own login; `--auth api` is the default. None of these flags ever
 change saved preferences.
 
 - Precedence: profile from `--profile`, else match rules, else
-  `default_profile`. Harness from `--agent`, else the repository's
+  `default_profile`. Agent from `--agent`, else the repository's
   saved preference (`aide project set`), else a trusted `.aide.yaml`
   `agent:`, else the profile's `agent:`. Credentials from
   `--credential`/`--auth login`, else the saved selection, else
-  `default_credentials:`. A note is printed when a saved harness
-  overrides a different `.aide.yaml` harness.
+  `default_credentials:`. A note is printed when a saved agent
+  overrides a different `.aide.yaml` agent.
 - `aide which` and `aide status` accept the same four flags and report
   how each choice was made: `--format json` gains `profile_source`
   (`flag`, `match`, `default`, `prompt`), `harness_source` (`flag`,
@@ -372,37 +372,37 @@ change saved preferences.
   `auth`, `preference`, `profile`) and `credential_selection` (binding
   names only); `aide status` also gains `notices` and a `Selected by:`
   line.
-- `--profile`, `--agent` and `--credential` complete profile, harness
+- `--profile`, `--agent` and `--credential` complete profile, agent
   and credential names in shells; `--auth` completes `api`/`login`.
 - Read-only commands that take `--context` also take `--profile` for
   the same selection: `aide cap list`, `aide cap audit`, `aide env
   list`, `aide hook list`, `aide plugin list`, `aide mcp list`,
   `aide sandbox show`, `aide sandbox test`, `aide sync`, `aide adopt`
   and `aide statusline`. Giving both with different names is an error.
-- `aide prompt` and `aide statusline` show the harness saved for the
+- `aide prompt` and `aide statusline` show the agent saved for the
   repository, as a launch would run it. They select exactly as a
-  launch does: a saved harness the launch would reject is not shown,
+  launch does: a saved agent the launch would reject is not shown,
   and `aide statusline --profile <name>` applies the trusted
   `.aide.yaml` the way `aide --profile <name>` does, so a malformed
   `.aide.yaml` now makes it fail as the launch would.
 - `aide sandbox show` and `aide sandbox test` select the profile and
-  harness the way a launch does, including the harness saved for the
+  agent the way a launch does, including the agent saved for the
   repository, and print the notices a launch would print. `aide sync`,
   `aide adopt`, `aide plugin list`, `aide mcp list` and `aide hook
   list|remove` still act on the profile's own agent, and print a note
-  when the repository saved a different harness.
+  when the repository saved a different agent.
 - Without a `config.yaml`, `--profile`, `--credential` and `--auth api`
   stop with a pointer to `aide init`; `--auth login` is accepted, since
-  without a config aide injects nothing and the harness uses its own
+  without a config aide injects nothing and the agent uses its own
   login.
 - When no profile matches and none is the default, the error now
   suggests `aide --profile <name>` for a one-off launch (it suggested
   `aide use`, which saves a match rule).
 
-#### aide project saves a repository's harness and credentials
+#### aide project saves a repository's agent and credentials
 
 `aide project set --agent pi --credential openrouter` saves this
-repository's default harness and credential selection under the
+repository's default agent and credential selection under the
 current profile (or `--profile <name>`). `aide project clear [--agent]
 [--credential]` removes them and `aide project show [--format json]`
 prints them.
@@ -413,7 +413,7 @@ prints them.
   clones share them under one profile but not across profiles. They
   hold names only, never secret values or models, and never change
   `.aide.yaml` or `config.yaml`.
-- `set` changes only the fields given and refuses a harness or
+- `set` changes only the fields given and refuses an agent or
   credential the profile cannot launch. `--no-credentials` saves an
   explicit empty selection (native login); `clear --credential` unsets
   the selection so `default_credentials:` applies again.
@@ -428,7 +428,7 @@ prints them.
 - `aide which`, `aide status`, `aide project set` and the statusline
   apply the same `.aide.yaml` trust gate as a launch, so an untrusted
   or denied file contributes nothing to what they report or check.
-  `aide statusline --profile <name>` also shows the saved harness.
+  `aide statusline --profile <name>` also shows the saved agent.
 
 #### Linked git worktrees inherit the main checkout's .aide.yaml
 
@@ -497,15 +497,15 @@ release are asked for again once.
 #### aide skillshare targets points Skillshare at your profile dirs
 
 `aide skillshare targets` generates Skillshare account targets
-(`agent:` + `config_dir:`), named `aide-<profile>-<harness>`, for every
-profile and harness (`claude`, `codex`, `pi`) that launches from a
+(`agent:` + `config_dir:`), named `aide-<profile>-<agent>`, for every
+profile and agent (`claude`, `codex`, `pi`) that launches from a
 config dir of its own, using the same dirs the launch uses. It
 previews by default; `--write` merges them into Skillshare's config
 (`$SKILLSHARE_CONFIG`, else `$XDG_CONFIG_HOME/skillshare/config.yaml`,
 else `~/.config/skillshare/config.yaml`) atomically with a `.bak`,
 keeping everything else and removing only stale `aide-*` targets. Run
 `skillshare sync` afterwards; aide never runs it. Default dirs, dirs
-two targets would share and harnesses without Skillshare account
+two targets would share and agents without Skillshare account
 targets are listed, not written. No credential is written, and MCP
 assignments are not generated yet (see `docs/skillshare.md`). `aide
 sync` provisioning is unchanged.
@@ -520,7 +520,7 @@ and Linux, to Skillshare's `skills/` and `agents/`,
 `sources:` paths in Skillshare's config, by their symlink-resolved
 paths, so the skills Skillshare links into a config dir are readable.
 A `sources:` path that is relative, `$HOME`, `/`, outside `$HOME`, or
-overlaps a sensitive dir, a harness default dir, a profile's config dir
+overlaps a sensitive dir, an agent default dir, a profile's config dir
 or aide's config dir is not granted. Skillshare's `config.yaml`,
 hooks, MCP state, logs, backups and cache are never granted. Opt out
 with `disabled_capabilities: [skillshare]` in `.aide.yaml` or
@@ -632,7 +632,7 @@ environment" in `docs/configuration.md`.
 #### aide sandbox test shows the profile's own config dir
 
 `aide sandbox test --profile <name>` printed the sandbox for the
-harness's profile-less default dir (on Linux `~/.config/aide/claude`)
+agent's profile-less default dir (on Linux `~/.config/aide/claude`)
 instead of the profile's own (`~/.claude-<name>`). It now injects the
 profile's config dir as a launch does, and stops with the launch's
 error when the profile's dir settings are invalid.
@@ -641,9 +641,9 @@ error when the profile's dir settings are invalid.
 
 A profile whose `agent:` names an `agents:` entry, such as
 `work-claude` with `binary: claude`, stopped with
-`Profiles are not supported for harness "work-claude"`. Profile
+a `Profiles are not supported` error naming `work-claude`. Profile
 support now follows the entry's binary, so the launch gets the
-harness's profile dir (`CLAUDE_CONFIG_DIR=~/.claude-<name>`) and its
+agent's profile dir (`CLAUDE_CONFIG_DIR=~/.claude-<name>`) and its
 sandbox module, which grants that dir. `aide which`, `aide status`,
 `aide sandbox test` and `aide project set` resolve the alias the same
 way.
@@ -698,8 +698,8 @@ falls back to `AIDE_CONTEXT` for sessions started by older releases.
 #### Clear error for profiles on agents without profile support
 
 Selecting a context with `profile:` for an agent that cannot isolate a
-profile now stops with `Profiles are not supported for harness
-"opencode"`. Before, OpenCode and Cursor reported a driver-level
+profile now stops with a `Profiles are not supported` error that
+names the agent (`"opencode"`). Before, OpenCode and Cursor reported a driver-level
 message, and Aider, Amp, Goose and unknown agents reported `no
 provisioner registered for agent`.
 

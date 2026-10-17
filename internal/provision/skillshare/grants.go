@@ -142,9 +142,7 @@ func protectedDirs(cfg *config.Config, home string, getenv func(string) string) 
 	add(config.DirFrom(xdgDir(getenv("XDG_CONFIG_HOME"), home, ".config")))
 	all := harness.All()
 	for _, d := range all {
-		if d.DefaultConfigDir != "" {
-			add(filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir)))
-		}
+		add(d.DefaultDir(home))
 	}
 	if cfg == nil {
 		return dirs

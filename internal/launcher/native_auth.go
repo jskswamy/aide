@@ -74,7 +74,7 @@ func launchConfigDir(harnessName string, ctx config.Context, home string, getenv
 	if v := getenv(d.ProfileEnvKey); v != "" {
 		return homepath.Expand(v, home)
 	}
-	return filepath.Join(home, filepath.FromSlash(d.DefaultConfigDir))
+	return d.DefaultDir(home)
 }
 
 // piProvidersByEnv maps a provider credential variable to the Pi

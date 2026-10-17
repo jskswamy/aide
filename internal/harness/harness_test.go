@@ -151,3 +151,14 @@ func TestSandboxModulesHonorProfileEnvKey(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultDir(t *testing.T) {
+	pi, _ := harness.Lookup("pi")
+	if got, want := pi.DefaultDir("/home/u"), filepath.Join("/home/u", ".pi", "agent"); got != want {
+		t.Errorf("pi DefaultDir = %q, want %q", got, want)
+	}
+	aider, _ := harness.Lookup("aider")
+	if got := aider.DefaultDir("/home/u"); got != "" {
+		t.Errorf("aider DefaultDir = %q, want empty (no known dir)", got)
+	}
+}

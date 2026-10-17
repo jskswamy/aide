@@ -665,3 +665,46 @@ func trustProjectFile(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+// `aide cap show skillshare` lists the paths the capability grants read
+// access to on this machine, not the built-in's empty static list.
+func TestCapShow_SkillshareListsGrantedPaths(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("SKILLSHARE_CONFIG", "")
+	configHome := filepath.Join(home, ".config")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	want := []string{
+		filepath.Join(configHome, "skillshare", "skills"),
+		filepath.Join(configHome, "skillshare", "agents"),
+		filepath.Join(home, ".local", "state", "skillshare", "plugins"),
+	}
+	for _, d := range append(want, filepath.Join(home, ".local", "state", "skillshare", "hooks")) {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(t.TempDir())
+
+	var buf bytes.Buffer
+	cmd := capCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"show", "skillshare"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cap show: %v\nout: %s", err, buf.String())
+	}
+	out := buf.String()
+	for _, p := range want {
+		if !strings.Contains(out, p) {
+			t.Errorf("cap show skillshare missing %s; got:\n%s", p, out)
+		}
+	}
+	if strings.Contains(out, "hooks") {
+		t.Errorf("cap show skillshare lists hooks/; got:\n%s", out)
+	}
+}

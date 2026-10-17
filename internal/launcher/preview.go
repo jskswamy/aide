@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
@@ -34,6 +35,7 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 	var ctx config.Context
 	var name string
 	var trustInfo *ui.TrustInfo
+	var disabledCaps []string
 	remotes := aidectx.GitRemotes(cwd)
 
 	if contextName != "" {
@@ -55,6 +57,9 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 		}
 		ctx = rc.Context
 		name = rc.Name
+		if cfg.ProjectOverride != nil {
+			disabledCaps = cfg.ProjectOverride.DisabledCapabilities
+		}
 	}
 	// A harness saved for this repository and profile is what a launch
 	// runs. Unreadable preferences are ignored here: a statusline stays
@@ -72,7 +77,7 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 	}
 
 	capNames := sandbox.MergeCapNames(ctx.Capabilities, nil, nil)
-	capNames = capability.AutoIncludeCcstatusline(capNames, nil, homeDir)
+	capNames = capability.AutoInclude(capNames, disabledCaps, homeDir, os.Getenv)
 	caps := &capability.Set{Capabilities: make([]capability.ResolvedCapability, len(capNames))}
 	for i, n := range capNames {
 		caps.Capabilities[i] = capability.ResolvedCapability{Name: n}

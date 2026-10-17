@@ -20,8 +20,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 23 {
-		t.Errorf("expected 23 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 24 {
+		t.Errorf("expected 24 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -367,5 +367,21 @@ func TestBuiltin_Ccstatusline_Exists(t *testing.T) {
 	wantReadable := []string{"~/.config/ccstatusline/settings.json"}
 	if !reflect.DeepEqual(c.Readable, wantReadable) {
 		t.Errorf("Readable = %v, want %v", c.Readable, wantReadable)
+	}
+}
+
+// skillshare's paths depend on the environment and Skillshare's config,
+// so the sandbox layer fills them in at resolution; the built-in grants
+// nothing writable and declares no markers.
+func TestBuiltin_Skillshare_Exists(t *testing.T) {
+	c, ok := Builtins()["skillshare"]
+	if !ok {
+		t.Fatal("missing built-in capability 'skillshare'")
+	}
+	if c.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if len(c.Writable) != 0 || len(c.Markers) != 0 {
+		t.Errorf("skillshare must be read-only and auto-included only: %+v", c)
 	}
 }

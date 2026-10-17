@@ -109,7 +109,7 @@ aide cap create k8s-dev --extends k8s --deny ~/.kube/prod-config
 aide --with k8s-dev docker    # dev clusters only, production blocked
 ```
 
-23 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, `go`, `rust`, `python`, `ruby`, `java`, `github`, `gpg`, and more. Or define your own.
+24 built-in capabilities: `aws`, `gcp`, `azure`, `docker`, `k8s`, `helm`, `terraform`, `vault`, `ssh`, `npm`, `go`, `rust`, `python`, `ruby`, `java`, `github`, `gpg`, and more. Or define your own.
 
 ### Unified UX - one command, any agent
 

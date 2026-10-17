@@ -3,6 +3,7 @@ package modules
 import (
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
@@ -52,6 +53,11 @@ var sensitiveHomeDirs = []string{
 	".netrc",
 	".git-credentials",
 }
+
+// SensitiveHomeDirs returns the home-relative, slash-separated paths
+// that hold credentials or private keys and must never be granted
+// through a config-dir override or a tool's source path.
+func SensitiveHomeDirs() []string { return slices.Clone(sensitiveHomeDirs) }
 
 // resolveConfigDirsAdditive is like resolveConfigDirs but xdgCandidate is
 // always appended to the result (augmenting rather than replacing defaults).

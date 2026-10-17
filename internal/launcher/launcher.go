@@ -438,7 +438,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 
 	// 12. Resolve capabilities and merge into sandbox config.
 	capNames := sandbox.MergeCapNames(rc.Context.Capabilities, withCaps, withoutCaps)
-	capNames = capability.AutoIncludeCcstatusline(capNames, withoutCaps, homeDir)
+	excludedCaps := slices.Clone(withoutCaps)
+	if cfg.ProjectOverride != nil {
+		excludedCaps = append(excludedCaps, cfg.ProjectOverride.DisabledCapabilities...)
+	}
+	capNames = capability.AutoInclude(capNames, excludedCaps, homeDir, os.Getenv)
 
 	// Build capability source map: track whether each cap came from context or --with.
 	contextCapSet := make(map[string]bool, len(rc.Context.Capabilities))

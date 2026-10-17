@@ -21,10 +21,7 @@ func ConfigPath(home string, getenv func(string) string) string {
 	if p := getenv("SKILLSHARE_CONFIG"); p != "" {
 		return expand(p, home)
 	}
-	if x := getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "skillshare", "config.yaml")
-	}
-	return filepath.Join(home, ".config", "skillshare", "config.yaml")
+	return filepath.Join(ConfigDir(home, getenv), "config.yaml")
 }
 
 // Result is the outcome of merging a Plan into a Skillshare config.

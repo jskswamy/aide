@@ -20,6 +20,7 @@ import (
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/output"
+	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/trust"
 )
 
@@ -334,6 +335,9 @@ func capShowCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolving capability: %w", err)
 			}
+			one := []capability.ResolvedCapability{*resolved}
+			sandbox.AddSkillsharePaths(one, env.Config())
+			resolved = &one[0]
 
 			entry := registry[name]
 			home, _ := os.UserHomeDir()
@@ -947,6 +951,7 @@ This is a preview — nothing is launched or modified.`,
 			if err != nil {
 				return err
 			}
+			sandbox.AddSkillsharePaths(set.Capabilities, cfg)
 
 			result := buildCapReportResult(set, "")
 			format, ferr := output.FromCmd(cmd)
@@ -999,6 +1004,7 @@ func capAuditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			sandbox.AddSkillsharePaths(set.Capabilities, cfg)
 
 			result := buildCapReportResult(set, ctxName)
 			format, ferr := output.FromCmd(cmd)

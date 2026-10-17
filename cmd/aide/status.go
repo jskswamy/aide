@@ -1238,13 +1238,18 @@ func statusCmd() *cobra.Command {
 			// Build capability registry and resolve capabilities
 			registry := env.Registry()
 
-			capNames := resolved.Context.Capabilities
+			var disabledCaps []string
+			if cfg.ProjectOverride != nil {
+				disabledCaps = cfg.ProjectOverride.DisabledCapabilities
+			}
+			capNames := capability.AutoInclude(resolved.Context.Capabilities, disabledCaps, homeDir, os.Getenv)
 			var capSet *capability.Set
 			if len(capNames) > 0 {
 				capSet, err = capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
 				if err != nil {
 					return fmt.Errorf("resolving capabilities: %w", err)
 				}
+				sandbox.AddSkillsharePaths(capSet.Capabilities, cfg)
 			}
 
 			// Resolve sandbox policy for rule count

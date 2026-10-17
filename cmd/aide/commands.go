@@ -165,15 +165,16 @@ func resolveContextForMutation(contextName string) (*config.Config, string, conf
 // precedent in sandboxTestCmd's --context handling: project overrides
 // are tied to cwd, not to an arbitrary named context being inspected.
 //
-// The result also auto-includes the "ccstatusline" capability when
-// <homeDir>/.config/ccstatusline/settings.json exists on disk, mirroring
-// what internal/launcher.Launch grants at actual agent launch — this is
+// The result also auto-includes "ccstatusline" and "skillshare" when
+// their tools are set up (capability.AutoInclude), mirroring what
+// internal/launcher.Launch grants at actual agent launch — this is
 // the same resolution `aide cap list`/`aide cap audit` use, so what they
-// report stays in sync with what a real launch actually grants. Callers
-// here have no --without-style exclusion concept, so that's always nil.
+// report stays in sync with what a real launch actually grants. The
+// project's disabled_capabilities opts out of them, as at launch;
+// callers here have no --without-style exclusion concept.
 // homeDir is a parameter (rather than resolved internally via
 // os.UserHomeDir()) so tests stay hermetic against the real machine's
-// home directory, matching internal/capability's ccstatusline tests.
+// home directory, matching internal/capability's auto-include tests.
 func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName, homeDir string) (name string, caps []string, err error) {
 	if contextName == "" {
 		// What a launch applies: untrusted .aide.yaml files contribute
@@ -185,13 +186,17 @@ func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName, homeDir 
 		if err != nil {
 			return "", nil, fmt.Errorf("resolving profile: %w", err)
 		}
-		return rc.Name, capability.AutoIncludeCcstatusline(rc.Context.Capabilities, nil, homeDir), nil
+		var disabled []string
+		if cfg.ProjectOverride != nil {
+			disabled = cfg.ProjectOverride.DisabledCapabilities
+		}
+		return rc.Name, capability.AutoInclude(rc.Context.Capabilities, disabled, homeDir, os.Getenv), nil
 	}
 	ctx, ok := cfg.Contexts[contextName]
 	if !ok {
 		return "", nil, fmt.Errorf("context %q not found", contextName)
 	}
-	return contextName, capability.AutoIncludeCcstatusline(ctx.Capabilities, nil, homeDir), nil
+	return contextName, capability.AutoInclude(ctx.Capabilities, nil, homeDir, os.Getenv), nil
 }
 
 // resolveProjectOverrideForMutation loads the global config and the

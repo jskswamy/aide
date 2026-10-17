@@ -14,7 +14,7 @@ func TestExecRunnerSuccess(t *testing.T) {
 		t.Skip("requires POSIX /usr/bin/true")
 	}
 	r := provision.ExecRunner{}
-	_, _, code, err := r.Run(context.Background(), nil, "/usr/bin/true")
+	_, _, code, err := r.Run(context.Background(), provision.Context{}, "/usr/bin/true")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestExecRunnerNonZeroExit(t *testing.T) {
 		t.Skip("requires POSIX /usr/bin/false")
 	}
 	r := provision.ExecRunner{}
-	_, _, code, err := r.Run(context.Background(), nil, "/usr/bin/false")
+	_, _, code, err := r.Run(context.Background(), provision.Context{}, "/usr/bin/false")
 	if err != nil {
 		t.Fatalf("err should be nil for non-zero exit, got %v", err)
 	}
@@ -39,7 +39,7 @@ func TestExecRunnerNonZeroExit(t *testing.T) {
 
 func TestExecRunnerCapturesStdout(t *testing.T) {
 	r := provision.ExecRunner{}
-	out, _, code, err := r.Run(context.Background(), nil, "echo", "hello")
+	out, _, code, err := r.Run(context.Background(), provision.Context{}, "echo", "hello")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestExecRunnerCapturesStdout(t *testing.T) {
 
 func TestExecRunnerMissingBinary(t *testing.T) {
 	r := provision.ExecRunner{}
-	_, _, _, err := r.Run(context.Background(), nil, "/no/such/binary-aide-test")
+	_, _, _, err := r.Run(context.Background(), provision.Context{}, "/no/such/binary-aide-test")
 	if err == nil {
 		t.Fatal("expected err for missing binary")
 	}
@@ -70,7 +70,7 @@ func TestExecRunnerScrubsInheritedCredentials(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY_FILE", "/shell/age.txt")
 	t.Setenv("AIDE_RUNNER_KEEP", "kept")
 	r := provision.ExecRunner{}
-	out, _, code, err := r.Run(context.Background(), map[string]string{"CLAUDE_CONFIG_DIR": "/p"}, "env")
+	out, _, code, err := r.Run(context.Background(), provision.Context{Env: map[string]string{"CLAUDE_CONFIG_DIR": "/p"}}, "env")
 	if err != nil || code != 0 {
 		t.Fatalf("env: code=%d err=%v", code, err)
 	}
@@ -90,12 +90,11 @@ func TestExecRunnerScrubsConfiguredCustomNames(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires POSIX env")
 	}
-	t.Cleanup(func() { provision.SetScrubEnv(nil) })
-	provision.SetScrubEnv([]string{"MY_PROVIDER_TOKEN", "CORP_LLM_*"})
 	t.Setenv("MY_PROVIDER_TOKEN", "custom-shell")
 	t.Setenv("CORP_LLM_KEY", "corp-shell")
 	t.Setenv("AIDE_RUNNER_KEEP", "kept")
-	out, _, code, err := provision.ExecRunner{}.Run(context.Background(), nil, "env")
+	pctx := provision.Context{ScrubEnv: []string{"MY_PROVIDER_TOKEN", "CORP_LLM_*"}}
+	out, _, code, err := provision.ExecRunner{}.Run(context.Background(), pctx, "env")
 	if err != nil || code != 0 {
 		t.Fatalf("env: code=%d err=%v", code, err)
 	}

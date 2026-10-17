@@ -17,8 +17,7 @@ type fakeRunner struct {
 	calls  [][]string
 }
 
-func (f *fakeRunner) Run(_ context.Context, env map[string]string, name string, args ...string) (string, string, int, error) {
-	_ = env
+func (f *fakeRunner) Run(_ context.Context, _ provision.Context, name string, args ...string) (string, string, int, error) {
 	call := append([]string{name}, args...)
 	f.calls = append(f.calls, call)
 	return f.stdout, f.stderr, f.code, f.err
@@ -37,7 +36,7 @@ type runStep struct {
 	err            error
 }
 
-func (r *stepRunner) Run(_ context.Context, _ map[string]string, name string, args ...string) (string, string, int, error) {
+func (r *stepRunner) Run(_ context.Context, _ provision.Context, name string, args ...string) (string, string, int, error) {
 	call := append([]string{name}, args...)
 	r.calls = append(r.calls, call)
 	if r.idx >= len(r.steps) {

@@ -89,7 +89,7 @@ const piNotFoundStderr = "No matching package found"
 // regardless of aide's working directory, which is what makes
 // RequiresTTY: false hold.
 func (d *Driver) InstallPlugin(ctx provision.Context, p provision.Plugin) error {
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
+	return provision.RunCLI(context.Background(), d.runner, ctx,
 		"pi install "+p.Name,
 		"pi", []string{"install", p.Name, "--no-approve"})
 }
@@ -99,7 +99,7 @@ func (d *Driver) InstallPlugin(ctx provision.Context, p provision.Plugin) error 
 // not-installed wording.
 func (d *Driver) UninstallPlugin(ctx provision.Context, name string) error {
 	tolerate := append(append([]string{}, provision.DefaultTolerateStderr...), piNotFoundStderr)
-	return provision.RunCLI(context.Background(), d.runner, ctx.Env,
+	return provision.RunCLI(context.Background(), d.runner, ctx,
 		"pi remove "+name,
 		"pi", []string{"remove", name, "--no-approve"},
 		tolerate...)
@@ -116,7 +116,7 @@ func (d *Driver) UninstallPlugin(ctx provision.Context, name string) error {
 // has its own parser. A Runner error (binary missing) collapses to
 // (nil, nil): nothing is installed if Pi isn't.
 func (d *Driver) InstalledPlugins(ctx provision.Context) ([]provision.Plugin, error) {
-	stdout, stderr, code, err := d.runner.Run(context.Background(), ctx.Env, "pi", "list", "--no-approve")
+	stdout, stderr, code, err := d.runner.Run(context.Background(), ctx, "pi", "list", "--no-approve")
 	if err != nil {
 		return nil, nil
 	}

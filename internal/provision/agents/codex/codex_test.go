@@ -16,7 +16,7 @@ import (
 
 type stubRunner struct{}
 
-func (stubRunner) Run(_ context.Context, _ map[string]string, _ string, _ ...string) (string, string, int, error) {
+func (stubRunner) Run(_ context.Context, _ provision.Context, _ string, _ ...string) (string, string, int, error) {
 	return "", "", 0, nil
 }
 

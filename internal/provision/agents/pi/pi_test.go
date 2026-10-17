@@ -19,7 +19,7 @@ type fakeRunner struct {
 	calls  [][]string
 }
 
-func (f *fakeRunner) Run(_ context.Context, _ map[string]string, name string, args ...string) (string, string, int, error) {
+func (f *fakeRunner) Run(_ context.Context, _ provision.Context, name string, args ...string) (string, string, int, error) {
 	f.calls = append(f.calls, append([]string{name}, args...))
 	return f.stdout, f.stderr, f.code, f.err
 }

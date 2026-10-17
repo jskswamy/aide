@@ -74,14 +74,14 @@ func TestResolveProvisionContext_InheritsExportedPiDir(t *testing.T) {
 // agent grants) resolves its provision context here, so this is where
 // the user's scrub_env: reaches provisioning subprocesses.
 func TestResolveProvisionContext_AppliesScrubEnvToProvisionSubprocesses(t *testing.T) {
-	t.Cleanup(func() { provision.SetScrubEnv(nil) })
 	home := t.TempDir()
 	t.Setenv("MY_PROVIDER_TOKEN", "custom-shell")
 	cfg := &config.Config{ScrubEnv: []string{"MY_PROVIDER_TOKEN"}}
-	if _, err := resolveProvisionContext(cfg, "c", config.Context{Agent: "claude"}, home, home); err != nil {
+	pCtx, err := resolveProvisionContext(cfg, "c", config.Context{Agent: "claude"}, home, home)
+	if err != nil {
 		t.Fatal(err)
 	}
-	out, _, code, err := provision.ExecRunner{}.Run(context.Background(), nil, "env")
+	out, _, code, err := provision.ExecRunner{}.Run(context.Background(), pCtx, "env")
 	if err != nil || code != 0 {
 		t.Fatalf("env: code=%d err=%v", code, err)
 	}
@@ -93,7 +93,6 @@ func TestResolveProvisionContext_AppliesScrubEnvToProvisionSubprocesses(t *testi
 // A custom Codex provider key named in ~/.codex/config.toml is a
 // configured credential name: provisioning subprocesses drop it too.
 func TestResolveProvisionContext_ScrubsCodexProviderKeys(t *testing.T) {
-	t.Cleanup(func() { provision.SetScrubEnv(nil) })
 	home := t.TempDir()
 	unsetEnv(t, "CODEX_HOME")
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
@@ -104,10 +103,11 @@ func TestResolveProvisionContext_ScrubsCodexProviderKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CORP_LLM_KEY", "corp-shell")
-	if _, err := resolveProvisionContext(&config.Config{}, "c", config.Context{Agent: "claude"}, home, home); err != nil {
+	pCtx, err := resolveProvisionContext(&config.Config{}, "c", config.Context{Agent: "claude"}, home, home)
+	if err != nil {
 		t.Fatal(err)
 	}
-	out, _, code, err := provision.ExecRunner{}.Run(context.Background(), nil, "env")
+	out, _, code, err := provision.ExecRunner{}.Run(context.Background(), pCtx, "env")
 	if err != nil || code != 0 {
 		t.Fatalf("env: code=%d err=%v", code, err)
 	}

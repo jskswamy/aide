@@ -58,7 +58,7 @@ func (*Driver) MCPHandler(_ provision.Context) provision.MCPHandler { return nil
 // name appearing as the first whitespace-delimited token. Empty lines
 // and obvious headers are skipped.
 func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, error) {
-	stdout, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "gemini", "extensions", "list")
+	stdout, stderr, code, err := d.runner.Run(context.Background(), pctx, "gemini", "extensions", "list")
 	if err != nil {
 		return nil, fmt.Errorf("gemini extensions list: %w", err)
 	}
@@ -73,7 +73,7 @@ func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, e
 //   - marketplace/git: use Plugin.Name (a GitHub URL or owner/repo).
 //   - local: use --path Plugin.Name (an absolute or relative path).
 func (d *Driver) InstallPlugin(pctx provision.Context, p provision.Plugin) error {
-	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+	return provision.RunCLI(context.Background(), d.runner, pctx,
 		"gemini extensions install "+p.Name,
 		"gemini", installArgs(p))
 }
@@ -91,7 +91,7 @@ func installArgs(p provision.Plugin) []string {
 // UninstallPlugin invokes `gemini extensions uninstall <name>`.
 // Tolerates the standard rollback-safety stderr substrings.
 func (d *Driver) UninstallPlugin(pctx provision.Context, name string) error {
-	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+	return provision.RunCLI(context.Background(), d.runner, pctx,
 		"gemini extensions uninstall "+name,
 		"gemini", []string{"extensions", "uninstall", name},
 		provision.DefaultTolerateStderr...)

@@ -85,7 +85,7 @@ type claudePluginEntry struct {
 // "agent not installed" as "nothing installed" lets `aide plugin list`
 // still render a useful declared/managed view.
 func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, error) {
-	stdout, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "claude", "plugin", "list", "--json")
+	stdout, stderr, code, err := d.runner.Run(context.Background(), pctx, "claude", "plugin", "list", "--json")
 	if err != nil {
 		// Binary missing or unrunnable — return empty rather than fail.
 		return nil, nil
@@ -117,7 +117,7 @@ func (d *Driver) InstalledPlugins(pctx provision.Context) ([]provision.Plugin, e
 // updates the marketplace index and retries once. The marketplace name is
 // extracted from the `@<marketplace>` suffix of p.Name.
 func (d *Driver) InstallPlugin(pctx provision.Context, p provision.Plugin) error {
-	err := provision.RunCLI(context.Background(), d.runner, pctx.Env,
+	err := provision.RunCLI(context.Background(), d.runner, pctx,
 		"claude plugin install "+p.Name,
 		"claude", []string{"plugin", "install", p.Name})
 	if err == nil {
@@ -126,9 +126,9 @@ func (d *Driver) InstallPlugin(pctx provision.Context, p provision.Plugin) error
 	if strings.Contains(err.Error(), "may be out of date") {
 		if marketplace := marketplaceFromPluginName(p.Name); marketplace != "" {
 			// Ignore update errors — the retry is the real signal.
-			_, _, _, _ = d.runner.Run(context.Background(), pctx.Env,
+			_, _, _, _ = d.runner.Run(context.Background(), pctx,
 				"claude", "plugin", "marketplace", "update", marketplace)
-			return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+			return provision.RunCLI(context.Background(), d.runner, pctx,
 				"claude plugin install "+p.Name,
 				"claude", []string{"plugin", "install", p.Name})
 		}
@@ -149,7 +149,7 @@ func marketplaceFromPluginName(name string) string {
 // "not installed" / "not found" / "project scope" stderr for rollback safety
 // and for plugins that were installed at project scope (aide stops tracking them).
 func (d *Driver) UninstallPlugin(pctx provision.Context, name string) error {
-	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+	return provision.RunCLI(context.Background(), d.runner, pctx,
 		"claude plugin uninstall "+name,
 		"claude", []string{"plugin", "uninstall", name},
 		append(provision.DefaultTolerateStderr, "project scope")...)
@@ -187,7 +187,7 @@ type claudeMarketplaceEntry struct {
 // Marketplace.Source carries the form provision.ResolveDesired derives
 // from that key ("github:steveyegge/beads", or the URL or path as-is).
 func (d *Driver) InstalledMarketplaces(pctx provision.Context) ([]provision.Marketplace, error) {
-	stdout, stderr, code, err := d.runner.Run(context.Background(), pctx.Env, "claude", "plugin", "marketplace", "list", "--json")
+	stdout, stderr, code, err := d.runner.Run(context.Background(), pctx, "claude", "plugin", "marketplace", "list", "--json")
 	if err != nil {
 		return nil, nil
 	}
@@ -227,7 +227,7 @@ func (d *Driver) InstalledMarketplaces(pctx provision.Context) ([]provision.Mark
 // AddMarketplace invokes `claude plugin marketplace add <source>`.
 func (d *Driver) AddMarketplace(pctx provision.Context, m provision.Marketplace) error {
 	ref := normalizeMarketplaceRef(m.Source, m.Key)
-	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+	return provision.RunCLI(context.Background(), d.runner, pctx,
 		"claude plugin marketplace add "+ref,
 		"claude", []string{"plugin", "marketplace", "add", ref})
 }
@@ -236,7 +236,7 @@ func (d *Driver) AddMarketplace(pctx provision.Context, m provision.Marketplace)
 // Tolerates the standard "not found" / "not configured" / "not
 // installed" stderr substrings for rollback safety.
 func (d *Driver) RemoveMarketplace(pctx provision.Context, name string) error {
-	return provision.RunCLI(context.Background(), d.runner, pctx.Env,
+	return provision.RunCLI(context.Background(), d.runner, pctx,
 		"claude plugin marketplace remove "+name,
 		"claude", []string{"plugin", "marketplace", "remove", name},
 		provision.DefaultTolerateStderr...)

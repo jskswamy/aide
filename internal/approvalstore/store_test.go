@@ -161,3 +161,18 @@ func TestStore_Concurrent_DifferentKeys(t *testing.T) {
 		t.Errorf("concurrent Add produced no records")
 	}
 }
+
+func TestDefaultRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for value, want := range map[string]string{
+		"/xdg/data":     "/xdg/data/aide",
+		"":              filepath.Join(home, ".local", "share", "aide"),
+		"relative/data": filepath.Join(home, ".local", "share", "aide"),
+	} {
+		t.Setenv("XDG_DATA_HOME", value)
+		if got := DefaultRoot(); got != want {
+			t.Errorf("XDG_DATA_HOME=%q: DefaultRoot() = %q, want %q", value, got, want)
+		}
+	}
+}

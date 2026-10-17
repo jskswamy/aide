@@ -520,6 +520,11 @@ path, else `~/.local/state/aide` as before.
   keeps being used there, so setting `XDG_STATE_HOME` never loses
   ownership records or saved preferences. Move the file into
   `$XDG_STATE_HOME/aide` to switch.
+- aide now ignores a relative `XDG_CONFIG_HOME` or `XDG_DATA_HOME`,
+  as the XDG spec requires, like `XDG_STATE_HOME`: config, trust and
+  approval records fall back to `~/.config/aide` and
+  `~/.local/share/aide` instead of a path relative to the current
+  directory.
 
 #### --agent now gets its own profile directory
 

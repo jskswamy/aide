@@ -8,6 +8,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 const appName = "aide"
@@ -19,11 +21,7 @@ const appName = "aide"
 // existing state; the file moves when the user moves it.
 func Path(homeDir, name string) string {
 	legacy := filepath.Join(homeDir, ".local", "state", appName, name)
-	base := os.Getenv("XDG_STATE_HOME")
-	if base == "" || !filepath.IsAbs(base) {
-		return legacy
-	}
-	current := filepath.Join(base, appName, name)
+	current := filepath.Join(homepath.XDG(os.Getenv("XDG_STATE_HOME"), homeDir, ".local/state"), appName, name)
 	if current == legacy || exists(current) || !exists(legacy) {
 		return current
 	}

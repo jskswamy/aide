@@ -4,28 +4,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/adrg/xdg"
+
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 const appName = "aide"
 
-// configHome returns the base config directory, preferring ~/.config on
-// macOS when $XDG_CONFIG_HOME is not explicitly set. The adrg/xdg library
+// configHome returns the base config directory: an absolute
+// $XDG_CONFIG_HOME, else ~/.config, on macOS too. The adrg/xdg library
 // follows Apple conventions (~/Library/Application Support) but CLI tools
 // conventionally use ~/.config on all platforms.
 func configHome() string {
-	if v := os.Getenv("XDG_CONFIG_HOME"); v != "" {
-		return v
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return xdg.ConfigHome
 	}
-	if runtime.GOOS == "darwin" {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, ".config")
-		}
-	}
-	return xdg.ConfigHome
+	return homepath.XDG(os.Getenv("XDG_CONFIG_HOME"), home, ".config")
 }
 
 // --- Parameterized variants (testable, no dependency on cached xdg values) ---

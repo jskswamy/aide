@@ -56,6 +56,16 @@ func Tilde(path, home string) string {
 	return path
 }
 
+// XDG is an XDG base dir: value (the variable's setting) when it is
+// absolute, else home/def. The XDG spec says relative values are
+// ignored.
+func XDG(value, home, def string) string {
+	if filepath.IsAbs(value) {
+		return value
+	}
+	return filepath.Join(home, filepath.FromSlash(def))
+}
+
 func resolveHome(home string) string {
 	if home != "" {
 		return home

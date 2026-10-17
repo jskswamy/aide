@@ -12,6 +12,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/harness"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
@@ -19,22 +20,13 @@ import (
 // else ~/.config/skillshare. It holds config.yaml (unless
 // $SKILLSHARE_CONFIG moves it) and the default skills/ and agents/.
 func ConfigDir(home string, getenv func(string) string) string {
-	return filepath.Join(xdgDir(getenv("XDG_CONFIG_HOME"), home, ".config"), "skillshare")
+	return filepath.Join(homepath.XDG(getenv("XDG_CONFIG_HOME"), home, ".config"), "skillshare")
 }
 
 // stateDir is Skillshare's state dir: $XDG_STATE_HOME/skillshare, else
 // ~/.local/state/skillshare.
 func stateDir(home string, getenv func(string) string) string {
-	return filepath.Join(xdgDir(getenv("XDG_STATE_HOME"), home, ".local/state"), "skillshare")
-}
-
-// xdgDir is an XDG base dir: v when it is absolute (the spec ignores
-// relative values), else home/def.
-func xdgDir(v, home, def string) string {
-	if filepath.IsAbs(v) {
-		return v
-	}
-	return filepath.Join(home, filepath.FromSlash(def))
+	return filepath.Join(homepath.XDG(getenv("XDG_STATE_HOME"), home, ".local/state"), "skillshare")
 }
 
 // Installed reports whether Skillshare is set up for this user: its
@@ -139,7 +131,7 @@ func protectedDirs(cfg *config.Config, home string, getenv func(string) string) 
 	for _, rel := range modules.SensitiveHomeDirs() {
 		add(filepath.Join(home, filepath.FromSlash(rel)))
 	}
-	add(config.DirFrom(xdgDir(getenv("XDG_CONFIG_HOME"), home, ".config")))
+	add(config.DirFrom(homepath.XDG(getenv("XDG_CONFIG_HOME"), home, ".config")))
 	all := harness.All()
 	for _, d := range all {
 		add(d.DefaultDir(home))

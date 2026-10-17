@@ -90,3 +90,20 @@ func TestTilde(t *testing.T) {
 		})
 	}
 }
+
+func TestXDG(t *testing.T) {
+	cases := []struct {
+		name, value, want string
+	}{
+		{"absolute value wins", "/xdg/state", "/xdg/state"},
+		{"unset falls back under home", "", "/home/u/.local/state"},
+		{"relative value is ignored", "rel/state", "/home/u/.local/state"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := homepath.XDG(tc.value, "/home/u", ".local/state"); got != tc.want {
+				t.Errorf("XDG(%q) = %q, want %q", tc.value, got, tc.want)
+			}
+		})
+	}
+}

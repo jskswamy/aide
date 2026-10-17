@@ -136,3 +136,12 @@ func TestRuntimeDir(t *testing.T) {
 		t.Errorf("RuntimeDir() = %q, want it to contain aide-12345", got)
 	}
 }
+
+func TestConfigHome_IgnoresRelativeXDGConfigHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "relative/config")
+	if got, want := configHome(), filepath.Join(home, ".config"); got != want {
+		t.Errorf("configHome() = %q, want %q", got, want)
+	}
+}

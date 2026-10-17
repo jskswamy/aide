@@ -211,6 +211,23 @@ file as it was.
 
 ### ✨ New
 
+#### codebase-memory-mcp starts inside the macOS sandbox
+
+The default macOS sandbox now lets the agent open and list the directory
+that holds your home directory (`/Users`). codebase-memory-mcp checks
+every parent of its cache directory before it starts, and it failed with
+`ancestry component validation failed` because that one directory could
+be read for metadata but not opened.
+
+- Only that directory's entry names are visible. Nothing inside any
+  account's home is readable that was not readable before.
+- A home outside `/Users` gets the same single-directory grant for its
+  parent.
+- A cache outside `~/.cache` (`CBM_CACHE_DIR`) still needs your own
+  `readable_extra` and `writable_extra` entries.
+- Linux is unchanged.
+- See the 2026-10-18 codebase-memory spec in `docs/superpowers/specs/`.
+
 #### aide profile manages profiles; aide context is a deprecated alias
 
 `aide profile` has the subcommands `aide context` had: `list`, `bind`,
@@ -781,15 +798,6 @@ preferences, worktree configuration inheritance, and Skillshare integration.
 
 - Design only; no runtime behavior or configuration format has changed.
 - See the 2026-10-16 profiles design spec in `docs/superpowers/specs/`.
-
-#### Codebase-memory sandbox fix design
-
-A draft design makes the codebase-memory-mcp server and CLI start inside
-the macOS sandbox by letting the sandboxed process open and list the
-directory that holds the home directory, with no wider file access.
-
-- Design only; no runtime behavior or configuration format has changed.
-- See the 2026-10-18 codebase-memory spec in `docs/superpowers/specs/`.
 
 ## v2.3.0 (2026-10-15)
 

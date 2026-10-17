@@ -201,6 +201,9 @@ func previewSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir strin
 		return p, fmt.Errorf("context %q: %w", p.rc.Name, err)
 	}
 	p.rc.Context.Env = mergedEnv
+	if err := cfg.GlobalLoginError(p.rc.Name, cfg.HarnessOf(p.rc.Context.Agent), homeDir); err != nil {
+		p.notices = append(p.notices, "launch would fail: "+err.Error())
+	}
 	return p, nil
 }
 

@@ -194,6 +194,34 @@ func TestMigrateProfiles_AdoptRefusals(t *testing.T) {
 	}
 }
 
+// Adopting a profile's global dir while another profile still runs
+// from it would make the adopted profile look isolated when it is not.
+func TestMigrateProfiles_AdoptRefusesWhileAnotherProfileSharesTheGlobalDir(t *testing.T) {
+	body := `profiles:
+  a:
+    agent: claude
+  b:
+    agent: codex
+`
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	_, err := MigrateProfiles([]byte(body), MigrateOptions{Home: home, Adopt: []string{"a"}})
+	if !errors.Is(err, ErrAdopt) {
+		t.Fatalf("err = %v, want ErrAdopt", err)
+	}
+	for _, want := range []string{`"b"`, "~/.claude", "config_dir_name"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
+	}
+	// Each adopting its own harness's dir leaves no profile on the
+	// other's global dir.
+	m := migrate(t, body, "a", "b")
+	if !m.GlobalLogins[0].Adopted || !m.GlobalLogins[1].Adopted {
+		t.Errorf("GlobalLogins = %+v, want both adopted", m.GlobalLogins)
+	}
+}
+
 func TestMigrateProfiles_AlreadyMigratedIsUnchanged(t *testing.T) {
 	body := `profiles:
   work:

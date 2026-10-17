@@ -152,6 +152,39 @@ trusted. Before, it replaced the profile's own store, so a repository
 could make a work launch decrypt your personal secrets. Move the
 `secret:` line into the profile in your aide config.
 
+#### Profiles sharing an agent's global login no longer launch
+
+Profiles with no config dir of their own (no `config_dir_name:`,
+`config_dir:`, `config_dirs:`, or legacy `profile:`/`profile_dir:`,
+and no `CLAUDE_CONFIG_DIR`-style dir variable in `env:`) all run each
+agent from its global dir, such as `~/.claude`, so they share one
+login. When two or more profiles are in that state, launching any of
+them stops with `profiles share a native config dir: profiles [...]
+all run claude from its global login ~/.claude`. Other profiles and
+commands keep working; `aide status`, `aide which` and `aide validate`
+report it, and `aide profile migrate` lists the profiles. The error
+names the exact line to add to each profile but one (for example
+`profiles.personal: add config_dir_name: personal`); the default
+profile keeps the global login, and each of the others needs a fresh
+login in its new dir. A profile whose own agent cannot select a config
+dir (such as aider) never blocks another profile's launch on its own
+agent, but launching it with `--agent claude` is refused while another
+profile uses or pins `~/.claude`; the error then suggests launching
+without `--agent` or an `env:` `CLAUDE_CONFIG_DIR`. Setting a dir
+variable such as `CLAUDE_CONFIG_DIR` in `env:` to the default dir does
+not count as a dir of its own.
+
+`aide profile create`, `aide use` and `aide setup` now give a new
+profile its own `config_dir_name:` when another profile already uses
+that agent's global login, and say so; the first profile on an agent
+stays on its global login. A dir name another profile already uses
+gets a numeric suffix (`my-repo-2`).
+
+A config that pins a profile to an agent's global dir (for example
+`config_dirs: {claude: ~/.claude}`) while another profile still has no
+config dir no longer loads: the pinned profile would look isolated
+while sharing that login. The error names both profiles and the fix.
+
 ### ✨ New
 
 #### aide profile manages profiles; aide context is a deprecated alias
@@ -226,8 +259,10 @@ and writes the new file atomically.
   `config_dir_name:`, launching that profile under another agent
   (`--agent codex`, ...) then uses a fresh `~/.<agent>-<profile>` dir
   that needs its own login, not that agent's global login; the preview
-  lists those dirs. Adopting two profiles onto the same dir is refused.
-  No login dir is copied.
+  lists those dirs. Adopting two profiles onto the same dir is refused,
+  and so is adopting one while another profile still has no config dir
+  of its own (it would keep running from the adopted dir). No login dir
+  is copied.
 - `--write` also updates provisioning state for profiles synced against
   the old file, so the rewrite is not reported as drift and nothing aide
   installed is treated as new. Profiles that had already drifted still

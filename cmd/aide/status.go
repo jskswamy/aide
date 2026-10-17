@@ -502,6 +502,9 @@ Examples:
 					ctx.Sandbox = &config.SandboxRef{ProfileName: sandboxProfile}
 				}
 			}
+			if !exists {
+				isolateNewProfile(out, cfg, ctxName, &ctx)
+			}
 			cfg.Contexts[ctxName] = ctx
 
 			if _, ok := cfg.Agents[agentName]; !ok {
@@ -737,6 +740,7 @@ func setupCmd() *cobra.Command {
 					if len(newEnv) > 0 {
 						newCtx.Env = newEnv
 					}
+					isolateNewProfile(out, cfg, ctxName, &newCtx)
 					cfg.Contexts[ctxName] = newCtx
 
 					if _, ok := cfg.Agents[newAgent]; !ok {
@@ -1077,6 +1081,7 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 	if selectedSandbox != nil {
 		ctx.Sandbox = selectedSandbox
 	}
+	isolateNewProfile(out, cfg, ctxName, &ctx)
 	cfg.Contexts[ctxName] = ctx
 
 	if _, ok := cfg.Agents[agentName]; !ok {

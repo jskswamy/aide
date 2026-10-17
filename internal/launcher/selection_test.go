@@ -191,6 +191,7 @@ profiles:
     agent: claude
   personal:
     agent: codex
+    config_dir_name: personal
 default_profile: work
 `
 

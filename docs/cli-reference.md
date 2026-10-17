@@ -536,7 +536,7 @@ refused; expand it by hand first.
 | Flag | Description |
 |------|-------------|
 | `--write` | Write the migrated config (default: preview only) |
-| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}`. Under `--agent <other agent>` the profile then uses a fresh `~/.<agent>-<profile>` dir with its own login; the preview lists them. Repeatable, but two profiles cannot adopt the same dir |
+| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}`. Under `--agent <other agent>` the profile then uses a fresh `~/.<agent>-<profile>` dir with its own login; the preview lists them. Repeatable, but two profiles cannot adopt the same dir, and a profile cannot adopt while another profile still has no config dir of its own |
 
 See [Profiles § Migrating from contexts](profiles.md#migrating-from-contexts).
 

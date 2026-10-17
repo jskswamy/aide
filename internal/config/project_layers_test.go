@@ -9,15 +9,15 @@ import (
 func boolPtr(b bool) *bool { return &b }
 
 func TestMergeProjectOverrides_LocalScalarsWin(t *testing.T) {
-	inherited := &ProjectOverride{Agent: "claude", Secret: "main", Profile: "work", Yolo: boolPtr(true)}
+	inherited := &ProjectOverride{Agent: "claude", Profile: "work", Yolo: boolPtr(true)}
 	local := &ProjectOverride{Agent: "codex", Yolo: boolPtr(false)}
 
 	got := MergeProjectOverrides(inherited, local)
 	if got.Agent != "codex" {
 		t.Errorf("Agent = %q, want codex (local wins)", got.Agent)
 	}
-	if got.Secret != "main" || got.Profile != "work" {
-		t.Errorf("unset local scalars should keep inherited: secret=%q profile=%q", got.Secret, got.Profile)
+	if got.Profile != "work" {
+		t.Errorf("unset local scalars should keep inherited: profile=%q", got.Profile)
 	}
 	if got.Yolo == nil || *got.Yolo {
 		t.Errorf("Yolo = %v, want false (local wins)", got.Yolo)

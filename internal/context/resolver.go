@@ -228,9 +228,6 @@ func applyProjectOverride(rc *ResolvedContext, po *config.ProjectOverride, sandb
 	if po.Agent != "" {
 		rc.Context.Agent = po.Agent
 	}
-	if po.Secret != "" {
-		rc.Context.Secret = po.Secret
-	}
 	if len(po.MCPServers) > 0 {
 		rc.Context.MCPServers = po.MCPServers
 	}

@@ -79,7 +79,6 @@ Place `.aide.yaml` at the project root to override fields in the resolved profil
 ```yaml
 # .aide.yaml
 agent: claude
-secret: client-x
 env:
   NODE_ENV: development
 sandbox:
@@ -87,7 +86,7 @@ sandbox:
     - /tmp/build
 ```
 
-Env variables merge additively; the project override wins on key conflicts. All other fields (including `yolo`) replace the matched value when set.
+Env variables merge additively; the project override wins on key conflicts. All other fields (including `yolo`) replace the matched value when set. `.aide.yaml` cannot set `secret:`: the secret store belongs to the profile.
 
 ## Capabilities
 

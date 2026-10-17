@@ -480,7 +480,7 @@ Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 
 ## Per-Project Override
 
-`.aide.yaml` supports: `agent`, `env`, `secret`, `sandbox`, `preferences`, `yolo`, `capabilities`, `disabled_capabilities`, `statusline`, `mcp_servers`, `capability_variants`. aide merges it on top of the matched global profile.
+`.aide.yaml` supports: `agent`, `env`, `sandbox`, `preferences`, `yolo`, `capabilities`, `disabled_capabilities`, `statusline`, `mcp_servers`, `capability_variants`. aide merges it on top of the matched global profile. It cannot set `secret:`; set the secret store in the profile.
 
 - `env:` merges additively; project values win on key conflicts.
 - All other fields replace the matched profile value entirely.

@@ -151,13 +151,12 @@ var loadSecretStore StoreLoader = secrets.LoadSecretsMap
 
 // profileCredentials returns rc's profile with legacy provider
 // credential env: entries translated into implicit bindings. Legacy
-// entries use the profile's own secret: store, never one .aide.yaml
-// substitutes, and .aide.yaml may not set provider credentials,
+// entries use the profile's own secret: store (.aide.yaml cannot set
+// one; the loader rejects it), and .aide.yaml may not set provider credentials,
 // selectors or endpoints at all (an endpoint could redirect the
 // profile's key to a repository-chosen host).
 func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config.Context, []config.LegacyCredential, error) {
 	label := profileLabel(cfg, rc.Name)
-	store := rc.Context.Secret
 	if po := cfg.ProjectOverride; po != nil {
 		for _, k := range slices.Sorted(maps.Keys(po.Env)) {
 			if envscrub.IsProviderName(k) {
@@ -167,11 +166,8 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 					config.ErrLegacyCredentialEnv, projectFileSettingEnv(cfg, k), k, label)
 			}
 		}
-		if po.Secret != "" {
-			store = ownSecret(cfg, rc.Name)
-		}
 	}
-	ctx, legacy, err := config.TranslateLegacyCredentials(rc.Context, store)
+	ctx, legacy, err := config.TranslateLegacyCredentials(rc.Context, rc.Context.Secret)
 	if err != nil {
 		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
 	}
@@ -184,17 +180,6 @@ func projectFileSettingEnv(cfg *config.Config, key string) string {
 		_, ok := po.Env[key]
 		return ok
 	})
-}
-
-// ownSecret is the secret: store the profile itself declares.
-func ownSecret(cfg *config.Config, name string) string {
-	if ctx, ok := cfg.Contexts[name]; ok {
-		return ctx.Secret
-	}
-	if cfg.IsMinimal() {
-		return cfg.Secret
-	}
-	return ""
 }
 
 // printLegacyCredentialHints prints each legacy credential's migration

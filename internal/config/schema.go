@@ -794,7 +794,6 @@ type ProjectOverride struct {
 	Profile              string            `yaml:"profile,omitempty"`
 	Agent                string            `yaml:"agent,omitempty"`
 	Env                  map[string]string `yaml:"env,omitempty"`
-	Secret               string            `yaml:"secret,omitempty"`
 	MCPServers           []string          `yaml:"mcp_servers,omitempty"`
 	Sandbox              *SandboxPolicy    `yaml:"sandbox,omitempty"`
 	Preferences          *Preferences      `yaml:"preferences,omitempty"`

@@ -112,7 +112,6 @@ env:
 	overrideYAML := `agent: codex
 env:
   PROJECT_KEY: project-value
-secret: project
 mcp_servers: [git]
 `
 	if err := os.WriteFile(filepath.Join(projectDir, ".aide.yaml"), []byte(overrideYAML), 0644); err != nil {
@@ -132,9 +131,6 @@ mcp_servers: [git]
 	}
 	if cfg.ProjectOverride.Env["PROJECT_KEY"] != "project-value" {
 		t.Errorf("expected override env PROJECT_KEY='project-value', got %q", cfg.ProjectOverride.Env["PROJECT_KEY"])
-	}
-	if cfg.ProjectOverride.Secret != "project" {
-		t.Errorf("expected override secret 'project', got %q", cfg.ProjectOverride.Secret)
 	}
 	if len(cfg.ProjectOverride.MCPServers) != 1 || cfg.ProjectOverride.MCPServers[0] != "git" {
 		t.Errorf("expected override mcp_servers [git], got %v", cfg.ProjectOverride.MCPServers)

@@ -606,3 +606,56 @@ func TestIsolateNewProfile(t *testing.T) {
 		t.Errorf("agent without profile support got config_dir_name %q", tool.Profile)
 	}
 }
+
+// A dir variable in env: that names a dir another profile also uses
+// (through env: or its own config dir) shares that login, like two
+// config_dirs naming one dir.
+func TestLoad_EnvRedirectedDirsSharedByProfilesFail(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want []string
+	}{
+		"same env dir": {
+			"profiles:\n" +
+				"  a:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-shared}\n" +
+				"  b:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-shared}\n",
+			[]string{`"a"`, `"b"`, "CLAUDE_CONFIG_DIR", "~/.claude-shared"},
+		},
+		"env dir is another profile's derived dir": {
+			"profiles:\n" +
+				"  a:\n    agent: claude\n    config_dir_name: work\n" +
+				"  b:\n    agent: codex\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-work}\n",
+			[]string{`"a"`, `"b"`, "CLAUDE_CONFIG_DIR", "~/.claude-work"},
+		},
+		"env dir is another profile's pinned dir": {
+			"profiles:\n" +
+				"  a:\n    agent: pi\n    config_dir_name: a\n    config_dirs: {pi: ~/pi-a}\n" +
+				"  b:\n    agent: pi\n    env: {PI_CODING_AGENT_DIR: ~/pi-a}\n",
+			[]string{`"a"`, `"b"`, "PI_CODING_AGENT_DIR", "~/pi-a"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadYAML(t, tc.body)
+			if !errors.Is(err, ErrProfileDirAlias) {
+				t.Fatalf("Load() error = %v, want ErrProfileDirAlias", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not mention %s", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLoad_DistinctEnvRedirectedDirsLoad(t *testing.T) {
+	_, err := loadYAML(t, "profiles:\n"+
+		"  a:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-a}\n"+
+		"  b:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-b}\n"+
+		"  c:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: \"{{ .ProjectRoot }}/.claude\"}\n"+
+		"  d:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: \"{{ .ProjectRoot }}/.claude\"}\n")
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil (distinct or templated dirs)", err)
+	}
+}

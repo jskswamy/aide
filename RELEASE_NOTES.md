@@ -156,7 +156,10 @@ could make a work launch decrypt your personal secrets. Move the
 
 A repository `.aide.yaml` whose `env:` sets an agent's config-dir
 variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`,
-`COPILOT_HOME`, ...) now stops the launch with `repository config
+`COPILOT_HOME`, `GEMINI_HOME`), or another variable that moves an
+agent's config or state (`AMP_HOME`, `CURSOR_CONFIG_DIR`,
+`GOOSE_PATH_ROOT`, `OPENCODE_CONFIG`, `PI_CODING_AGENT_SESSION_DIR`),
+now stops the launch with `repository config
 cannot choose a harness's config dir`: that dir holds the login, so a
 repository could otherwise pick, or share, the login a profile runs
 under. `aide env set` refuses those names without `--global`. Give the
@@ -201,6 +204,10 @@ The same holds for a dir variable in a profile's `env:`: two profiles
 setting `CLAUDE_CONFIG_DIR: ~/.claude-shared`, or one naming another
 profile's dir (such as `~/.claude-work` from `config_dir_name: work`),
 no longer load; the error names the profile whose `env:` to change.
+Commands that edit `config.yaml` (such as `aide env set --global`)
+refuse, with `refusing to write config: it would not load`, a change
+that would leave a config aide then refuses to load, and keep the
+file as it was.
 
 ### ✨ New
 

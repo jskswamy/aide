@@ -38,5 +38,9 @@ func WriteConfigTo(cfg *Config, path string) error {
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
+	home, _ := userHome()
+	if err := validateLoadable(data, home, "refusing to write config: it"); err != nil {
+		return err
+	}
 	return fsutil.AtomicWrite(path, data)
 }

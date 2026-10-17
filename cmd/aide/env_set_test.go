@@ -174,3 +174,23 @@ func TestEnvSet_HarnessConfigDirOnlyInUserConfig(t *testing.T) {
 		t.Error("refused command still wrote .aide.yaml")
 	}
 }
+
+// Setting a dir variable to another profile's dir would write a config
+// aide then refuses to load; the write is refused and the file kept.
+func TestEnvSet_GlobalConfigDirAliasRefusedBeforeWrite(t *testing.T) {
+	dir := projectTempDir(t)
+	cfgPath := filepath.Join(dir, "xdg", "aide", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const before = "profiles:\n  a:\n    agent: claude\n    config_dir_name: work\n  b:\n    agent: claude\ndefault_profile: b\n"
+	if err := os.WriteFile(cfgPath, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runEnvSet(t, "CLAUDE_CONFIG_DIR", "~/.claude-work", "--global", "--context", "b"); err == nil {
+		t.Fatal("env set wrote a config sharing a's login dir")
+	}
+	if got, _ := os.ReadFile(cfgPath); string(got) != before {
+		t.Errorf("refused write changed config.yaml:\n%s", got)
+	}
+}

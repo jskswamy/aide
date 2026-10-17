@@ -120,8 +120,18 @@ var providerSelectorNames = []string{
 	"CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
 	"CLAUDE_CODE_SKIP_MANTLE_AUTH",
 	"CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH",
+	// Pi's provider selectors
+	"AZURE_OPENAI_DEPLOYMENT_NAME_MAP",
+	"AZURE_OPENAI_API_VERSION",
+	"GOOGLE_CLOUD_LOCATION",
+}
+
+// providerEndpointNames are where a provider key is sent. They are
+// provider selectors too; a profile sets them in a credential route's
+// set: so an endpoint never receives another binding's key.
+var providerEndpointNames = []string{
 	"OPENAI_BASE_URL",
-	// Endpoints a key can be redirected to.
+	"OPENAI_API_BASE",
 	"ANTHROPIC_BASE_URL",
 	"ANTHROPIC_BEDROCK_BASE_URL",
 	"ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
@@ -129,17 +139,12 @@ var providerSelectorNames = []string{
 	"ANTHROPIC_VERTEX_BASE_URL",
 	"ANTHROPIC_FOUNDRY_BASE_URL",
 	"ANTHROPIC_FOUNDRY_RESOURCE",
-	"OPENAI_API_BASE",
 	"AZURE_OPENAI_ENDPOINT",
-	"GOOGLE_GEMINI_BASE_URL",
-	// Pi's provider endpoints and selectors
 	"AZURE_OPENAI_BASE_URL",
 	"AZURE_OPENAI_RESOURCE_NAME",
-	"AZURE_OPENAI_DEPLOYMENT_NAME_MAP",
-	"AZURE_OPENAI_API_VERSION",
+	"GOOGLE_GEMINI_BASE_URL",
 	"CLOUDFLARE_ACCOUNT_ID",
 	"CLOUDFLARE_GATEWAY_ID",
-	"GOOGLE_CLOUD_LOCATION",
 }
 
 // cloudNames are ambient cloud credentials and selectors. A trailing
@@ -181,7 +186,13 @@ func IsProviderSecretName(name string) bool {
 // IsProviderSelectorName reports whether name is a non-secret provider
 // selector or endpoint, which a profile may set in env:.
 func IsProviderSelectorName(name string) bool {
-	return slices.Contains(providerSelectorNames, name)
+	return slices.Contains(providerSelectorNames, name) || IsProviderEndpointName(name)
+}
+
+// IsProviderEndpointName reports whether name is a provider endpoint:
+// a variable that decides where a provider key is sent.
+func IsProviderEndpointName(name string) bool {
+	return slices.Contains(providerEndpointNames, name)
 }
 
 // IsProviderName reports whether name is a provider credential or a
@@ -257,7 +268,7 @@ func SecretMaterial() Registry { return Registry{}.Pin(secretMaterialNames...) }
 // keys and tokens, federation and cloud selectors, and secret material.
 // Only the cloud names can be exempted with Permit.
 func Credentials() Registry {
-	return Registry{}.Pin(secretMaterialNames...).Pin(providerSecretNames...).Pin(providerSelectorNames...).With(cloudNames...)
+	return Registry{}.Pin(secretMaterialNames...).Pin(providerSecretNames...).Pin(providerSelectorNames...).Pin(providerEndpointNames...).With(cloudNames...)
 }
 
 // ConfigDirRedirects returns, sorted, every harness config-dir redirect

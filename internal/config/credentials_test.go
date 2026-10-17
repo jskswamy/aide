@@ -245,3 +245,102 @@ func TestTranslateLegacyCredentials_UntranslatableStops(t *testing.T) {
 		})
 	}
 }
+
+const routeProfiles = `profiles:
+  work:
+    agent: claude
+    credentials:
+      anthropic:
+        backend: age
+        store: work
+        key: anthropic_api_key
+        for:
+          claude: {}
+      openrouter:
+        backend: age
+        store: work
+        key: openrouter_api_key
+        for:
+          claude:
+            env: [ANTHROPIC_AUTH_TOKEN]
+            set: {ANTHROPIC_BASE_URL: "https://openrouter.ai/api", ANTHROPIC_API_KEY: ""}
+          pi:
+            env: [OPENROUTER_API_KEY]
+      bedrock:
+        capabilities: [aws]
+        for:
+          claude: {set: {CLAUDE_CODE_USE_BEDROCK: "1"}}
+          pi: {set: {AWS_REGION: us-east-1}}
+    default_credentials: [openrouter]
+default_profile: work
+`
+
+func TestLoad_CredentialRoutes(t *testing.T) {
+	cfg, err := loadYAML(t, routeProfiles)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	creds := cfg.Contexts["work"].Credentials
+	or := creds["openrouter"]
+	if r, ok := or.Route("openrouter", "claude"); !ok || !slices.Equal(r.Env, []string{"ANTHROPIC_AUTH_TOKEN"}) ||
+		r.Set["ANTHROPIC_BASE_URL"] != "https://openrouter.ai/api" {
+		t.Errorf("openrouter claude route = %+v, %v", r, ok)
+	}
+	if r, ok := or.Route("openrouter", "/usr/bin/pi"); !ok || !slices.Equal(r.Env, []string{"OPENROUTER_API_KEY"}) || len(r.Set) != 0 {
+		t.Errorf("openrouter pi route = %+v, %v", r, ok)
+	}
+	if or.AllowsHarness("codex") {
+		t.Error("a binding with for: should serve only its for: harnesses")
+	}
+	if got := or.EnvNames("openrouter"); !slices.Equal(got, []string{"ANTHROPIC_AUTH_TOKEN", "OPENROUTER_API_KEY"}) {
+		t.Errorf("EnvNames = %v, want every route's key variables", got)
+	}
+	if r, ok := creds["anthropic"].Route("anthropic", "claude"); !ok || !slices.Equal(r.Env, []string{"ANTHROPIC_API_KEY"}) {
+		t.Errorf("a built-in route without env: should use the built-in variable, got %+v", r)
+	}
+	bedrock := creds["bedrock"]
+	if !bedrock.Keyless() || !slices.Equal(bedrock.Capabilities, []string{"aws"}) {
+		t.Errorf("bedrock = %+v, want keyless with capabilities [aws]", bedrock)
+	}
+	if r, _ := bedrock.Route("bedrock", "pi"); len(r.Env) != 0 || r.Set["AWS_REGION"] != "us-east-1" {
+		t.Errorf("bedrock pi route = %+v", r)
+	}
+	old := CredentialBinding{Backend: "age", Store: "w", Key: "k", Env: []string{"CORP"}, Harnesses: []string{"pi"}}
+	if r, ok := old.Route("corp", "pi"); !ok || !slices.Equal(r.Env, []string{"CORP"}) {
+		t.Errorf("env:/harnesses: shorthand route = %+v, %v", r, ok)
+	}
+	if _, ok := old.Route("corp", "claude"); ok {
+		t.Error("shorthand route should not serve a harness outside harnesses:")
+	}
+}
+
+func TestLoad_InvalidCredentialRoutesFail(t *testing.T) {
+	cases := map[string]struct{ entry, want string }{
+		"for with harnesses": {"credentials: {anthropic: {backend: age, store: w, key: k, harnesses: [pi], for: {pi: {}}}}", "for:"},
+		"for with env":       {"credentials: {anthropic: {backend: age, store: w, key: k, env: [X_KEY], for: {pi: {}}}}", "for:"},
+		"for unknown":        {"credentials: {anthropic: {backend: age, store: w, key: k, for: {nosuch: {}}}}", "nosuch"},
+		"custom route env":   {"credentials: {corp: {backend: age, store: w, key: k, for: {pi: {}}}}", "env"},
+		"keyless no effect":  {"credentials: {bedrock: {for: {claude: {}}}}", "capabilities"},
+		"keyless env":        {"credentials: {bedrock: {for: {claude: {env: [X_KEY], set: {A: b}}}}}", "store"},
+		"set reserved":       {"credentials: {anthropic: {backend: age, store: w, key: k, for: {claude: {set: {PATH: /x}}}}}", "PATH"},
+		"set bad name":       {"credentials: {anthropic: {backend: age, store: w, key: k, for: {claude: {set: {\"BAD-N\": x}}}}}", "BAD-N"},
+		"set secret value":   {"credentials: {bedrock: {capabilities: [aws], for: {claude: {set: {ANTHROPIC_API_KEY: sk}}}}}", "ANTHROPIC_API_KEY"},
+		"defaults collide": {"credentials: {anthropic: {backend: age, store: w, key: k}, " +
+			"openai: {backend: age, store: w, key: k, for: {claude: {env: [ANTHROPIC_API_KEY]}}}}\n    default_credentials: [anthropic, openai]", "ANTHROPIC_API_KEY"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadYAML(t, "profiles:\n  work:\n    agent: claude\n    "+tc.entry+"\n")
+			if !errors.Is(err, ErrInvalidCredentials) {
+				t.Fatalf("Load() error = %v, want ErrInvalidCredentials", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "work") {
+				t.Errorf("error %q should name profile work and %s", err, tc.want)
+			}
+		})
+	}
+	// Blanking a key variable is allowed.
+	if _, err := loadYAML(t, routeProfiles); err != nil {
+		t.Errorf("set: ANTHROPIC_API_KEY: \"\" should load: %v", err)
+	}
+}

@@ -330,6 +330,17 @@ profiles:
   agent config-dir variable such as `CLAUDE_CONFIG_DIR`.
 - `harnesses:` matches the agent an `agents:` entry runs, so an alias
   such as `my-claude` with `binary: claude` counts as `claude`.
+- Routes: `for: {claude: {env: [...], set: {...}}, pi: {...}}` gives one
+  binding a route per harness, carrying the endpoint and provider
+  switches with the key, so `--agent` alone picks the right credential.
+  A binding without `store:`/`key:` is keyless (e.g. Bedrock with
+  `capabilities: [aws]`). A provider endpoint in a profile's `env:`
+  now stops a launch that injects a key from `credentials:` unless a
+  selected route sets it (`provider endpoint outside the credential
+  route`); `aide profile migrate` moves legacy endpoints into the
+  route. `default_credentials:` that collide on a variable for the
+  same harness fail to load, and a harness with no route prints a note
+  that it uses its own login.
 - `aide --diagnose` lists the secret stores of the selected bindings
   (paths only).
 - The launch banner, `aide which` and `aide status` list binding and

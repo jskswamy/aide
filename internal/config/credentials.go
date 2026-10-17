@@ -17,10 +17,12 @@ import (
 // age/sops secret store (the same stores secret: names).
 const CredentialBackendAge = "age"
 
-// CredentialBinding is a profile-local named provider credential: the
-// key Key in secret store Store, injected as Env.
+// CredentialBinding is a profile-local named provider route: the key
+// Key in secret store Store, injected per harness with the settings
+// that harness needs to reach the provider. A binding without
+// Backend/Store/Key is keyless (e.g. Bedrock via the aws capability).
 type CredentialBinding struct {
-	Backend string `yaml:"backend"`
+	Backend string `yaml:"backend,omitempty"`
 	// Store names a secret store the way secret: does (see
 	// ResolveSecretPath).
 	Store string `yaml:"store"`
@@ -30,6 +32,51 @@ type CredentialBinding struct {
 	// Harnesses restricts the binding to these harnesses; required for
 	// custom names. Empty on a built-in means every harness.
 	Harnesses []string `yaml:"harnesses,omitempty"`
+	// For gives each harness the binding serves its own route; it
+	// replaces Env/Harnesses.
+	For map[string]CredentialRoute `yaml:"for,omitempty"`
+	// Capabilities are added to a launch that selects the binding.
+	Capabilities []string `yaml:"capabilities,omitempty"`
+}
+
+// CredentialRoute is how one harness reaches a binding's provider: the
+// variables the key is injected as, and non-secret settings such as
+// the endpoint that must accompany it.
+type CredentialRoute struct {
+	Env []string          `yaml:"env,omitempty"`
+	Set map[string]string `yaml:"set,omitempty"`
+}
+
+// Keyless reports whether the binding injects no secret.
+func (b CredentialBinding) Keyless() bool {
+	return b.Backend == "" && b.Store == "" && b.Key == ""
+}
+
+// Route returns the route binding name gives agent (a harness name or
+// a path to its binary), and false when the binding does not serve it.
+// A for: entry without env: on a keyed built-in uses the built-in
+// variables; without for:, every allowed harness gets EnvNames.
+func (b CredentialBinding) Route(name, agent string) (CredentialRoute, bool) {
+	if len(b.For) == 0 {
+		if !b.AllowsHarness(agent) {
+			return CredentialRoute{}, false
+		}
+		if b.Keyless() {
+			return CredentialRoute{}, true
+		}
+		return CredentialRoute{Env: b.EnvNames(name)}, true
+	}
+	h := canonicalHarness(filepath.Base(agent))
+	for k, r := range b.For {
+		if canonicalHarness(k) != h {
+			continue
+		}
+		if len(r.Env) == 0 && !b.Keyless() {
+			r.Env = builtinCredentialEnv[name]
+		}
+		return CredentialRoute{Env: slices.Clone(r.Env), Set: maps.Clone(r.Set)}, true
+	}
+	return CredentialRoute{}, false
 }
 
 // builtinCredentialEnv maps built-in binding names to the env vars
@@ -51,6 +98,15 @@ func IsBuiltinCredential(name string) bool {
 // EnvNames returns the env vars binding name injects: Env when set,
 // else the built-in names.
 func (b CredentialBinding) EnvNames(name string) []string {
+	if len(b.For) > 0 {
+		var out []string
+		for h := range b.For {
+			r, _ := b.Route(name, h)
+			out = append(out, r.Env...)
+		}
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
 	if len(b.Env) > 0 {
 		return slices.Clone(b.Env)
 	}
@@ -61,6 +117,10 @@ func (b CredentialBinding) EnvNames(name string) []string {
 // (a harness name or a path to its binary; resolve agents: aliases with
 // Config.HarnessOf first).
 func (b CredentialBinding) AllowsHarness(agent string) bool {
+	if len(b.For) > 0 {
+		_, ok := b.Route("", agent)
+		return ok
+	}
 	if len(b.Harnesses) == 0 {
 		return true
 	}
@@ -120,21 +180,66 @@ func (c *Config) validateCredentials() error {
 					ErrInvalidCredentials, at, sel, definedBindings(ctx))
 			}
 		}
+		if err := checkDefaultRoutes(ctx); err != nil {
+			return fmt.Errorf("%w: %s: %s", ErrInvalidCredentials, at, err)
+		}
+	}
+	return nil
+}
+
+// checkDefaultRoutes fails when two default bindings serving the same
+// harness set the same variable, so switching harness never needs a
+// --credential to resolve a clash.
+func checkDefaultRoutes(ctx Context) error {
+	for _, d := range harness.All() {
+		if !d.Launchable() {
+			continue
+		}
+		setBy := map[string]string{}
+		for _, name := range slices.Compact(slices.Clone(ctx.DefaultCredentials)) {
+			r, ok := ctx.Credentials[name].Route(name, d.Name)
+			if !ok {
+				continue
+			}
+			for _, e := range append(r.Env, slices.Sorted(maps.Keys(r.Set))...) {
+				if other, dup := setBy[e]; dup && other != name {
+					return fmt.Errorf("default_credentials %q and %q both set %s for %s; "+
+						"keep one in default_credentials: or route them to different harnesses with for", other, name, e, d.Name)
+				}
+				setBy[e] = name
+			}
+		}
 	}
 	return nil
 }
 
 func validateBinding(name string, b CredentialBinding) error {
-	if b.Backend != CredentialBackendAge {
-		return fmt.Errorf("backend: must be %q (got %q)", CredentialBackendAge, b.Backend)
+	keyless := b.Keyless()
+	if !keyless {
+		if b.Backend != CredentialBackendAge {
+			return fmt.Errorf("backend: must be %q (got %q)", CredentialBackendAge, b.Backend)
+		}
+		if b.Store == "" {
+			return errors.New("store: is required (the secret store holding the key, as named by secret:)")
+		}
+		if b.Key == "" {
+			return errors.New("key: is required (the key inside the secret store)")
+		}
 	}
-	if b.Store == "" {
-		return errors.New("store: is required (the secret store holding the key, as named by secret:)")
+	if len(b.For) > 0 {
+		if len(b.Env) > 0 || len(b.Harnesses) > 0 {
+			return errors.New("for: replaces env: and harnesses: (move them into for.<harness>.env)")
+		}
+		return validateRoutes(name, b)
 	}
-	if b.Key == "" {
-		return errors.New("key: is required (the key inside the secret store)")
-	}
-	if !IsBuiltinCredential(name) {
+	if keyless {
+		if len(b.Env) > 0 {
+			return errors.New("env: needs a key (set backend, store and key)")
+		}
+		if len(b.Capabilities) == 0 {
+			return errors.New("a binding without store and key needs for.<harness>.set or capabilities")
+		}
+	} else if !IsBuiltinCredential(name) {
 		builtins := strings.Join(slices.Sorted(maps.Keys(builtinCredentialEnv)), ", ")
 		if len(b.Env) == 0 {
 			return fmt.Errorf("env: is required for a custom credential (built-in names: %s)", builtins)
@@ -144,17 +249,60 @@ func validateBinding(name string, b CredentialBinding) error {
 		}
 	}
 	for _, e := range b.Env {
-		if !envNameRE.MatchString(e) {
-			return fmt.Errorf("env: %q is not a valid variable name", e)
-		}
-		if reason := reservedEnvReason(e); reason != "" {
-			return fmt.Errorf("env: %s is %s and cannot be set by a credential", e, reason)
+		if err := checkBindingEnv("env", e); err != nil {
+			return err
 		}
 	}
 	for _, h := range b.Harnesses {
 		if _, ok := harness.Lookup(h); !ok {
 			return fmt.Errorf("harnesses: %q is not a known harness", h)
 		}
+	}
+	return nil
+}
+
+// validateRoutes checks a binding's for: entries.
+func validateRoutes(name string, b CredentialBinding) error {
+	keyless, effect := b.Keyless(), len(b.Capabilities) > 0
+	for _, h := range slices.Sorted(maps.Keys(b.For)) {
+		r := b.For[h]
+		at := "for." + h
+		if _, ok := harness.Lookup(h); !ok {
+			return fmt.Errorf("%s: %q is not a known harness", at, h)
+		}
+		switch {
+		case keyless && len(r.Env) > 0:
+			return fmt.Errorf("%s.env: needs a key (set backend, store and key)", at)
+		case !keyless && len(r.Env) == 0 && !IsBuiltinCredential(name):
+			return fmt.Errorf("%s.env: is required for a custom credential", at)
+		}
+		for _, e := range r.Env {
+			if err := checkBindingEnv(at+".env", e); err != nil {
+				return err
+			}
+		}
+		for _, k := range slices.Sorted(maps.Keys(r.Set)) {
+			if err := checkBindingEnv(at+".set", k); err != nil {
+				return err
+			}
+			if envscrub.IsProviderSecretName(k) && r.Set[k] != "" {
+				return fmt.Errorf("%s.set: %s is a provider credential; set: may only blank it (\"\"), keys come from store and key", at, k)
+			}
+		}
+		effect = effect || len(r.Set) > 0
+	}
+	if keyless && !effect {
+		return errors.New("a binding without store and key needs for.<harness>.set or capabilities")
+	}
+	return nil
+}
+
+func checkBindingEnv(at, e string) error {
+	if !envNameRE.MatchString(e) {
+		return fmt.Errorf("%s: %q is not a valid variable name", at, e)
+	}
+	if reason := reservedEnvReason(e); reason != "" {
+		return fmt.Errorf("%s: %s is %s and cannot be set by a credential", at, e, reason)
 	}
 	return nil
 }

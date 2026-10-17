@@ -223,7 +223,7 @@ func (c *Config) IsolateNewProfile(name string, ctx *Context) []string {
 	}
 	base := configDirName(name)
 	ctx.Profile = base
-	for n := 2; c.dirNameTaken(name, ctx.Profile); n++ {
+	for n := 2; c.dirNameTaken(name, ctx.Profile, home); n++ {
 		suffix := fmt.Sprintf("-%d", n)
 		ctx.Profile = base[:min(len(base), 64-len(suffix))] + suffix
 	}
@@ -231,11 +231,27 @@ func (c *Config) IsolateNewProfile(name string, ctx *Context) []string {
 }
 
 // dirNameTaken reports whether a profile other than name uses dir
-// name dirName.
-func (c *Config) dirNameTaken(name, dirName string) bool {
+// name dirName, or runs a harness from a dir that name would derive
+// from it (through its own config dirs or env:).
+func (c *Config) dirNameTaken(name, dirName, home string) bool {
 	for n, ctx := range c.Contexts {
-		if n != name && ctx.Profile == dirName {
+		if n == name {
+			continue
+		}
+		if ctx.Profile == dirName {
 			return true
+		}
+		for _, d := range harness.All() {
+			if !d.SupportsProfiles() || home == "" {
+				continue
+			}
+			theirs := envDir(ctx, d, home)
+			if ctx.SelectsConfigDir() {
+				theirs = ctx.NativeConfigDir(d.Name, home)
+			}
+			if sameDirPath(theirs, harness.ProfileConfigDir(d.Name, dirName, "", home)) {
+				return true
+			}
 		}
 	}
 	return false
@@ -281,10 +297,17 @@ func (c *Config) GlobalLoginError(name, h, home string) error {
 	if !c.ProfileSchema {
 		section, nameKey = "contexts", "profile"
 	}
+	// Keep the login on a pinned profile, else on one that could move
+	// off it but need not (the default profile first).
+	selectable := slices.DeleteFunc(slices.Clone(users), func(u string) bool { return !c.canSelectDir(c.Contexts[u]) })
 	keep := users[0]
 	switch {
 	case len(pinned) > 0:
 		keep = pinned[0]
+	case slices.Contains(selectable, c.DefaultContext):
+		keep = c.DefaultContext
+	case len(selectable) > 0:
+		keep = selectable[0]
 	case slices.Contains(users, c.DefaultContext):
 		keep = c.DefaultContext
 	}

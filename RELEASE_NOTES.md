@@ -176,7 +176,8 @@ commands keep working; `aide status`, `aide which` and `aide validate`
 report it, and `aide profile migrate` lists the profiles. The error
 names the exact line to add to each profile but one (for example
 `profiles.personal: add config_dir_name: personal`); the default
-profile keeps the global login, and each of the others needs a fresh
+profile keeps the global login (unless its own agent cannot select a
+config dir, then another profile does), and each of the others needs a fresh
 login in its new dir. A profile whose own agent cannot select a config
 dir (such as aider) never blocks another profile's launch on its own
 agent, but launching it with `--agent claude` is refused while another
@@ -188,8 +189,9 @@ not count as a dir of its own.
 `aide profile create`, `aide use` and `aide setup` now give a new
 profile its own `config_dir_name:` when another profile already uses
 that agent's global login, and say so; the first profile on an agent
-stays on its global login. A dir name another profile already uses
-gets a numeric suffix (`my-repo-2`).
+stays on its global login. A dir name another profile already uses,
+or whose dirs another profile already runs from, gets a numeric suffix
+(`my-repo-2`).
 
 A config that pins a profile to an agent's global dir (for example
 `config_dirs: {claude: ~/.claude}`) while another profile still has no

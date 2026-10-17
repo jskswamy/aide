@@ -143,19 +143,27 @@ func SetBannerSelection(data *ui.BannerData, sel Selection) {
 // origin remote there is nothing to look up and it returns the zero
 // preference; a missing file is not an error.
 func SavedPreference(path, profile string, remotes aidectx.RemoteLookup) (prefs.Preference, error) {
-	if remotes == nil {
-		return prefs.Preference{}, nil
-	}
-	remote := aidectx.ParseRemoteHost(remotes(aidectx.DefaultRemoteName))
-	if remote == "" {
+	key := PreferenceKey(profile, remotes)
+	if key.Remote == "" {
 		return prefs.Preference{}, nil
 	}
 	f, err := prefs.Load(path)
 	if err != nil {
 		return prefs.Preference{}, err
 	}
-	p, _ := f.Get(prefs.Key{Profile: profile, Remote: remote})
+	p, _ := f.Get(key)
 	return p, nil
+}
+
+// PreferenceKey is the key repository preferences for profile are
+// saved and read under: the profile and the repository's normalized
+// origin remote, which is "" without one (or with nil remotes).
+func PreferenceKey(profile string, remotes aidectx.RemoteLookup) prefs.Key {
+	key := prefs.Key{Profile: profile}
+	if remotes != nil {
+		key.Remote = aidectx.ParseRemoteHost(remotes(aidectx.DefaultRemoteName))
+	}
+	return key
 }
 
 // ProjectProfileNotice explains a .aide.yaml profile: reference that

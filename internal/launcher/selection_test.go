@@ -508,3 +508,16 @@ func TestLauncher_UntrustedProjectProfileReferencePrintsNothing(t *testing.T) {
 		t.Errorf("untrusted .aide.yaml produced a profile notice:\n%s", stderr)
 	}
 }
+
+// aide project set writes, and a launch reads, the key PreferenceKey
+// builds: the profile and the normalized origin remote.
+func TestPreferenceKey_ProfileAndNormalizedOrigin(t *testing.T) {
+	cwd := t.TempDir()
+	gitRepo(t, cwd, "https://user:tok@github.com/org/repo.git")
+	if got, want := PreferenceKey("work", aidectx.GitRemotes(cwd)), (prefs.Key{Profile: "work", Remote: "github.com/org/repo"}); got != want {
+		t.Errorf("PreferenceKey = %+v, want %+v", got, want)
+	}
+	if got := PreferenceKey("work", nil); got != (prefs.Key{Profile: "work"}) {
+		t.Errorf("PreferenceKey without remotes = %+v, want no remote", got)
+	}
+}

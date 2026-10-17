@@ -782,6 +782,15 @@ preferences, worktree configuration inheritance, and Skillshare integration.
 - Design only; no runtime behavior or configuration format has changed.
 - See the 2026-10-16 profiles design spec in `docs/superpowers/specs/`.
 
+#### Codebase-memory sandbox fix design
+
+A draft design makes the codebase-memory-mcp server and CLI start inside
+the macOS sandbox by letting the sandboxed process open and list the
+directory that holds the home directory, with no wider file access.
+
+- Design only; no runtime behavior or configuration format has changed.
+- See the 2026-10-18 codebase-memory spec in `docs/superpowers/specs/`.
+
 ## v2.3.0 (2026-10-15)
 
 Pi and OpenCode join the supported agents, the Linux sandbox now gives

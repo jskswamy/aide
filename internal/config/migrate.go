@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jskswamy/aide/internal/harness"
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // ErrAdopt reports an --adopt choice migration cannot apply.
@@ -246,7 +247,7 @@ func globalLogins(cfg *Config, names []string, home string) []GlobalLogin {
 		for _, other := range profileHarnesses() {
 			if other != d.Name {
 				gl.OtherDirs = append(gl.OtherDirs, OtherHarnessDir{Harness: other,
-					Dir: tildePath(harness.ProfileConfigDir(other, name, "", home), home)})
+					Dir: homepath.Tilde(harness.ProfileConfigDir(other, name, "", home), home)})
 			}
 		}
 		out = append(out, gl)

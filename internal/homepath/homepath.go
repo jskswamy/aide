@@ -5,7 +5,10 @@ package homepath
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/jskswamy/aide/internal/fsutil"
 )
 
 // Expand replaces a leading "~" or "~/" in path with home.
@@ -39,6 +42,18 @@ func Collapse(s, home string) string {
 		return s
 	}
 	return strings.ReplaceAll(s, home, "~")
+}
+
+// Tilde shows a path below home as ~/<rel>, as users write it; home
+// itself and paths outside it are returned unchanged.
+func Tilde(path, home string) string {
+	if home == "" || !fsutil.IsUnderDir(path, home) || filepath.Clean(path) == filepath.Clean(home) {
+		return path
+	}
+	if rel, err := filepath.Rel(home, path); err == nil {
+		return "~/" + filepath.ToSlash(rel)
+	}
+	return path
 }
 
 func resolveHome(home string) string {

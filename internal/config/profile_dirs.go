@@ -312,7 +312,7 @@ func (c *Config) GlobalLoginError(name, h, home string) error {
 	case slices.Contains(users, c.DefaultContext):
 		keep = c.DefaultContext
 	}
-	defaultDir := tildePath(harnessDefaultDir(d.Name, home), home)
+	defaultDir := homepath.Tilde(harnessDefaultDir(d.Name, home), home)
 	var fixes []string
 	for _, u := range users {
 		switch uc := c.Contexts[u]; {
@@ -347,13 +347,13 @@ func (c *Config) profileDirAliasError(h, a, b, dir, home string) error {
 		return fmt.Errorf("%w: profile %q pins %s's config dir to %s, its global login, which profile %q also uses because it "+
 			"selects no config dir, so the two would share one %s login while %q looks isolated. Keep the global login for one "+
 			"of them: give %q its own %s: (it will need a fresh %s login there), or remove the pin from %q",
-			ErrProfileDirAlias, pinned, h, tildePath(dir, home), global, h, pinned, global, nameKey, h, pinned)
+			ErrProfileDirAlias, pinned, h, homepath.Tilde(dir, home), global, h, pinned, global, nameKey, h, pinned)
 	}
 	ha, okA := profileHarness(c.HarnessOf(ctxA.Agent))
 	hb, okB := profileHarness(c.HarnessOf(ctxB.Agent))
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "profiles %q (agent %s) and %q (agent %s) both resolve %s's config dir to %s",
-		a, ctxA.Agent, b, ctxB.Agent, h, tildePath(dir, home))
+		a, ctxA.Agent, b, ctxB.Agent, h, homepath.Tilde(dir, home))
 	switch {
 	case ha != h || hb != h:
 		fmt.Fprintf(&msg, "; any profile can launch any harness (--agent %s), so both would use the same %s login", h, h)
@@ -362,12 +362,12 @@ func (c *Config) profileDirAliasError(h, a, b, dir, home string) error {
 			// own but keeps its login, and a moves off b's login dir.
 			fmt.Fprintf(&msg, ". To keep both logins, merge the two profiles into one, or separate them with "+
 				"%s: %s, config_dirs: {%s: %s} on %q and config_dirs: {%s: %s} on %q",
-				nameKey, b, hb, tildePath(ctxB.NativeConfigDir(hb, home), home), b,
-				hb, tildePath(harness.ProfileConfigDir(hb, a, "", home), home), a)
+				nameKey, b, hb, homepath.Tilde(ctxB.NativeConfigDir(hb, home), home), b,
+				hb, homepath.Tilde(harness.ProfileConfigDir(hb, a, "", home), home), a)
 		} else {
 			fmt.Fprintf(&msg, ". To keep both logins, merge the two profiles into one, or add a config_dirs entry "+
 				"for %s to one of them so it no longer resolves to %s, leaving each existing login dir in place",
-				h, tildePath(dir, home))
+				h, homepath.Tilde(dir, home))
 		}
 	default:
 		fmt.Fprintf(&msg, ", so they would share one %s login. Merge the two profiles into one, or give one of them "+
@@ -391,14 +391,6 @@ func profileHarness(agent string) (string, bool) {
 		return agent, false
 	}
 	return d.Name, true
-}
-
-// tildePath shows path relative to home as ~/..., as users write it.
-func tildePath(path, home string) string {
-	if rel, err := filepath.Rel(home, path); err == nil && home != "" && rel != ".." && !strings.HasPrefix(rel, "../") {
-		return "~/" + rel
-	}
-	return path
 }
 
 // userHome is the home dir used for profile dir checks at load.

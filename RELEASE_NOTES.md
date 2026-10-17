@@ -343,7 +343,10 @@ change saved preferences.
   `aide sandbox show`, `aide sandbox test`, `aide sync`, `aide adopt`
   and `aide statusline`. Giving both with different names is an error.
 - `aide prompt` and `aide statusline` show the harness saved for the
-  repository, as a launch would run it.
+  repository, as a launch would run it. They select exactly as a
+  launch does: a saved harness the launch would reject is not shown,
+  and `aide statusline --profile <name>` applies the trusted
+  `.aide.yaml` the way `aide --profile <name>` does.
 - `aide sandbox show` and `aide sandbox test` select the profile and
   harness the way a launch does, including the harness saved for the
   repository, and print the notices a launch would print. `aide sync`,

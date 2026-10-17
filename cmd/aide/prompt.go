@@ -7,10 +7,8 @@ import (
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
-	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
-	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -50,27 +48,19 @@ func promptCmd() *cobra.Command {
 			cwd := env.CWD()
 			cfg := env.Config()
 
-			// The same per-file trust gate a launch applies: untrusted
-			// files neither shape the prompt nor go unflagged.
-			gate, err := launcher.GateProjectConfig(cfg)
-			if err != nil {
-				return err
-			}
-			remotes := aidectx.GitRemotes(cwd)
-			resolved, err := aidectx.Resolve(cfg, cwd, remotes)
-			if err != nil {
+			// A launch's selection, trust gate included: untrusted files
+			// neither shape the prompt nor go unflagged. Steps a launch
+			// stops on after the profile is resolved leave the harness it
+			// would otherwise run; it reports them itself.
+			home, _ := os.UserHomeDir()
+			res, err := (&launcher.Launcher{}).ResolveSelection(cfg, cwd, home, launcher.SelectionInputs{})
+			resolved := res.RC
+			if resolved == nil {
 				// No context matched — Starship hides the module on non-zero exit.
 				return err
 			}
-			// Show the harness a launch would run: a harness saved for
-			// this repository wins over the profile's.
-			if home, herr := os.UserHomeDir(); herr == nil {
-				if saved, perr := launcher.SavedPreference(prefs.DefaultPath(home), resolved.Name, remotes); perr == nil && saved.Harness != "" {
-					resolved.Context.Agent = saved.Harness
-				}
-			}
 
-			trustStatus := gate.Status()
+			trustStatus := res.Gate.Status()
 			sbDisabled := resolved.Context.Sandbox != nil && resolved.Context.Sandbox.Disabled
 
 			ctxIcon := resolved.Context.Icon

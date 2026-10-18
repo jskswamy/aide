@@ -49,3 +49,6 @@ testdata/*.actual.*
 
 coverage.out
 CLAUDE.md
+
+# bd gate lock
+.beads.gate.lock

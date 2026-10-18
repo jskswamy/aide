@@ -1,0 +1,6 @@
+template = "docker"
+agents {
+  "claude"
+  "opencode"
+  "pi"
+}

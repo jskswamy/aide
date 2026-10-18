@@ -89,3 +89,22 @@ func TestAutoInclude_SkillshareFollowsXDGConfigHome(t *testing.T) {
 		t.Errorf("got %v, want [skillshare]", got)
 	}
 }
+
+func TestAutoInclude_BivouacWhenConfigDirExists(t *testing.T) {
+	homeDir := t.TempDir()
+	if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 1 {
+		t.Errorf("got %v, want [k8s] without bivouac", got)
+	}
+	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "bivouac"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 2 || got[1] != "bivouac" {
+		t.Errorf("got %v, want [k8s bivouac]", got)
+	}
+	if got := AutoInclude([]string{"bivouac"}, nil, homeDir, noEnv); len(got) != 1 {
+		t.Errorf("got %v, want [bivouac] (not duplicated)", got)
+	}
+	if got := AutoInclude([]string{"k8s"}, []string{"bivouac"}, homeDir, noEnv); len(got) != 1 {
+		t.Errorf("got %v, want [k8s] (exclusion honored)", got)
+	}
+}

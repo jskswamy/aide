@@ -282,6 +282,27 @@ func init() {
 			Description: "Beautiful highly customizable statusline for Claude Code CLI with powerline support, themes, and more.",
 			Readable:    []string{"~/.config/ccstatusline/settings.json"},
 		},
+		// Default XDG locations only; bivouac's lock file sits beside its
+		// state dir, not inside it. The config dir is read-only on purpose:
+		// base.pkl there is evaluated by pkl on the host.
+		"bivouac": {
+			Name:        "bivouac",
+			Description: "bivouac's config (read), its state and herdr's saved machines (read/write) so `bivouac list`, `status` and `session merge` run in the sandbox (auto-included when ~/.config/bivouac exists). ssh stays behind --with ssh.",
+			Readable:    []string{"~/.config/bivouac"},
+			Writable: []string{
+				"~/.local/state/bivouac",
+				"~/.local/state/.bivouac-state.json.lock",
+				// herdr keeps its saved machines here; session merge and
+				// down add, enable and remove them (atomic rewrite, so
+				// the directory must be writable).
+				"~/.local/state/herdr/client",
+			},
+			// herdr --machine binds a unix socket in the per-user temp
+			// dir for its ssh connection; ssh itself needs --with ssh.
+			Allow: []string{
+				`network-bind (local unix-socket (subpath "/private/var/folders"))`,
+			},
+		},
 		// Readable paths depend on XDG dirs and Skillshare's config, so
 		// sandbox.ResolveCapabilitiesWithVariants adds them at launch.
 		"skillshare": {

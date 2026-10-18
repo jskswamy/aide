@@ -211,6 +211,29 @@ file as it was.
 
 ### ✨ New
 
+#### A built-in bivouac capability
+
+When `~/.config/bivouac` exists, aide now turns on a `bivouac`
+capability by itself, so `bivouac list`, `bivouac status` and
+`bivouac session merge` run inside the sandbox. A merge used to stop
+after advancing `main`, with access denied to
+`~/.local/state/herdr/client/endpoints.json`. Before this, `list` and `status` both failed with
+`open ~/.local/state/.bivouac-state.json.lock: operation not permitted`,
+because that lock file sits beside the state directory, not inside it.
+
+- Read access to `~/.config/bivouac`. It is read-only on purpose:
+  `base.pkl` there is evaluated by pkl on your machine.
+- Read/write access to `~/.local/state/bivouac`, the lock file, and
+  herdr's saved machines in `~/.local/state/herdr/client`.
+- Binding a unix socket in the per-user temp dir, which `herdr
+  --machine` uses for its ssh connection. The connection itself still
+  needs `--with ssh`.
+- No ssh, no `~/.pkl/cache`, no network. Add ssh with `--with ssh`.
+- Turn it off with `--without bivouac`, or add it by hand with
+  `--with bivouac`.
+- Default XDG locations only. `up`, `down` and `provision` are not
+  covered yet; they may need `~/.pkl/cache` and more.
+
 #### codebase-memory-mcp starts inside the macOS sandbox
 
 The default macOS sandbox now lets the agent open and list the directory

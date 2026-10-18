@@ -2,6 +2,7 @@ package capability
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -20,8 +21,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 24 {
-		t.Errorf("expected 24 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 25 {
+		t.Errorf("expected 25 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -383,5 +384,31 @@ func TestBuiltin_Skillshare_Exists(t *testing.T) {
 	}
 	if len(c.Writable) != 0 || len(c.Markers) != 0 {
 		t.Errorf("skillshare must be read-only and auto-included only: %+v", c)
+	}
+}
+
+// bivouac's config stays read-only (base.pkl is evaluated on the host);
+// only its state dir and the lock file beside it are writable.
+func TestBuiltin_Bivouac_Paths(t *testing.T) {
+	c, ok := Builtins()["bivouac"]
+	if !ok {
+		t.Fatal("missing built-in capability 'bivouac'")
+	}
+	if want := []string{"~/.config/bivouac"}; !reflect.DeepEqual(c.Readable, want) {
+		t.Errorf("Readable = %v, want %v", c.Readable, want)
+	}
+	want := []string{
+		"~/.local/state/bivouac",
+		"~/.local/state/.bivouac-state.json.lock",
+		"~/.local/state/herdr/client",
+	}
+	if !reflect.DeepEqual(c.Writable, want) {
+		t.Errorf("Writable = %v, want %v", c.Writable, want)
+	}
+	if len(c.Allow) != 1 || !strings.Contains(c.Allow[0], "network-bind") {
+		t.Errorf("Allow = %v, want one network-bind rule for herdr's ssh socket", c.Allow)
+	}
+	if len(c.Markers) != 0 {
+		t.Errorf("bivouac is auto-included, not marker-detected: %v", c.Markers)
 	}
 }

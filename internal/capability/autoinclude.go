@@ -8,7 +8,10 @@ import (
 	"github.com/jskswamy/aide/internal/provision/skillshare"
 )
 
-const ccstatuslineSettingsPath = "~/.config/ccstatusline/settings.json"
+const (
+	ccstatuslineSettingsPath = "~/.config/ccstatusline/settings.json"
+	bivouacConfigDir         = "~/.config/bivouac"
+)
 
 // AutoInclude adds the capabilities aide turns on by itself when their
 // tool is set up on this machine:
@@ -16,6 +19,8 @@ const ccstatuslineSettingsPath = "~/.config/ccstatusline/settings.json"
 //   - "ccstatusline" when its settings file exists, so a sandboxed agent
 //     process invoking `aide statusline claude` from a ccstatusline
 //     Custom Command widget can read its config;
+//   - "bivouac" when its config dir exists, so `bivouac list` and `status`
+//     can read their config and state;
 //   - "skillshare" when Skillshare's config dir exists, so the agent can
 //     read the skills, agents and plugins Skillshare links into its
 //     config dir.
@@ -32,6 +37,8 @@ const ccstatuslineSettingsPath = "~/.config/ccstatusline/settings.json"
 func AutoInclude(capNames, excluded []string, homeDir string, getenv func(string) string) []string {
 	_, err := os.Stat(homepath.Expand(ccstatuslineSettingsPath, homeDir))
 	capNames = autoInclude(capNames, excluded, "ccstatusline", err == nil)
+	_, err = os.Stat(homepath.Expand(bivouacConfigDir, homeDir))
+	capNames = autoInclude(capNames, excluded, "bivouac", err == nil)
 	return autoInclude(capNames, excluded, "skillshare", skillshare.Installed(homeDir, getenv))
 }
 

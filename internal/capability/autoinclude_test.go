@@ -108,3 +108,24 @@ func TestAutoInclude_BivouacWhenConfigDirExists(t *testing.T) {
 		t.Errorf("got %v, want [k8s] (exclusion honored)", got)
 	}
 }
+
+func TestAutoInclude_PonytailWhenInstalled(t *testing.T) {
+	for name, dir := range map[string]string{
+		"config dir": ".config/ponytail",
+		"skillshare": ".local/state/skillshare/plugins/abc/skillshare-ponytail-123",
+	} {
+		homeDir := t.TempDir()
+		if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 1 {
+			t.Errorf("%s: got %v, want [k8s] without ponytail", name, got)
+		}
+		if err := os.MkdirAll(filepath.Join(homeDir, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 2 || got[1] != "ponytail" {
+			t.Errorf("%s: got %v, want [k8s ponytail]", name, got)
+		}
+		if got := AutoInclude([]string{"k8s"}, []string{"ponytail"}, homeDir, noEnv); len(got) != 1 {
+			t.Errorf("%s: got %v, want [k8s] (exclusion honored)", name, got)
+		}
+	}
+}

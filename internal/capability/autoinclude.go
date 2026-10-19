@@ -2,6 +2,7 @@ package capability
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/jskswamy/aide/internal/homepath"
@@ -11,6 +12,10 @@ import (
 const (
 	ccstatuslineSettingsPath = "~/.config/ccstatusline/settings.json"
 	bivouacConfigDir         = "~/.config/bivouac"
+	ponytailConfigDir        = "~/.config/ponytail"
+	// Skillshare's installed plugins; it is how a fresh install shows up
+	// before ponytail has written its own config dir.
+	ponytailPluginGlob = "~/.local/state/skillshare/plugins/*/skillshare-ponytail-*"
 )
 
 // AutoInclude adds the capabilities aide turns on by itself when their
@@ -21,6 +26,8 @@ const (
 //     Custom Command widget can read its config;
 //   - "bivouac" when its config dir exists, so `bivouac list` and `status`
 //     can read their config and state;
+//   - "ponytail" when its config dir exists or Skillshare has it installed,
+//     so its band can write the task ledger;
 //   - "skillshare" when Skillshare's config dir exists, so the agent can
 //     read the skills, agents and plugins Skillshare links into its
 //     config dir.
@@ -39,6 +46,7 @@ func AutoInclude(capNames, excluded []string, homeDir string, getenv func(string
 	capNames = autoInclude(capNames, excluded, "ccstatusline", err == nil)
 	_, err = os.Stat(homepath.Expand(bivouacConfigDir, homeDir))
 	capNames = autoInclude(capNames, excluded, "bivouac", err == nil)
+	capNames = autoInclude(capNames, excluded, "ponytail", ponytailInstalled(homeDir))
 	return autoInclude(capNames, excluded, "skillshare", skillshare.Installed(homeDir, getenv))
 }
 
@@ -47,4 +55,12 @@ func autoInclude(capNames, excluded []string, name string, installed bool) []str
 		return capNames
 	}
 	return append(capNames, name)
+}
+
+func ponytailInstalled(homeDir string) bool {
+	if _, err := os.Stat(homepath.Expand(ponytailConfigDir, homeDir)); err == nil {
+		return true
+	}
+	m, _ := filepath.Glob(homepath.Expand(ponytailPluginGlob, homeDir))
+	return len(m) > 0
 }

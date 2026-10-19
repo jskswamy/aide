@@ -21,8 +21,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 25 {
-		t.Errorf("expected 25 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 26 {
+		t.Errorf("expected 26 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -410,5 +410,18 @@ func TestBuiltin_Bivouac_Paths(t *testing.T) {
 	}
 	if len(c.Markers) != 0 {
 		t.Errorf("bivouac is auto-included, not marker-detected: %v", c.Markers)
+	}
+}
+
+func TestBuiltin_Ponytail_Paths(t *testing.T) {
+	c, ok := Builtins()["ponytail"]
+	if !ok {
+		t.Fatal("missing built-in capability 'ponytail'")
+	}
+	if want := []string{"~/.config/ponytail/band"}; !reflect.DeepEqual(c.Writable, want) {
+		t.Errorf("Writable = %v, want %v", c.Writable, want)
+	}
+	if len(c.Readable) != 0 || len(c.Markers) != 0 {
+		t.Errorf("ponytail is write-only and auto-included: %+v", c)
 	}
 }

@@ -303,6 +303,13 @@ func init() {
 				`network-bind (local unix-socket (subpath "/private/var/folders"))`,
 			},
 		},
+		// ponytail's band keeps its per-project task ledger and board.html
+		// here (default XDG location only, as with bivouac).
+		"ponytail": {
+			Name:        "ponytail",
+			Description: "ponytail's task ledger (read/write) so the band can record each task under the sandbox (auto-included when ponytail is set up).",
+			Writable:    []string{"~/.config/ponytail/band"},
+		},
 		// Readable paths depend on XDG dirs and Skillshare's config, so
 		// sandbox.ResolveCapabilitiesWithVariants adds them at launch.
 		"skillshare": {

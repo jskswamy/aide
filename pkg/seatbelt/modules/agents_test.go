@@ -90,6 +90,15 @@ func TestAgentModules(t *testing.T) {
 			},
 		},
 		{
+			name:     "Antigravity defaults",
+			module:   AntigravityAgent(),
+			wantName: "Antigravity Agent",
+			wantContain: []string{
+				"/home/user/.gemini",
+				"/home/user/.config/gemini",
+			},
+		},
+		{
 			name:     "Gemini defaults",
 			module:   GeminiAgent(),
 			wantName: "Gemini Agent",

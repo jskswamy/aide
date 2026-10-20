@@ -655,6 +655,10 @@ func resolveAgentBinary(cfg *config.Config, agentName string) (string, error) {
 		return agent.Binary, nil
 	}
 
+	if d, ok := harness.Lookup(agentName); ok {
+		return d.Binary, nil
+	}
+
 	// If there are agents defined but this one isn't found, that's an error
 	if len(cfg.Agents) > 0 {
 		return "", fmt.Errorf("agent %q not found in agents map", agentName)

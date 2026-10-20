@@ -2,6 +2,14 @@
 
 ### ✨ New
 
+#### Support for Antigravity (`agy`)
+
+aide now discovers, sandboxes, and launches Google Antigravity CLI (`agy`).
+
+- Auto-discovered on PATH under canonical name `agy` (with alias `antigravity`).
+- Sandbox access granted to `~/.gemini` (including `~/.gemini/antigravity-cli` and `~/.gemini/config`).
+- `--yolo` maps to Antigravity's `--dangerously-skip-permissions` flag.
+
 #### A built-in ponytail capability
 
 When ponytail is set up (`~/.config/ponytail` exists, or Skillshare has

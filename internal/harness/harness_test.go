@@ -37,6 +37,8 @@ func TestLookupResolvesNamesAndAliases(t *testing.T) {
 		{"cursor-agent", "cursor-agent"},
 		{"cursor", "cursor-agent"},
 		{"hermes", "hermes"},
+		{"antigravity", "agy"},
+		{"agy", "agy"},
 	}
 	for _, tc := range tests {
 		d, ok := harness.Lookup(tc.in)
@@ -63,6 +65,7 @@ func TestProfileSupport(t *testing.T) {
 		{"cursor-agent", ""},
 		{"aider", ""},
 		{"amp", ""},
+		{"agy", ""},
 		{"goose", ""},
 		{"hermes", ""},
 	}
@@ -100,6 +103,7 @@ func TestYoloArgs(t *testing.T) {
 		ok   bool
 	}{
 		{"claude", []string{"--dangerously-skip-permissions"}, true},
+		{"agy", []string{"--dangerously-skip-permissions"}, true},
 		{"pi", nil, true},
 		{"aider", nil, false},
 	}

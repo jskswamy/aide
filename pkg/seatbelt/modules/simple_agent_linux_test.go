@@ -19,9 +19,10 @@ func TestSimpleAgentLinux_ConfigDirsAreWritable(t *testing.T) {
 	ctx := &seatbelt.Context{HomeDir: home}
 
 	for name, mod := range map[string]seatbelt.Module{
-		"pi":       PiAgent(),
-		"opencode": OpenCodeAgent(),
-		"codex":    CodexAgent(),
+		"pi":          PiAgent(),
+		"opencode":    OpenCodeAgent(),
+		"codex":       CodexAgent(),
+		"antigravity": AntigravityAgent(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			result := mod.Rules(ctx)

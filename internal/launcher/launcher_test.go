@@ -866,6 +866,16 @@ func TestYoloArgs_OpenCode(t *testing.T) {
 	}
 }
 
+func TestYoloArgs_Agy(t *testing.T) {
+	args, err := YoloArgs("agy")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(args) != 1 || args[0] != "--dangerously-skip-permissions" {
+		t.Errorf("expected [--dangerously-skip-permissions], got %v", args)
+	}
+}
+
 // Pi has no permission prompts, so yolo is already its only mode: it must
 // launch without error and without extra args (not --approve, which trusts
 // project-local files and is a different decision).

@@ -10,7 +10,7 @@ import (
 // Every harness the launcher recognizes has a descriptor that owns its
 // sandbox module, so no launcher table can drift from the harness table.
 func TestLauncherHarnessesHaveDescriptors(t *testing.T) {
-	want := []string{"aider", "amp", "claude", "codex", "copilot", "cursor-agent", "gemini", "goose", "opencode", "pi"}
+	want := []string{"agy", "aider", "amp", "claude", "codex", "copilot", "cursor-agent", "gemini", "goose", "opencode", "pi"}
 	if !slices.Equal(KnownAgents, want) {
 		t.Errorf("KnownAgents = %v, want %v", KnownAgents, want)
 	}
@@ -34,13 +34,13 @@ func TestHermesIsNotLaunchable(t *testing.T) {
 	}
 }
 
-// Aliases resolve for provisioning only; "cursor" is the Cursor editor
-// binary and must not pick up the cursor-agent sandbox or discovery.
 func TestAliasIsNotLaunchable(t *testing.T) {
-	if IsKnownAgent("cursor") || ResolveAgentModule("cursor") != nil {
-		t.Error("cursor alias treated as a launchable harness")
-	}
-	if _, err := YoloArgs("cursor"); err == nil {
-		t.Error("YoloArgs(cursor) succeeded")
+	for _, alias := range []string{"cursor", "antigravity"} {
+		if IsKnownAgent(alias) || ResolveAgentModule(alias) != nil {
+			t.Errorf("%s alias treated as a launchable harness", alias)
+		}
+		if _, err := YoloArgs(alias); err == nil {
+			t.Errorf("YoloArgs(%s) succeeded", alias)
+		}
 	}
 }

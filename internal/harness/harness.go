@@ -86,6 +86,15 @@ func (d Descriptor) YoloArgs() ([]string, bool) {
 // descriptors is the harness table, kept in name order.
 var descriptors = []Descriptor{
 	{
+		Name:          "agy",
+		Aliases:       []string{"antigravity"},
+		Binary:        "agy",
+		Sandbox:       modules.AntigravityAgent,
+		YoloSupported: true,
+		YoloFlag:      "--dangerously-skip-permissions",
+		Icon:          "🛸",
+	},
+	{
 		Name:    "aider",
 		Binary:  "aider",
 		Sandbox: modules.AiderAgent,

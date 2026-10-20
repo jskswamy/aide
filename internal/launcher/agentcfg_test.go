@@ -5,7 +5,7 @@ import (
 )
 
 func TestResolveAgentModule_KnownAgents(t *testing.T) {
-	for _, name := range []string{"claude", "codex", "aider", "goose", "amp", "gemini", "cursor-agent", "opencode", "pi"} {
+	for _, name := range []string{"claude", "codex", "aider", "goose", "amp", "gemini", "cursor-agent", "opencode", "pi", "agy"} {
 		if mod := ResolveAgentModule(name); mod == nil {
 			t.Errorf("ResolveAgentModule(%q) = nil, want non-nil", name)
 		}

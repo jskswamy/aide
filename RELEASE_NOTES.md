@@ -1,14 +1,4 @@
-## Unreleased
-
-### 🔧 Internal
-
-- Updated Codex yolo mode to use its current `--approve-for-me` flag;
-  the obsolete `--full-auto` flag was rejected by current Codex releases.
-
-- Documented the Codex profile-isolation contract and added launcher coverage
-  for isolated homes, native login fallback, credential scrubbing, explicit
-  credential errors, and native argument passthrough. Runtime admission
-  remains pending verification; no runtime behavior changed.
+## v3.1.0 (2026-10-21)
 
 ### ✨ New
 
@@ -32,3 +22,23 @@ did not let it write `~/.config/ponytail/band`.
 - Turn it off with `--without ponytail`, or add it by hand with
   `--with ponytail`.
 - Default XDG location only; a custom `XDG_CONFIG_HOME` is not followed.
+
+### 🔒 Security
+
+#### Go 1.26.10 resolves standard library vulnerability in crypto/x509
+
+govulncheck reported GO-2026-6809 (compromised intermediate certificates
+in crypto/x509) in Go 1.26.9.
+
+- Updated Go toolchain to 1.26.10 in go.mod.
+- Updated Nix development environment and package build to pin Go 1.26.10.
+
+### 🔧 Internal
+
+- Updated Codex yolo mode to use its current `--approve-for-me` flag;
+  the obsolete `--full-auto` flag was rejected by current Codex releases.
+
+- Documented the Codex profile-isolation contract and added launcher coverage
+  for isolated homes, native login fallback, credential scrubbing, explicit
+  credential errors, and native argument passthrough. Runtime admission
+  remains pending verification; no runtime behavior changed.

@@ -124,7 +124,7 @@ var descriptors = []Descriptor{
 		ConfigEnvKeys:    []string{"CODEX_HOME"},
 		Sandbox:          modules.CodexAgent,
 		YoloSupported:    true,
-		YoloFlag:         "--full-auto",
+		YoloFlag:         "--approve-for-me",
 		Icon:             "📝",
 	},
 	{

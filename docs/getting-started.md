@@ -25,7 +25,15 @@ To skip the agent's built-in permission prompts while keeping the OS sandbox act
 $ aide --auto-approve
 ```
 
-This injects the agent-specific skip flag (e.g. `--dangerously-skip-permissions` for Claude). `--yolo` is kept as an alias. You can also set `auto_approve: true` (or `yolo: true`) in config for specific profiles. Use `--no-auto-approve` (or `--no-yolo`) to override config-level settings.
+This injects the agent-specific approval flag (for example,
+`--dangerously-skip-permissions` for Claude or `--approve-for-me` for
+Codex). `--yolo` is kept as an alias. You can also set
+`auto_approve: true` (or `yolo: true`) in config for specific profiles.
+Use `--no-auto-approve` (or `--no-yolo`) to override config-level settings.
+
+aide's `sandbox:` policy is enforced by its OS sandbox and is not translated
+into Codex's separate `--sandbox` option. Pass native Codex options after
+`--` when you want Codex to apply them as well.
 
 ## First-Time Setup
 

@@ -851,8 +851,8 @@ func TestYoloArgs_Codex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(args) != 1 || args[0] != "--full-auto" {
-		t.Errorf("expected [--full-auto], got %v", args)
+	if len(args) != 1 || args[0] != "--approve-for-me" {
+		t.Errorf("expected [--approve-for-me], got %v", args)
 	}
 }
 

@@ -13,6 +13,16 @@ Headings (use only what applies; drop empty sections):
 After tagging, reset this file to this template.
 -->
 
+### ✨ New
+
+#### Support for multiple profiles in OpenCode
+
+aide now supports multiple profiles for OpenCode via `OPENCODE_CONFIG_DIR`.
+
+- Automatically routes profile configuration (`opencode.jsonc`, plugins, hooks, skills) to isolated profile directories (`~/.opencode-<profile>` or custom `config_dirs`).
+- Seatbelt sandbox restricts write access to the active profile's directory.
+- OpenCode provision driver manages MCP servers and hooks per profile.
+
 ### 🔧 Internal
 
 - Fixed OpenCode yolo argument placement for subcommands. OpenCode v2 strictly

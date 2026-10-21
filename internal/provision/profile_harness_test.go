@@ -15,7 +15,7 @@ import (
 // Every harness without profile support, with or without a provision
 // driver, reports the same error.
 func TestProfileUnsupportedHarnesses(t *testing.T) {
-	for _, agent := range []string{"opencode", "cursor-agent", "cursor", "aider", "amp", "goose", "hermes", "my-custom-agent"} {
+	for _, agent := range []string{"cursor-agent", "cursor", "aider", "amp", "goose", "hermes", "my-custom-agent"} {
 		t.Run(agent, func(t *testing.T) {
 			ctx := config.Context{Agent: agent, Profile: "work"}
 			want := fmt.Sprintf("Profiles are not supported for harness %q", agent)
@@ -47,10 +47,22 @@ func TestInjectProfileEnvForPi(t *testing.T) {
 	}
 }
 
+func TestInjectProfileEnvForOpenCode(t *testing.T) {
+	ctx := config.Context{Agent: "opencode", Profile: "work"}
+	env, err := provision.InjectProfileEnv(ctx.Agent, ctx, nil, "/home/u")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env["OPENCODE_CONFIG_DIR"] != "/home/u/.opencode-work" {
+		t.Errorf("OPENCODE_CONFIG_DIR = %q, want /home/u/.opencode-work", env["OPENCODE_CONFIG_DIR"])
+	}
+}
+
 func TestProfileEnvKeyFor(t *testing.T) {
 	tests := map[string]string{
 		"claude":       "CLAUDE_CONFIG_DIR",
 		"pi":           "PI_CODING_AGENT_DIR",
+		"opencode":     "OPENCODE_CONFIG_DIR",
 		"cursor-agent": "",
 		"aider":        "",
 		"unknown":      "",

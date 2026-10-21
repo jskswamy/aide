@@ -355,7 +355,7 @@ func TestLauncher_SavedHarnessUnsupportedStopsBeforeDecryption(t *testing.T) {
 	cwd := t.TempDir()
 	gitRepo(t, cwd, "git@github.com:org/repo.git")
 	prefsPath := filepath.Join(t.TempDir(), "preferences.json")
-	savePreference(t, prefsPath, prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: "opencode"})
+	savePreference(t, prefsPath, prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{Harness: "amp"})
 
 	decrypted := 0
 	prev := loadSecretStore

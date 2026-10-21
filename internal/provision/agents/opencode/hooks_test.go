@@ -192,6 +192,26 @@ func TestOpenCodeSessionEventsMapToEventAndDispose(t *testing.T) {
 	}
 }
 
+func TestOpenCodeHooksDirRespectsOpencodeConfigDir(t *testing.T) {
+	home := t.TempDir()
+	custom := filepath.Join(home, "custom-opencode")
+	ctx := provision.Context{
+		HomeDir: home,
+		Env:     map[string]string{"OPENCODE_CONFIG_DIR": custom},
+	}
+	d := opencode.New(fakeRunner{})
+	err := d.WriteHooks(ctx, nil, []provision.Hook{
+		{Event: "pre_tool", Command: "rtk hook opencode"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(filepath.Join(custom, "plugin"))
+	if len(entries) == 0 {
+		t.Error("expected hook in custom plugin dir")
+	}
+}
+
 func readAll(t *testing.T, dir string) string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

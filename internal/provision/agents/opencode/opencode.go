@@ -7,6 +7,7 @@ package opencode
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/tailscale/hujson"
 
@@ -38,6 +39,7 @@ func New(r provision.Runner) *Driver {
 			SourceShapes:        []provision.SourceShape{provision.ShapeURLDirect},
 			PluginsByInstallRef: true,
 			SupportsHooks:       true,
+			ProfileEnvKey:       provision.ProfileEnvKeyFor(agentName),
 		}},
 		runner: r,
 	}
@@ -47,12 +49,24 @@ func init() {
 	provision.RegisterProvisioner(New(provision.ExecRunner{}))
 }
 
+var _ provision.AgentDirProvider = (*Driver)(nil)
+
+// AgentDir returns the absolute config directory for this context.
+func (d *Driver) AgentDir(ctx provision.Context) string {
+	return agentDir(ctx)
+}
+
+func agentDir(ctx provision.Context) string {
+	return provision.EnvOrHomePath(ctx, "OPENCODE_CONFIG_DIR", ".config", "opencode")
+}
+
 // configPath returns the OpenCode config file path: OPENCODE_CONFIG
-// (confirmed via OpenCode's own config docs — it points at a single
-// config file) if set, otherwise ~/.config/opencode/opencode.jsonc.
-// Unlike claude's AgentDir this is not otherwise profile-aware.
+// if set, otherwise <agentDir>/opencode.jsonc.
 func configPath(ctx provision.Context) string {
-	return provision.EnvOrHomePath(ctx, "OPENCODE_CONFIG", ".config", "opencode", "opencode.jsonc")
+	if v := ctx.Env["OPENCODE_CONFIG"]; v != "" {
+		return v
+	}
+	return filepath.Join(agentDir(ctx), "opencode.jsonc")
 }
 
 // MCPConfigPath returns the same file plugins live in — OpenCode

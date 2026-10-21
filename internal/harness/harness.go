@@ -219,15 +219,15 @@ var descriptors = []Descriptor{
 		Binary: "hermes",
 	},
 	{
-		// OPENCODE_CONFIG selects a single config file, not a config
-		// tree, so it cannot isolate a profile.
-		Name:          "opencode",
-		Binary:        "opencode",
-		ConfigEnvKeys: []string{"OPENCODE_CONFIG"},
-		Sandbox:       modules.OpenCodeAgent,
-		YoloSupported: true,
-		YoloFlag:      "--auto",
-		Icon:          "🔷",
+		Name:             "opencode",
+		Binary:           "opencode",
+		ProfileEnvKey:    "OPENCODE_CONFIG_DIR",
+		DefaultConfigDir: ".config/opencode",
+		ConfigEnvKeys:    []string{"OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG"},
+		Sandbox:          modules.OpenCodeAgent,
+		YoloSupported:    true,
+		YoloFlag:         "--auto",
+		Icon:             "🔷",
 	},
 	{
 		// Pi's --approve trusts project-local files, a separate decision

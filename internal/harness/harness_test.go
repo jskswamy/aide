@@ -61,7 +61,7 @@ func TestProfileSupport(t *testing.T) {
 		{"pi", "PI_CODING_AGENT_DIR"},
 		{"copilot", "COPILOT_HOME"},
 		{"gemini", "GEMINI_HOME"},
-		{"opencode", ""},
+		{"opencode", "OPENCODE_CONFIG_DIR"},
 		{"cursor-agent", ""},
 		{"aider", ""},
 		{"amp", ""},

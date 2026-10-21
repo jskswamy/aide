@@ -35,7 +35,7 @@ var openCodeMatcherMap = map[string]string{
 }
 
 func openCodeHooksDir(ctx provision.Context) string {
-	return filepath.Join(ctx.HomeDir, ".config", "opencode", "plugin")
+	return filepath.Join(agentDir(ctx), "plugin")
 }
 
 // openCodeHookCodec reads and writes OpenCode's aide-*.js plugin files.

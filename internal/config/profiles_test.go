@@ -291,7 +291,7 @@ func TestContextNativeConfigDirResolutionOrder(t *testing.T) {
 func TestLoad_InvalidConfigDirsFail(t *testing.T) {
 	cases := map[string]struct{ entry, want string }{
 		"unknown harness":      {"config_dir_name: w\n    config_dirs: {nosuch: ~/x}", "nosuch"},
-		"harness w/o profiles": {"config_dir_name: w\n    config_dirs: {opencode: ~/x}", "opencode"},
+		"harness w/o profiles": {"config_dir_name: w\n    config_dirs: {amp: ~/x}", "amp"},
 		"outside home":         {"config_dir_name: w\n    config_dirs: {claude: /opt/x}", "$HOME"},
 		"empty path":           {"config_dir_name: w\n    config_dirs: {claude: \"\"}", "claude"},
 		"without dir name":     {"config_dirs: {claude: ~/x}", "config_dir_name"},

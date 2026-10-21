@@ -26,12 +26,28 @@ func TestOpenCodeCapabilities(t *testing.T) {
 	if !d.SupportsPlugins() || !d.SupportsMCP() || !d.SupportsHooks() {
 		t.Error("OpenCode should support plugins, MCP, and hooks")
 	}
+	if d.ProfileEnvKey() != "OPENCODE_CONFIG_DIR" {
+		t.Errorf("ProfileEnvKey = %q, want OPENCODE_CONFIG_DIR", d.ProfileEnvKey())
+	}
 	if d.RequiresTTY() {
 		t.Error("OpenCode should not require TTY")
 	}
 	shapes := d.SupportedSourceShapes()
 	if len(shapes) != 1 || shapes[0] != provision.ShapeURLDirect {
 		t.Errorf("OpenCode shapes = %v, want [url-direct]", shapes)
+	}
+}
+
+func TestOpenCodeAgentDir(t *testing.T) {
+	d := opencode.New(fakeRunner{})
+	ctx := provision.Context{HomeDir: "/home/u"}
+	if got := d.AgentDir(ctx); got != filepath.Join("/home/u", ".config", "opencode") {
+		t.Errorf("AgentDir default = %q", got)
+	}
+
+	ctx.Env = map[string]string{"OPENCODE_CONFIG_DIR": "/custom/opencode"}
+	if got := d.AgentDir(ctx); got != "/custom/opencode" {
+		t.Errorf("AgentDir override = %q", got)
 	}
 }
 
@@ -54,6 +70,18 @@ func TestOpenCodeConfigPathRespectsOpencodeConfigEnvVar(t *testing.T) {
 		Env:     map[string]string{"OPENCODE_CONFIG": "/custom/opencode.jsonc"},
 	}
 	want := "/custom/opencode.jsonc"
+	if got := d.MCPConfigPath(ctx); got != want {
+		t.Errorf("MCPConfigPath = %q, want %q", got, want)
+	}
+}
+
+func TestOpenCodeConfigPathRespectsOpencodeConfigDirEnvVar(t *testing.T) {
+	d := opencode.New(fakeRunner{})
+	ctx := provision.Context{
+		HomeDir: "/home/u",
+		Env:     map[string]string{"OPENCODE_CONFIG_DIR": "/custom/opencode"},
+	}
+	want := "/custom/opencode/opencode.jsonc"
 	if got := d.MCPConfigPath(ctx); got != want {
 		t.Errorf("MCPConfigPath = %q, want %q", got, want)
 	}

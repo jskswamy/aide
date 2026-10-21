@@ -1929,7 +1929,7 @@ contexts:
 			capturedEnv = env
 			return nil
 		})
-	l := &Launcher{Execer: mockExec, ConfigDir: configDir}
+	l := &Launcher{Execer: mockExec, ConfigDir: configDir, PrefsPath: filepath.Join(t.TempDir(), "preferences.json")}
 
 	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
 		t.Fatalf("Launch failed: %v", err)

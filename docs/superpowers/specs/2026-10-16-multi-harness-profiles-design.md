@@ -1,7 +1,7 @@
 # Multi-harness profiles and repository configuration
 
 Date: 2026-10-16
-Status: Revised 2026-10-16 after codebase feasibility study; awaiting final approval; no runtime behavior implemented
+Status: Implementation exists; per-harness runtime admission remains subject to the evidence below and docs/profiles-verification.md. Codex's clarified contract was approved in the 2026-10-21 Codex profile-isolation spec.
 Design capture: AIDE-82s
 Feasibility study: see "Feasibility study findings" below
 Related work: AIDE-dqx (Skillshare provisioning migration), AIDE-bwu (credential-injecting proxy)

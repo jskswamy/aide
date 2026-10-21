@@ -1,21 +1,34 @@
 # Profiles verification checklist
 
-aide admits a harness for profiles only after a person has run it
+aide admits an agent for profiles only after a person has run it
 against real logins on macOS and Linux and found no authentication
-crossover between two profiles (see "Harness support assessment and
-admission criteria" in
-`docs/superpowers/specs/2026-10-16-multi-harness-profiles-design.md`).
+crossover between two profiles (see the agent support assessment and
+admission criteria in the profile design document).
 Automated tests cover what aide controls: the scrubbed environment,
 the injected config dir and the sandbox rules. This checklist covers
-what only a real harness can show: where it stores logins, how it
+what only a real agent can show: where it stores logins, how it
 refreshes them, and which credential it picks.
 
-Each harness has its own section. Run the shared setup once, then the
-harness section on each platform. Record a result for every step,
+The Codex launcher contract is also covered by
+`TestLauncher_CodexProfileContract` in
+`internal/launcher/codex_profile_test.go`: it checks profile-home
+selection after `--agent codex`, native argument passthrough, inherited
+credential scrubbing, native-login fallback, and explicit incompatible
+credential errors. Run it with:
+
+```sh
+nix develop path:. --command go test ./internal/launcher -run TestLauncher_CodexProfileContract -count=1
+```
+
+This test uses a mocked executable. It does not establish Codex's native
+login storage, refresh, keyring behavior, or concurrent-account isolation.
+
+Each agent has its own section. Run the shared setup once, then the
+agent section on each platform. Record a result for every step,
 then report the filled-in file back so the spec's admission table can
 be updated.
 
-| Harness | Section | Status |
+| Agent | Section | Status |
 | --- | --- | --- |
 | Claude Code | [Claude Code](#claude-code) | Pending verification |
 | Pi | [Pi](#pi) | Pending verification |
@@ -131,7 +144,7 @@ Result (macOS): PASS / FAIL / N/A    Notes:
 Result (Linux): PASS / FAIL / N/A    Notes:
 ```
 
-### S4. Cleanup (after every harness section)
+### S4. Cleanup (after every agent section)
 
 ```sh
 if [ -f ~/.config/aide/config.yaml.before-verify ]; then
@@ -144,7 +157,7 @@ fi
 rm -rf ~/aide-verify
 ```
 
-Each harness section lists the login state it created; remove it only
+Each agent section lists the login state it created; remove it only
 once you have recorded the results.
 
 ---
@@ -1387,7 +1400,7 @@ changes nothing. No key or token appears in `$SS`
 
 Cleanup: `mv -f "$SS.before-verify" "$SS"`, and remove `$SS.bak` once
 you have compared it. The links Skillshare made live inside the
-`*-verify-*` dirs, which the harness cleanups remove. `skillshare sync`
+`*-verify-*` dirs, which the agent cleanups remove. `skillshare sync`
 also creates `skills/` in the Codex and Pi dirs; if you are not running
 those sections, remove them:
 `rm -rf ~/.codex-verify-a ~/.codex-verify-b ~/.pi-verify-a ~/.pi-verify-b`.

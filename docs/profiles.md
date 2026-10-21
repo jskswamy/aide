@@ -145,6 +145,50 @@ aide use claude --sandbox strict      # use a named sandbox profile
 aide use --profile work               # add CWD as a match rule to existing profile
 ```
 
+## Codex identities and native settings
+
+Use separate native homes for personal, work, or client identities:
+
+```yaml
+profiles:
+  personal:
+    agent: codex
+    config_dir_name: personal
+  work:
+    agent: claude
+    config_dir_name: work
+default_profile: personal
+```
+
+`aide --profile work --agent codex` launches Codex with
+`CODEX_HOME=~/.codex-work`, even though work normally launches Claude.
+The personal profile uses `~/.codex-personal`. Applicable credential routes
+provide the selected keys and endpoint settings. When none of the default
+or saved routes applies to Codex, aide still launches it in the work home
+and notes that it uses its own login. Use the agent's native login flow
+there; aide does not borrow the personal or global login.
+
+An explicitly incompatible `--credential` selection or a failure to load
+a selected credential remains an error. A missing applicable default is
+different from a broken selected credential.
+
+Codex settings remain native. For example:
+
+```sh
+aide --profile work --agent codex -- --profile deep-review
+```
+
+aide selects the work identity and passes `--profile deep-review` unchanged
+to Codex. Codex loads the named settings according to its installed version
+from the selected home; aide does not create or remember those settings.
+Provider and model compatibility also belongs to the agent: supplying a
+key or endpoint does not make an unsupported provider compatible.
+
+Codex's real-account isolation admission is still
+[pending verification](profiles-verification.md#codex). Automated launcher
+checks establish environment and argument handling, not native login,
+keyring, refresh, or concurrent-account behavior.
+
 ## Multi-Account Setups
 
 A common need is keeping a personal and a work Claude account side by
@@ -213,7 +257,7 @@ The same pattern extends to N accounts (client-x, oss, ...) - just
 add more profile blocks. Two profiles that would resolve to the same
 config dir stop with `profiles share a native config dir`.
 
-Per-profile login isolation for each harness is being verified by hand
+Per-profile login isolation for each agent is being verified by hand
 on macOS and Linux; the steps and their status are in
 [profiles-verification.md](profiles-verification.md).
 

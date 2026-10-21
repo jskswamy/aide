@@ -83,6 +83,53 @@ func (d Descriptor) YoloArgs() ([]string, bool) {
 	return []string{d.YoloFlag}, true
 }
 
+// opencodeSubcommands is the set of OpenCode v2 subcommands.
+// Only "run" supports the --auto flag.
+var opencodeSubcommands = map[string]bool{
+	"acp": true, "api": true, "attach": true, "auth": true,
+	"completion": true, "db": true, "debug": true, "export": true,
+	"github": true, "import": true, "mcp": true, "mini": true,
+	"models": true, "pair": true, "plugin": true, "pr": true,
+	"reload": true, "run": true, "serve": true, "service": true,
+	"session": true, "stats": true, "uninstall": true, "update": true,
+	"upgrade": true, "web": true,
+}
+
+// ApplyYolo returns args with the harness's yolo flag applied.
+// When yolo is unsupported or needs no flag (e.g. Pi), args is returned unchanged.
+// If args already contains the yolo flag, args is returned unchanged.
+// For OpenCode, subcommands are respected: '--auto' is placed after 'run',
+// omitted for subcommands that do not accept it, and prepended for root invocations.
+func (d Descriptor) ApplyYolo(args []string) []string {
+	if !d.YoloSupported || d.YoloFlag == "" {
+		return args
+	}
+	if slices.Contains(args, d.YoloFlag) {
+		return args
+	}
+
+	if d.Name == "opencode" {
+		if len(args) == 0 {
+			return []string{d.YoloFlag}
+		}
+		if args[0] == "run" {
+			out := make([]string, 0, len(args)+1)
+			out = append(out, "run", d.YoloFlag)
+			out = append(out, args[1:]...)
+			return out
+		}
+		if opencodeSubcommands[args[0]] {
+			// Subcommand does not accept --auto; do not inject it.
+			return args
+		}
+	}
+
+	out := make([]string, 0, len(args)+1)
+	out = append(out, d.YoloFlag)
+	out = append(out, args...)
+	return out
+}
+
 // descriptors is the harness table, kept in name order.
 var descriptors = []Descriptor{
 	{

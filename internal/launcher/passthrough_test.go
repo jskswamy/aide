@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -285,6 +286,38 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 		if innerArgs[i] != want {
 			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
+	}
+}
+
+func TestPassthrough_YoloOpenCodeSubcommandRun(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, _ []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
+	l := &Launcher{
+		Execer:   mockExec,
+		LookPath: mockLookPath(map[string]string{"opencode": "/usr/local/bin/opencode"}),
+		Yolo:     true,
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	err := l.Passthrough(t.TempDir(), "opencode", []string{"run", "-m", "openrouter/openai/gpt-4o-mini", "hello"})
+	if err != nil {
+		t.Fatalf("Passthrough failed: %v", err)
+	}
+
+	expected := []string{"/usr/local/bin/opencode", "run", "--auto", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
+	if !slices.Equal(innerArgs, expected) {
+		t.Fatalf("innerArgs = %v, want %v", innerArgs, expected)
 	}
 }
 

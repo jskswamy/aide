@@ -116,6 +116,53 @@ func TestYoloArgs(t *testing.T) {
 	}
 }
 
+func TestApplyYolo(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		// Claude: top-level flag prepended
+		{"claude", []string{"--model", "opus"}, []string{"--dangerously-skip-permissions", "--model", "opus"}},
+		{"claude", []string{"--dangerously-skip-permissions", "--model", "opus"}, []string{"--dangerously-skip-permissions", "--model", "opus"}},
+		{"claude", nil, []string{"--dangerously-skip-permissions"}},
+
+		// Pi: yolo needs no flag
+		{"pi", []string{"--model", "opus"}, []string{"--model", "opus"}},
+
+		// Aider: yolo unsupported
+		{"aider", []string{"--model", "opus"}, []string{"--model", "opus"}},
+
+		// OpenCode: root invocation (no args, flags, or directory) gets --auto prepended
+		{"opencode", nil, []string{"--auto"}},
+		{"opencode", []string{"-c"}, []string{"--auto", "-c"}},
+		{"opencode", []string{"/path/to/project"}, []string{"--auto", "/path/to/project"}},
+
+		// OpenCode: 'run' subcommand gets --auto inserted after 'run'
+		{"opencode", []string{"run", "hello"}, []string{"run", "--auto", "hello"}},
+		{"opencode", []string{"run", "-m", "model", "hello"}, []string{"run", "--auto", "-m", "model", "hello"}},
+		{"opencode", []string{"run", "--auto", "hello"}, []string{"run", "--auto", "hello"}},
+
+		// OpenCode: subcommands that reject --auto leave args unchanged
+		{"opencode", []string{"models"}, []string{"models"}},
+		{"opencode", []string{"auth", "list"}, []string{"auth", "list"}},
+		{"opencode", []string{"mcp", "list"}, []string{"mcp", "list"}},
+		{"opencode", []string{"stats"}, []string{"stats"}},
+		{"opencode", []string{"upgrade"}, []string{"upgrade"}},
+	}
+
+	for _, tc := range tests {
+		d, ok := harness.Lookup(tc.name)
+		if !ok {
+			t.Fatalf("harness %q not found", tc.name)
+		}
+		got := d.ApplyYolo(tc.input)
+		if !slices.Equal(got, tc.expected) {
+			t.Errorf("%s with %v: ApplyYolo() = %v, want %v", tc.name, tc.input, got, tc.expected)
+		}
+	}
+}
+
 func TestAllReturnsACopy(t *testing.T) {
 	all := harness.All()
 	all[0].Name = "mutated"

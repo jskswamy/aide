@@ -311,11 +311,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 	effectiveYolo := l.resolveEffectiveYolo(prefYolo, rc.Context.Yolo, nil)
 	if effectiveYolo {
-		yoloArgs, err := YoloArgs(agentName)
+		var err error
+		extraArgs, err = ApplyYoloArgs(agentName, extraArgs)
 		if err != nil {
 			return err
 		}
-		extraArgs = append(yoloArgs, extraArgs...)
 		// No separate warning here — auto-approve is shown in the banner
 		// as the last line via renderAutoApprove().
 	}
@@ -666,6 +666,29 @@ func resolveAgentBinary(cfg *config.Config, agentName string) (string, error) {
 
 	// No agents map at all (minimal config without normalization) - use agent name as binary
 	return agentName, nil
+}
+
+// ApplyYoloArgs returns extraArgs with the yolo flag applied for the
+// given agent. Returns an error if the agent does not support yolo mode.
+// For OpenCode, subcommands are respected: '--auto' is placed after 'run',
+// omitted on subcommands that reject it, or placed at the front for
+// interactive/root invocations.
+func ApplyYoloArgs(agentName string, extraArgs []string) ([]string, error) {
+	if d, ok := launchableHarness(agentName); ok {
+		if _, ok := d.YoloArgs(); ok {
+			return d.ApplyYolo(extraArgs), nil
+		}
+	}
+	var supported []string
+	for _, d := range harness.All() {
+		if _, ok := d.YoloArgs(); ok && d.Launchable() {
+			supported = append(supported, d.Name)
+		}
+	}
+	return nil, fmt.Errorf(
+		"--yolo not supported for agent %q. Supported agents: %s",
+		agentName, strings.Join(supported, ", "),
+	)
 }
 
 // YoloArgs returns the skip-permissions args for the given agent.

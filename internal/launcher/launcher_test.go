@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -956,6 +957,107 @@ agent: claude
 		if innerArgs[i] != want {
 			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
+	}
+}
+
+func TestApplyYoloArgs(t *testing.T) {
+	// Claude prepends flag
+	got, err := ApplyYoloArgs("claude", []string{"--model", "opus"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []string{"--dangerously-skip-permissions", "--model", "opus"}
+	if !slices.Equal(got, expected) {
+		t.Errorf("claude: got %v, want %v", got, expected)
+	}
+
+	// OpenCode root invocation
+	got, err = ApplyYoloArgs("opencode", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.Equal(got, []string{"--auto"}) {
+		t.Errorf("opencode nil: got %v, want [--auto]", got)
+	}
+
+	// OpenCode 'run' subcommand: flag placed after 'run'
+	got, err = ApplyYoloArgs("opencode", []string{"run", "-m", "openrouter/openai/gpt-4o-mini", "hello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected = []string{"run", "--auto", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
+	if !slices.Equal(got, expected) {
+		t.Errorf("opencode run: got %v, want %v", got, expected)
+	}
+
+	// OpenCode 'run' with --auto already present: no duplicate
+	got, err = ApplyYoloArgs("opencode", []string{"run", "--auto", "hello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected = []string{"run", "--auto", "hello"}
+	if !slices.Equal(got, expected) {
+		t.Errorf("opencode run with --auto: got %v, want %v", got, expected)
+	}
+
+	// OpenCode subcommands that reject --auto: left as-is
+	for _, sub := range []string{"models", "stats", "upgrade"} {
+		got, err = ApplyYoloArgs("opencode", []string{sub})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Equal(got, []string{sub}) {
+			t.Errorf("opencode %s: got %v, want [%s]", sub, got, sub)
+		}
+	}
+
+	// Unsupported agent returns error
+	_, err = ApplyYoloArgs("vim", nil)
+	if err == nil {
+		t.Fatal("expected error for vim, got nil")
+	}
+}
+
+func TestLauncher_YoloOpenCodeSubcommandRun(t *testing.T) {
+	configDir := t.TempDir()
+	cwd := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agent: opencode
+`)
+
+	ctrl := gomock.NewController(t)
+	var capturedBinary string
+	var capturedArgs []string
+	mockExec := mocks.NewMockExecer(ctrl)
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, _ []string) error {
+			capturedBinary = binary
+			capturedArgs = args
+			return nil
+		})
+	l := &Launcher{
+		Execer:    mockExec,
+		ConfigDir: configDir,
+		LookPath: func(file string) (string, error) {
+			if file == "opencode" {
+				return "/usr/local/bin/opencode", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		Yolo: true,
+	}
+
+	if err := l.Launch(cwd, "", []string{"run", "-m", "openrouter/openai/gpt-4o-mini", "hello"}, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// Unwrap sandbox to check inner args: binary, then run, then --auto, then user args.
+	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
+	expected := []string{"/usr/local/bin/opencode", "run", "--auto", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
+	if !slices.Equal(innerArgs, expected) {
+		t.Fatalf("innerArgs = %v, want %v", innerArgs, expected)
 	}
 }
 

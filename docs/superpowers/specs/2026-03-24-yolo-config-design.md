@@ -8,7 +8,7 @@
 
 Currently `--yolo` is a CLI-only flag (default `false`) that injects agent-specific
 skip-permissions flags (`--dangerously-skip-permissions` for Claude,
-`--full-auto` for Codex, `--yolo` for Gemini). There is no way to:
+`--approve-for-me` for Codex, `--yolo` for Gemini). There is no way to:
 
 1. Set yolo as a persistent preference in config
 2. Disable yolo when it's enabled in config (no `--no-yolo` flag)

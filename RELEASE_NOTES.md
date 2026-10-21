@@ -2,6 +2,9 @@
 
 ### 🔧 Internal
 
+- Updated Codex yolo mode to use its current `--approve-for-me` flag;
+  the obsolete `--full-auto` flag was rejected by current Codex releases.
+
 - Documented the Codex profile-isolation contract and added launcher coverage
   for isolated homes, native login fallback, credential scrubbing, explicit
   credential errors, and native argument passthrough. Runtime admission

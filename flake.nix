@@ -19,14 +19,14 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         stable = nixpkgs-stable.legacyPackages.${system};
-        # ponytail: pinned to 1.26.9 for the crypto/tls, net/http,
-        # html/template and net/textproto CVEs; nixpkgs is still on 1.26.8.
-        # Drop this override once pkgs.go_1_26 reaches 1.26.9.
+        # ponytail: pinned to 1.26.10 for the crypto/x509 CVE;
+        # nixpkgs is still on 1.26.8. Drop this override once pkgs.go_1_26
+        # reaches 1.26.10.
         go = pkgs.go_1_26.overrideAttrs (_: rec {
-          version = "1.26.9";
+          version = "1.26.10";
           src = pkgs.fetchurl {
             url = "https://go.dev/dl/go${version}.src.tar.gz";
-            hash = "sha256-lzXX3Ntls10/pXfwQGRzfAO4nPGitx5uaf4vPG+f1Mo=";
+            hash = "sha256-/WPog7ovK/ypPBZGsx6+9j4rHk0rMXyXidl2po2B828=";
           };
         });
       in

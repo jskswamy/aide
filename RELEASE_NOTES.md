@@ -1,5 +1,12 @@
 ## Unreleased
 
+### 🔧 Internal
+
+- Documented the Codex profile-isolation contract and added launcher coverage
+  for isolated homes, native login fallback, credential scrubbing, explicit
+  credential errors, and native argument passthrough. Runtime admission
+  remains pending verification; no runtime behavior changed.
+
 ### ✨ New
 
 #### Support for Antigravity (`agy`)

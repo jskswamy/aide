@@ -163,6 +163,34 @@ func TestApplyYolo(t *testing.T) {
 	}
 }
 
+func TestApplyLaunchArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{"opencode", nil, []string{"--standalone"}},
+		{"opencode", []string{"-c"}, []string{"--standalone", "-c"}},
+		{"opencode", []string{"/path/to/project"}, []string{"--standalone", "/path/to/project"}},
+		{"opencode", []string{"run", "hello"}, []string{"run", "--standalone", "hello"}},
+		{"opencode", []string{"mini"}, []string{"mini", "--standalone"}},
+		{"opencode", []string{"--standalone"}, []string{"--standalone"}},
+		{"opencode", []string{"--server", "http://x"}, []string{"--server", "http://x"}},
+		{"opencode", []string{"auth", "list"}, []string{"auth", "list"}},
+		{"opencode", []string{"serve"}, []string{"serve"}},
+		{"claude", []string{"--model", "opus"}, []string{"--model", "opus"}},
+	}
+	for _, tc := range tests {
+		d, ok := harness.Lookup(tc.name)
+		if !ok {
+			t.Fatalf("harness %q not found", tc.name)
+		}
+		if got := d.ApplyLaunchArgs(tc.input); !slices.Equal(got, tc.expected) {
+			t.Errorf("%s with %v: ApplyLaunchArgs() = %v, want %v", tc.name, tc.input, got, tc.expected)
+		}
+	}
+}
+
 func TestAllReturnsACopy(t *testing.T) {
 	all := harness.All()
 	all[0].Name = "mutated"

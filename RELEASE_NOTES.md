@@ -24,6 +24,14 @@ aide now supports multiple profiles for OpenCode via `OPENCODE_CONFIG_DIR`.
 - OpenCode provision driver manages MCP servers and hooks per profile.
 - The sandbox keeps OpenCode's data, state and cache dirs (`~/.local/share/opencode`, etc.) writable when `OPENCODE_CONFIG_DIR` is set; previously OpenCode crashed at startup with `EPERM` opening `opencode.log`.
 
+#### OpenCode launches use a private server
+
+aide now starts OpenCode with `--standalone` (root, `run` and `mini`).
+OpenCode v2 otherwise reuses one per-user background service that keeps the
+environment of whichever launch started it, so a profile's credentials
+(e.g. `ANTHROPIC_API_KEY`) were ignored and the server ran outside the
+sandbox. Pass `--server <url>` to opt out.
+
 ### 🔧 Internal
 
 - Fixed OpenCode yolo argument placement for subcommands. OpenCode v2 strictly

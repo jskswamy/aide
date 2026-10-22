@@ -310,6 +310,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefYolo = cfg.Preferences.Yolo
 	}
 	effectiveYolo := l.resolveEffectiveYolo(prefYolo, rc.Context.Yolo, nil)
+	extraArgs = ApplyLaunchArgs(agentName, extraArgs)
 	if effectiveYolo {
 		var err error
 		extraArgs, err = ApplyYoloArgs(agentName, extraArgs)

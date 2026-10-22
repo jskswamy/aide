@@ -140,6 +140,7 @@ func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []str
 
 // execAgent injects yolo flags if needed, applies the OS sandbox, and execs the agent.
 func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error {
+	extraArgs = ApplyLaunchArgs(name, extraArgs)
 	if l.Yolo && !l.NoYolo {
 		var err error
 		extraArgs, err = ApplyYoloArgs(name, extraArgs)

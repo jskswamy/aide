@@ -31,6 +31,15 @@ func launchableHarness(agentName string) (harness.Descriptor, bool) {
 	return d, true
 }
 
+// ApplyLaunchArgs returns extraArgs with the agent's always-on launch
+// flags applied (see harness.Descriptor.ApplyLaunchArgs).
+func ApplyLaunchArgs(agentName string, extraArgs []string) []string {
+	if d, ok := launchableHarness(agentName); ok {
+		return d.ApplyLaunchArgs(extraArgs)
+	}
+	return extraArgs
+}
+
 // SandboxAgentEnv returns the env overrides the named agent's sandbox
 // module injects at launch (e.g. Claude's CLAUDE_CONFIG_DIR redirect to
 // ~/.config/aide/claude on Linux). Provisioning that runs outside a

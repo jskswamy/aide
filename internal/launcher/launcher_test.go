@@ -1055,7 +1055,7 @@ agent: opencode
 
 	// Unwrap sandbox to check inner args: binary, then run, then --auto, then user args.
 	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
-	expected := []string{"/usr/local/bin/opencode", "run", "--auto", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
+	expected := []string{"/usr/local/bin/opencode", "run", "--auto", "--standalone", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
 	if !slices.Equal(innerArgs, expected) {
 		t.Fatalf("innerArgs = %v, want %v", innerArgs, expected)
 	}

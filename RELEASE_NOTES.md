@@ -32,6 +32,13 @@ environment of whichever launch started it, so a profile's credentials
 (e.g. `ANTHROPIC_API_KEY`) were ignored and the server ran outside the
 sandbox. Pass `--server <url>` to opt out.
 
+The sandbox also lets OpenCode open the directories and config entries it
+resolves at startup: the home dir, each ancestor of the project, and any
+existing `.claude`, `.agents`, `.opencode`, `opencode.json` or
+`opencode.jsonc` in them. OpenCode does this whatever the profile, and its
+server answers 500 if opening one is denied. Only the entries themselves are
+granted (names are visible), never what is inside them.
+
 ### 🔧 Internal
 
 - Fixed OpenCode yolo argument placement for subcommands. OpenCode v2 strictly

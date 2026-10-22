@@ -69,3 +69,39 @@ func TestOpenCodeConfigDirOverrideKeepsDataDirs(t *testing.T) {
 		}
 	}
 }
+
+// OpenCode's server resolves .claude, .agents, .opencode, opencode.json
+// and opencode.jsonc in the home dir and in every ancestor of the project
+// at startup, whatever the profile, and answers 500 when opening an
+// existing one is denied. The grant must be those paths themselves, not
+// directory contents, so a profile still cannot read another's config.
+func TestOpenCodeGrantsProbedPathsWithoutContents(t *testing.T) {
+	home := t.TempDir()
+	project := filepath.Join(home, "src", "org", "proj")
+	for _, d := range []string{".claude", ".agents", ".opencode", filepath.Join("src", ".claude"), project} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(home, "src", "opencode.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := &seatbelt.Context{HomeDir: home, ProjectRoot: project}
+
+	got := rulesToString(OpenCodeAgent().Rules(ctx).Rules)
+
+	for _, rel := range []string{"", "src", "src/org", "src/org/proj", ".claude", ".agents", ".opencode", "src/.claude", "src/opencode.json"} {
+		p := filepath.Join(home, rel)
+		if !strings.Contains(got, `(literal "`+p+`")`) {
+			t.Errorf("rules do not grant %s:\n%s", p, got)
+		}
+		if strings.Contains(got, `(subpath "`+p+`")`) {
+			t.Errorf("rules grant the contents of %s:\n%s", p, got)
+		}
+	}
+	for _, rel := range []string{"src/.agents", "src/org/.claude", "opencode.json"} {
+		if p := filepath.Join(home, rel); strings.Contains(got, `"`+p+`"`) {
+			t.Errorf("rules grant nonexistent %s:\n%s", p, got)
+		}
+	}
+}

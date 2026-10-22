@@ -22,6 +22,7 @@ aide now supports multiple profiles for OpenCode via `OPENCODE_CONFIG_DIR`.
 - Automatically routes profile configuration (`opencode.jsonc`, plugins, hooks, skills) to isolated profile directories (`~/.opencode-<profile>` or custom `config_dirs`).
 - Seatbelt sandbox restricts write access to the active profile's directory.
 - OpenCode provision driver manages MCP servers and hooks per profile.
+- The sandbox keeps OpenCode's data, state and cache dirs (`~/.local/share/opencode`, etc.) writable when `OPENCODE_CONFIG_DIR` is set; previously OpenCode crashed at startup with `EPERM` opening `opencode.log`.
 
 ### 🔧 Internal
 

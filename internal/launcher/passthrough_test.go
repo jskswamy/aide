@@ -314,7 +314,7 @@ func TestPassthrough_YoloOpenCodeSubcommandRun(t *testing.T) {
 		t.Fatalf("Passthrough failed: %v", err)
 	}
 
-	expected := []string{"/usr/local/bin/opencode", "run", "--auto", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
+	expected := []string{"/usr/local/bin/opencode", "run", "--auto", "--standalone", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
 	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if !slices.Equal(innerArgs, expected) {
 		t.Fatalf("innerArgs = %v, want %v", innerArgs, expected)

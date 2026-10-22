@@ -47,3 +47,25 @@ func TestProfileDirRulesGrantOnlySelectedDir(t *testing.T) {
 		})
 	}
 }
+
+// OPENCODE_CONFIG_DIR moves only the config dir; the XDG data dir
+// (log, db, auth) must stay writable or OpenCode dies with EPERM
+// opening ~/.local/share/opencode/log/opencode.log.
+func TestOpenCodeConfigDirOverrideKeepsDataDirs(t *testing.T) {
+	home := t.TempDir()
+	work := filepath.Join(home, ".opencode-work")
+	for _, d := range []string{work, ".local/share/opencode", ".local/state/opencode", ".cache/opencode"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := &seatbelt.Context{HomeDir: home, Env: []string{"OPENCODE_CONFIG_DIR=" + work}}
+
+	got := rulesToString(OpenCodeAgent().Rules(ctx).Rules)
+
+	for _, rel := range []string{".opencode-work", ".local/share/opencode", ".local/state/opencode", ".cache/opencode"} {
+		if !strings.Contains(got, `(subpath "`+filepath.Join(home, rel)+`")`) {
+			t.Errorf("rules do not grant %s:\n%s", rel, got)
+		}
+	}
+}

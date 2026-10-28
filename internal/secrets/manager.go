@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -340,21 +341,6 @@ func (m *Manager) EditFromContent(name, secretsDir string, newContent []byte) er
 		return err
 	}
 
-	// Load the existing encrypted tree to extract key groups (recipients).
-	fileBytes, err := os.ReadFile(srcPath)
-	if err != nil {
-		return fmt.Errorf("failed to read encrypted file: %w", err)
-	}
-
-	store := &yaml.Store{}
-	encTree, err := store.LoadEncryptedFile(fileBytes)
-	if err != nil {
-		return fmt.Errorf("failed to load encrypted file metadata: %w", err)
-	}
-
-	// Extract the existing key groups to preserve recipients.
-	keyGroups := encTree.Metadata.KeyGroups
-
 	// Create secure temp dir for the intermediate work.
 	tmpDir, cleanup, err := m.secureTempDir("aide-secrets-")
 	if err != nil {
@@ -370,16 +356,7 @@ func (m *Manager) EditFromContent(name, secretsDir string, newContent []byte) er
 	}
 
 	// Re-encrypt with the same recipients.
-	encrypted, err := encryptWithKeyGroups(newContent, keyGroups)
-	if err != nil {
-		return fmt.Errorf("sops re-encryption failed: %w", err)
-	}
-
-	if err := fsutil.AtomicWrite(srcPath, encrypted); err != nil {
-		return fmt.Errorf("failed to atomically write encrypted file: %w", err)
-	}
-
-	return nil
+	return reencryptInPlace(srcPath, newContent)
 }
 
 // encryptWithKeyGroups encrypts plaintext YAML content using sops with the
@@ -469,4 +446,115 @@ func (m *Manager) secureTempDir(prefix string) (string, func(), error) {
 	}
 
 	return tmpDir, cleanup, nil
+}
+
+// SetKey sets key to value in the store storeName under secretsDir
+// without an editor and without writing plaintext anywhere: an existing
+// store is decrypted, updated and re-encrypted in memory for its
+// current recipients; a missing store is created for
+// explicitAgePubKey, or for the discovered identity's recipient when
+// that is empty.
+func (m *Manager) SetKey(storeName, secretsDir, key, value, explicitAgePubKey string) error {
+	if err := validateName(storeName); err != nil {
+		return err
+	}
+	if key == "" {
+		return errors.New("secret key name cannot be empty")
+	}
+	path := filepath.Join(secretsDir, storeName+".enc.yaml")
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		recipient := explicitAgePubKey
+		if recipient == "" {
+			identity, err := DiscoverAgeKey()
+			if err != nil {
+				return err
+			}
+			if recipient, err = identity.Recipient(); err != nil {
+				return err
+			}
+		}
+		content, err := yamlpkg.Marshal(map[string]string{key: value})
+		if err != nil {
+			return fmt.Errorf("serializing secrets: %w", err)
+		}
+		return m.CreateFromContent(storeName, secretsDir, recipient, content)
+	} else if err != nil {
+		return err
+	}
+	data, err := decryptForUpdate(path)
+	if err != nil {
+		return err
+	}
+	data[key] = value
+	return reencryptMap(path, data)
+}
+
+// DeleteKey removes key from the store storeName under secretsDir. A
+// missing store or key is not an error. Deleting the last key removes
+// the store file, since sops cannot encrypt an empty map.
+func (m *Manager) DeleteKey(storeName, secretsDir, key string) error {
+	if err := validateName(storeName); err != nil {
+		return err
+	}
+	path := filepath.Join(secretsDir, storeName+".enc.yaml")
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	data, err := decryptForUpdate(path)
+	if err != nil {
+		return err
+	}
+	if _, ok := data[key]; !ok {
+		return nil
+	}
+	delete(data, key)
+	if len(data) == 0 {
+		return os.Remove(path)
+	}
+	return reencryptMap(path, data)
+}
+
+func decryptForUpdate(path string) (map[string]string, error) {
+	identity, err := DiscoverAgeKey()
+	if err != nil {
+		return nil, err
+	}
+	data, err := DecryptSecretsFile(path, identity)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// reencryptMap replaces the store at path with data, encrypted for the
+// store's existing recipients.
+func reencryptMap(path string, data map[string]string) error {
+	content, err := yamlpkg.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("serializing secrets: %w", err)
+	}
+	return reencryptInPlace(path, content)
+}
+
+// reencryptInPlace encrypts content for the recipients of the store at
+// path and atomically replaces it.
+func reencryptInPlace(path string, content []byte) error {
+	fileBytes, err := os.ReadFile(path) // #nosec G304 -- the store being updated
+	if err != nil {
+		return fmt.Errorf("failed to read encrypted file: %w", err)
+	}
+	encTree, err := (&yaml.Store{}).LoadEncryptedFile(fileBytes)
+	if err != nil {
+		return fmt.Errorf("failed to load encrypted file metadata: %w", err)
+	}
+	encrypted, err := encryptWithKeyGroups(content, encTree.Metadata.KeyGroups)
+	if err != nil {
+		return fmt.Errorf("sops re-encryption failed: %w", err)
+	}
+	if err := fsutil.AtomicWrite(path, encrypted); err != nil {
+		return fmt.Errorf("failed to atomically write encrypted file: %w", err)
+	}
+	return nil
 }

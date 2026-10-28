@@ -2,12 +2,16 @@
 package secrets
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"filippo.io/age"
 )
 
 // AgeKeySource describes where an age key was found.
@@ -28,6 +32,46 @@ type AgeIdentity struct {
 	// or the file path for SourceEnvKeyFile / SourceDefaultFile.
 	// For SourceYubiKey this is empty (plugin handles it).
 	KeyData string
+}
+
+// Recipient returns the public age1... recipient of a software
+// identity, for encrypting a new store to it. A YubiKey identity's
+// recipient is not derivable here; pass one explicitly (--age-key).
+func (id *AgeIdentity) Recipient() (string, error) {
+	var r io.Reader
+	switch id.Source {
+	case SourceYubiKey:
+		return "", fmt.Errorf("cannot derive an age recipient from a YubiKey identity; pass --age-key <age1...>")
+	case SourceEnvKey:
+		r = strings.NewReader(id.KeyData)
+	case SourceEnvKeyFile, SourceDefaultFile:
+		f, err := os.Open(id.KeyData) // #nosec G304 -- the discovered age key file
+		if err != nil {
+			return "", fmt.Errorf("reading age key file: %w", err)
+		}
+		defer func() { _ = f.Close() }()
+		r = f
+	default:
+		return "", fmt.Errorf("unknown age identity source: %d", id.Source)
+	}
+	// Scan for the first software key: keys.txt may also hold plugin
+	// identities, which age.ParseIdentities rejects.
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if !strings.HasPrefix(line, "AGE-SECRET-KEY-") {
+			continue
+		}
+		x, err := age.ParseX25519Identity(line)
+		if err != nil {
+			return "", fmt.Errorf("parsing age identity: %w", err)
+		}
+		return x.Recipient().String(), nil
+	}
+	if err := sc.Err(); err != nil {
+		return "", fmt.Errorf("reading age identity: %w", err)
+	}
+	return "", fmt.Errorf("no software age identity found; pass --age-key <age1...>")
 }
 
 // DiscoverAgeKey searches for an age identity in priority order.

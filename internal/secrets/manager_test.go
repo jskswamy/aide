@@ -929,3 +929,171 @@ func TestEditFromContent_NestedYAML(t *testing.T) {
 		t.Fatal("expected error for nested YAML")
 	}
 }
+
+// testKeyFile returns the testdata age identity file.
+func testKeyFile(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(testdataDir(t), "age-key.txt")
+}
+
+func decryptStore(t *testing.T, path string) map[string]string {
+	t.Helper()
+	got, err := DecryptSecretsFile(path, &AgeIdentity{Source: SourceEnvKeyFile, KeyData: testKeyFile(t)})
+	if err != nil {
+		t.Fatalf("decrypting %s: %v", path, err)
+	}
+	return got
+}
+
+// assertEmptyDir fails when dir holds any entry: SetKey and DeleteKey
+// must never stage plaintext in a temp or runtime directory.
+func assertEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("%s holds %d entries, want none (plaintext staged?)", dir, len(entries))
+	}
+}
+
+func TestAgeIdentity_Recipient(t *testing.T) {
+	keyFile := testKeyFile(t)
+	keyData, err := os.ReadFile(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secretLine string
+	for _, line := range strings.Split(string(keyData), "\n") {
+		if strings.HasPrefix(line, "AGE-SECRET-KEY-") {
+			secretLine = line
+		}
+	}
+	want := testAgePublicKey(t)
+	for label, id := range map[string]*AgeIdentity{
+		"env key":      {Source: SourceEnvKey, KeyData: secretLine},
+		"env key file": {Source: SourceEnvKeyFile, KeyData: keyFile},
+		"default file": {Source: SourceDefaultFile, KeyData: keyFile},
+	} {
+		got, err := id.Recipient()
+		if err != nil || got != want {
+			t.Errorf("%s: Recipient() = %q, %v; want %q", label, got, err, want)
+		}
+	}
+	_, err = (&AgeIdentity{Source: SourceYubiKey}).Recipient()
+	if err == nil || !strings.Contains(err.Error(), "--age-key") {
+		t.Errorf("YubiKey Recipient() error = %v, want one naming --age-key", err)
+	}
+}
+
+func TestManager_SetDeleteKey_CreatesStore(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	t.Setenv("TMPDIR", t.TempDir())
+
+	if err := mgr.SetKey("work", secretsDir, "corp_token", "tok-1", ""); err != nil {
+		t.Fatalf("SetKey() on a new store: %v", err)
+	}
+	path := filepath.Join(secretsDir, "work.enc.yaml")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("store mode = %v, want 0600", info.Mode().Perm())
+	}
+	if got := decryptStore(t, path); len(got) != 1 || got["corp_token"] != "tok-1" {
+		t.Errorf("store = %v, want corp_token only", got)
+	}
+	recipients, err := ListRecipients(path)
+	if err != nil || len(recipients) != 1 || recipients[0] != testAgePublicKey(t) {
+		t.Errorf("recipients = %v, %v; want the discovered identity's", recipients, err)
+	}
+	assertEmptyDir(t, os.TempDir())
+	assertEmptyDir(t, filepath.Join(tmpDir, "runtime"))
+}
+
+func TestManager_SetDeleteKey_ExplicitRecipient(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	other, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.SetKey("work", secretsDir, "corp_token", "tok", other.Recipient().String()); err != nil {
+		t.Fatalf("SetKey(): %v", err)
+	}
+	recipients, err := ListRecipients(filepath.Join(secretsDir, "work.enc.yaml"))
+	if err != nil || len(recipients) != 1 || recipients[0] != other.Recipient().String() {
+		t.Errorf("recipients = %v, %v; want the explicit one", recipients, err)
+	}
+}
+
+func TestManager_SetDeleteKey_UpdatesExistingStore(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	if err := mgr.CreateFromContent("work", secretsDir, testAgePublicKey(t), []byte("anthropic_api_key: sk-1\n")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+
+	tricky := "a: b # c 'd' \"e\" [f] {g}\nsecond line"
+	if err := mgr.SetKey("work", secretsDir, "corp_token", tricky, ""); err != nil {
+		t.Fatalf("SetKey(): %v", err)
+	}
+	if err := mgr.SetKey("work", secretsDir, "corp_token", tricky+"!", ""); err != nil {
+		t.Fatalf("SetKey() update: %v", err)
+	}
+	got := decryptStore(t, filepath.Join(secretsDir, "work.enc.yaml"))
+	if got["anthropic_api_key"] != "sk-1" {
+		t.Errorf("sibling key lost: %v", got)
+	}
+	if got["corp_token"] != tricky+"!" {
+		t.Errorf("corp_token = %q, want %q", got["corp_token"], tricky+"!")
+	}
+	assertEmptyDir(t, os.TempDir())
+	assertEmptyDir(t, filepath.Join(tmpDir, "runtime"))
+}
+
+func TestManager_SetDeleteKey_RejectsBadInput(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	if err := mgr.SetKey("../x", secretsDir, "k", "v", ""); err == nil {
+		t.Error("SetKey() with a traversal store name succeeded")
+	}
+	if err := mgr.SetKey("work", secretsDir, "", "v", ""); err == nil {
+		t.Error("SetKey() with an empty key succeeded")
+	}
+	if err := mgr.DeleteKey("../x", secretsDir, "k"); err == nil {
+		t.Error("DeleteKey() with a traversal store name succeeded")
+	}
+}
+
+func TestManager_SetDeleteKey_DeleteKey(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	path := filepath.Join(secretsDir, "work.enc.yaml")
+
+	if err := mgr.DeleteKey("work", secretsDir, "corp_token"); err != nil {
+		t.Errorf("DeleteKey() on a missing store = %v, want nil", err)
+	}
+	if err := mgr.CreateFromContent("work", secretsDir, testAgePublicKey(t), []byte("a: 1\ncorp_token: t\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.DeleteKey("work", secretsDir, "absent"); err != nil {
+		t.Errorf("DeleteKey() of an absent key = %v, want nil", err)
+	}
+	if err := mgr.DeleteKey("work", secretsDir, "corp_token"); err != nil {
+		t.Fatalf("DeleteKey(): %v", err)
+	}
+	if got := decryptStore(t, path); len(got) != 1 || got["a"] != "1" {
+		t.Errorf("store after delete = %v, want only a", got)
+	}
+	if err := mgr.DeleteKey("work", secretsDir, "a"); err != nil {
+		t.Fatalf("DeleteKey() of the last key: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("store still exists after its last key was deleted (stat err %v)", err)
+	}
+}

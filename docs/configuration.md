@@ -474,6 +474,145 @@ to declare instead. It sets selectors and endpoints only with
 
 ---
 
+## Custom gateways
+
+A gateway is a self-hosted or organization-run LLM endpoint (LiteLLM or
+an internal proxy) that serves the Anthropic API (`/v1/messages`) and
+the OpenAI API (`/v1/chat/completions`, `/v1/models`) behind one base
+URL and bearer token. `aide gateway` registers one on a profile, keeps
+its token in an age secret store, and writes its model list into each
+agent's own config so the agent's model picker shows the gateway's
+models.
+
+```bash
+aide gateway add corp --url https://gateway.example.com --profile work
+```
+
+This prompts for the token (input hidden), then:
+
+1. Encrypts it into `~/.config/aide/secrets/work.enc.yaml` under key
+   `corp_token`, without opening an editor.
+2. Saves the gateway on the profile:
+
+   ```yaml
+   profiles:
+     work:
+       config_dir_name: work
+       gateways:
+         corp:
+           base_url: https://gateway.example.com
+           refresh_ttl: 24h
+           store: work
+           key: corp_token
+           # harnesses: [claude, pi]   # optional; default is all four
+   ```
+
+3. Fetches `<base_url>/v1/models`, caches the result in
+   `~/.local/state/aide/gateways/work/corp.json`, and writes it into the
+   config of every agent whose profile dir already exists. Agents
+   without a dir yet show `pending` and get the file on first launch.
+
+Read the token from a password manager instead of the prompt with
+`--token-stdin` (one line from stdin) or `--token-env <VAR>` (the named
+variable). There is no flag that takes the token itself, so it never
+lands in shell history.
+
+| Flag | Default | Meaning |
+| :--- | :--- | :--- |
+| `<name>` | first DNS label of the URL's host | Gateway name under `gateways:` |
+| `--url` | required | Base URL; a trailing `/v1` or `/` is dropped |
+| `--profile` | profile matched from the current directory | Target profile |
+| `--token-stdin` / `--token-env <VAR>` | hidden prompt | Where the token comes from |
+| `--ttl` | `24h` | How long cached models stay fresh |
+| `--harnesses` | `claude,pi,opencode,codex` | Agents to configure |
+| `--store` | the profile's `secret:` store, else the profile name | Secret store for the token |
+| `--key` | `<name>_token` | Key inside the store; its uppercase form is the variable name |
+| `--age-key` | the discovered age identity | Recipient for a store that does not exist yet (needed with a YubiKey identity) |
+| `--force` | off | Replace a gateway of the same name that has another URL, or overwrite a store key no gateway owns |
+
+Running `add` again with the same name and URL replaces the token,
+which is how you rotate it.
+
+### What each agent gets
+
+The token is injected at launch through a credential binding that aide
+derives from the `gateways:` entry in memory; nothing is added under
+`credentials:`. Agent config files name the variable, never the token.
+
+| Agent | Variables injected | File written |
+| :--- | :--- | :--- |
+| `claude` | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_API_KEY=""` | `<dir>/cache/gateway-models.json` |
+| `pi` | `CORP_TOKEN` (the key uppercased) | `<dir>/models.json`, `providers.corp` |
+| `opencode` | `CORP_TOKEN` | `<dir>/opencode.jsonc`, `provider.corp` |
+| `codex` | `CORP_TOKEN` | `<dir>/config.toml`, `[model_providers.corp]` |
+
+`<dir>` is the profile's config dir for that agent (`~/.pi-work` with
+`config_dir_name: work`, or the agent's default dir when the profile
+sets none). aide edits only the gateway's own entry, keyed by the
+gateway name; other providers, MCP servers and plugins stay. `add`
+replaces an existing entry of the same name, while `remove` deletes it
+only when it still points at the gateway's URL. Comments in `opencode.jsonc` and
+`config.toml` are not preserved when aide rewrites them.
+
+Codex speaks the OpenAI protocol, so its route needs the gateway's
+`/v1/chat/completions`. aide sets Codex's `model_provider` to the
+gateway only when `config.toml` does not already choose one.
+
+### Defaults and several gateways
+
+Each gateway is a default credential of its profile unless a binding
+already in `default_credentials:` (or a gateway earlier in name order)
+sets one of the same variables for the same agent. Claude reads fixed
+variable names, so only one gateway can be Claude's default; select
+another per launch with `aide --credential <name>`, or name the one you
+want in `default_credentials:`. `aide gateway list` shows which agents
+each gateway is the default for.
+
+Claude keeps one gateway model file per config dir. `aide gateway sync`
+writes it only for Claude's default gateway; a launch that selects
+another gateway rewrites it before Claude starts.
+
+### Refresh at launch
+
+When the cached models are older than `refresh_ttl`, a launch fetches
+them again before starting the agent and prints what it did. If the
+gateway cannot be reached, the launch warns and uses the cached models;
+with no cache at all it launches without a model list. When the cache
+is fresh but the launched agent's file is missing or out of date (after
+switching with `--agent` or `--credential`), aide writes it from the
+cache with no network call. `--auth login` launches skip all of this.
+
+### Commands
+
+- `aide gateway list [--profile <name>] [--models] [--format json]`:
+  each gateway's URL, secret store and key name (never the token), cache
+  age, and per-agent file status: `synced`, `stale` (out of date, or
+  the cache expired) or `pending` (agent dir not created yet).
+- `aide gateway sync [<name>] [--profile <name>]`: fetch now, whatever
+  the TTL, and update every agent file that exists.
+- `aide gateway remove <name> [--profile <name>] [--keep-secret]`:
+  delete the gateway, its cache and its entries in agent files. The
+  token is deleted too unless `--keep-secret` is passed, another gateway
+  or credential (on any profile) uses the same store and key, or an
+  `env:` or MCP server template reads that key from a profile's
+  `secret:` store.
+
+### Safety rules
+
+- `base_url` must use `https://`; `http://` is allowed only for
+  `localhost`, `127.0.0.1` and `::1`. It cannot carry credentials, a
+  query string or a fragment.
+- Model discovery refuses redirects to another host or from `https` to
+  `http`, reads at most 4 MiB, keeps at most 1000 models, and strips
+  control characters from model names before caching or printing them.
+- `key` must be a valid variable name, and its uppercase form cannot be
+  a reserved, `never_allow_env`, provider (`ANTHROPIC_API_KEY`,
+  `OPENAI_BASE_URL`, ...), loader, proxy or TLS variable (`LD_*`,
+  `DYLD_*`, `NODE_OPTIONS`, `HTTPS_PROXY`, `SSL_CERT_FILE`, ...).
+- A gateway cannot share its name with a credential binding, including
+  one aide derives from a legacy provider key in `env:`.
+- `.aide.yaml` cannot declare `gateways:`.
+
 ## Control Environment Variables
 
 Alongside `AIDE_SANDBOX`, `AIDE_NETWORK_MODE`, and `AIDE_INFO_STYLE` (used
@@ -499,6 +638,7 @@ also honors:
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
 - `credentials:` / `default_credentials:`: named provider API key bindings and the ones injected by default. See [Credential bindings](#credential-bindings).
+- `gateways:` (map, optional): custom LLM gateways and the agents they serve. Manage them with `aide gateway`; see [Custom gateways](#custom-gateways).
 - `icon:` (string, optional): Unicode symbol displayed alongside the profile name in the banner and `aide prompt` output.
 - `config_dir_name:` (string, optional; `profile:` under legacy `contexts:`): names the profile's native agent config dirs. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Profiles](profiles.md).
 - `config_dir:` (string, optional; `profile_dir:` under legacy `contexts:`): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path for every agent.

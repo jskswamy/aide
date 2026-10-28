@@ -22,6 +22,7 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(whichCmd())
 	rootCmd.AddCommand(validateCmd())
 	rootCmd.AddCommand(secretsCmd())
+	rootCmd.AddCommand(gatewayCmd())
 	rootCmd.AddCommand(configCmd())
 	rootCmd.AddCommand(agentsCmd())
 	rootCmd.AddCommand(useCmd())

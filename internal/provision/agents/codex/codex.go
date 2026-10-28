@@ -13,11 +13,8 @@
 package codex
 
 import (
-	"fmt"
 	"path/filepath"
 	"sort"
-
-	"github.com/pelletier/go-toml/v2"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/provision"
@@ -132,20 +129,11 @@ func (d *Driver) setPluginEnabled(ctx provision.Context, name string, enabled bo
 	body["enabled"] = enabled
 	plugins[name] = body
 	doc["plugins"] = plugins
-
-	out, err := toml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("codex: marshalling config: %w", err)
-	}
-	return fsutil.AtomicWrite(path, out)
+	return fsutil.WriteTOML(path, doc)
 }
 
 func readConfig(path string) (map[string]any, error) {
-	return provision.ReadGenericDoc(agentName, path, func(data []byte) (map[string]any, error) {
-		doc := map[string]any{}
-		err := toml.Unmarshal(data, &doc)
-		return doc, err
-	})
+	return fsutil.ReadTOML(path)
 }
 
 // InstalledMarketplaces reads `[plugin_marketplaces.<name>]` tables
@@ -202,11 +190,7 @@ func (d *Driver) AddMarketplace(ctx provision.Context, m provision.Marketplace) 
 	body["source"] = src
 	mks[name] = body
 	doc["plugin_marketplaces"] = mks
-	out, err := toml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("codex: marshalling config: %w", err)
-	}
-	return fsutil.AtomicWrite(path, out)
+	return fsutil.WriteTOML(path, doc)
 }
 
 // RemoveMarketplace deletes the `[plugin_marketplaces.<name>]` table
@@ -223,9 +207,5 @@ func (d *Driver) RemoveMarketplace(ctx provision.Context, name string) error {
 			doc["plugin_marketplaces"] = mm
 		}
 	}
-	out, err := toml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("codex: marshalling config: %w", err)
-	}
-	return fsutil.AtomicWrite(path, out)
+	return fsutil.WriteTOML(path, doc)
 }

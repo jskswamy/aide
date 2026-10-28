@@ -15,6 +15,14 @@ After tagging, reset this file to this template.
 
 ### ✨ New
 
+#### Custom model gateway management (`aide gateway`)
+
+aide now manages custom-hosted LLM gateways and model catalogues across Claude Code, Pi, OpenCode, and Codex via `aide gateway add`, `list`, `sync`, and `remove`.
+
+- Stores gateway bearer tokens in `aide`'s encrypted `age` secret store (via interactive hidden prompt, `--token-stdin`, or `--token-env <VAR>`) and records only non-secret gateway settings under `profiles.<profile>.gateways.<name>` in `config.yaml`.
+- Queries `<base_url>/v1/models`, caches the normalized model catalogue under `~/.local/state/aide/gateways/<profile>/<gateway>.json`, and materializes per-agent model configuration files (`gateway-models.json` for Claude Code, `models.json` for Pi, `opencode.jsonc` for OpenCode, and `config.toml` for Codex) without writing plaintext tokens to disk.
+- Automatically refreshes expired gateway model catalogues at launch (default `refresh_ttl: 24h`) or on demand with `aide gateway sync`.
+
 #### Support for multiple profiles in OpenCode
 
 aide now supports multiple profiles for OpenCode via `OPENCODE_CONFIG_DIR`.

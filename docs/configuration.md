@@ -223,7 +223,7 @@ not `--clean-env` is set:
 - aide's own secret material: `SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`;
 - names you list in `scrub_env:`;
 - when the profile selects its own config dir (`profile:`,
-  `config_dir_name:`, `config_dir:` or `config_dirs:`), every harness
+  `config_dir_name:`, `config_dir:` or `config_dirs:`), every agent
   config-dir redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
   `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `COPILOT_HOME`,
   `OPENCODE_CONFIG`, ...).
@@ -298,7 +298,7 @@ Codex reads a custom model provider's key from the variable its
 `config.toml` names in `model_providers.<id>.env_key` (and header
 values from `env_http_headers`), so those names are not in the
 registry. aide treats them like credential binding names: every
-configured launch (any harness) and every provisioning subprocess
+configured launch (any agent) and every provisioning subprocess
 scrubs, from the inherited environment, each such name declared in
 any Codex home aide knows of: `~/.codex`, an exported `CODEX_HOME`,
 and every profile's own Codex dir, each with its `config.toml` and
@@ -396,10 +396,10 @@ profiles:
   endpoint in its `env:` stops the launch (an endpoint there could
   redirect the profile's key to a host the repository chose).
 
-### Routes: one binding, every harness
+### Routes: one binding, every agent
 
-Pick a harness and the profile picks the credential: give a binding a
-route per harness with `for:`. Each route says which variables carry
+Pick an agent and the profile picks the credential: give a binding a
+route per agent with `for:`. Each route says which variables carry
 the key (`env:`) and which non-secret settings travel with it
 (`set:`), such as the endpoint. Switching with `--agent` then needs no
 `--credential`.
@@ -431,9 +431,9 @@ through OpenRouter, and `aide --credential bedrock` switches Claude to
 Bedrock. `aide --agent codex` notes that Codex has no route and uses
 its own login.
 
-- The `for:` keys are the harnesses the binding serves. `for:` replaces
+- The `for:` keys are the agents the binding serves. `for:` replaces
   `env:` and `harnesses:` on that binding (those remain shorthand for
-  the same `env:` on every listed harness). A built-in name's route
+  the same `env:` on every listed agent). A built-in name's route
   without `env:` uses the built-in variable.
 - A binding without `backend:`, `store:` and `key:` is keyless: it
   injects only `set:` values and adds its `capabilities:` to the
@@ -447,7 +447,7 @@ its own login.
   in legacy `env:` form keep their `env:` endpoint;
   `aide profile migrate` moves both into a route.
 - Loading fails when two `default_credentials:` entries serving the
-  same harness set the same variable.
+  same agent set the same variable.
 - The banner and `aide which` list each route's variable names,
   including `set:` names, never values.
 
@@ -592,15 +592,15 @@ not by looking in parent directories, so the worktree can live anywhere.
 When both files apply, the worktree's file wins:
 
 - Scalars (`agent`, `secret`, `yolo`, `profile`, sandbox `network`,
-  `writable`, `readable`, `denied`, `guards`, ...) — the worktree's value
+  `writable`, `readable`, `denied`, `guards`, ...): the worktree's value
   replaces the inherited one.
-- `capabilities` — a stable union, without duplicates. The worktree's
+- `capabilities`: a stable union, without duplicates. The worktree's
   `disabled_capabilities` may remove inherited capabilities, and a
   worktree capability re-enables one the main checkout disabled.
-- `env` — merged key by key, the worktree's key wins. Provider
+- `env`: merged key by key, the worktree's key wins. Provider
   credentials, selectors and endpoints stay forbidden in both files.
-- Sandbox `_extra` lists, `unguard` — combined.
-- `capability_variants` — merged per capability, the worktree wins.
+- Sandbox `_extra` lists, `unguard`: combined.
+- `capability_variants`: merged per capability, the worktree wins.
 
 Each file is trusted separately. An untrusted or denied file contributes
 nothing; the other file still applies if it is trusted. Changing the main

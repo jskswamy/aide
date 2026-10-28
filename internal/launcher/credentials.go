@@ -122,26 +122,16 @@ type StoreLoader func(path string) (map[string]string, error)
 // returns the env vars to inject. A missing store or key fails without
 // returning any value.
 func ResolveCredentialEnv(plan CredentialPlan, load StoreLoader) (map[string]string, error) {
+	load = CachingStoreLoader(load)
 	env := map[string]string{}
-	stores := map[string]map[string]string{}
 	for _, b := range plan.Bindings {
 		maps.Copy(env, b.Set)
 		if b.Store == "" {
 			continue
 		}
-		data, ok := stores[b.Store]
-		if !ok {
-			var err error
-			data, err = load(config.ResolveSecretPath(b.Store))
-			if err != nil {
-				return nil, fmt.Errorf("credential %q: secret store %q: %w", b.Name, b.Store, err)
-			}
-			stores[b.Store] = data
-		}
-		v, ok := data[b.Key]
-		if !ok {
-			return nil, fmt.Errorf("%w: credential %q: key %q is not in secret store %q (list keys with: aide secrets keys %s)",
-				ErrCredentialKeyMissing, b.Name, b.Key, b.Store, b.Store)
+		v, err := ResolveStoreKey(load, fmt.Sprintf("credential %q", b.Name), b.Store, b.Key)
+		if err != nil {
+			return nil, err
 		}
 		for _, e := range b.Env {
 			env[e] = v
@@ -150,8 +140,23 @@ func ResolveCredentialEnv(plan CredentialPlan, load StoreLoader) (map[string]str
 	return env, nil
 }
 
-// cachingLoader decrypts each store at most once per launch.
-func cachingLoader(load StoreLoader) StoreLoader {
+// ResolveStoreKey decrypts store via load and returns the value of key.
+func ResolveStoreKey(load StoreLoader, label, store, key string) (string, error) {
+	data, err := load(config.ResolveSecretPath(store))
+	if err != nil {
+		return "", fmt.Errorf("%s: secret store %q: %w", label, store, err)
+	}
+	v, ok := data[key]
+	if !ok {
+		return "", fmt.Errorf("%w: %s: key %q is not in secret store %q (list keys with: aide secrets keys %s)",
+			ErrCredentialKeyMissing, label, key, store, store)
+	}
+	return v, nil
+}
+
+// CachingStoreLoader wraps load so each store path is decrypted at most
+// once.
+func CachingStoreLoader(load StoreLoader) StoreLoader {
 	cache := map[string]map[string]string{}
 	return func(path string) (map[string]string, error) {
 		if m, ok := cache[path]; ok {

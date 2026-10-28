@@ -297,11 +297,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if len(credPlan.Ignored) > 0 {
 		fmt.Fprintf(l.stderr(), "aide: note: native login: not injecting credentials %s\n", strings.Join(credPlan.Ignored, ", "))
 	}
-	loadStore := cachingLoader(loadSecretStore)
+	loadStore := CachingStoreLoader(loadSecretStore)
 	credEnv, err := ResolveCredentialEnv(credPlan, loadStore)
 	if err != nil {
 		return err
 	}
+	l.ensureGatewaySynced(rc, cfg.HarnessOf(agentName), homeDir, credPlan, credEnv)
 
 	// 5b. Resolve effective auto-approve from config layers + CLI flags.
 	// Priority: --no-auto-approve/--no-yolo (highest) > --auto-approve/--yolo flag > project override > context > preferences

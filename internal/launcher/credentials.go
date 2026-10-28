@@ -171,7 +171,8 @@ func cachingLoader(load StoreLoader) StoreLoader {
 var loadSecretStore StoreLoader = secrets.LoadSecretsMap
 
 // profileCredentials returns rc's profile with legacy provider
-// credential env: entries translated into implicit bindings. Legacy
+// credential env: entries translated into implicit bindings and its
+// gateways synthesized into credential bindings. Legacy
 // entries use the profile's own secret: store (.aide.yaml cannot set
 // one; the loader rejects it), and .aide.yaml may not set provider credentials,
 // selectors or endpoints at all (an endpoint could redirect the
@@ -196,6 +197,10 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 		}
 	}
 	ctx, legacy, err := config.TranslateLegacyCredentials(rc.Context, rc.Context.Secret)
+	if err != nil {
+		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
+	}
+	ctx, err = config.SynthesizeGatewayCredentials(ctx)
 	if err != nil {
 		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
 	}
@@ -282,7 +287,10 @@ func checkEndpointsRouted(label string, ctx config.Context, harnessName string, 
 			routed[k] = true
 		}
 		isLegacy := slices.ContainsFunc(legacy, func(l config.LegacyCredential) bool { return l.Name == b.Name })
-		if keyed == "" && b.Store != "" && !isLegacy {
+		// A gateway's key goes to its base_url: Claude's route sets the
+		// endpoint, the other harnesses read it from their own config.
+		_, isGateway := ctx.Gateways[b.Name]
+		if keyed == "" && b.Store != "" && !isLegacy && !isGateway {
 			keyed = b.Name
 		}
 	}

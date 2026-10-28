@@ -47,7 +47,7 @@ var profileDirKeys = [][2]string{
 var projectDefiningKeys = []string{
 	keyProfiles, keyDefaultProfile, keyContexts, keyDefaultContext,
 	"config_dir_name", "config_dir", "config_dirs", "profile_dir",
-	"match", "credentials", "default_credentials", "secret",
+	"match", "credentials", "default_credentials", "secret", "gateways",
 }
 
 // UnmarshalYAML decodes either profile schema. A profiles: file sets

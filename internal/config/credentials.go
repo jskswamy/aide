@@ -167,8 +167,14 @@ func (c *Config) validateCredentials() error {
 		section = "contexts"
 	}
 	for _, name := range sortedKeys(c.Contexts) {
-		ctx := c.Contexts[name]
 		at := fmt.Sprintf("%s.%s", section, name)
+		if err := ValidateGateways(at, c.Contexts[name], c.NeverAllowEnv); err != nil {
+			return err
+		}
+		ctx, err := SynthesizeGatewayCredentials(c.Contexts[name])
+		if err != nil {
+			return err
+		}
 		for _, cred := range slices.Sorted(maps.Keys(ctx.Credentials)) {
 			if err := validateBinding(cred, ctx.Credentials[cred]); err != nil {
 				return fmt.Errorf("%w: %s: credentials.%s: %s", ErrInvalidCredentials, at, cred, err)
@@ -338,7 +344,8 @@ func definedBindings(ctx Context) string {
 
 // CredentialScrubNames returns, sorted, the names to scrub from an
 // inherited environment on top of the built-in registry: scrub_env:
-// plus every env name any profile's credential binding injects, so a
+// plus every env name any profile's credential binding or gateway
+// injects, so a
 // custom credential exported in the shell cannot reach an agent
 // unselected.
 func (c *Config) CredentialScrubNames() []string {
@@ -349,6 +356,11 @@ func (c *Config) CredentialScrubNames() []string {
 	for _, ctx := range c.Contexts {
 		for name, b := range ctx.Credentials {
 			for _, e := range b.EnvNames(name) {
+				seen[e] = true
+			}
+		}
+		for _, gw := range ctx.Gateways {
+			for _, e := range gatewayScrubNames(gw) {
 				seen[e] = true
 			}
 		}

@@ -1,9 +1,7 @@
 package mcp
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/pelletier/go-toml/v2"
@@ -32,16 +30,9 @@ type codexServerBody struct {
 
 // Read implements provision.MCPHandler.
 func (codexTOML) Read(path string) (map[string]provision.MCPServer, map[string]bool, error) {
-	data, err := os.ReadFile(path)
+	top, err := fsutil.ReadTOML(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]provision.MCPServer{}, map[string]bool{}, nil
-		}
-		return nil, nil, fmt.Errorf("provision/mcp: reading %s: %w", path, err)
-	}
-	top := map[string]any{}
-	if err := toml.Unmarshal(data, &top); err != nil {
-		return nil, nil, fmt.Errorf("provision/mcp: parsing %s: %w", path, err)
+		return nil, nil, fmt.Errorf("provision/mcp: %w", err)
 	}
 
 	servers := map[string]provision.MCPServer{}
@@ -94,13 +85,9 @@ func (codexTOML) Read(path string) (map[string]provision.MCPServer, map[string]b
 
 // Write implements provision.MCPHandler.
 func (codexTOML) Write(path string, desired map[string]provision.MCPServer) error {
-	top := map[string]any{}
-	if data, err := os.ReadFile(path); err == nil {
-		if err := toml.Unmarshal(data, &top); err != nil {
-			return fmt.Errorf("provision/mcp: parsing existing %s: %w", path, err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("provision/mcp: reading %s: %w", path, err)
+	top, err := fsutil.ReadTOML(path)
+	if err != nil {
+		return fmt.Errorf("provision/mcp: %w", err)
 	}
 
 	prevManaged := map[string]bool{}
@@ -155,10 +142,5 @@ func (codexTOML) Write(path string, desired map[string]provision.MCPServer) erro
 		managedAny[i] = k
 	}
 	top["_aide_managed_mcp"] = managedAny
-
-	out, err := toml.Marshal(top)
-	if err != nil {
-		return fmt.Errorf("provision/mcp: marshalling %s: %w", path, err)
-	}
-	return fsutil.AtomicWrite(path, out)
+	return fsutil.WriteTOML(path, top)
 }

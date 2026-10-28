@@ -5,11 +5,7 @@
 package opencode
 
 import (
-	"encoding/json"
-	"fmt"
 	"path/filepath"
-
-	"github.com/tailscale/hujson"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/provision"
@@ -83,23 +79,11 @@ func (*Driver) MCPHandler(_ provision.Context) provision.MCPHandler { return mcp
 // codex's config.toml handling uses, so plugins and MCP (Task 2, a
 // different key in the same file) never clobber each other's keys.
 func readConfig(path string) (map[string]any, error) {
-	return provision.ReadGenericDoc(agentName, path, func(data []byte) (map[string]any, error) {
-		standardized, err := hujson.Standardize(data)
-		if err != nil {
-			return nil, err
-		}
-		doc := map[string]any{}
-		err = json.Unmarshal(standardized, &doc)
-		return doc, err
-	})
+	return fsutil.ReadJSONCMap(path)
 }
 
 func writeConfig(path string, doc map[string]any) error {
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Errorf("opencode: marshalling config %s: %w", path, err)
-	}
-	return fsutil.AtomicWrite(path, out)
+	return fsutil.WriteJSON(path, doc)
 }
 
 // pluginRefs reads the "plugin" array (bare npm/git/local-path

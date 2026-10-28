@@ -2,11 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-
-	"github.com/tailscale/hujson"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/provision"
@@ -49,23 +45,16 @@ type openCodeServerBody struct {
 
 // Read implements provision.MCPHandler.
 func (openCodeJSON) Read(path string) (map[string]provision.MCPServer, map[string]bool, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]provision.MCPServer{}, map[string]bool{}, nil
-		}
-		return nil, nil, fmt.Errorf("provision/mcp: reading %s: %w", path, err)
-	}
-	standardized, err := hujson.Standardize(data)
-	if err != nil {
-		return nil, nil, fmt.Errorf("provision/mcp: parsing %s: %w", path, err)
-	}
 	var doc struct {
 		AideManaged []string                   `json:"_aide_managed,omitempty"`
 		MCP         map[string]json.RawMessage `json:"mcp,omitempty"`
 	}
-	if err := json.Unmarshal(standardized, &doc); err != nil {
-		return nil, nil, fmt.Errorf("provision/mcp: parsing %s: %w", path, err)
+	ok, err := fsutil.ReadJSONC(path, &doc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("provision/mcp: %w", err)
+	}
+	if !ok {
+		return map[string]provision.MCPServer{}, map[string]bool{}, nil
 	}
 	servers := map[string]provision.MCPServer{}
 	for key, raw := range doc.MCP {
@@ -91,17 +80,9 @@ func (openCodeJSON) Read(path string) (map[string]provision.MCPServer, map[strin
 
 // Write implements provision.MCPHandler.
 func (openCodeJSON) Write(path string, desired map[string]provision.MCPServer) error {
-	existing := map[string]json.RawMessage{}
-	if data, err := os.ReadFile(path); err == nil {
-		standardized, serr := hujson.Standardize(data)
-		if serr != nil {
-			return fmt.Errorf("provision/mcp: parsing existing %s: %w", path, serr)
-		}
-		if err := json.Unmarshal(standardized, &existing); err != nil {
-			return fmt.Errorf("provision/mcp: parsing existing %s: %w", path, err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("provision/mcp: reading %s: %w", path, err)
+	existing, err := fsutil.ReadJSONCRawMap(path)
+	if err != nil {
+		return fmt.Errorf("provision/mcp: %w", err)
 	}
 
 	prevServers := map[string]json.RawMessage{}
@@ -121,12 +102,7 @@ func (openCodeJSON) Write(path string, desired map[string]provision.MCPServer) e
 	serversRaw, _ := json.Marshal(newServers)
 	existing["_aide_managed"] = managedRaw
 	existing["mcp"] = serversRaw
-
-	out, err := json.MarshalIndent(existing, "", "  ")
-	if err != nil {
-		return fmt.Errorf("provision/mcp: marshalling %s: %w", path, err)
-	}
-	return fsutil.AtomicWrite(path, out)
+	return fsutil.WriteJSON(path, existing)
 }
 
 // openCodeServerBodyAny converts an MCPServer into OpenCode's on-disk

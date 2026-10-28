@@ -128,6 +128,10 @@ type Context struct {
 	// else selects. See credentials.go.
 	Credentials        map[string]CredentialBinding `yaml:"credentials,omitempty"`
 	DefaultCredentials []string                     `yaml:"default_credentials,omitempty"`
+	// Gateways are custom LLM gateways; each injects through a
+	// credential binding of the same name synthesized at load time
+	// (see gateway.go), never written back as credentials:.
+	Gateways map[string]GatewayConfig `yaml:"gateways,omitempty"`
 	// MCPServers retains the v1 list-of-names form for the per-context
 	// selection of which MCP servers (declared at the top level) are
 	// enabled in this context. The v2 ContextOverride[MCPServer]
@@ -181,6 +185,9 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	}
 	if len(c.DefaultCredentials) > 0 {
 		out["default_credentials"] = c.DefaultCredentials
+	}
+	if len(c.Gateways) > 0 {
+		out["gateways"] = c.Gateways
 	}
 	if c.Sandbox != nil {
 		out["sandbox"] = c.Sandbox

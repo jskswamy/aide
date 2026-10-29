@@ -311,7 +311,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefYolo = cfg.Preferences.Yolo
 	}
 	effectiveYolo := l.resolveEffectiveYolo(prefYolo, rc.Context.Yolo, nil)
-	extraArgs = ApplyLaunchArgs(agentName, extraArgs)
+	extraArgs = ApplyLaunchArgs(cfg.HarnessOf(agentName), extraArgs)
 	if effectiveYolo {
 		var err error
 		extraArgs, err = ApplyYoloArgs(agentName, extraArgs)
@@ -475,6 +475,17 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		env = filterNeverAllowEnv(env, blockedVars)
 	}
 
+	// An OpenCode profile with a config dir keeps its accounts in its own
+	// database there. The path is read before the sandbox, whose
+	// clean_env may drop OPENCODE_CONFIG_DIR, and set after it.
+	var openCodeDB string
+	if cfg.HarnessOf(agentName) == "opencode" && rc.Context.SelectsConfigDir() && opensOpenCodeProfileDB(extraArgs) {
+		if openCodeDB, err = openCodeProfileDB(env, blockedVars); err != nil {
+			cleanup()
+			return err
+		}
+	}
+
 	var pathWarnings []string
 	var diagSandbox diag.SandboxInfo
 	// sandboxExtraFiles parks fds the sandbox layer needs the child to
@@ -535,6 +546,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 				diagSandbox.RenderedSB = rendered
 			}
 		}
+	}
+	if openCodeDB != "" {
+		env = mergeEnv(env, map[string]string{"OPENCODE_DB": openCodeDB})
 	}
 	if resolvedCapSet != nil {
 		seen := make(map[string]bool)

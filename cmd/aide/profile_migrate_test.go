@@ -266,3 +266,58 @@ func TestProfileMigrate_PreviewReportsSharedGlobalLogin(t *testing.T) {
 		}
 	}
 }
+
+const openCodeNotCopiedNote = "OpenCode accounts and sessions were not copied and were not deleted. " +
+	"They remain in the database OpenCode was already opening, which is not always under the data directory."
+
+// Any config that mentions OpenCode gets the not-copied note, whether
+// or not anything else changes; a Claude-only config does not.
+func TestProfileMigrate_OpenCodeNotCopiedNote(t *testing.T) {
+	for name, tc := range map[string]struct {
+		config string
+		args   []string
+	}{
+		"legacy contexts preview": {"contexts:\n  work: {agent: opencode, profile: work}\ndefault_context: work\n", nil},
+		"legacy contexts write":   {"contexts:\n  work: {agent: opencode, profile: work}\ndefault_context: work\n", []string{"--write"}},
+		"already profiles":        {"profiles:\n  work: {agent: opencode, config_dir_name: work}\n", nil},
+		"already profiles write":  {"profiles:\n  work: {agent: opencode, config_dir_name: work}\n", []string{"--write"}},
+		"config_dirs key": {"profiles:\n  work:\n    agent: claude\n    config_dir_name: work\n" +
+			"    config_dirs: {opencode: ~/oc-work}\n", nil},
+		"global login row":   {"profiles:\n  personal: {agent: opencode}\n", nil},
+		"adopt global login": {"profiles:\n  personal: {agent: opencode}\n", []string{"--write", "--adopt", "personal"}},
+		"agents alias":       {"agents:\n  oc: {binary: opencode}\nprofiles:\n  work: {agent: oc, config_dir_name: work}\n", nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := isolatedConfigDir(t)
+			cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+			if err := os.WriteFile(cfgPath, []byte(tc.config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out, _, err := execProfileMigrate(t, tc.args...)
+			if err != nil {
+				t.Fatalf("migrate: %v\n%s", err, out)
+			}
+			if !strings.Contains(out, openCodeNotCopiedNote) {
+				t.Errorf("output missing the OpenCode note:\n%s", out)
+			}
+			if strings.Contains(out, ".local/share/opencode/opencode.db") {
+				t.Errorf("output names the default database path:\n%s", out)
+			}
+		})
+	}
+}
+
+// Preview, the --write summary and the unchanged second run all stay
+// silent about OpenCode for a Claude-only config.
+func TestProfileMigrate_ClaudeOnlyHasNoOpenCodeNote(t *testing.T) {
+	migrateFixture(t)
+	for _, args := range [][]string{nil, {"--write"}, {"--write"}} {
+		out, _, err := execProfileMigrate(t, args...)
+		if err != nil {
+			t.Fatalf("migrate %v: %v\n%s", args, err, out)
+		}
+		if strings.Contains(out, openCodeNotCopiedNote) {
+			t.Errorf("migrate %v printed an OpenCode note for a Claude-only config:\n%s", args, out)
+		}
+	}
+}

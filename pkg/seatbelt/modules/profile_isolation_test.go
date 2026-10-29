@@ -48,9 +48,10 @@ func TestProfileDirRulesGrantOnlySelectedDir(t *testing.T) {
 	}
 }
 
-// OPENCODE_CONFIG_DIR moves only the config dir; the XDG data dir
-// (log, db, auth) must stay writable or OpenCode dies with EPERM
-// opening ~/.local/share/opencode/log/opencode.log.
+// OPENCODE_CONFIG_DIR moves only the config dir; the XDG data, state
+// and cache dirs must stay writable or OpenCode dies with EPERM opening
+// ~/.local/share/opencode/log/opencode.log. A profile's database sits
+// in its config dir, so it needs no extra grant.
 func TestOpenCodeConfigDirOverrideKeepsDataDirs(t *testing.T) {
 	home := t.TempDir()
 	work := filepath.Join(home, ".opencode-work")

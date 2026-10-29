@@ -13,6 +13,36 @@ Headings (use only what applies; drop empty sections):
 After tagging, reset this file to this template.
 -->
 
+### 💥 Breaking changes
+
+#### OpenCode profiles open their own account database
+
+A profile that has selected an OpenCode config dir (`config_dir_name`,
+`config_dir` or `config_dirs.opencode`) now opens
+`<config-dir>/opencode.db` on launches that start a private server and on
+`debug paths`. Saved accounts, sessions and the last-selected model no
+longer show up across profiles. This includes a profile pinned to
+`~/.config/opencode` by `aide profile migrate --adopt`.
+
+- Accounts and sessions are not copied and are not deleted, so those
+  profiles start logged out. The old database stays wherever OpenCode was
+  already opening it, which is not always
+  `~/.local/share/opencode/opencode.db`: `XDG_DATA_HOME` and a
+  channel-specific filename (`opencode-<channel>.db`) move it.
+- OpenCode imports a leftover `auth.json` from its shared data directory
+  into a new database the first time it creates one. aide does not deny,
+  delete or move that file; remove it yourself if its accounts must not
+  reach a profile.
+- The database and its SQLite sidecar files sit in the config dir, so
+  anything that copies or syncs that directory copies accounts and
+  sessions too.
+- A profile without a selected config dir keeps its current database, and
+  an `OPENCODE_DB` you set yourself is left alone there. On a launch that
+  sets it, an earlier `OPENCODE_DB` is overwritten, and listing
+  `OPENCODE_DB` in `never_allow_env` stops the launch with an error.
+- `service`, `serve`, `mcp`, `plugin` and the other commands that use the
+  shared background server do not get the profile database.
+
 ### ✨ New
 
 #### Custom model gateway management (`aide gateway`)
@@ -34,15 +64,22 @@ aide now supports multiple profiles for OpenCode via `OPENCODE_CONFIG_DIR`.
 - Automatically routes profile configuration (`opencode.jsonc`, plugins, hooks, skills) to isolated profile directories (`~/.opencode-<profile>` or custom `config_dirs`).
 - Seatbelt sandbox restricts write access to the active profile's directory.
 - OpenCode provision driver manages MCP servers and hooks per profile.
-- The sandbox keeps OpenCode's data, state and cache dirs (`~/.local/share/opencode`, etc.) writable when `OPENCODE_CONFIG_DIR` is set; previously OpenCode crashed at startup with `EPERM` opening `opencode.log`.
+- The sandbox keeps OpenCode's data, state and cache dirs (`~/.local/share/opencode`, etc.) writable when `OPENCODE_CONFIG_DIR` is set; previously OpenCode crashed at startup with `EPERM` opening `opencode.log`. The account database is no longer one of them for a profile with a config dir (see Breaking changes).
 
 #### OpenCode launches use a private server
 
-aide now starts OpenCode with `--standalone` (root, `run` and `mini`).
-OpenCode v2 otherwise reuses one per-user background service that keeps the
-environment of whichever launch started it, so a profile's credentials
-(e.g. `ANTHROPIC_API_KEY`) were ignored and the server ran outside the
-sandbox. Pass `--server <url>` to opt out.
+aide now starts OpenCode with `--standalone` on every OpenCode v2
+command whose own help lists the flag: the root TUI, `run`, `mini`, `api`,
+`models`, `stats`, `reload`, `auth list|login|logout|export|import|switch`
+and `session list|delete|export|import`. The flag goes after the leaf
+command, as in `auth list --standalone`; OpenCode rejects
+`auth --standalone list`. Commands that reject the flag, such as `mcp`,
+`plugin`, `debug` and `service`, are left as typed. OpenCode v2 otherwise
+reuses one per-user background service that keeps the environment of
+whichever launch started it, so a profile's credentials (e.g.
+`ANTHROPIC_API_KEY`) were ignored and the server ran outside the sandbox.
+Pass `--server <url>` to opt out; an explicit `--server` or `--standalone`
+is never changed.
 
 The sandbox also lets OpenCode open the directories and config entries it
 resolves at startup: the home dir, each ancestor of the project, and any

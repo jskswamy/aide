@@ -261,8 +261,8 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 	if err != nil {
 		return rc.Context, nil, CredentialPlan{}, err
 	}
-	sel.SelectCredentials(in, ctx.DefaultCredentials)
 	harnessName := cfg.HarnessOf(ctx.Agent)
+	sel.SelectCredentials(in, ctx.DefaultCredentials)
 	plan, err := sel.PlanCredentials(rc.Name, ctx, harnessName, in.Auth)
 	if err == nil {
 		err = checkEndpointsRouted(profileLabel(cfg, rc.Name), ctx, harnessName, plan, legacy)
@@ -320,7 +320,17 @@ func SetBannerCredentials(data *ui.BannerData, plan CredentialPlan) {
 	}
 	data.Credentials = nil
 	for _, b := range plan.Bindings {
-		names := append(slices.Clone(b.Env), slices.Sorted(maps.Keys(b.Set))...)
-		data.Credentials = append(data.Credentials, ui.CredentialInfo{Name: b.Name, Env: names})
+		names := slices.Clone(b.Env)
+		for _, k := range slices.Sorted(maps.Keys(b.Set)) {
+			if b.Set[k] != "" {
+				names = append(names, k)
+			}
+		}
+		data.Credentials = append(data.Credentials, ui.CredentialInfo{
+			Name:  b.Name,
+			Env:   names,
+			Store: b.Store,
+			Key:   b.Key,
+		})
 	}
 }

@@ -1379,3 +1379,68 @@ func TestFuncMap_HasIsolationTierLabel(t *testing.T) {
 		t.Error("colorFuncMap missing key 'isolationTierLabel'")
 	}
 }
+
+func TestRenderBanner_GatewayAndHarnesses(t *testing.T) {
+	data := &BannerData{
+		ContextName:      "work",
+		MatchReason:      "default_profile (work)",
+		AgentName:        "claude",
+		AgentPath:        "/usr/local/bin/claude",
+		HarnessConfigDir: "~/.claude-work",
+		AvailableHarnesses: []HarnessOption{
+			{Name: "pi", ConfigDir: "~/.pi-work"},
+			{Name: "opencode", ConfigDir: "~/.opencode-work"},
+		},
+		AuthMode:         "api",
+		CredentialSource: "profile",
+		Credentials: []CredentialInfo{
+			{
+				Name:       "api",
+				Env:        []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"},
+				URL:        "https://gw.example.com",
+				Store:      "work",
+				Key:        "api_token",
+				IsGateway:  true,
+				ModelCount: 7,
+				ModelAge:   "3m",
+				TargetFile: "~/.claude-work/cache/gateway-models.json",
+				TargetSync: "synced",
+			},
+		},
+		AvailableGateways: []GatewayOption{
+			{Name: "anthropic", URL: "https://api.anthropic.com"},
+		},
+		EnvItems: []EnvItem{
+			{Key: "CLAUDE_CONFIG_DIR", Badge: "📌", Annotation: "= ~/.claude-work"},
+			{Key: "CUSTOM_VAR", Badge: "📌", Annotation: "= hello"},
+		},
+	}
+
+	for _, style := range []string{"compact", "clean", "boxed"} {
+		t.Run(style, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := RenderBanner(&buf, style, data); err != nil {
+				t.Fatalf("RenderBanner(%s) error = %v", style, err)
+			}
+			out := buf.String()
+			for _, want := range []string{
+				"~/.claude-work",
+				"pi (~/.pi-work)",
+				"https://gw.example.com",
+				"auth: store=work, key=api_token",
+				"7 cached",
+				"gateway-models.json",
+				"anthropic",
+				"aide gateway use anthropic",
+				"CUSTOM_VAR",
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("style %s output missing %q:\n%s", style, want, out)
+				}
+			}
+			if strings.Contains(out, "CLAUDE_CONFIG_DIR") {
+				t.Errorf("style %s should hide CLAUDE_CONFIG_DIR when HarnessConfigDir is shown:\n%s", style, out)
+			}
+		})
+	}
+}

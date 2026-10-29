@@ -146,13 +146,45 @@ type BannerData struct {
 	// Nil means sandbox: false (user explicitly disabled sandboxing).
 	// On macOS always primary; on Linux varies by kernel and policy.
 	IsolationTier *sandbox.IsolationTier `json:"isolation_tier,omitempty"`
+
+	// HarnessConfigDir is the resolved profile config directory for the
+	// active harness (e.g. ~/.claude-work).
+	HarnessConfigDir string `json:"harness_config_dir,omitempty"`
+	// AvailableHarnesses are the other installed harnesses available for
+	// this profile, with their resolved profile config directories.
+	AvailableHarnesses []HarnessOption `json:"available_harnesses,omitempty"`
+	// AvailableGateways are the other credentials or gateways on the
+	// profile that support the active harness.
+	AvailableGateways []GatewayOption `json:"available_gateways,omitempty"`
+}
+
+// HarnessOption describes an alternate installed harness and its
+// profile config directory.
+type HarnessOption struct {
+	Name      string `json:"name"`
+	ConfigDir string `json:"config_dir,omitempty"`
+}
+
+// GatewayOption describes an alternate credential or gateway on the
+// profile that supports the active harness.
+type GatewayOption struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
 }
 
 // CredentialInfo names one injected credential binding and the env
 // vars it sets. It never carries a value.
 type CredentialInfo struct {
-	Name string   `json:"name"`
-	Env  []string `json:"env"`
+	Name       string   `json:"name"`
+	Env        []string `json:"env"`
+	URL        string   `json:"url,omitempty"`
+	Store      string   `json:"store,omitempty"`
+	Key        string   `json:"key,omitempty"`
+	IsGateway  bool     `json:"is_gateway,omitempty"`
+	ModelCount int      `json:"model_count,omitempty"`
+	ModelAge   string   `json:"model_age,omitempty"`
+	TargetFile string   `json:"target_file,omitempty"`
+	TargetSync string   `json:"target_sync,omitempty"`
 }
 
 // SandboxInfo describes sandbox configuration for display.

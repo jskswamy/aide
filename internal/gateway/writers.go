@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -102,9 +103,9 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string, createDirIfMissing bool) (HarnessFileStatus, error) {
 	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
 	if err != nil {
-		return HarnessFileStatus{Harness: harnessName}, err
+		return HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(harnessName)}, err
 	}
-	st := HarnessFileStatus{Harness: harnessName, FilePath: path}
+	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(harnessName), FilePath: path}
 	if cat == nil {
 		return st, errors.New("gateway: no cached catalogue to write")
 	}
@@ -128,13 +129,23 @@ func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConf
 // fresh catalogue cat for gwName.
 func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string) HarnessFileStatus {
 	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
-	st := HarnessFileStatus{Harness: harnessName, FilePath: path}
+	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(harnessName), FilePath: path}
 	if err != nil {
 		st.State, st.Detail = StateStale, err.Error()
 		return st
 	}
 	if !dirExists(dir) {
 		st.State, st.Detail = StatePending, "dir not provisioned"
+		return st
+	}
+	if SingleGatewayPerDir(harnessName) && !CanSyncHarness(ctx, gwName, harnessName) {
+		if _, err := os.Stat(path); err == nil {
+			if diff, err := hf.mismatch(path, gwName, gw, cat); err == nil && diff == "" && cat != nil && !IsExpired(cat, gw.TTL(), time.Now()) {
+				st.State, st.Detail = StateSynced, fmt.Sprintf("%d models", len(cat.Models))
+				return st
+			}
+		}
+		st.State, st.Detail = StatePending, fmt.Sprintf("not %s's active gateway; syncs when selected", harnessName)
 		return st
 	}
 	switch {
@@ -175,10 +186,10 @@ func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfi
 }
 
 // IsDefaultGateway reports whether gwName is a default credential of
-// ctx, synthesizing gateway credentials unless ctx already carries
-// them (as a launch's profile does). A context that does not declare
-// gwName, such as a single gateway passed on its own, counts as its
-// default.
+// ctx for harnessName, synthesizing gateway credentials unless ctx
+// already carries them (as a launch's profile does). A context that
+// does not declare gwName, such as a single gateway passed on its own,
+// counts as its default.
 func IsDefaultGateway(ctx config.Context, gwName, harnessName string) bool {
 	if _, ok := ctx.Gateways[gwName]; !ok {
 		return true
@@ -189,7 +200,38 @@ func IsDefaultGateway(ctx config.Context, gwName, harnessName string) bool {
 			return false
 		}
 	}
-	return slices.Contains(ctx.DefaultCredentials, gwName) && ctx.Credentials[gwName].AllowsHarness(harnessName)
+	if harnessName == "" {
+		return slices.Contains(ctx.DefaultCredentials, gwName)
+	}
+	return slices.Contains(config.DefaultCredentialsForHarness(ctx, harnessName), gwName)
+}
+
+// CanSyncHarness reports whether background sync or gateway add may
+// write gwName's catalogue to harnessName's config file. For harnesses
+// with named provider entries (pi, opencode, codex), it is always true.
+// For single-gateway-per-dir harnesses (claude), it is true when gwName
+// is Claude's default gateway, or when no custom gateway in
+// ctx.Gateways is Claude's default and gwName is the first custom
+// gateway in sorted order that serves claude.
+func CanSyncHarness(ctx config.Context, gwName, harnessName string) bool {
+	if !SingleGatewayPerDir(harnessName) {
+		return true
+	}
+	if IsDefaultGateway(ctx, gwName, harnessName) {
+		return true
+	}
+	names := slices.Sorted(maps.Keys(ctx.Gateways))
+	for _, name := range names {
+		if IsDefaultGateway(ctx, name, harnessName) {
+			return false
+		}
+	}
+	for _, name := range names {
+		if slices.Contains(ctx.Gateways[name].EffectiveHarnesses(), harnessName) {
+			return name == gwName
+		}
+	}
+	return false
 }
 
 func dirExists(dir string) bool {
@@ -571,8 +613,13 @@ func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *Cached
 		"wire_api": "chat",
 	}
 	doc["model_providers"] = providers
-	if _, set := doc["model_provider"]; !set && isDefault {
-		doc["model_provider"] = gwName
+	if isDefault {
+		cur, _ := doc["model_provider"].(string)
+		if cur == "" {
+			doc["model_provider"] = gwName
+		} else if _, managed := providers[cur]; managed {
+			doc["model_provider"] = gwName
+		}
 	}
 	return fsutil.WriteTOML(path, doc)
 }

@@ -27,7 +27,7 @@ BANNED_PATTERNS=(
 )
 
 # Only check staged markdown files
-FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.md' | grep -v 'docs/superpowers/' || true)
+FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.md' | grep -v -E 'docs/(superpowers|designs)/' || true)
 
 if [ -z "$FILES" ]; then
   exit 0

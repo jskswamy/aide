@@ -1,6 +1,9 @@
 {{- boldGreen "aide" -}}
 {{- if .ContextName}} · profile: {{boldGreen (contextIconDisplay .)}}{{end}}
   {{cyan "Agent     "}}{{agentIconPrefix .}}{{agentDisplay .}}
+{{- with availableHarnessesLine .}}
+  {{cyan "Harnesses "}}{{.}}
+{{- end}}
 {{- if .MatchReason}}
   {{cyan "Matched   "}}{{.MatchReason}}
 {{- end}}
@@ -9,6 +12,9 @@
 {{- end}}
 {{- with credentialDisplay .}}
   {{cyan "Auth      "}}{{.}}
+{{- end}}
+{{- range credentialDetailLines .}}
+            {{dim .}}
 {{- end}}
 {{- range trustEntries .}}
 

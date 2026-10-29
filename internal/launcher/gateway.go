@@ -3,11 +3,17 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"maps"
+	"os"
+	"slices"
 	"time"
 
+	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/gateway"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/ui"
 )
 
 // ensureGatewaySynced brings the model catalogue of every gateway the
@@ -83,5 +89,114 @@ func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName,
 			verb = "synced %d models"
 		}
 		fmt.Fprintf(l.stderr(), "aide: "+verb+" for gateway %q -> %s\n", len(cat.Models), name, homepath.Tilde(st.FilePath, homeDir))
+	}
+}
+
+// EnrichBannerHarnessesAndGateways populates HarnessConfigDir,
+// AvailableHarnesses, AvailableGateways, and gateway/endpoint metadata
+// on data.Credentials for both Launch and `aide which`.
+func EnrichBannerHarnessesAndGateways(
+	data *ui.BannerData,
+	cfg *config.Config,
+	rc *aidectx.ResolvedContext,
+	agentName string,
+	homeDir string,
+	lookPath LookPathFunc,
+) {
+	if data == nil || rc == nil {
+		return
+	}
+	harnessName := agentName
+	if cfg != nil {
+		harnessName = cfg.HarnessOf(agentName)
+	}
+	if dir := launchConfigDir(harnessName, rc.Context, homeDir, os.Getenv); dir != "" {
+		data.HarnessConfigDir = homepath.Tilde(dir, homeDir)
+	}
+
+	// Populate other installed profile-capable harnesses when the
+	// launched agent is itself a known harness.
+	if _, isHarness := harness.Lookup(harnessName); lookPath != nil && isHarness {
+		data.AvailableHarnesses = nil
+		for _, d := range harness.All() {
+			if !d.Launchable() || d.ProfileEnvKey == "" || d.Name == harnessName {
+				continue
+			}
+			bin := d.Binary
+			if cfg != nil {
+				if def, ok := cfg.Agents[d.Name]; ok && def.Binary != "" {
+					bin = def.Binary
+				}
+			}
+			if _, err := lookPath(bin); err != nil {
+				continue
+			}
+			opt := ui.HarnessOption{Name: d.Name}
+			if dir := launchConfigDir(d.Name, rc.Context, homeDir, os.Getenv); dir != "" {
+				opt.ConfigDir = homepath.Tilde(dir, homeDir)
+			}
+			data.AvailableHarnesses = append(data.AvailableHarnesses, opt)
+		}
+	}
+
+	// Enrich active credentials with endpoint URL and gateway cache/file status.
+	selected := map[string]bool{}
+	for i := range data.Credentials {
+		c := &data.Credentials[i]
+		selected[c.Name] = true
+		if gw, ok := rc.Context.Gateways[c.Name]; ok {
+			c.IsGateway = true
+			c.URL = gateway.NormalizeBaseURL(gw.BaseURL)
+			if c.Store == "" {
+				c.Store = gw.Store
+			}
+			if c.Key == "" {
+				c.Key = gw.Key
+			}
+			if homeDir != "" {
+				cat, _ := gateway.ReadCache(homeDir, rc.Name, c.Name)
+				if cat != nil {
+					c.ModelCount = len(cat.Models)
+					c.ModelAge = gateway.FormatAge(time.Since(cat.FetchedAt))
+				}
+				st := gateway.InspectHarness(rc.Context, c.Name, gw, cat, harnessName, homeDir)
+				if st.FilePath != "" {
+					c.TargetFile = homepath.Tilde(st.FilePath, homeDir)
+				}
+				c.TargetSync = string(st.State)
+			}
+			continue
+		}
+		if b, ok := rc.Context.Credentials[c.Name]; ok {
+			c.URL = b.EndpointURL(c.Name, harnessName)
+		} else {
+			c.URL = config.BuiltinCredentialURL(c.Name)
+		}
+	}
+
+	// Populate AvailableGateways: other credentials/gateways on the profile that serve harnessName.
+	data.AvailableGateways = nil
+	for _, name := range slices.Sorted(maps.Keys(rc.Context.Credentials)) {
+		if selected[name] {
+			continue
+		}
+		b := rc.Context.Credentials[name]
+		if _, isGW := rc.Context.Gateways[name]; isGW {
+			if !b.AllowsHarness(harnessName) {
+				continue
+			}
+			data.AvailableGateways = append(data.AvailableGateways, ui.GatewayOption{
+				Name: name,
+				URL:  gateway.NormalizeBaseURL(rc.Context.Gateways[name].BaseURL),
+			})
+			continue
+		}
+		if !b.DefaultAllowsHarness(name, harnessName) {
+			continue
+		}
+		data.AvailableGateways = append(data.AvailableGateways, ui.GatewayOption{
+			Name: name,
+			URL:  b.EndpointURL(name, harnessName),
+		})
 	}
 }

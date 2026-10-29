@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/provision"
@@ -220,21 +222,33 @@ func whichCmd() *cobra.Command {
 			resolved.Context = credCtx
 
 			// Build BannerData
-			agentPath, lookErr := exec.LookPath(resolved.Context.Agent)
-			if lookErr != nil {
-				agentPath = ""
+			agentName := resolved.Context.Agent
+			agentBinary := agentName
+			if agentDef, ok := cfg.Agents[agentName]; ok && agentDef.Binary != "" {
+				agentBinary = agentDef.Binary
+			} else if d, ok := harness.Lookup(agentName); ok && d.Binary != "" {
+				agentBinary = d.Binary
+			}
+			agentPath := agentBinary
+			if !filepath.IsAbs(agentPath) {
+				if p, lookErr := exec.LookPath(agentBinary); lookErr == nil {
+					agentPath = p
+				} else {
+					agentPath = ""
+				}
 			}
 
 			data := &ui.BannerData{
 				ContextName: resolved.Name,
 				MatchReason: resolved.MatchReason,
-				AgentName:   resolved.Context.Agent,
+				AgentName:   agentName,
 				AgentPath:   agentPath,
 				SecretName:  resolved.Context.Secret,
 			}
 
 			launcher.SetBannerCredentials(data, credPlan)
 			launcher.SetBannerSelection(data, sel)
+			launcher.EnrichBannerHarnessesAndGateways(data, cfg, resolved, agentName, homeDir, exec.LookPath)
 			preview.Gate.SetBanner(data)
 			data.Warnings = append(data.Warnings, notices...)
 			if credErr != nil {
@@ -243,10 +257,10 @@ func whichCmd() *cobra.Command {
 
 			// Add context and agent icons
 			data.ContextIcon = resolved.Context.Icon
-			if agentDef, ok := cfg.Agents[resolved.Context.Agent]; ok {
-				data.AgentIcon = launcher.ResolveAgentIcon(resolved.Context.Agent, &agentDef)
+			if agentDef, ok := cfg.Agents[agentName]; ok {
+				data.AgentIcon = launcher.ResolveAgentIcon(agentName, &agentDef)
 			} else {
-				data.AgentIcon = launcher.ResolveAgentIcon(resolved.Context.Agent, nil)
+				data.AgentIcon = launcher.ResolveAgentIcon(agentName, nil)
 			}
 
 			// In resolve mode, populate detailed fields
@@ -270,7 +284,44 @@ func whichCmd() *cobra.Command {
 				}
 			}
 
-			// Build unified env items (no capabilities in aide which — context env only)
+			// Resolve capabilities & merge into sandbox policy (non-interactive preview)
+			projectRoot := aidectx.ProjectRoot(cwd)
+			capNames := sandbox.MergeCapNames(resolved.Context.Capabilities, nil, nil)
+			var excludedCaps []string
+			if cfg.ProjectOverride != nil {
+				excludedCaps = append(excludedCaps, cfg.ProjectOverride.DisabledCapabilities...)
+			}
+			capNames = capability.AutoInclude(capNames, excludedCaps, homeDir, os.Getenv)
+			contextCapSet := make(map[string]bool, len(resolved.Context.Capabilities))
+			for _, c := range resolved.Context.Capabilities {
+				contextCapSet[c] = true
+			}
+
+			resolvedSandbox, sbDisabled, _ := sandbox.ResolveSandboxRef(resolved.Context.Sandbox, cfg.Sandboxes)
+			var configWritableExtra, configReadableExtra, configDeniedExtra []string
+			if resolvedSandbox != nil {
+				configWritableExtra = append([]string{}, resolvedSandbox.WritableExtra...)
+				configReadableExtra = append([]string{}, resolvedSandbox.ReadableExtra...)
+				configDeniedExtra = append([]string{}, resolvedSandbox.DeniedExtra...)
+			}
+
+			var yamlPins map[string][]string
+			if cfg.ProjectOverride != nil && len(cfg.ProjectOverride.CapabilityVariants) > 0 {
+				yamlPins = make(map[string][]string, len(cfg.ProjectOverride.CapabilityVariants))
+				for k, v := range cfg.ProjectOverride.CapabilityVariants {
+					yamlPins[k] = append([]string(nil), v...)
+				}
+			}
+			variantOpts := sandbox.VariantSelectionOptions{
+				ProjectRoot: projectRoot,
+				FS:          os.DirFS(projectRoot),
+				YAMLPins:    yamlPins,
+				Interactive: false,
+			}
+			resolvedCapSet, capOverrides, capProvenance, _ := sandbox.ResolveCapabilitiesWithVariants(capNames, cfg, variantOpts)
+			sandbox.ApplyOverrides(&resolvedSandbox, capOverrides)
+
+			// Build unified env items
 			var resolvedValues map[string]string
 			if resolve && len(resolved.Context.Env) > 0 {
 				resolvedValues = make(map[string]string, len(resolved.Context.Env))
@@ -279,15 +330,67 @@ func whichCmd() *cobra.Command {
 					resolvedValues[k] = display.ResolveEnvDisplay(v, "", secretKey, secretMap)
 				}
 			}
-			data.EnvItems = launcher.BuildEnvItems(resolved.Context.Env, nil, nil, resolvedValues)
+			var neverAllowEnv []string
+			var resolvedCaps []capability.ResolvedCapability
+			if resolvedCapSet != nil {
+				neverAllowEnv = resolvedCapSet.NeverAllowEnv
+				resolvedCaps = resolvedCapSet.Capabilities
+			}
+			data.EnvItems = launcher.BuildEnvItems(resolved.Context.Env, resolvedCaps, neverAllowEnv, resolvedValues)
+
+			// Populate capability display data
+			if resolvedCapSet != nil && len(resolvedCapSet.Capabilities) > 0 {
+				for _, rc := range resolvedCapSet.Capabilities {
+					source := "--with"
+					if contextCapSet[rc.Name] {
+						source = "context config"
+					}
+					prov := capProvenance[rc.Name]
+					data.Capabilities = append(data.Capabilities, ui.CapabilityDisplay{
+						Name:            rc.Name,
+						ReadablePaths:   rc.Readable,
+						WritablePaths:   rc.Writable,
+						EnvVars:         rc.EnvAllow,
+						Source:          source,
+						Variants:        prov.Variants,
+						ProvenanceTag:   ui.ProvenanceTag(prov.Reason),
+						FreshGrant:      prov.Reason == "consent:granted",
+						EvidenceSummary: prov.EvidenceSummary,
+					})
+				}
+				data.NeverAllow = cfg.NeverAllow
+				data.CompWarnings = capability.CompositionWarnings(resolvedCapSet.Capabilities)
+			}
+
+			// Project detection: show suggested capabilities not yet enabled
+			if suggestions := capability.DetectProject(os.DirFS(projectRoot)); len(suggestions) > 0 {
+				enabled := make(map[string]bool, len(data.Capabilities))
+				for _, c := range data.Capabilities {
+					enabled[c.Name] = true
+				}
+				registry := capability.MergedRegistry(nil)
+				for _, name := range suggestions {
+					if enabled[name] {
+						continue
+					}
+					if capDef, ok := registry[name]; ok {
+						data.SuggestedCaps = append(data.SuggestedCaps, ui.CapabilityDisplay{
+							Name:          name,
+							ReadablePaths: capDef.Readable,
+							WritablePaths: capDef.Writable,
+							Suggested:     true,
+							Source:        "detected",
+						})
+					}
+				}
+			}
 
 			// Build sandbox info
-			resolvedSandbox, sbDisabled, _ := sandbox.ResolveSandboxRef(resolved.Context.Sandbox, cfg.Sandboxes)
 			if sbDisabled {
 				data.Sandbox = &ui.SandboxInfo{Disabled: true}
 			} else {
 				tempDir := os.TempDir()
-				policy, pathWarnings, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, sandbox.Paths{ProjectRoot: aidectx.ProjectRoot(cwd), RuntimeDir: "/tmp/aide-preview", HomeDir: homeDir, TempDir: tempDir})
+				policy, pathWarnings, policyErr := sandbox.PolicyFromConfig(resolvedSandbox, sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: "/tmp/aide-preview", HomeDir: homeDir, TempDir: tempDir})
 				if policyErr == nil && policy != nil {
 					tier := sandbox.PlatformIsolationTier(*policy)
 					data.IsolationTier = &tier
@@ -310,6 +413,7 @@ func whichCmd() *cobra.Command {
 								Name:      g.Name,
 								Protected: g.Protected,
 								Allowed:   g.Allowed,
+								Readable:  g.Readable,
 							}
 							for _, o := range g.Overrides {
 								display.Overrides = append(display.Overrides, ui.GuardOverride{
@@ -331,6 +435,17 @@ func whichCmd() *cobra.Command {
 					data.Warnings = append(data.Warnings, pathWarnings...)
 				}
 			}
+
+			// Populate extra paths that are from config (not capabilities)
+			data.ExtraWritable = slices.DeleteFunc(configWritableExtra, func(s string) bool {
+				return slices.Contains(capOverrides.WritableExtra, s)
+			})
+			data.ExtraReadable = slices.DeleteFunc(configReadableExtra, func(s string) bool {
+				return slices.Contains(capOverrides.ReadableExtra, s)
+			})
+			data.ExtraDenied = slices.DeleteFunc(configDeniedExtra, func(s string) bool {
+				return slices.Contains(capOverrides.DeniedExtra, s)
+			})
 
 			// Provisioning drift hint: compare config hash against
 			// last-sync state. Errors here are best-effort — never

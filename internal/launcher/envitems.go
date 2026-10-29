@@ -1,13 +1,31 @@
 package launcher
 
 import (
+	"maps"
 	"sort"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/display"
+	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/ui"
 )
+
+// BannerContextEnv returns a copy of ctx.Env with harness config-dir
+// redirect variables removed when ctx selects its own native config
+// dir, since the active harness config dir is already shown in the
+// harness header.
+func BannerContextEnv(ctx config.Context) map[string]string {
+	if !ctx.SelectsConfigDir() || len(ctx.Env) == 0 {
+		return ctx.Env
+	}
+	redirects := envscrub.ConfigDirRedirects()
+	out := maps.Clone(ctx.Env)
+	for _, k := range redirects {
+		delete(out, k)
+	}
+	return out
+}
 
 // BuildEnvItems constructs the unified env section for banner rendering.
 // It merges context env vars and capability env_allow into one sorted list.

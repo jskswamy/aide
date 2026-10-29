@@ -45,6 +45,7 @@ const (
 // HarnessFileStatus is one harness's config file and its state.
 type HarnessFileStatus struct {
 	Harness  string           `json:"harness"`
+	EnvVar   string           `json:"env_var,omitempty"`
 	FilePath string           `json:"file_path"`
 	State    HarnessSyncState `json:"state"`
 	Detail   string           `json:"detail,omitempty"`

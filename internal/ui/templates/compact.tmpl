@@ -3,11 +3,17 @@
 {{- if .MatchReason}}
    📁 {{.MatchReason}}
 {{- end}}
+{{- with availableHarnessesLine .}}
+   🤖 harnesses: {{.}}
+{{- end}}
 {{- if .SecretName}}
    🔐 secret: {{secretDisplay .}}
 {{- end}}
 {{- with credentialDisplay .}}
    🔑 credentials: {{.}}
+{{- end}}
+{{- range credentialDetailLines .}}
+                  {{dim .}}
 {{- end}}
 {{- range trustEntries .}}
 

@@ -260,40 +260,51 @@ func TestGateway_SynthesizeDefaultsDoNotCollide(t *testing.T) {
 		},
 	}
 
-	// No explicit defaults: alpha (first sorted) claims claude; beta's
-	// claude route would set the same variables, so it is not a default.
+	// No explicit defaults: alpha (first sorted) claims all four
+	// gateway harnesses (claude, pi, opencode, codex), so neither beta
+	// nor gamma is appended.
 	got, err := SynthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got.DefaultCredentials, []string{"alpha", "gamma"}) {
-		t.Errorf("DefaultCredentials = %v, want [alpha gamma]", got.DefaultCredentials)
+	if !slices.Equal(got.DefaultCredentials, []string{"alpha"}) {
+		t.Errorf("DefaultCredentials = %v, want [alpha]", got.DefaultCredentials)
 	}
 	if err := checkDefaultRoutes(got); err != nil {
 		t.Errorf("checkDefaultRoutes() = %v", err)
 	}
 
-	// An explicit default wins over gateways that collide with it.
+	// An explicit default (anthropic) claims claude, pi and opencode;
+	// alpha is appended for codex, which anthropic does not serve.
 	ctx.DefaultCredentials = []string{"anthropic"}
 	got, err = SynthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got.DefaultCredentials, []string{"anthropic", "gamma"}) {
-		t.Errorf("DefaultCredentials = %v, want [anthropic gamma]", got.DefaultCredentials)
+	if !slices.Equal(got.DefaultCredentials, []string{"anthropic", "alpha"}) {
+		t.Errorf("DefaultCredentials = %v, want [anthropic alpha]", got.DefaultCredentials)
+	}
+	for _, h := range []string{"claude", "pi", "opencode"} {
+		if defs := DefaultCredentialsForHarness(got, h); !slices.Equal(defs, []string{"anthropic"}) {
+			t.Errorf("DefaultCredentialsForHarness(%s) = %v, want [anthropic]", h, defs)
+		}
+	}
+	if defs := DefaultCredentialsForHarness(got, "codex"); !slices.Equal(defs, []string{"alpha"}) {
+		t.Errorf("DefaultCredentialsForHarness(codex) = %v, want [alpha]", defs)
 	}
 	if !slices.Equal(ctx.DefaultCredentials, []string{"anthropic"}) {
 		t.Errorf("input DefaultCredentials mutated: %v", ctx.DefaultCredentials)
 	}
 
-	// A gateway named explicitly in default_credentials is not added twice.
+	// A gateway named explicitly in default_credentials claims all four
+	// harnesses and is not added twice.
 	ctx.DefaultCredentials = []string{"beta"}
 	got, err = SynthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got.DefaultCredentials, []string{"beta", "gamma"}) {
-		t.Errorf("DefaultCredentials = %v, want [beta gamma]", got.DefaultCredentials)
+	if !slices.Equal(got.DefaultCredentials, []string{"beta"}) {
+		t.Errorf("DefaultCredentials = %v, want [beta]", got.DefaultCredentials)
 	}
 }
 

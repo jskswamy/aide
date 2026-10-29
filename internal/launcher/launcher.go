@@ -563,6 +563,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		bannerData.Yolo = effectiveYolo
 		SetBannerCredentials(bannerData, credPlan)
 		SetBannerSelection(bannerData, sel)
+		EnrichBannerHarnessesAndGateways(bannerData, cfg, rc, agentName, homeDir, l.lookPath())
 		bannerData.AutoApprove = effectiveYolo
 		style := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
 		if err := ui.RenderBanner(l.stderr(), style, bannerData); err != nil {
@@ -896,7 +897,7 @@ func (l *Launcher) buildBannerData(
 	if resolvedCapSet != nil {
 		resolvedCaps = resolvedCapSet.Capabilities
 	}
-	data.EnvItems = BuildEnvItems(rc.Context.Env, resolvedCaps, neverAllowEnv, detailedEnv)
+	data.EnvItems = BuildEnvItems(BannerContextEnv(rc.Context), resolvedCaps, neverAllowEnv, detailedEnv)
 
 	// Populate capability display data
 	if resolvedCapSet != nil && len(resolvedCapSet.Capabilities) > 0 {

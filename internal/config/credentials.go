@@ -89,10 +89,95 @@ var builtinCredentialEnv = map[string][]string{
 	"openrouter": {"OPENROUTER_API_KEY"},
 }
 
+// builtinCredentialURLs maps built-in provider names to their canonical
+// upstream API endpoints.
+var builtinCredentialURLs = map[string]string{
+	"anthropic":  "https://api.anthropic.com",
+	"codex":      "https://api.openai.com",
+	"gemini":     "https://generativelanguage.googleapis.com",
+	"openai":     "https://api.openai.com",
+	"openrouter": "https://openrouter.ai/api",
+}
+
+// builtinCredentialHarnesses maps built-in provider names to the
+// harnesses that natively read their default environment variable when
+// neither harnesses: nor for: is set on the binding.
+var builtinCredentialHarnesses = map[string][]string{
+	"anthropic":  {"claude", "pi", "opencode"},
+	"codex":      {"codex"},
+	"gemini":     {"gemini", "pi", "opencode"},
+	"openai":     {"pi", "opencode", "codex"},
+	"openrouter": {"pi", "opencode", "codex"},
+}
+
 // IsBuiltinCredential reports whether name has built-in env names.
 func IsBuiltinCredential(name string) bool {
 	_, ok := builtinCredentialEnv[name]
 	return ok
+}
+
+// IsLLMProvider reports whether binding name is an LLM provider
+// credential (a built-in provider name, a route that sets a provider
+// endpoint URL, or a binding that injects a known provider env var).
+func (b CredentialBinding) IsLLMProvider(name string) bool {
+	if IsBuiltinCredential(name) {
+		return true
+	}
+	for _, e := range b.EnvNames(name) {
+		if envscrub.IsProviderName(e) {
+			return true
+		}
+	}
+	for _, r := range b.For {
+		for k := range r.Set {
+			if envscrub.IsProviderName(k) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// BuiltinCredentialURL returns the canonical upstream base URL for a
+// built-in provider credential name, or "" for custom names.
+func BuiltinCredentialURL(name string) string {
+	return builtinCredentialURLs[name]
+}
+
+// BuiltinCredentialHarnesses returns the default target harnesses for a
+// built-in provider credential when neither Harnesses nor For is set.
+func BuiltinCredentialHarnesses(name string) []string {
+	return slices.Clone(builtinCredentialHarnesses[name])
+}
+
+// EndpointURL returns the base URL that binding name targets on
+// harnessName: an explicit endpoint in the route's Set map if present,
+// else BuiltinCredentialURL(name).
+func (b CredentialBinding) EndpointURL(name, harnessName string) string {
+	if r, ok := b.Route(name, harnessName); ok {
+		for _, k := range []string{"ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "GEMINI_BASE_URL"} {
+			if v := strings.TrimSpace(r.Set[k]); v != "" {
+				return v
+			}
+		}
+	}
+	return BuiltinCredentialURL(name)
+}
+
+// DefaultAllowsHarness reports whether binding name applies to agent by
+// default (when selected via default_credentials rather than explicit
+// --credential). For a built-in provider credential with neither For
+// nor Harnesses set, it restricts default selection to the harnesses in
+// BuiltinCredentialHarnesses(name) so e.g. "anthropic" does not claim
+// "codex" by default.
+func (b CredentialBinding) DefaultAllowsHarness(name, agent string) bool {
+	if len(b.For) == 0 && len(b.Harnesses) == 0 && len(b.Env) == 0 {
+		if hs := builtinCredentialHarnesses[name]; len(hs) > 0 {
+			h := canonicalHarness(filepath.Base(agent))
+			return slices.Contains(hs, h)
+		}
+	}
+	return b.AllowsHarness(agent)
 }
 
 // EnvNames returns the env vars binding name injects: Env when set,
@@ -186,7 +271,9 @@ func (c *Config) validateCredentials() error {
 					ErrInvalidCredentials, at, sel, definedBindings(ctx))
 			}
 		}
-		if err := checkDefaultRoutes(ctx); err != nil {
+		explicitCtx := ctx
+		explicitCtx.DefaultCredentials = c.Contexts[name].DefaultCredentials
+		if err := checkDefaultRoutes(explicitCtx); err != nil {
 			return fmt.Errorf("%w: %s: %s", ErrInvalidCredentials, at, err)
 		}
 	}

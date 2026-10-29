@@ -130,28 +130,46 @@ func (d Descriptor) ApplyYolo(args []string) []string {
 	return out
 }
 
-// opencodeStandaloneSubcommands are the subcommands that start a session
-// and accept --standalone.
-var opencodeStandaloneSubcommands = map[string]bool{"run": true, "mini": true}
+// opencodeStandaloneLeaves maps each OpenCode v2 subcommand whose
+// leaf accepts --standalone to that leaf's child subcommands. A nil
+// value means the subcommand is itself the leaf. Parents such as auth
+// and session reject the flag, so it must follow the child.
+var opencodeStandaloneLeaves = map[string][]string{
+	"run": nil, "mini": nil, "api": nil, "models": nil, "stats": nil, "reload": nil,
+	"auth":    {"list", "login", "logout", "export", "import", "switch"},
+	"session": {"list", "delete", "export", "import"},
+}
 
 // ApplyLaunchArgs returns args with the flags every launch of the
 // harness needs, independent of yolo. OpenCode v2 otherwise attaches
 // to a per-user background service that keeps the env of whichever
 // launch started it, so the profile's env and sandbox are ignored;
-// '--standalone' gives the session a private server. It goes after
-// 'run'/'mini', is omitted for other subcommands, and is prepended
-// for root invocations. An explicit --standalone or --server wins.
+// '--standalone' gives the session a private server. It goes after the
+// leaf whose own help lists it ('auth list --standalone'), is omitted
+// for other subcommands, and is prepended for root invocations. An
+// explicit --standalone or --server wins.
 func (d Descriptor) ApplyLaunchArgs(args []string) []string {
 	if d.Name != "opencode" || slices.Contains(args, "--standalone") || slices.Contains(args, "--server") {
 		return args
 	}
-	if len(args) > 0 && opencodeStandaloneSubcommands[args[0]] {
-		return append([]string{args[0], "--standalone"}, args[1:]...)
+	if len(args) == 0 || !opencodeSubcommands[args[0]] {
+		return append([]string{"--standalone"}, args...)
 	}
-	if len(args) > 0 && opencodeSubcommands[args[0]] {
+	children, ok := opencodeStandaloneLeaves[args[0]]
+	if !ok {
 		return args
 	}
-	return append([]string{"--standalone"}, args...)
+	leaf := 1
+	if children != nil {
+		if len(args) < 2 || !slices.Contains(children, args[1]) {
+			return args
+		}
+		leaf = 2
+	}
+	out := make([]string, 0, len(args)+1)
+	out = append(out, args[:leaf]...)
+	out = append(out, "--standalone")
+	return append(out, args[leaf:]...)
 }
 
 // descriptors is the harness table, kept in name order.

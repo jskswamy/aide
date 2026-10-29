@@ -8,7 +8,7 @@ BANNED_WORDS=(
   "seamlessly" "effortlessly" "robust" "powerful" "leverage"
   "utilize" "comprehensive" "cutting-edge" "innovative"
   "game-changing" "world-class" "best-in-class" "next-generation"
-  "harness" "unlock" "empower" "elevate" "streamline"
+  "unlock" "empower" "elevate" "streamline"
   "delve" "unpack"
 )
 

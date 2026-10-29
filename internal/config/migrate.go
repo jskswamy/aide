@@ -76,6 +76,9 @@ type Migration struct {
 	Renamed      []string
 	Credentials  []MigratedCredential
 	GlobalLogins []GlobalLogin
+	// MentionsOpenCode reports that a profile runs OpenCode or pins an
+	// OpenCode config dir, so its accounts may now open another database.
+	MentionsOpenCode bool
 }
 
 // MigrateProfiles converts a config.yaml from the contexts: schema to
@@ -101,7 +104,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	if err := doc.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
-	m := &Migration{Output: data}
+	m := &Migration{Output: data, MentionsOpenCode: mentionsOpenCode(&cfg)}
 	if len(doc.Content) == 0 || cfg.IsMinimal() {
 		return m, nil
 	}
@@ -271,6 +274,21 @@ func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
 	defaults := ensureValue(entry, "default_credentials", yaml.SequenceNode)
 	defaults.Content = append(defaults.Content, yamlnode.Str(mc.Name))
 	return nil
+}
+
+// mentionsOpenCode reports whether the flat agent or any profile runs
+// OpenCode, or a profile pins an OpenCode config dir. Every OpenCode
+// global-login row is a profile that runs OpenCode.
+func mentionsOpenCode(cfg *Config) bool {
+	if cfg.HarnessOf(cfg.Agent) == "opencode" {
+		return true
+	}
+	for _, ctx := range cfg.Contexts {
+		if _, ok := ctx.ConfigDirs["opencode"]; ok || cfg.HarnessOf(ctx.Agent) == "opencode" {
+			return true
+		}
+	}
+	return false
 }
 
 // globalLogins lists the profiles whose harness supports profiles but

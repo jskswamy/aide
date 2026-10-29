@@ -10,9 +10,13 @@ import (
 
 // OpenCodeAgent returns a module with OpenCode CLI agent sandbox
 // rules. OPENCODE_CONFIG_DIR overrides only OpenCode's config
-// directory (default ~/.config/opencode); its data (log, db, auth),
-// state and cache dirs stay at their XDG defaults, so they are granted
-// independently of the override.
+// directory (default ~/.config/opencode); its data, state and cache
+// dirs stay at their XDG defaults and remain granted for the log,
+// state and cache, independently of the override. When a launch with a
+// selected config dir sets OPENCODE_DB, the database (opencode.db and
+// its SQLite sidecars) lives in that config dir, which is already
+// granted. The data dir stays writable, so this isolates which file a
+// launch opens, not whether another profile's file is readable.
 func OpenCodeAgent() seatbelt.Module {
 	return openCodeModule{
 		config: NewSimpleAgent(AgentSpec{

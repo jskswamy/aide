@@ -56,6 +56,11 @@ func TestInjectProfileEnvForOpenCode(t *testing.T) {
 	if env["OPENCODE_CONFIG_DIR"] != "/home/u/.opencode-work" {
 		t.Errorf("OPENCODE_CONFIG_DIR = %q, want /home/u/.opencode-work", env["OPENCODE_CONFIG_DIR"])
 	}
+	// Provision, preview and Skillshare also call InjectProfileEnv, so
+	// the database path belongs to the launch alone.
+	if v, ok := env["OPENCODE_DB"]; ok {
+		t.Errorf("OPENCODE_DB = %q, want it unset", v)
+	}
 }
 
 func TestProfileEnvKeyFor(t *testing.T) {

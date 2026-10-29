@@ -321,6 +321,46 @@ func TestPassthrough_YoloOpenCodeSubcommandRun(t *testing.T) {
 	}
 }
 
+// Passthrough has no profile, so it never invents a database path; the
+// --standalone rule still applies, after the leaf.
+func TestPassthrough_OpenCodeStandaloneWithoutProfileDB(t *testing.T) {
+	for name, tc := range map[string]struct{ args, want []string }{
+		"auth list":   {[]string{"auth", "list"}, []string{"auth", "list", "--standalone"}},
+		"debug paths": {[]string{"debug", "paths"}, []string{"debug", "paths"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			unsetEnvForTest(t, "OPENCODE_DB")
+			ctrl := gomock.NewController(t)
+			var capturedBinary string
+			var capturedArgs, capturedEnv []string
+			mockExec := mocks.NewMockExecer(ctrl)
+			mockExec.EXPECT().
+				Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(binary string, args, env []string) error {
+					capturedBinary, capturedArgs, capturedEnv = binary, args, env
+					return nil
+				})
+			l := &Launcher{
+				Execer:   mockExec,
+				LookPath: mockLookPath(map[string]string{"opencode": "/usr/local/bin/opencode"}),
+			}
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+			if err := l.Passthrough(t.TempDir(), "opencode", tc.args); err != nil {
+				t.Fatalf("Passthrough failed: %v", err)
+			}
+			_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
+			if want := append([]string{"/usr/local/bin/opencode"}, tc.want...); !slices.Equal(innerArgs, want) {
+				t.Errorf("innerArgs = %v, want %v", innerArgs, want)
+			}
+			if v, ok := envValue(capturedEnv, "OPENCODE_DB"); ok {
+				t.Errorf("OPENCODE_DB = %q, want it unset", v)
+			}
+		})
+	}
+}
+
 func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
 	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)

@@ -86,6 +86,7 @@ func runProfileMigrate(out io.Writer, cfgPath, statePath, home string, adopt []s
 	if !m.Changed {
 		fmt.Fprintf(out, "Nothing to migrate: %s already uses profiles:.\n", cfgPath)
 		printGlobalLogins(out, m.GlobalLogins)
+		printOpenCodeNote(out, m)
 		return nil
 	}
 	if !write {
@@ -161,6 +162,16 @@ func printMigrationSummary(out io.Writer, m *config.Migration) {
 	}
 	printGlobalLogins(out, m.GlobalLogins)
 	fmt.Fprintln(out, "Comments, unrelated keys and native config dirs are kept (blank lines and indentation are normalized). .aide.yaml files are not changed.")
+	printOpenCodeNote(out, m)
+}
+
+// printOpenCodeNote says OpenCode logins were left where they were: a
+// profile with a config dir now opens its own database there.
+func printOpenCodeNote(out io.Writer, m *config.Migration) {
+	if m.MentionsOpenCode {
+		fmt.Fprintln(out, "OpenCode accounts and sessions were not copied and were not deleted. "+
+			"They remain in the database OpenCode was already opening, which is not always under the data directory.")
+	}
 }
 
 func printGlobalLogins(out io.Writer, logins []config.GlobalLogin) {

@@ -71,11 +71,8 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	res := &SyncResult{Catalogue: cat}
 	for _, h := range opts.Gateway.EffectiveHarnesses() {
 		var st HarnessFileStatus
-		if SingleGatewayPerDir(h) && !IsDefaultGateway(opts.Profile, opts.GatewayName, h) {
+		if !CanSyncHarness(opts.Profile, opts.GatewayName, h) {
 			st = InspectHarness(opts.Profile, opts.GatewayName, opts.Gateway, cat, h, opts.HomeDir)
-			if st.State == StateStale {
-				st.Detail = fmt.Sprintf("not %s's default gateway; written when a launch selects it", h)
-			}
 		} else if st, err = MaterializeHarness(opts.Profile, opts.GatewayName, opts.Gateway, cat, h, opts.HomeDir, false); err != nil {
 			st.State, st.Detail = StateStale, err.Error()
 		}

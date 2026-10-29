@@ -25,10 +25,12 @@ func colorFuncMap() template.FuncMap {
 		"cyan":      func(s string) string { return color.New(color.FgCyan).Sprint(s) },
 
 		// Data helpers (wrapping existing functions)
-		"agentDisplay":        agentDisplay,
-		"secretDisplay":       secretDisplay,
-		"credentialDisplay":   credentialDisplay,
-		"envItemLines":        envItemLines,
+		"agentDisplay":           agentDisplay,
+		"availableHarnessesLine": availableHarnessesLine,
+		"secretDisplay":          secretDisplay,
+		"credentialDisplay":      credentialDisplay,
+		"credentialDetailLines":  credentialDetailLines,
+		"envItemLines":           envItemLines,
 		"hasTrust":            hasTrust,
 		"trustStatusLine":     trustStatusLine,
 		"trustWantsLine":      trustWantsLine,

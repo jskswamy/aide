@@ -418,3 +418,117 @@ func TestGatewayCmd_RemoveKeepsSecretUsedByEnvTemplate(t *testing.T) {
 		t.Errorf("secret used by an env template was deleted: %v\n%s", got, out)
 	}
 }
+
+func TestGatewayCmd_UseAndListWithBuiltinCredential(t *testing.T) {
+	e := newGatewayEnv(t)
+	if err := os.MkdirAll(filepath.Join(e.home, ".claude-work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(e.home, ".codex-work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	e.writeConfig(t, `profiles:
+  work:
+    agent: claude
+    config_dir_name: work
+    credentials:
+      anthropic:
+        backend: age
+        store: work
+        key: anthropic_api_key
+    default_credentials: [anthropic]
+default_profile: work
+`)
+	if _, err := runGateway(t, gwCmdToken, "add", "api", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	// List shows both built-in anthropic (default for claude, pi, opencode) and api (default for codex).
+	out, err := runGateway(t, "", "list", "--profile", "work")
+	if err != nil {
+		t.Fatalf("list: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"GATEWAY: anthropic (default for: claude, pi, opencode",
+		"https://api.anthropic.com (built-in)",
+		"GATEWAY: api (default for: codex",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list missing %q:\n%s", want, out)
+		}
+	}
+
+	// Switch default to api via `aide gateway use api --profile work`.
+	out, err = runGateway(t, "", "use", "api", "--profile", "work")
+	if err != nil {
+		t.Fatalf("use api: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `Set default gateway for profile "work" to "api" (claude, pi, opencode, codex)`) {
+		t.Errorf("unexpected use output:\n%s", out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Contexts["work"].DefaultCredentials; len(got) != 1 || got[0] != "api" {
+		t.Errorf("DefaultCredentials after use api = %v, want [api]", got)
+	}
+
+	// Switch back to anthropic via interactive TTY picker.
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+	out, err = runGateway(t, "1\n", "use", "--profile", "work")
+	if err != nil {
+		t.Fatalf("interactive use: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `Set default gateway for profile "work" to "anthropic"`) {
+		t.Errorf("unexpected interactive use output:\n%s", out)
+	}
+}
+
+func TestGatewayCmd_AddInteractiveNameAndDefaultPrompt(t *testing.T) {
+	e := newGatewayEnv(t)
+	e.writeConfig(t, `profiles:
+  work:
+    agent: claude
+    config_dir_name: work
+    credentials:
+      anthropic:
+        backend: age
+        store: work
+        key: anthropic_api_key
+    default_credentials: [anthropic]
+default_profile: work
+`)
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+
+	url := strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
+	stdin := strings.Join([]string{url, "acme", gwCmdToken, "y"}, "\n") + "\n"
+	out, err := runGateway(t, stdin, "add", "--profile", "work")
+	if err != nil {
+		t.Fatalf("interactive add: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"Gateway base URL",
+		"Gateway name [localhost]: ",
+		`Make "acme" the default instead? [Y/n]: `,
+		`Saved gateway "acme" under profile "work"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("interactive add output missing %q:\n%s", want, out)
+		}
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loaded.Contexts["work"].Gateways["acme"]; !ok {
+		t.Errorf("gateways = %+v, want acme", loaded.Contexts["work"].Gateways)
+	}
+	if got := loaded.Contexts["work"].DefaultCredentials; len(got) != 1 || got[0] != "acme" {
+		t.Errorf("DefaultCredentials = %v, want [acme]", got)
+	}
+}

@@ -17,12 +17,12 @@ After tagging, reset this file to this template.
 
 #### Custom model gateway management (`aide gateway`)
 
-aide now manages custom-hosted LLM gateways and model catalogues across Claude Code, Pi, OpenCode, and Codex via `aide gateway add`, `list`, `sync`, and `remove`.
+aide now manages custom-hosted LLM gateways and model catalogues across Claude Code, Pi, OpenCode, and Codex via `aide gateway add`, `list`, `use`, `sync`, and `remove`.
 
 - Stores gateway bearer tokens in `aide`'s encrypted `age` secret store (via interactive hidden prompt, `--token-stdin`, or `--token-env <VAR>`) and records only non-secret gateway settings under `profiles.<profile>.gateways.<name>` in `config.yaml`.
 - Queries `<base_url>/v1/models`, caches the normalized model catalogue under `~/.local/state/aide/gateways/<profile>/<gateway>.json`, and materializes per-agent model configuration files (`gateway-models.json` for Claude Code, `models.json` for Pi, `opencode.jsonc` for OpenCode, and `config.toml` for Codex) without writing plaintext tokens to disk.
 - Automatically refreshes expired gateway model catalogues at launch (default `refresh_ttl: 24h`) or on demand with `aide gateway sync`.
-- A gateway is a default credential of its profile unless an existing default already sets the same variables (for example `anthropic`); select it per launch with `aide --credential <name>`. `aide gateway list` shows which agents each gateway is the default for.
+- Resolves default credentials per agent (`DefaultCredentialsForHarness`) and switches a profile's active default between custom gateways and built-in provider credentials via `aide gateway use [<name>]` (or `--default` on `aide gateway add`, or per launch with `aide --credential <name>`). `aide gateway list`, `aide which`, and the startup banner show active and standby gateways, target endpoints, and agent config directories.
 - `base_url` must be `https://` except for `localhost`, `127.0.0.1` and `::1`, and `.aide.yaml` cannot declare `gateways:`.
 - Codex reaches the gateway over the OpenAI protocol, so the gateway must also serve `/v1/chat/completions`.
 

@@ -754,3 +754,59 @@ func TestMaterializeHarness_OpenCodeHonorsOPENCODE_CONFIG(t *testing.T) {
 		t.Fatalf("InspectHarness() = %+v, want Synced at %s", got, custom)
 	}
 }
+
+func TestCanSyncHarness_WithBuiltinAnthropicDefault(t *testing.T) {
+	ctx := config.Context{
+		Profile: "work",
+		Credentials: map[string]config.CredentialBinding{
+			"anthropic": {Backend: config.CredentialBackendAge, Store: "work", Key: "anthropic_api_key"},
+		},
+		DefaultCredentials: []string{"anthropic"},
+		Gateways: map[string]config.GatewayConfig{
+			"alpha": {BaseURL: "https://alpha.example.com", Store: "work", Key: "alpha_token"},
+			"beta":  {BaseURL: "https://beta.example.com", Store: "work", Key: "beta_token"},
+		},
+	}
+	if !CanSyncHarness(ctx, "alpha", "claude") {
+		t.Error("CanSyncHarness(alpha, claude) = false; want true for first custom gateway when anthropic is default")
+	}
+	if CanSyncHarness(ctx, "beta", "claude") {
+		t.Error("CanSyncHarness(beta, claude) = true; want false for second non-default gateway")
+	}
+	ctx.DefaultCredentials = []string{"beta"}
+	if !CanSyncHarness(ctx, "beta", "claude") {
+		t.Error("CanSyncHarness(beta, claude) = false when beta is explicit default")
+	}
+	if CanSyncHarness(ctx, "alpha", "claude") {
+		t.Error("CanSyncHarness(alpha, claude) = true when beta is explicit default")
+	}
+}
+
+func TestMaterialize_CodexUpdatesManagedModelProvider(t *testing.T) {
+	f := newFixture(t)
+	f.mkdirs(t, "codex")
+	alpha := config.GatewayConfig{BaseURL: "https://alpha.example.com", Store: "work", Key: "alpha_token"}
+	beta := config.GatewayConfig{BaseURL: "https://beta.example.com", Store: "work", Key: "beta_token"}
+	f.ctx.Gateways = map[string]config.GatewayConfig{"alpha": alpha, "beta": beta}
+	f.ctx.DefaultCredentials = []string{"alpha"}
+
+	if _, err := MaterializeHarness(f.ctx, "alpha", alpha, f.cat, "codex", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MaterializeHarness(f.ctx, "beta", beta, f.cat, "codex", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(f.dir("codex"), "config.toml")
+	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'alpha'") && !strings.Contains(body, `model_provider = "alpha"`) {
+		t.Fatalf("expected model_provider = alpha:\n%s", body)
+	}
+
+	// Switch default to beta: re-materializing beta updates model_provider.
+	f.ctx.DefaultCredentials = []string{"beta"}
+	if _, err := MaterializeHarness(f.ctx, "beta", beta, f.cat, "codex", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'beta'") && !strings.Contains(body, `model_provider = "beta"`) {
+		t.Fatalf("expected model_provider = beta after switching default:\n%s", body)
+	}
+}

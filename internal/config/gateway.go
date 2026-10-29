@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/envscrub"
-	"github.com/jskswamy/aide/internal/harness"
 )
 
 // GatewayConfig is a custom LLM gateway on a profile: where it is,
@@ -266,10 +265,11 @@ func gatewayBinding(gw GatewayConfig) CredentialBinding {
 }
 
 // SynthesizeGatewayCredentials returns ctx with a credential binding
-// per gateway, named after the gateway. A gateway becomes a default
-// credential unless a binding already in default_credentials (or an
-// earlier gateway, in name order) sets one of the same variables for
-// the same harness; select it per launch with --credential instead.
+// per gateway, named after the gateway. A gateway is appended to
+// DefaultCredentials whenever at least one of its target harnesses is
+// not already claimed by an earlier default credential (or earlier
+// gateway in sorted order). DefaultCredentialsForHarness resolves the
+// effective default list per harness.
 // ctx is not modified and nothing is written, so the bindings never
 // reach config.yaml.
 func SynthesizeGatewayCredentials(ctx Context) (Context, error) {
@@ -288,70 +288,82 @@ func SynthesizeGatewayCredentials(ctx Context) (Context, error) {
 		}
 		ctx.Credentials[name] = gatewayBinding(ctx.Gateways[name])
 	}
-	claimed := claimedDefaultVars(ctx)
 	for _, name := range names {
 		if slices.Contains(ctx.DefaultCredentials, name) {
 			continue
 		}
-		vars := routeVars(name, ctx.Credentials[name])
-		if collides(claimed, vars) {
-			continue
+		candidate := ctx
+		candidate.DefaultCredentials = append(slices.Clone(ctx.DefaultCredentials), name)
+		servesAny := false
+		for _, h := range ctx.Gateways[name].EffectiveHarnesses() {
+			if slices.Contains(DefaultCredentialsForHarness(candidate, h), name) {
+				servesAny = true
+				break
+			}
 		}
-		ctx.DefaultCredentials = append(ctx.DefaultCredentials, name)
-		for h, vs := range vars {
-			claimed[h] = append(claimed[h], vs...)
+		if servesAny {
+			ctx.DefaultCredentials = candidate.DefaultCredentials
 		}
 	}
 	return ctx, nil
 }
 
-// routeVars maps each launchable harness b serves to the variables its
-// route sets.
-func routeVars(name string, b CredentialBinding) map[string][]string {
-	out := map[string][]string{}
-	for _, h := range launchableHarnesses() {
-		if r, ok := b.Route(name, h); ok {
-			out[h] = append(r.Env, slices.Sorted(maps.Keys(r.Set))...)
-		}
+// DefaultCredentialsForHarness returns the ordered slice of default
+// credential names from synthCtx.DefaultCredentials that apply to
+// harnessName, skipping any binding whose route variables on
+// harnessName collide with an earlier binding or that would claim a
+// second LLM provider/gateway slot on harnessName.
+func DefaultCredentialsForHarness(synthCtx Context, harnessName string) []string {
+	if harnessName == "" {
+		return slices.Clone(synthCtx.DefaultCredentials)
 	}
-	return out
-}
-
-func launchableHarnesses() []string {
+	h := canonicalHarness(harnessName)
 	var out []string
-	for _, d := range harness.All() {
-		if d.Launchable() {
-			out = append(out, d.Name)
+	claimedVars := map[string]bool{}
+	providerClaimed := false
+	gatewayClaimed := false
+	for _, name := range slices.Compact(slices.Clone(synthCtx.DefaultCredentials)) {
+		b, ok := synthCtx.Credentials[name]
+		if !ok {
+			// Preserve unknown names so PlanCredentials can report ErrCredentialNotFound.
+			out = append(out, name)
+			continue
 		}
-	}
-	return out
-}
-
-// claimedDefaultVars maps each harness to the variables ctx's default
-// bindings already set for it.
-func claimedDefaultVars(ctx Context) map[string][]string {
-	claimed := map[string][]string{}
-	for _, name := range ctx.DefaultCredentials {
-		b, ok := ctx.Credentials[name]
+		if !b.DefaultAllowsHarness(name, h) {
+			continue
+		}
+		r, ok := b.Route(name, h)
 		if !ok {
 			continue
 		}
-		for h, vs := range routeVars(name, b) {
-			claimed[h] = append(claimed[h], vs...)
+		_, isGW := synthCtx.Gateways[name]
+		isProvider := isGW || b.IsLLMProvider(name)
+		if (isGW && providerClaimed) || (isProvider && gatewayClaimed) {
+			continue
 		}
-	}
-	return claimed
-}
-
-func collides(claimed, vars map[string][]string) bool {
-	for h, vs := range vars {
-		for _, v := range vs {
-			if slices.Contains(claimed[h], v) {
-				return true
+		vars := append(slices.Clone(r.Env), slices.Sorted(maps.Keys(r.Set))...)
+		conflict := false
+		for _, v := range vars {
+			if claimedVars[v] {
+				conflict = true
+				break
 			}
 		}
+		if conflict {
+			continue
+		}
+		out = append(out, name)
+		for _, v := range vars {
+			claimedVars[v] = true
+		}
+		if isProvider {
+			providerClaimed = true
+		}
+		if isGW {
+			gatewayClaimed = true
+		}
 	}
-	return false
+	return out
 }
 
 // gatewayScrubNames are the variables any gateway may inject, scrubbed

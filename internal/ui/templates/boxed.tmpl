@@ -6,11 +6,17 @@
 │ 📁 {{cyan "Matched   "}}{{.MatchReason}}
 {{- end}}
 │ {{agentIconPrefix .}}{{cyan "Agent     "}}{{agentDisplay .}}
+{{- with availableHarnessesLine .}}
+│ 🤖 {{cyan "Harnesses "}}{{.}}
+{{- end}}
 {{- if .SecretName}}
 │ 🔐 {{cyan "Secret    "}}{{secretDisplay .}}
 {{- end}}
 {{- with credentialDisplay .}}
 │ 🔑 {{cyan "Auth      "}}{{.}}
+{{- end}}
+{{- range credentialDetailLines .}}
+│               {{dim .}}
 {{- end}}
 {{- range trustEntries .}}
 │

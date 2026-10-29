@@ -519,8 +519,9 @@ lands in shell history.
 
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
-| `<name>` | first DNS label of the URL's host | Gateway name under `gateways:` |
-| `--url` | required | Base URL; a trailing `/v1` or `/` is dropped |
+| `<name>` | first DNS label of the URL's host (prompted on TTY when `--url` is also prompted) | Gateway name under `gateways:` |
+| `--url` | required (or prompted on TTY) | Base URL; a trailing `/v1` or `/` is dropped |
+| `--default` | prompted on TTY when an existing default collides | Make this gateway the profile default across its harnesses |
 | `--profile` | profile matched from the current directory | Target profile |
 | `--token-stdin` / `--token-env <VAR>` | hidden prompt | Where the token comes from |
 | `--ttl` | `24h` | How long cached models stay fresh |
@@ -560,17 +561,26 @@ gateway only when `config.toml` does not already choose one.
 
 ### Defaults and several gateways
 
-Each gateway is a default credential of its profile unless a binding
-already in `default_credentials:` (or a gateway earlier in name order)
-sets one of the same variables for the same agent. Claude reads fixed
-variable names, so only one gateway can be Claude's default; select
-another per launch with `aide --credential <name>`, or name the one you
-want in `default_credentials:`. `aide gateway list` shows which agents
-each gateway is the default for.
+Default credentials resolve per agent (`DefaultCredentialsForHarness`),
+with at most one active LLM provider or gateway default per agent:
+
+- Built-in provider credentials without `harnesses:` or `for:` default
+  to the harnesses that natively read their variable (`anthropic` →
+  `claude`, `pi`, `opencode`; `openai` and `openrouter` → `pi`,
+  `opencode`, `codex`; `codex` → `codex`; `gemini` → `gemini`, `pi`,
+  `opencode`).
+- If a profile has `default_credentials: [anthropic]` and a custom
+  gateway `api`, `anthropic` stays the default for `claude`, `pi`, and
+  `opencode`, while `api` automatically becomes the default for `codex`.
+- Switch a profile's default gateway or built-in provider credential at
+  any time with `aide gateway use [<name>] [--profile <name>]` (or pass
+  `aide --credential <name>` for a single launch).
 
 Claude keeps one gateway model file per config dir. `aide gateway sync`
-writes it only for Claude's default gateway; a launch that selects
-another gateway rewrites it before Claude starts.
+writes it for Claude's default gateway (or the first custom gateway on
+the profile when Claude's default is a built-in credential such as
+`anthropic`); a launch that selects another gateway rewrites it before
+Claude starts.
 
 ### Refresh at launch
 
@@ -585,9 +595,14 @@ cache with no network call. `--auth login` launches skip all of this.
 ### Commands
 
 - `aide gateway list [--profile <name>] [--models] [--format json]`:
-  each gateway's URL, secret store and key name (never the token), cache
-  age, and per-agent file status: `synced`, `stale` (out of date, or
-  the cache expired) or `pending` (agent dir not created yet).
+  each configured gateway and built-in provider credential on the
+  profile, its URL, secret store and key name (never the token), cache
+  age, and per-agent file status (`synced`, `stale`, `pending`, or
+  `active`/`standby` for built-in credentials).
+- `aide gateway use [<name>] [--profile <name>]`: switch the profile's
+  default gateway or built-in provider credential (with an interactive
+  numbered picker on a terminal when `<name>` is omitted) and
+  materialize cached models for `claude` and `codex`.
 - `aide gateway sync [<name>] [--profile <name>]`: fetch now, whatever
   the TTL, and update every agent file that exists.
 - `aide gateway remove <name> [--profile <name>] [--keep-secret]`:

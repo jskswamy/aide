@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -29,15 +30,16 @@ import (
 	"github.com/jskswamy/aide/internal/secrets"
 )
 
-// GatewayListEntry is one gateway in `aide gateway list --format json`.
+// GatewayListEntry is one gateway or provider credential in `aide gateway list --format json`.
 type GatewayListEntry struct {
 	Profile    string                      `json:"profile"`
 	Gateway    string                      `json:"gateway"`
+	Kind       string                      `json:"kind,omitempty"`
 	BaseURL    string                      `json:"base_url"`
 	Store      string                      `json:"store"`
 	Key        string                      `json:"key"`
-	RefreshTTL string                      `json:"refresh_ttl"`
-	CachePath  string                      `json:"cache_path"`
+	RefreshTTL string                      `json:"refresh_ttl,omitempty"`
+	CachePath  string                      `json:"cache_path,omitempty"`
 	FetchedAt  *time.Time                  `json:"fetched_at,omitempty"`
 	Expired    bool                        `json:"expired"`
 	ModelCount int                         `json:"model_count"`
@@ -61,6 +63,7 @@ only name the variable aide injects it as.`,
 	}
 	cmd.AddCommand(gatewayAddCmd())
 	cmd.AddCommand(gatewayListCmd())
+	cmd.AddCommand(gatewayUseCmd())
 	cmd.AddCommand(gatewaySyncCmd())
 	cmd.AddCommand(gatewayRemoveCmd())
 	return cmd
@@ -69,7 +72,7 @@ only name the variable aide injects it as.`,
 func gatewayAddCmd() *cobra.Command {
 	var (
 		rawURL, profile, ttl, harnesses, store, key, ageKey, tokenEnv string
-		tokenStdin, force                                             bool
+		tokenStdin, force, makeDefault                                bool
 	)
 	cmd := &cobra.Command{
 		Use:   "add [<name>]",
@@ -93,6 +96,7 @@ Examples:
 				return errors.New("--token-stdin and --token-env are mutually exclusive")
 			}
 			out := cmd.OutOrStdout()
+			reader := bufio.NewReader(cmd.InOrStdin())
 			env, err := cmdEnv(cmd)
 			if err != nil {
 				return err
@@ -102,15 +106,26 @@ Examples:
 			if err != nil {
 				return err
 			}
-			rawURL, err = readGatewayURL(cmd, rawURL, tokenStdin)
+			urlWasPrompted := rawURL == ""
+			rawURL, err = readGatewayURL(cmd, reader, rawURL, tokenStdin)
 			if err != nil {
 				return err
 			}
 			name := ""
 			if len(args) == 1 {
 				name = args[0]
-			} else if name, err = gatewayNameFromURL(rawURL); err != nil {
-				return err
+			} else {
+				derived, deriveErr := gatewayNameFromURL(rawURL)
+				if (urlWasPrompted || deriveErr != nil || !config.IsGatewayName(derived)) && !tokenStdin && stdinIsTTY() {
+					name, err = readGatewayName(cmd, reader, derived)
+					if err != nil {
+						return err
+					}
+				} else if deriveErr != nil {
+					return deriveErr
+				} else {
+					name = derived
+				}
 			}
 
 			gw := config.GatewayConfig{
@@ -152,9 +167,19 @@ Examples:
 				}
 			}
 
-			token, err := readGatewayToken(cmd, tokenStdin, tokenEnv)
+			token, err := readGatewayToken(cmd, reader, tokenStdin, tokenEnv)
 			if err != nil {
 				return err
+			}
+
+			if cmd.Flags().Changed("default") {
+				if makeDefault {
+					ctx.DefaultCredentials = setProfileDefaultCredential(ctx, name)
+				}
+			} else if existing := collidingDefaultForGateway(ctx, name, gw); existing != "" && !tokenStdin && stdinIsTTY() {
+				if promptMakeDefault(cmd, reader, profileName, existing, name) {
+					ctx.DefaultCredentials = setProfileDefaultCredential(ctx, name)
+				}
 			}
 
 			secretsDir := config.SecretsDir()
@@ -192,6 +217,7 @@ Examples:
 	cmd.Flags().StringVar(&key, "key", "", "Key for the token inside the store (default: <name>_token)")
 	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient for a new secret store (default: the discovered age identity)")
 	cmd.Flags().StringVar(&profile, "profile", "", "Target profile (default: matched from the current directory)")
+	cmd.Flags().BoolVar(&makeDefault, "default", false, "Make this gateway the profile default across its harnesses")
 	cmd.Flags().BoolVar(&force, "force", false, "Replace a gateway of the same name with another URL, or overwrite an existing secret key")
 	return cmd
 }
@@ -228,6 +254,13 @@ func gatewayListCmd() *cobra.Command {
 					continue
 				}
 				ctx := cfg.Contexts[p]
+				for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
+					b := ctx.Credentials[name]
+					if !b.IsLLMProvider(name) {
+						continue
+					}
+					entries = append(entries, credentialListEntry(p, ctx, name, b))
+				}
 				for _, name := range slices.Sorted(maps.Keys(ctx.Gateways)) {
 					entries = append(entries, gatewayListEntry(p, ctx, name, home, models))
 				}
@@ -240,6 +273,163 @@ func gatewayListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Show only this profile's gateways")
 	cmd.Flags().BoolVar(&models, "models", false, "Include each gateway's cached models")
+	return cmd
+}
+
+type selectableGateway struct {
+	name       string
+	kind       string
+	url        string
+	defaultFor []string
+}
+
+func selectableGateways(ctx config.Context) []selectableGateway {
+	var list []selectableGateway
+	for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
+		b := ctx.Credentials[name]
+		if !b.IsLLMProvider(name) {
+			continue
+		}
+		u := b.EndpointURL(name, "")
+		if config.IsBuiltinCredential(name) && u != "" {
+			u += " (built-in)"
+		}
+		var defs []string
+		for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+			if gateway.IsDefaultGateway(ctx, name, h) {
+				defs = append(defs, h)
+			}
+		}
+		list = append(list, selectableGateway{name: name, kind: "credential", url: u, defaultFor: defs})
+	}
+	for _, name := range slices.Sorted(maps.Keys(ctx.Gateways)) {
+		gw := ctx.Gateways[name]
+		var defs []string
+		for _, h := range gw.EffectiveHarnesses() {
+			if gateway.IsDefaultGateway(ctx, name, h) {
+				defs = append(defs, h)
+			}
+		}
+		list = append(list, selectableGateway{name: name, kind: "gateway", url: gw.BaseURL, defaultFor: defs})
+	}
+	return list
+}
+
+func gatewayUseCmd() *cobra.Command {
+	var profile string
+	cmd := &cobra.Command{
+		Use:   "use [<name>]",
+		Short: "Set the profile's default gateway or built-in credential",
+		Long: `Switch a profile's default gateway or built-in provider credential.
+
+Without <name> on a terminal, lists the profile's configured gateways and
+built-in provider credentials and prompts for a selection.`,
+		Args:         cobra.MaximumNArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			reader := bufio.NewReader(cmd.InOrStdin())
+			env, err := cmdEnv(cmd)
+			if err != nil {
+				return err
+			}
+			cfg := env.Config()
+			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), profile)
+			if err != nil {
+				return err
+			}
+			choices := selectableGateways(ctx)
+			if len(choices) == 0 {
+				return fmt.Errorf("profile %q has no gateways or provider credentials configured; add one with: aide gateway add", profileName)
+			}
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			} else {
+				if !stdinIsTTY() {
+					return errors.New("gateway or credential name is required when stdin is not a terminal")
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "Gateways on profile %q:\n", profileName)
+				tw := tabwriter.NewWriter(cmd.ErrOrStderr(), 0, 0, 2, ' ', 0)
+				for i, c := range choices {
+					status := "[standby]"
+					if len(c.defaultFor) > 0 {
+						status = "[default: " + strings.Join(c.defaultFor, ", ") + "]"
+					}
+					fmt.Fprintf(tw, "  [%d] %s\t%s\t%s\n", i+1, c.name, c.url, status)
+				}
+				_ = tw.Flush()
+				fmt.Fprint(cmd.ErrOrStderr(), "Select default [1]: ")
+				line, err := reader.ReadString('\n')
+				if err != nil && !errors.Is(err, io.EOF) {
+					return fmt.Errorf("reading selection: %w", err)
+				}
+				ans := strings.TrimSpace(line)
+				if ans == "" {
+					name = choices[0].name
+				} else if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(choices) {
+					name = choices[idx-1].name
+				} else {
+					name = ans
+				}
+			}
+
+			found := false
+			for _, c := range choices {
+				if c.name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				var names []string
+				for _, c := range choices {
+					names = append(names, c.name)
+				}
+				return fmt.Errorf("profile %q has no gateway or provider credential %q (defined: %s)",
+					profileName, name, strings.Join(names, ", "))
+			}
+
+			ctx.DefaultCredentials = setProfileDefaultCredential(ctx, name)
+			cfg.Contexts[profileName] = ctx
+			if err := config.WriteConfig(cfg); err != nil {
+				return fmt.Errorf("writing config: %w", err)
+			}
+
+			var activeOn []string
+			for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+				if gateway.IsDefaultGateway(ctx, name, h) {
+					activeOn = append(activeOn, h)
+				}
+			}
+			fmt.Fprintf(out, "✓ Set default gateway for profile %q to %q (%s)\n",
+				profileName, name, strings.Join(activeOn, ", "))
+
+			home := userHomeDir()
+			if gw, isGw := ctx.Gateways[name]; isGw {
+				if cat, err := gateway.ReadCache(home, profileName, name); err == nil && cat != nil {
+					var statuses []gateway.HarnessFileStatus
+					for _, h := range gw.EffectiveHarnesses() {
+						if !gateway.CanSyncHarness(ctx, name, h) {
+							continue
+						}
+						st, err := gateway.MaterializeHarness(ctx, name, gw, cat, h, home, false)
+						if err != nil {
+							st.State, st.Detail = gateway.StateStale, err.Error()
+						}
+						if st.State == gateway.StateSynced {
+							statuses = append(statuses, st)
+						}
+					}
+					if len(statuses) > 0 {
+						printHarnessStatuses(out, statuses, gw, home)
+					}
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&profile, "profile", "", "Target profile (default: matched from the current directory)")
 	return cmd
 }
 
@@ -408,7 +598,7 @@ var stdinIsTTY = isStdinTTY
 
 // readGatewayURL returns rawURL or prompts for it on a terminal when
 // stdin is not already reserved for --token-stdin.
-func readGatewayURL(cmd *cobra.Command, rawURL string, tokenStdin bool) (string, error) {
+func readGatewayURL(cmd *cobra.Command, reader *bufio.Reader, rawURL string, tokenStdin bool) (string, error) {
 	if rawURL != "" {
 		return rawURL, nil
 	}
@@ -416,7 +606,7 @@ func readGatewayURL(cmd *cobra.Command, rawURL string, tokenStdin bool) (string,
 		return "", errors.New("--url is required (the gateway base URL, e.g. https://gateway.example.com)")
 	}
 	fmt.Fprint(cmd.ErrOrStderr(), "Gateway base URL (e.g. https://gateway.example.com): ")
-	line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	line, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("reading the gateway URL: %w", err)
 	}
@@ -425,6 +615,29 @@ func readGatewayURL(cmd *cobra.Command, rawURL string, tokenStdin bool) (string,
 		return "", errors.New("the gateway URL is empty")
 	}
 	return rawURL, nil
+}
+
+// readGatewayName prompts for the gateway name on an interactive TTY,
+// defaulting to derived when non-empty.
+func readGatewayName(cmd *cobra.Command, reader *bufio.Reader, derived string) (string, error) {
+	if derived != "" && config.IsGatewayName(derived) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Gateway name [%s]: ", derived)
+	} else {
+		derived = ""
+		fmt.Fprint(cmd.ErrOrStderr(), "Gateway name: ")
+	}
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("reading the gateway name: %w", err)
+	}
+	name := strings.TrimSpace(line)
+	if name == "" {
+		name = derived
+	}
+	if name == "" {
+		return "", errors.New("the gateway name is empty")
+	}
+	return name, nil
 }
 
 // gatewayNameFromURL is the first DNS label of rawURL's host:
@@ -440,7 +653,7 @@ func gatewayNameFromURL(rawURL string) (string, error) {
 
 // readGatewayToken reads the token from --token-env, --token-stdin or
 // a hidden prompt, in that order.
-func readGatewayToken(cmd *cobra.Command, fromStdin bool, envVar string) (string, error) {
+func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, envVar string) (string, error) {
 	var token string
 	switch {
 	case envVar != "":
@@ -449,14 +662,27 @@ func readGatewayToken(cmd *cobra.Command, fromStdin bool, envVar string) (string
 			return "", fmt.Errorf("--token-env %s: the variable is unset or empty", envVar)
 		}
 	case fromStdin:
-		line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return "", fmt.Errorf("reading the token from stdin: %w", err)
 		}
 		token = strings.TrimRight(line, "\r\n")
 	case stdinIsTTY():
 		fmt.Fprint(cmd.ErrOrStderr(), "Gateway bearer token (input hidden): ")
-		raw, err := term.ReadPassword(int(os.Stdin.Fd())) // #nosec G115 -- stdin fd is always 0/1/2, never overflows int
+		var (
+			raw []byte
+			err error
+		)
+		if f, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(int(f.Fd())) { // #nosec G115 -- stdin fd is always 0/1/2
+			raw, err = term.ReadPassword(int(f.Fd())) // #nosec G115
+		} else {
+			var line string
+			line, err = reader.ReadString('\n')
+			if errors.Is(err, io.EOF) {
+				err = nil
+			}
+			raw = []byte(line)
+		}
 		fmt.Fprintln(cmd.ErrOrStderr())
 		if err != nil {
 			return "", fmt.Errorf("reading the token: %w", err)
@@ -469,6 +695,81 @@ func readGatewayToken(cmd *cobra.Command, fromStdin bool, envVar string) (string
 		return "", errors.New("the gateway token is empty")
 	}
 	return token, nil
+}
+
+// collidingDefaultForGateway returns the existing default credential or
+// gateway name that claims any of gw's harnesses ahead of name, or ""
+// when name is already default across all of gw.EffectiveHarnesses().
+func collidingDefaultForGateway(ctx config.Context, name string, gw config.GatewayConfig) string {
+	synth, err := config.SynthesizeGatewayCredentials(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, h := range gw.EffectiveHarnesses() {
+		defs := config.DefaultCredentialsForHarness(synth, h)
+		if slices.Contains(defs, name) {
+			continue
+		}
+		for _, d := range defs {
+			b := synth.Credentials[d]
+			_, isGw := synth.Gateways[d]
+			if isGw || b.IsLLMProvider(d) {
+				return d
+			}
+		}
+	}
+	return ""
+}
+
+func promptMakeDefault(cmd *cobra.Command, reader *bufio.Reader, profileName, existing, name string) bool {
+	fmt.Fprintf(cmd.ErrOrStderr(), "Profile %q currently uses %q by default. Make %q the default instead? [Y/n]: ",
+		profileName, existing, name)
+	line, err := reader.ReadString('\n')
+	if err != nil && errors.Is(err, io.EOF) && line == "" {
+		return false
+	}
+	ans := strings.ToLower(strings.TrimSpace(line))
+	return ans == "" || ans == "y" || ans == "yes"
+}
+
+// setProfileDefaultCredential places name first in ctx.DefaultCredentials
+// and removes any other LLM provider or gateway whose harness scope
+// overlaps with name, while preserving unrelated non-provider bindings.
+func setProfileDefaultCredential(ctx config.Context, name string) []string {
+	synth, err := config.SynthesizeGatewayCredentials(ctx)
+	if err != nil {
+		return []string{name}
+	}
+	nameB := synth.Credentials[name]
+	_, nameIsGw := synth.Gateways[name]
+	nameIsProvider := nameIsGw || nameB.IsLLMProvider(name)
+
+	out := []string{name}
+	for _, c := range ctx.DefaultCredentials {
+		if c == name {
+			continue
+		}
+		cb, ok := synth.Credentials[c]
+		if !ok {
+			continue
+		}
+		_, cIsGw := synth.Gateways[c]
+		cIsProvider := cIsGw || cb.IsLLMProvider(c)
+		if nameIsProvider && cIsProvider && bindingsOverlapHarnesses(name, nameB, c, cb) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func bindingsOverlapHarnesses(nameA string, a config.CredentialBinding, nameB string, b config.CredentialBinding) bool {
+	for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+		if a.DefaultAllowsHarness(nameA, h) && b.DefaultAllowsHarness(nameB, h) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkKeyUnclaimed refuses a key that already holds a value in store
@@ -567,11 +868,50 @@ func printHarnessStatuses(w io.Writer, statuses []gateway.HarnessFileStatus, gw 
 	_ = tw.Flush()
 }
 
+func credentialListEntry(profile string, ctx config.Context, name string, b config.CredentialBinding) GatewayListEntry {
+	e := GatewayListEntry{
+		Profile:    profile,
+		Gateway:    name,
+		Kind:       "credential",
+		BaseURL:    b.EndpointURL(name, ""),
+		Store:      b.Store,
+		Key:        b.Key,
+		DefaultFor: []string{},
+	}
+	for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+		if !b.DefaultAllowsHarness(name, h) {
+			continue
+		}
+		r, ok := b.Route(name, h)
+		if !ok {
+			continue
+		}
+		isDef := gateway.IsDefaultGateway(ctx, name, h)
+		if isDef {
+			e.DefaultFor = append(e.DefaultFor, h)
+		}
+		state := gateway.HarnessSyncState("standby")
+		detail := "select with --credential " + name
+		if isDef {
+			state = "active"
+			detail = "default"
+		}
+		e.Harnesses = append(e.Harnesses, gateway.HarnessFileStatus{
+			Harness:  h,
+			EnvVar:   strings.Join(r.Env, ", "),
+			FilePath: "-",
+			State:    state,
+			Detail:   detail,
+		})
+	}
+	return e
+}
+
 func gatewayListEntry(profile string, ctx config.Context, name, home string, withModels bool) GatewayListEntry {
 	gw := ctx.Gateways[name]
 	ttl := gw.TTL()
 	e := GatewayListEntry{
-		Profile: profile, Gateway: name, BaseURL: gw.BaseURL, Store: gw.Store, Key: gw.Key,
+		Profile: profile, Gateway: name, Kind: "gateway", BaseURL: gw.BaseURL, Store: gw.Store, Key: gw.Key,
 		RefreshTTL: cmp.Or(gw.RefreshTTL, "24h"), DefaultFor: []string{},
 	}
 	e.CachePath, _ = gateway.CachePath(home, profile, name)
@@ -605,16 +945,29 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			fmt.Fprintf(w, "PROFILE: %s\n", e.Profile)
 			lastProfile = e.Profile
 		}
-		defaults := "not a default; select with --credential " + e.Gateway
+		defaults := fmt.Sprintf("not a default; switch with: aide gateway use %s --profile %s, or pass --credential %s", e.Gateway, e.Profile, e.Gateway)
 		if len(e.DefaultFor) > 0 {
 			defaults = "default for: " + strings.Join(e.DefaultFor, ", ")
+			if len(e.DefaultFor) < len(e.Harnesses) {
+				defaults += fmt.Sprintf("; switch all with: aide gateway use %s --profile %s", e.Gateway, e.Profile)
+			}
 		}
 		fmt.Fprintf(w, "  GATEWAY: %s (%s)\n", e.Gateway, defaults)
-		fmt.Fprintf(w, "    URL:          %s\n", e.BaseURL)
-		fmt.Fprintf(w, "    Secret:       store=%s, key=%s\n", e.Store, e.Key)
-		fmt.Fprintf(w, "    Refresh TTL:  %s\n", e.RefreshTTL)
-		fmt.Fprintf(w, "    Cache:        %s\n", cacheSummary(e))
-		fmt.Fprintf(w, "                  %s\n", homepath.Tilde(e.CachePath, home))
+		urlDisplay := e.BaseURL
+		if e.Kind == "credential" && config.IsBuiltinCredential(e.Gateway) && urlDisplay != "" {
+			urlDisplay += " (built-in)"
+		}
+		if urlDisplay != "" {
+			fmt.Fprintf(w, "    URL:          %s\n", urlDisplay)
+		}
+		if e.Store != "" || e.Key != "" {
+			fmt.Fprintf(w, "    Secret:       store=%s, key=%s\n", e.Store, e.Key)
+		}
+		if e.Kind != "credential" {
+			fmt.Fprintf(w, "    Refresh TTL:  %s\n", e.RefreshTTL)
+			fmt.Fprintf(w, "    Cache:        %s\n", cacheSummary(e))
+			fmt.Fprintf(w, "                  %s\n", homepath.Tilde(e.CachePath, home))
+		}
 		fmt.Fprintln(w, "    Harnesses:")
 		gw := cfg.Contexts[e.Profile].Gateways[e.Gateway]
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -624,10 +977,18 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			if st.Detail != "" {
 				status += " (" + st.Detail + ")"
 			}
-			fmt.Fprintf(tw, "      %s\t%s\t%s\t%s\n", st.Harness, gw.TokenEnv(st.Harness), homepath.Tilde(st.FilePath, home), status)
+			envVar := st.EnvVar
+			if envVar == "" && e.Kind != "credential" {
+				envVar = gw.TokenEnv(st.Harness)
+			}
+			targetFile := st.FilePath
+			if targetFile != "-" {
+				targetFile = homepath.Tilde(targetFile, home)
+			}
+			fmt.Fprintf(tw, "      %s\t%s\t%s\t%s\n", st.Harness, envVar, targetFile, status)
 		}
 		_ = tw.Flush()
-		if withModels {
+		if withModels && e.Kind != "credential" {
 			fmt.Fprintf(w, "    Models (%d):\n", len(e.Models))
 			tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(tw, "      ID\tDISPLAY NAME\tPROVIDER\tCONTEXT\tMAX OUTPUT")

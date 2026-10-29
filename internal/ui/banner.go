@@ -5,9 +5,12 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/template"
 	"unicode"
+
+	"github.com/jskswamy/aide/internal/envscrub"
 )
 
 //go:embed templates/*.tmpl
@@ -40,7 +43,14 @@ func RenderBanner(w io.Writer, style string, data *BannerData) error {
 	if t := tmpl.Lookup(name); t == nil {
 		name = "compact.tmpl"
 	}
-	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
+	renderData := *data
+	if renderData.HarnessConfigDir != "" && len(renderData.EnvItems) > 0 {
+		redirects := envscrub.ConfigDirRedirects()
+		renderData.EnvItems = slices.DeleteFunc(slices.Clone(renderData.EnvItems), func(item EnvItem) bool {
+			return slices.Contains(redirects, item.Key)
+		})
+	}
+	if err := tmpl.ExecuteTemplate(w, name, &renderData); err != nil {
 		return fmt.Errorf("rendering banner style %q: %w", style, err)
 	}
 	return nil
@@ -49,12 +59,32 @@ func RenderBanner(w io.Writer, style string, data *BannerData) error {
 // --- Data helper functions (used by FuncMap and retained for direct use) ---
 
 // agentDisplay returns the agent display string, including path when it differs
-// from the name.
+// from the name and the active harness config dir when present.
 func agentDisplay(data *BannerData) string {
+	base := data.AgentName
 	if data.AgentPath != "" && data.AgentPath != data.AgentName {
-		return fmt.Sprintf("%s → %s", data.AgentName, data.AgentPath)
+		base = fmt.Sprintf("%s → %s", data.AgentName, data.AgentPath)
 	}
-	return data.AgentName
+	if data.HarnessConfigDir != "" {
+		base += fmt.Sprintf(" (dir: %s)", data.HarnessConfigDir)
+	}
+	return base
+}
+
+// availableHarnessesLine formats data.AvailableHarnesses as "pi (~/.pi-work) · opencode (~/.opencode-work)".
+func availableHarnessesLine(data *BannerData) string {
+	if len(data.AvailableHarnesses) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(data.AvailableHarnesses))
+	for _, h := range data.AvailableHarnesses {
+		if h.ConfigDir != "" {
+			parts = append(parts, fmt.Sprintf("%s (%s)", h.Name, h.ConfigDir))
+		} else {
+			parts = append(parts, h.Name)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 // secretDisplay returns the secret display string.
@@ -74,17 +104,76 @@ func credentialDisplay(data *BannerData) string {
 	return CredentialSummary(data.Credentials, data.AuthMode)
 }
 
-// CredentialSummary renders credential bindings as "name (ENV, ...)",
-// or the native-login mode. It never includes values.
+// CredentialSummary renders credential bindings as "name (ENV, ...)" or
+// "name → url (ENV, ...)", or the native-login mode. It never includes values.
 func CredentialSummary(creds []CredentialInfo, authMode string) string {
 	if authMode == "login" {
 		return "native login (no API keys)"
 	}
 	parts := make([]string, 0, len(creds))
 	for _, c := range creds {
-		parts = append(parts, fmt.Sprintf("%s (%s)", c.Name, strings.Join(c.Env, ", ")))
+		label := c.Name
+		if c.URL != "" {
+			label = fmt.Sprintf("%s → %s", c.Name, c.URL)
+		}
+		if len(c.Env) > 0 {
+			parts = append(parts, fmt.Sprintf("%s (%s)", label, strings.Join(c.Env, ", ")))
+		} else {
+			parts = append(parts, label)
+		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// credentialDetailLines returns supplemental detail lines for active
+// credentials (store/key, gateway model cache + target file status) and
+// available alternative gateways on the profile.
+func credentialDetailLines(data *BannerData) []string {
+	var lines []string
+	for _, c := range data.Credentials {
+		var details []string
+		if c.Store != "" && c.Key != "" {
+			details = append(details, fmt.Sprintf("auth: store=%s, key=%s", c.Store, c.Key))
+		}
+		if c.IsGateway {
+			var modelPart string
+			switch {
+			case c.ModelCount > 0 && c.ModelAge != "":
+				modelPart = fmt.Sprintf("models: %d cached (%s ago)", c.ModelCount, c.ModelAge)
+			case c.ModelCount > 0:
+				modelPart = fmt.Sprintf("models: %d cached", c.ModelCount)
+			default:
+				modelPart = "models: not synced yet"
+			}
+			if c.TargetFile != "" {
+				if c.TargetSync != "" {
+					modelPart += fmt.Sprintf(" · %s (%s)", c.TargetFile, c.TargetSync)
+				} else {
+					modelPart += fmt.Sprintf(" · %s", c.TargetFile)
+				}
+			}
+			details = append(details, modelPart)
+		}
+		if len(details) > 0 {
+			lines = append(lines, strings.Join(details, " · "))
+		}
+	}
+	if len(data.AvailableGateways) > 0 {
+		opts := make([]string, 0, len(data.AvailableGateways))
+		for _, g := range data.AvailableGateways {
+			if g.URL != "" {
+				opts = append(opts, fmt.Sprintf("%s → %s", g.Name, g.URL))
+			} else {
+				opts = append(opts, g.Name)
+			}
+		}
+		switchHint := "aide gateway use"
+		if len(data.AvailableGateways) == 1 {
+			switchHint = fmt.Sprintf("aide gateway use %s", data.AvailableGateways[0].Name)
+		}
+		lines = append(lines, fmt.Sprintf("available: %s (switch: %s)", strings.Join(opts, " · "), switchHint))
+	}
+	return lines
 }
 
 // envItemLines returns formatted env variable lines from EnvItems.

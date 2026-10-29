@@ -471,7 +471,7 @@ func TestMaterialize_Pi(t *testing.T) {
 	if err := json.Unmarshal(doc.Providers["corp"], &corp); err != nil {
 		t.Fatal(err)
 	}
-	if corp["baseUrl"] != "https://gw.example.com" || corp["apiKey"] != "CORP_TOKEN" ||
+	if corp["baseUrl"] != "https://gw.example.com" || corp["apiKey"] != "$CORP_TOKEN" ||
 		corp["authHeader"] != true || corp["api"] != "anthropic-messages" {
 		t.Errorf("providers.corp = %v", corp)
 	}
@@ -506,6 +506,7 @@ func TestMaterialize_OpenCode(t *testing.T) {
   // user comment
   "mcp": {"fs": {"type": "local", "command": ["fs"]}},
   "plugin": ["p1"],
+  "provider": {"corp": {"npm": "@ai-sdk/anthropic", "name": "corp", "options": {"baseURL": "https://old.example.com/v1", "apiKey": "{env:CORP_TOKEN}"}}},
   /* trailing */
 }`)
 	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "opencode", f.home, false); err != nil {
@@ -522,16 +523,28 @@ func TestMaterialize_OpenCode(t *testing.T) {
 	if doc["mcp"] == nil || doc["plugin"] == nil {
 		t.Errorf("sibling keys lost: %v", doc)
 	}
-	corp := obj(t, obj(t, doc["provider"])["corp"])
-	opts := obj(t, corp["options"])
-	if corp["npm"] != "@ai-sdk/anthropic" || corp["name"] != "corp" ||
-		opts["baseURL"] != "https://gw.example.com/v1" || opts["apiKey"] != "{env:CORP_TOKEN}" {
-		t.Errorf("provider.corp = %v", corp)
+	if doc["provider"] != nil {
+		t.Errorf("legacy V1 provider section survived migration: %v", doc["provider"])
+	}
+	if doc["model"] != "corp/claude-sonnet-4-5" {
+		t.Errorf("model = %v, want corp/claude-sonnet-4-5", doc["model"])
+	}
+	corp := obj(t, obj(t, doc["providers"])["corp"])
+	settings := obj(t, corp["settings"])
+	headers := obj(t, corp["headers"])
+	env, _ := corp["env"].([]any)
+	if corp["package"] != "@ai-sdk/anthropic" || corp["name"] != "corp" ||
+		len(env) != 1 || env[0] != "CORP_TOKEN" ||
+		settings["baseURL"] != "https://gw.example.com/v1" || settings["apiKey"] != "{env:CORP_TOKEN}" ||
+		headers["Authorization"] != "Bearer {env:CORP_TOKEN}" {
+		t.Errorf("providers.corp = %v", corp)
 	}
 	models := obj(t, corp["models"])
 	sonnet := obj(t, models["claude-sonnet-4-5"])
 	limit := obj(t, sonnet["limit"])
-	if sonnet["name"] != "Claude Sonnet 4.5" || limit["context"] != 200000.0 || limit["output"] != 16384.0 {
+	compat := obj(t, sonnet["compatibility"])
+	if sonnet["name"] != "Claude Sonnet 4.5" || limit["context"] != 200000.0 || limit["output"] != 16384.0 ||
+		compat["supportsThinkingBlockBinding"] != false {
 		t.Errorf("models = %v", models)
 	}
 	if _, ok := obj(t, models["plain"])["limit"]; ok {
@@ -539,6 +552,10 @@ func TestMaterialize_OpenCode(t *testing.T) {
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "opencode", f.home); got.State != StateSynced {
 		t.Errorf("InspectHarness() = %+v, want synced", got)
+	}
+	writeFile(t, path, strings.ReplaceAll(readFile(t, path), `"compatibility"`, `"legacy"`))
+	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "opencode", f.home); got.State != StateStale {
+		t.Errorf("InspectHarness() without compatibility = %+v, want stale", got)
 	}
 	if removed, err := RemoveFromHarness(f.ctx, "corp", f.gw, "opencode", f.home); err != nil || !removed {
 		t.Fatalf("RemoveFromHarness() = %v, %v", removed, err)

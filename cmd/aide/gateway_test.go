@@ -14,6 +14,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/gateway"
 	"github.com/jskswamy/aide/internal/output"
+	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/secrets"
 )
 
@@ -530,5 +531,191 @@ default_profile: work
 	}
 	if got := loaded.Contexts["work"].DefaultCredentials; len(got) != 1 || got[0] != "acme" {
 		t.Errorf("DefaultCredentials = %v, want [acme]", got)
+	}
+}
+
+func TestGatewayCmd_AddPromptsForNameWhenURLFlagPassedOnTTY(t *testing.T) {
+	e := newGatewayEnv(t)
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+
+	url := strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
+	stdin := strings.Join([]string{"acme", gwCmdToken}, "\n") + "\n"
+	out, err := runGateway(t, stdin, "add", "--url", url, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add with --url on TTY: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Gateway name [localhost]: ") {
+		t.Errorf("expected Gateway name prompt even when --url was passed via flag:\n%s", out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gw, ok := loaded.Contexts["work"].Gateways["acme"]; !ok || gw.Key != "acme_token" {
+		t.Errorf("gateways.acme = %+v, ok=%v", gw, ok)
+	}
+}
+
+func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
+	e := newGatewayEnv(t)
+	for _, dir := range []string{".claude-work", ".pi-work", ".opencode-work", ".codex-work"} {
+		if err := os.MkdirAll(filepath.Join(e.home, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "api", "--url", e.srv.URL, "--default", "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed a repository preference referencing "api".
+	prefPath := prefs.DefaultPath(e.home)
+	pf := &prefs.File{Version: prefs.Version}
+	pf.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{
+		Credentials: prefs.Selection("api"),
+	})
+	if err := prefs.Save(prefPath, pf); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runGateway(t, "", "rename", "api", "acme", "--profile", "work")
+	if err != nil {
+		t.Fatalf("rename api acme: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		`Migrated secret key "api_token" → "acme_token"`,
+		`Renamed gateway "api" → "acme" under profile "work"`,
+		`Moved cache`,
+		`env: ACME_TOKEN`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rename output missing %q:\n%s", want, out)
+		}
+	}
+
+	// Verify config.yaml and default_credentials updated.
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wctx := loaded.Contexts["work"]
+	if _, exists := wctx.Gateways["api"]; exists {
+		t.Error("old gateway 'api' still present in config")
+	}
+	if gw, ok := wctx.Gateways["acme"]; !ok || gw.Key != "acme_token" {
+		t.Errorf("gateways.acme = %+v, ok=%v", gw, ok)
+	}
+	if len(wctx.DefaultCredentials) != 1 || wctx.DefaultCredentials[0] != "acme" {
+		t.Errorf("DefaultCredentials = %v, want [acme]", wctx.DefaultCredentials)
+	}
+
+	// Verify secret key migrated and old key deleted.
+	sec := e.store(t, "work")
+	if _, hasOld := sec["api_token"]; hasOld {
+		t.Errorf("secret store still has old key api_token: %v", sec)
+	}
+	if sec["acme_token"] != gwCmdToken {
+		t.Errorf("secret store acme_token = %q, want %q", sec["acme_token"], gwCmdToken)
+	}
+
+	// Verify cache moved.
+	if cat, _ := gateway.ReadCache(e.home, "work", "api"); cat != nil {
+		t.Error("old cache file for 'api' still exists")
+	}
+	if cat, _ := gateway.ReadCache(e.home, "work", "acme"); cat == nil || cat.Gateway != "acme" {
+		t.Errorf("new cache for 'acme' = %+v", cat)
+	}
+
+	// Verify pi, opencode, and codex files cleaned up "api" and have "acme".
+	piRaw, err := os.ReadFile(filepath.Join(e.home, ".pi-work", "models.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(piRaw), `"$API_TOKEN"`) || !strings.Contains(string(piRaw), `"acme"`) || !strings.Contains(string(piRaw), `"$ACME_TOKEN"`) {
+		t.Errorf("pi models.json after rename:\n%s", piRaw)
+	}
+	codexRaw, err := os.ReadFile(filepath.Join(e.home, ".codex-work", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(codexRaw), "[model_providers.api]") || strings.Contains(string(codexRaw), "API_TOKEN") || !strings.Contains(string(codexRaw), "model_provider = 'acme'") {
+		t.Errorf("codex config.toml after rename:\n%s", codexRaw)
+	}
+
+	// Verify repository preference updated to "acme".
+	updatedPrefs, err := prefs.Load(prefPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, ok := updatedPrefs.Get(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}); !ok || p.Credentials == nil || (*p.Credentials)[0] != "acme" {
+		t.Errorf("repo preference after rename = %+v, ok=%v", p, ok)
+	}
+}
+
+func TestGatewayCmd_EditInteractiveAndTokenRotation(t *testing.T) {
+	var currentToken atomic.Value
+	currentToken.Store(gwCmdToken)
+
+	e := newGatewayEnv(t)
+	rotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := "Bearer " + currentToken.Load().(string)
+		if r.Header.Get("Authorization") != want {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"m1","display_name":"Model One","owned_by":"acme"}]}`))
+	}))
+	t.Cleanup(rotSrv.Close)
+
+	for _, dir := range []string{".pi-work", ".opencode-work"} {
+		if err := os.MkdirAll(filepath.Join(e.home, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", rotSrv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Flag-driven token rotation via --token-env and harness narrowing (--harnesses claude,pi).
+	const rotatedToken = "rotated-secret-token-2"
+	currentToken.Store(rotatedToken)
+	t.Setenv("NEW_CORP_TOKEN", rotatedToken)
+	out, err := runGateway(t, "", "edit", "corp", "--token-env", "NEW_CORP_TOKEN", "--harnesses", "claude,pi", "--ttl", "12h", "--profile", "work")
+	if err != nil {
+		t.Fatalf("edit token-env + harnesses: %v\n%s", err, out)
+	}
+	if got := e.store(t, "work")["corp_token"]; got != rotatedToken {
+		t.Errorf("rotated token in secret store = %q, want %q", got, rotatedToken)
+	}
+	// opencode provider entry should have been removed since harnesses narrowed to claude,pi.
+	ocRaw, err := os.ReadFile(filepath.Join(e.home, ".opencode-work", "opencode.jsonc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(ocRaw), "corp") {
+		t.Errorf("opencode.jsonc still contains corp after narrowing --harnesses to claude,pi:\n%s", ocRaw)
+	}
+
+	// 2. Interactive TTY edit: rename corp -> acme, keep URL/TTL, reset harnesses to "all", no token rotation.
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+
+	stdin := strings.Join([]string{"acme", "", "", "all", "n"}, "\n") + "\n"
+	out, err = runGateway(t, stdin, "edit", "--profile", "work")
+	if err != nil {
+		t.Fatalf("interactive edit: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `Renamed gateway "corp" → "acme"`) {
+		t.Errorf("interactive edit output:\n%s", out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw, ok := loaded.Contexts["work"].Gateways["acme"]
+	if !ok || gw.RefreshTTL != "12h" || len(gw.Harnesses) != 0 || gw.Key != "acme_token" {
+		t.Errorf("edited gateway acme = %+v, ok=%v", gw, ok)
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
+	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/secrets"
 )
 
@@ -64,6 +65,8 @@ only name the variable aide injects it as.`,
 	cmd.AddCommand(gatewayAddCmd())
 	cmd.AddCommand(gatewayListCmd())
 	cmd.AddCommand(gatewayUseCmd())
+	cmd.AddCommand(gatewayEditCmd())
+	cmd.AddCommand(gatewayRenameCmd())
 	cmd.AddCommand(gatewaySyncCmd())
 	cmd.AddCommand(gatewayRemoveCmd())
 	return cmd
@@ -106,7 +109,6 @@ Examples:
 			if err != nil {
 				return err
 			}
-			urlWasPrompted := rawURL == ""
 			rawURL, err = readGatewayURL(cmd, reader, rawURL, tokenStdin)
 			if err != nil {
 				return err
@@ -116,7 +118,7 @@ Examples:
 				name = args[0]
 			} else {
 				derived, deriveErr := gatewayNameFromURL(rawURL)
-				if (urlWasPrompted || deriveErr != nil || !config.IsGatewayName(derived)) && !tokenStdin && stdinIsTTY() {
+				if !tokenStdin && stdinIsTTY() {
 					name, err = readGatewayName(cmd, reader, derived)
 					if err != nil {
 						return err
@@ -133,6 +135,7 @@ Examples:
 				RefreshTTL: ttl,
 				Store:      store,
 				Key:        key,
+				Harnesses:  parseGatewayHarnesses(harnesses),
 			}
 			if gw.Store == "" {
 				gw.Store = ctx.Secret
@@ -141,12 +144,7 @@ Examples:
 				gw.Store = profileName
 			}
 			if gw.Key == "" {
-				gw.Key = strings.ReplaceAll(name, "-", "_") + "_token"
-			}
-			if harnesses != "" {
-				for _, h := range strings.Split(harnesses, ",") {
-					gw.Harnesses = append(gw.Harnesses, strings.TrimSpace(h))
-				}
+				gw.Key = defaultGatewayKey(name)
 			}
 			if old, ok := ctx.Gateways[name]; ok && !force && gateway.NormalizeBaseURL(old.BaseURL) != gw.BaseURL {
 				return fmt.Errorf("profile %q already has gateway %q for %s; pass --force to replace it (and its token), or give this one another name",
@@ -408,28 +406,211 @@ built-in provider credentials and prompts for a selection.`,
 			home := userHomeDir()
 			if gw, isGw := ctx.Gateways[name]; isGw {
 				if cat, err := gateway.ReadCache(home, profileName, name); err == nil && cat != nil {
-					var statuses []gateway.HarnessFileStatus
-					for _, h := range gw.EffectiveHarnesses() {
-						if !gateway.CanSyncHarness(ctx, name, h) {
-							continue
-						}
-						st, err := gateway.MaterializeHarness(ctx, name, gw, cat, h, home, false)
-						if err != nil {
-							st.State, st.Detail = gateway.StateStale, err.Error()
-						}
-						if st.State == gateway.StateSynced {
-							statuses = append(statuses, st)
-						}
-					}
-					if len(statuses) > 0 {
-						printHarnessStatuses(out, statuses, gw, home)
-					}
+					materializeGatewayFromCache(out, ctx, name, gw, cat, home)
 				}
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Target profile (default: matched from the current directory)")
+	return cmd
+}
+
+func gatewayEditCmd() *cobra.Command {
+	var (
+		flagName, rawURL, profile, ttl, harnesses, store, key, ageKey, tokenEnv string
+		rotateToken, tokenStdin, force                                          bool
+	)
+	cmd := &cobra.Command{
+		Use:   "edit [<name>]",
+		Short: "Update a gateway's name, URL, token, TTL, or target harnesses",
+		Long: `Update an existing custom gateway on a profile in place.
+
+Pass flags (--name, --url, --ttl, --harnesses, --rotate-token, --token-stdin,
+--token-env, --store, --key) to update specific fields, or run interactively
+on a terminal with no flags to review and edit each field with its current
+value as the default.`,
+		Args:         cobra.MaximumNArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if tokenStdin && tokenEnv != "" {
+				return errors.New("--token-stdin and --token-env are mutually exclusive")
+			}
+			out := cmd.OutOrStdout()
+			reader := bufio.NewReader(cmd.InOrStdin())
+			env, err := cmdEnv(cmd)
+			if err != nil {
+				return err
+			}
+			cfg := env.Config()
+			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), profile)
+			if err != nil {
+				return err
+			}
+			oldName, err := resolveEditableGatewayName(cmd, reader, profileName, ctx, args, tokenStdin)
+			if err != nil {
+				return err
+			}
+			oldGW := ctx.Gateways[oldName]
+
+			hasEditFlags := cmd.Flags().Changed("name") ||
+				cmd.Flags().Changed("url") ||
+				cmd.Flags().Changed("ttl") ||
+				cmd.Flags().Changed("harnesses") ||
+				cmd.Flags().Changed("store") ||
+				cmd.Flags().Changed("key") ||
+				rotateToken || tokenStdin || tokenEnv != ""
+
+			newName := oldName
+			newGW := oldGW
+			wantTokenRotate := rotateToken || tokenStdin || tokenEnv != ""
+
+			if hasEditFlags {
+				if cmd.Flags().Changed("name") {
+					newName = strings.TrimSpace(flagName)
+				}
+				if cmd.Flags().Changed("url") {
+					newGW.BaseURL = gateway.NormalizeBaseURL(rawURL)
+				}
+				if cmd.Flags().Changed("ttl") {
+					newGW.RefreshTTL = strings.TrimSpace(ttl)
+				}
+				if cmd.Flags().Changed("harnesses") {
+					newGW.Harnesses = parseGatewayHarnesses(harnesses)
+				}
+				if cmd.Flags().Changed("store") {
+					newGW.Store = strings.TrimSpace(store)
+				}
+				if cmd.Flags().Changed("key") {
+					newGW.Key = strings.TrimSpace(key)
+				}
+			} else {
+				if !stdinIsTTY() {
+					return errors.New("no changes specified; pass at least one flag (--name, --url, --ttl, --harnesses, --store, --key, --token-stdin, --token-env) or run on a terminal")
+				}
+				var err error
+				newName, err = promptFieldDefault(cmd, reader, "Gateway name", oldName)
+				if err != nil {
+					return err
+				}
+				editedURL, err := promptFieldDefault(cmd, reader, "Gateway base URL", oldGW.BaseURL)
+				if err != nil {
+					return err
+				}
+				newGW.BaseURL = gateway.NormalizeBaseURL(editedURL)
+				editedTTL, err := promptFieldDefault(cmd, reader, "Refresh TTL", cmp.Or(oldGW.RefreshTTL, "24h"))
+				if err != nil {
+					return err
+				}
+				newGW.RefreshTTL = editedTTL
+				editedHarnesses, err := promptFieldDefault(cmd, reader, "Harnesses", strings.Join(oldGW.EffectiveHarnesses(), ","))
+				if err != nil {
+					return err
+				}
+				newGW.Harnesses = parseGatewayHarnesses(editedHarnesses)
+				wantTokenRotate = promptRotateToken(cmd, reader)
+			}
+
+			if newName != oldName && !cmd.Flags().Changed("key") && oldGW.Key == defaultGatewayKey(oldName) {
+				newGW.Key = defaultGatewayKey(newName)
+			}
+
+			if !wantTokenRotate && newName == oldName &&
+				gateway.NormalizeBaseURL(newGW.BaseURL) == gateway.NormalizeBaseURL(oldGW.BaseURL) &&
+				cmp.Or(newGW.RefreshTTL, "24h") == cmp.Or(oldGW.RefreshTTL, "24h") &&
+				newGW.Store == oldGW.Store &&
+				newGW.Key == oldGW.Key &&
+				slices.Equal(newGW.EffectiveHarnesses(), oldGW.EffectiveHarnesses()) {
+				fmt.Fprintf(out, "No changes to gateway %q\n", oldName)
+				return nil
+			}
+
+			var newToken string
+			if wantTokenRotate {
+				newToken, err = readGatewayToken(cmd, reader, tokenStdin, tokenEnv)
+				if err != nil {
+					return err
+				}
+			}
+
+			return applyGatewayEdit(cmd.Context(), out, cmd.ErrOrStderr(), cfg, profileName, oldName, newName, oldGW, newGW, newToken, ageKey, wantTokenRotate, force)
+		},
+	}
+	cmd.Flags().StringVar(&flagName, "name", "", "Rename the gateway to this name")
+	cmd.Flags().StringVar(&rawURL, "url", "", "Updated gateway base URL (https://, or http:// for localhost only)")
+	cmd.Flags().StringVar(&ttl, "ttl", "", "Updated launch-time model refresh interval (e.g. 12h, 24h, 168h)")
+	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure, or 'all' (default: claude,pi,opencode,codex)")
+	cmd.Flags().BoolVar(&rotateToken, "rotate-token", false, "Prompt for a new bearer token and re-sync models")
+	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "Read a new bearer token from stdin")
+	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "Read a new bearer token from this environment variable")
+	cmd.Flags().StringVar(&store, "store", "", "Move the token to this secret store")
+	cmd.Flags().StringVar(&key, "key", "", "Secret key name inside the store")
+	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient for a new secret store")
+	cmd.Flags().StringVar(&profile, "profile", "", "Target profile (default: matched from the current directory)")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing unclaimed secret key in the target store")
+	return cmd
+}
+
+func gatewayRenameCmd() *cobra.Command {
+	var (
+		profile, ageKey string
+		force           bool
+	)
+	cmd := &cobra.Command{
+		Use:   "rename <old-name> [<new-name>]",
+		Short: "Rename a gateway and migrate its secret key, cache, and harness configs",
+		Long: `Rename an existing custom gateway on a profile, automatically migrating its
+encrypted secret key (<old>_token -> <new>_token), default_credentials entry,
+repository preferences, cached model catalogue, and harness provider entries.`,
+		Args:         cobra.RangeArgs(1, 2),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			reader := bufio.NewReader(cmd.InOrStdin())
+			env, err := cmdEnv(cmd)
+			if err != nil {
+				return err
+			}
+			cfg := env.Config()
+			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), profile)
+			if err != nil {
+				return err
+			}
+			oldName := args[0]
+			oldGW, ok := ctx.Gateways[oldName]
+			if !ok {
+				return fmt.Errorf("profile %q has no gateway %q (defined: %s)", profileName, oldName, definedGateways(ctx))
+			}
+			newName := ""
+			if len(args) == 2 {
+				newName = strings.TrimSpace(args[1])
+			} else {
+				if !stdinIsTTY() {
+					return errors.New("new gateway name is required when stdin is not a terminal")
+				}
+				fmt.Fprint(cmd.ErrOrStderr(), "New gateway name: ")
+				line, err := reader.ReadString('\n')
+				if err != nil && !errors.Is(err, io.EOF) {
+					return fmt.Errorf("reading the new gateway name: %w", err)
+				}
+				newName = strings.TrimSpace(line)
+			}
+			if newName == "" {
+				return errors.New("the new gateway name is empty")
+			}
+			if newName == oldName {
+				return fmt.Errorf("gateway %q already has that name", oldName)
+			}
+			newGW := oldGW
+			if oldGW.Key == defaultGatewayKey(oldName) {
+				newGW.Key = defaultGatewayKey(newName)
+			}
+			return applyGatewayEdit(cmd.Context(), out, cmd.ErrOrStderr(), cfg, profileName, oldName, newName, oldGW, newGW, "", ageKey, false, force)
+		},
+	}
+	cmd.Flags().StringVar(&profile, "profile", "", "Target profile (default: matched from the current directory)")
+	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient if migrating to a new secret store")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing unclaimed secret key in the secret store")
 	return cmd
 }
 
@@ -568,12 +749,358 @@ func gatewayRemoveCmd() *cobra.Command {
 					fmt.Fprintf(out, "  ✓ %-9s removed provider %q in %s\n", h, name, homepath.Tilde(dir, home))
 				}
 			}
+			reconcileProfileHarnesses(updated, profileName, "", home)
+			if err := updateRepoPrefsGatewayRemove(home, profileName, name); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "aide: warning: could not update repository preferences: %v\n", err)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Target profile (default: matched from the current directory)")
 	cmd.Flags().BoolVar(&keepSecret, "keep-secret", false, "Keep the token in the secret store")
 	return cmd
+}
+
+func defaultGatewayKey(name string) string {
+	return strings.ReplaceAll(name, "-", "_") + "_token"
+}
+
+func parseGatewayHarnesses(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || strings.EqualFold(trimmed, "all") {
+		return nil
+	}
+	var list []string
+	for _, h := range strings.Split(trimmed, ",") {
+		if s := strings.TrimSpace(h); s != "" {
+			list = append(list, s)
+		}
+	}
+	if len(list) == len(config.DefaultGatewayHarnesses) {
+		allDefault := true
+		for _, d := range config.DefaultGatewayHarnesses {
+			if !slices.Contains(list, d) {
+				allDefault = false
+				break
+			}
+		}
+		if allDefault {
+			return nil
+		}
+	}
+	return list
+}
+
+func resolveEditableGatewayName(cmd *cobra.Command, reader *bufio.Reader, profileName string, ctx config.Context, args []string, tokenStdin bool) (string, error) {
+	if len(args) == 1 {
+		name := args[0]
+		if _, ok := ctx.Gateways[name]; !ok {
+			return "", fmt.Errorf("profile %q has no gateway %q (defined: %s)", profileName, name, definedGateways(ctx))
+		}
+		return name, nil
+	}
+	names := slices.Sorted(maps.Keys(ctx.Gateways))
+	if len(names) == 0 {
+		return "", fmt.Errorf("profile %q has no gateways; add one with: aide gateway add", profileName)
+	}
+	if tokenStdin || !stdinIsTTY() {
+		return "", errors.New("gateway name is required when stdin is not a terminal")
+	}
+	if len(names) == 1 {
+		return names[0], nil
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Custom gateways on profile %q:\n", profileName)
+	tw := tabwriter.NewWriter(cmd.ErrOrStderr(), 0, 0, 2, ' ', 0)
+	for i, n := range names {
+		fmt.Fprintf(tw, "  [%d] %s\t%s\n", i+1, n, ctx.Gateways[n].BaseURL)
+	}
+	_ = tw.Flush()
+	fmt.Fprint(cmd.ErrOrStderr(), "Select gateway to edit [1]: ")
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("reading selection: %w", err)
+	}
+	ans := strings.TrimSpace(line)
+	name := names[0]
+	if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(names) {
+		name = names[idx-1]
+	} else if ans != "" {
+		name = ans
+	}
+	if _, ok := ctx.Gateways[name]; !ok {
+		return "", fmt.Errorf("profile %q has no gateway %q (defined: %s)", profileName, name, definedGateways(ctx))
+	}
+	return name, nil
+}
+
+func promptFieldDefault(cmd *cobra.Command, reader *bufio.Reader, label, current string) (string, error) {
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s [%s]: ", label, current)
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("reading %s: %w", strings.ToLower(label), err)
+	}
+	val := strings.TrimSpace(line)
+	if val == "" {
+		return current, nil
+	}
+	return val, nil
+}
+
+func promptRotateToken(cmd *cobra.Command, reader *bufio.Reader) bool {
+	fmt.Fprint(cmd.ErrOrStderr(), "Rotate bearer token? [y/N]: ")
+	line, err := reader.ReadString('\n')
+	if err != nil && errors.Is(err, io.EOF) && line == "" {
+		return false
+	}
+	ans := strings.ToLower(strings.TrimSpace(line))
+	return ans == "y" || ans == "yes"
+}
+
+func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *config.Config, profileName, oldName, newName string, oldGW, newGW config.GatewayConfig, newToken, ageKey string, tokenChanged, force bool) error {
+	ctx := cfg.Contexts[profileName]
+	if newName != oldName {
+		if !config.IsGatewayName(newName) {
+			return fmt.Errorf("invalid gateway name %q (must match [a-zA-Z0-9][a-zA-Z0-9_-]*)", newName)
+		}
+		if existing, exists := ctx.Gateways[newName]; exists {
+			return fmt.Errorf("profile %q already has gateway %q for %s", profileName, newName, existing.BaseURL)
+		}
+		if _, exists := ctx.Credentials[newName]; exists {
+			return fmt.Errorf("profile %q already has credential %q", profileName, newName)
+		}
+	}
+
+	updatedCtx := ctx
+	updatedCtx.Gateways = maps.Clone(ctx.Gateways)
+	delete(updatedCtx.Gateways, oldName)
+	updatedCtx.Gateways[newName] = newGW
+	if newName != oldName && len(ctx.DefaultCredentials) > 0 {
+		defs := slices.Clone(ctx.DefaultCredentials)
+		for i, c := range defs {
+			if c == oldName {
+				defs[i] = newName
+			}
+		}
+		updatedCtx.DefaultCredentials = defs
+	}
+	if err := config.ValidateGateways("profiles."+profileName, updatedCtx, cfg.NeverAllowEnv); err != nil {
+		return err
+	}
+
+	keyOrStoreChanged := newGW.Store != oldGW.Store || newGW.Key != oldGW.Key
+	urlChanged := gateway.NormalizeBaseURL(newGW.BaseURL) != gateway.NormalizeBaseURL(oldGW.BaseURL)
+	needsLiveSync := tokenChanged || urlChanged
+
+	if keyOrStoreChanged && !force {
+		if err := checkKeyUnclaimed(cfg, newGW.Store, newGW.Key); err != nil {
+			return err
+		}
+	}
+
+	activeToken := newToken
+	if !tokenChanged && (keyOrStoreChanged || needsLiveSync) {
+		load := launcher.CachingStoreLoader(secrets.LoadSecretsMap)
+		var err error
+		activeToken, err = launcher.ResolveStoreKey(load, fmt.Sprintf("gateway %q", oldName), oldGW.Store, oldGW.Key)
+		if err != nil {
+			return err
+		}
+	}
+
+	home := userHomeDir()
+	secretsDir := config.SecretsDir()
+	if tokenChanged || keyOrStoreChanged {
+		if err := secrets.NewManager(secretsDir, "").SetKey(newGW.Store, secretsDir, newGW.Key, activeToken, ageKey); err != nil {
+			return fmt.Errorf("storing the gateway token: %w", err)
+		}
+		if keyOrStoreChanged && !tokenChanged {
+			fmt.Fprintf(out, "✓ Migrated secret key %q → %q in %s\n",
+				oldGW.Key, newGW.Key, homepath.Tilde(config.ResolveSecretPath(newGW.Store), home))
+		} else {
+			fmt.Fprintf(out, "✓ Encrypted token into %s (key: %s)\n",
+				homepath.Tilde(config.ResolveSecretPath(newGW.Store), home), newGW.Key)
+		}
+	}
+
+	cfg.Contexts[profileName] = updatedCtx
+	if err := config.WriteConfig(cfg); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+	if newName != oldName {
+		fmt.Fprintf(out, "✓ Renamed gateway %q → %q under profile %q in %s\n",
+			oldName, newName, profileName, homepath.Tilde(config.FilePath(), home))
+	} else {
+		fmt.Fprintf(out, "✓ Updated gateway %q under profile %q in %s\n",
+			newName, profileName, homepath.Tilde(config.FilePath(), home))
+	}
+
+	if keyOrStoreChanged && secretUser(cfg, oldGW.Store, oldGW.Key) == "" {
+		_ = secrets.NewManager(secretsDir, "").DeleteKey(oldGW.Store, secretsDir, oldGW.Key)
+	}
+
+	if newName != oldName {
+		if err := updateRepoPrefsGatewayName(home, profileName, oldName, newName); err != nil {
+			fmt.Fprintf(errOut, "aide: warning: could not update repository preferences: %v\n", err)
+		}
+	}
+
+	oldCat, _ := gateway.ReadCache(home, profileName, oldName)
+	if newName != oldName {
+		for _, h := range oldGW.EffectiveHarnesses() {
+			_, _ = gateway.RemoveFromHarness(ctx, oldName, oldGW, h, home)
+		}
+		_ = gateway.RemoveCache(home, profileName, oldName)
+	} else {
+		newSet := newGW.EffectiveHarnesses()
+		for _, h := range oldGW.EffectiveHarnesses() {
+			if !slices.Contains(newSet, h) || (h == "claude" && !gateway.CanSyncHarness(updatedCtx, newName, "claude")) {
+				_, _ = gateway.RemoveFromHarness(ctx, oldName, oldGW, h, home)
+			}
+		}
+	}
+
+	if needsLiveSync {
+		if syncCtx == nil {
+			syncCtx = context.Background()
+		}
+		res, err := gateway.Sync(syncCtx, gateway.SyncOptions{
+			ProfileName: profileName, Profile: updatedCtx, GatewayName: newName, Gateway: newGW,
+			Token: activeToken, HomeDir: home, Progress: out,
+		})
+		if err != nil {
+			if oldCat != nil && !urlChanged {
+				oldCat.Gateway = newName
+				oldCat.BaseURL = newGW.BaseURL
+				_ = gateway.WriteCache(home, oldCat)
+				materializeGatewayFromCache(out, updatedCtx, newName, newGW, oldCat, home)
+			}
+			reconcileProfileHarnesses(updatedCtx, profileName, newName, home)
+			return fmt.Errorf("gateway %q is saved, but model sync failed (retry with: aide gateway sync %s --profile %s): %w",
+				newName, newName, profileName, err)
+		}
+		printHarnessStatuses(out, res.HarnessStatuses, newGW, home)
+	} else if oldCat != nil {
+		oldCachePath, _ := gateway.CachePath(home, profileName, oldName)
+		oldCat.Gateway = newName
+		oldCat.BaseURL = newGW.BaseURL
+		if err := gateway.WriteCache(home, oldCat); err != nil {
+			return err
+		}
+		if newName != oldName {
+			newCachePath, _ := gateway.CachePath(home, profileName, newName)
+			fmt.Fprintf(out, "✓ Moved cache %s → %s\n",
+				homepath.Tilde(oldCachePath, home), homepath.Tilde(newCachePath, home))
+		}
+		materializeGatewayFromCache(out, updatedCtx, newName, newGW, oldCat, home)
+	}
+
+	reconcileProfileHarnesses(updatedCtx, profileName, newName, home)
+	return nil
+}
+
+func materializeGatewayFromCache(out io.Writer, ctx config.Context, name string, gw config.GatewayConfig, cat *gateway.CachedCatalogue, home string) {
+	var statuses []gateway.HarnessFileStatus
+	for _, h := range gw.EffectiveHarnesses() {
+		if !gateway.CanSyncHarness(ctx, name, h) {
+			continue
+		}
+		st, err := gateway.MaterializeHarness(ctx, name, gw, cat, h, home, false)
+		if err != nil {
+			st.State, st.Detail = gateway.StateStale, err.Error()
+		}
+		if st.State == gateway.StateSynced {
+			statuses = append(statuses, st)
+		}
+	}
+	if len(statuses) > 0 {
+		printHarnessStatuses(out, statuses, gw, home)
+	}
+}
+
+func reconcileProfileHarnesses(ctx config.Context, profileName, skipGateway, home string) {
+	if home == "" {
+		return
+	}
+	for _, g := range slices.Sorted(maps.Keys(ctx.Gateways)) {
+		if g == skipGateway {
+			continue
+		}
+		gw := ctx.Gateways[g]
+		cat, err := gateway.ReadCache(home, profileName, g)
+		if err != nil || cat == nil {
+			continue
+		}
+		for _, h := range []string{"claude", "codex"} {
+			if !slices.Contains(gw.EffectiveHarnesses(), h) {
+				continue
+			}
+			if (h == "claude" && gateway.CanSyncHarness(ctx, g, "claude")) ||
+				(h == "codex" && gateway.IsDefaultGateway(ctx, g, "codex")) {
+				_, _ = gateway.MaterializeHarness(ctx, g, gw, cat, h, home, false)
+			}
+		}
+	}
+}
+
+func updateRepoPrefsGatewayName(home, profileName, oldName, newName string) error {
+	if home == "" {
+		return nil
+	}
+	return prefs.Update(prefs.DefaultPath(home), func(f *prefs.File) error {
+		remotes := f.Profiles[profileName]
+		if len(remotes) == 0 {
+			return prefs.ErrUnchanged
+		}
+		changed := false
+		for remote, p := range remotes {
+			if p.Credentials == nil {
+				continue
+			}
+			creds := slices.Clone(*p.Credentials)
+			for i, c := range creds {
+				if c == oldName {
+					creds[i] = newName
+					changed = true
+				}
+			}
+			p.Credentials = &creds
+			remotes[remote] = p
+		}
+		if !changed {
+			return prefs.ErrUnchanged
+		}
+		return nil
+	})
+}
+
+func updateRepoPrefsGatewayRemove(home, profileName, name string) error {
+	if home == "" {
+		return nil
+	}
+	return prefs.Update(prefs.DefaultPath(home), func(f *prefs.File) error {
+		remotes := f.Profiles[profileName]
+		if len(remotes) == 0 {
+			return prefs.ErrUnchanged
+		}
+		changed := false
+		for remote, p := range remotes {
+			if p.Credentials == nil || !slices.Contains(*p.Credentials, name) {
+				continue
+			}
+			creds := slices.DeleteFunc(slices.Clone(*p.Credentials), func(c string) bool { return c == name })
+			if len(creds) == 0 {
+				p.Credentials = nil
+			} else {
+				p.Credentials = &creds
+			}
+			f.Set(prefs.Key{Profile: profileName, Remote: remote}, p)
+			changed = true
+		}
+		if !changed {
+			return prefs.ErrUnchanged
+		}
+		return nil
+	})
 }
 
 // resolveGatewayProfile returns the named profile, or the one matching

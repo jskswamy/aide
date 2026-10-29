@@ -519,7 +519,7 @@ lands in shell history.
 
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
-| `<name>` | first DNS label of the URL's host (prompted on TTY when `--url` is also prompted) | Gateway name under `gateways:` |
+| `<name>` | first DNS label of the URL's host (prompted on TTY when `<name>` is omitted) | Gateway name under `gateways:` |
 | `--url` | required (or prompted on TTY) | Base URL; a trailing `/v1` or `/` is dropped |
 | `--default` | prompted on TTY when an existing default collides | Make this gateway the profile default across its harnesses |
 | `--profile` | profile matched from the current directory | Target profile |
@@ -543,9 +543,9 @@ derives from the `gateways:` entry in memory; nothing is added under
 | Agent | Variables injected | File written |
 | :--- | :--- | :--- |
 | `claude` | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_API_KEY=""` | `<dir>/cache/gateway-models.json` |
-| `pi` | `CORP_TOKEN` (the key uppercased) | `<dir>/models.json`, `providers.corp` |
-| `opencode` | `CORP_TOKEN` | `<dir>/opencode.jsonc`, `provider.corp` |
-| `codex` | `CORP_TOKEN` | `<dir>/config.toml`, `[model_providers.corp]` |
+| `pi` | `CORP_TOKEN` (the key uppercased) | `<dir>/models.json`, `providers.corp` (`"apiKey": "$CORP_TOKEN"`) |
+| `opencode` | `CORP_TOKEN` | `<dir>/opencode.jsonc`, `provider.corp` (`"{env:CORP_TOKEN}"`) |
+| `codex` | `CORP_TOKEN` | `<dir>/config.toml`, `[model_providers.corp]` (`env_key = "CORP_TOKEN"`) |
 
 `<dir>` is the profile's config dir for that agent (`~/.pi-work` with
 `config_dir_name: work`, or the agent's default dir when the profile
@@ -603,6 +603,15 @@ cache with no network call. `--auth login` launches skip all of this.
   default gateway or built-in provider credential (with an interactive
   numbered picker on a terminal when `<name>` is omitted) and
   materialize cached models for `claude` and `codex`.
+- `aide gateway edit [<name>] [--name <new>] [--url <url>] [--ttl <ttl>] [--harnesses <list>] [--rotate-token | --token-stdin | --token-env <VAR>] [--profile <name>]`:
+  update a gateway's name, base URL, bearer token, refresh TTL, or
+  configured agents in place (interactively on a terminal when no edit
+  flags are passed, or directly via flags), migrating its secret key,
+  cache, `default_credentials`, repository preferences, and agent config
+  files.
+- `aide gateway rename <old-name> [<new-name>] [--profile <name>]`:
+  rename a gateway and migrate its secret key (`<old>_token` →
+  `<new>_token`), cache file, and agent provider entries.
 - `aide gateway sync [<name>] [--profile <name>]`: fetch now, whatever
   the TTL, and update every agent file that exists.
 - `aide gateway remove <name> [--profile <name>] [--keep-secret]`:

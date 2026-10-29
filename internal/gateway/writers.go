@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -422,7 +423,7 @@ func (piFile) singleGatewayPerDir() bool { return false }
 func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
 	p := piProvider{
 		BaseURL:    NormalizeBaseURL(gw.BaseURL),
-		APIKey:     gw.EnvVarName(),
+		APIKey:     "$" + gw.EnvVarName(),
 		AuthHeader: true,
 		API:        "anthropic-messages",
 		Models:     []piModel{},
@@ -448,7 +449,7 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 		return fmt.Sprintf("provider %q missing", gwName), nil
 	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
 		return "baseUrl differs", nil
-	case p.APIKey != gw.EnvVarName():
+	case p.APIKey != "$"+gw.EnvVarName():
 		return "apiKey differs", nil
 	}
 	ids := make([]string, len(p.Models))
@@ -476,31 +477,39 @@ func (piFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error)
 }
 
 // openCodeFile is OpenCode's <opencode-dir>/opencode.jsonc (or
-// $OPENCODE_CONFIG when set); a gateway is provider.<name>. Comments
+// $OPENCODE_CONFIG when set); a gateway is providers.<name>. Comments
 // are accepted on read but not preserved on write, as with aide's MCP
 // provisioning of the same file.
 type openCodeFile struct{}
 
 type openCodeProvider struct {
-	NPM     string                   `json:"npm"`
-	Name    string                   `json:"name"`
-	Options openCodeOptions          `json:"options"`
-	Models  map[string]openCodeModel `json:"models"`
+	Package  string                   `json:"package"`
+	Name     string                   `json:"name"`
+	Env      []string                 `json:"env"`
+	Settings openCodeSettings         `json:"settings"`
+	Headers  map[string]string        `json:"headers"`
+	Models   map[string]openCodeModel `json:"models"`
 }
 
-type openCodeOptions struct {
+type openCodeSettings struct {
 	BaseURL string `json:"baseURL"`
 	APIKey  string `json:"apiKey"`
 }
 
 type openCodeModel struct {
-	Name  string         `json:"name"`
-	Limit *openCodeLimit `json:"limit,omitempty"`
+	Name          string          `json:"name"`
+	Limit         *openCodeLimit  `json:"limit,omitempty"`
+	Compatibility *openCodeCompat `json:"compatibility,omitempty"`
 }
 
 type openCodeLimit struct {
 	Context int `json:"context,omitempty"`
 	Output  int `json:"output,omitempty"`
+}
+
+// shortcut: custom gateways reject Anthropic's thinking.block_binding beta; add a gateway option only if a custom proxy ever supports it.
+type openCodeCompat struct {
+	SupportsThinkingBlockBinding bool `json:"supportsThinkingBlockBinding"`
 }
 
 func (openCodeFile) path(ctx config.Context, dir, home string) string {
@@ -519,22 +528,77 @@ func (openCodeFile) singleGatewayPerDir() bool { return false }
 
 func openCodeAPIKey(gw config.GatewayConfig) string { return "{env:" + gw.EnvVarName() + "}" }
 
-func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
+func openCodeAuthHeader(gw config.GatewayConfig) string {
+	return "Bearer " + openCodeAPIKey(gw)
+}
+
+func defaultOpenCodeModelID(models []Model) string {
+	var best string
+	for _, m := range models {
+		if strings.Contains(strings.ToLower(m.ID), "sonnet") {
+			best = m.ID
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return models[0].ID
+}
+
+func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, isDefault bool) error {
+	doc, err := fsutil.ReadJSONCRawMap(path)
+	if err != nil {
+		return err
+	}
 	p := openCodeProvider{
-		NPM:     "@ai-sdk/anthropic",
-		Name:    gwName,
-		Options: openCodeOptions{BaseURL: NormalizeBaseURL(gw.BaseURL) + "/v1", APIKey: openCodeAPIKey(gw)},
-		Models:  map[string]openCodeModel{},
+		Package:  "@ai-sdk/anthropic",
+		Name:     gwName,
+		Env:      []string{gw.EnvVarName()},
+		Settings: openCodeSettings{BaseURL: NormalizeBaseURL(gw.BaseURL) + "/v1", APIKey: openCodeAPIKey(gw)},
+		Headers:  map[string]string{"Authorization": openCodeAuthHeader(gw)},
+		Models:   map[string]openCodeModel{},
 	}
 	for _, m := range cat.Models {
-		om := openCodeModel{Name: m.DisplayName}
+		om := openCodeModel{
+			Name:          m.DisplayName,
+			Compatibility: &openCodeCompat{},
+		}
 		if m.ContextWindow > 0 || m.MaxOutputTokens > 0 {
 			om.Limit = &openCodeLimit{Context: m.ContextWindow, Output: m.MaxOutputTokens}
 		}
 		p.Models[m.ID] = om
 	}
-	_, err := updateJSONEntry(path, "provider", gwName, p)
-	return err
+	if _, err := setJSONEntry(doc, "providers", gwName, p); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	// Clean up any legacy V1 "provider.<gwName>" entry in the same file.
+	_, _ = setJSONEntry(doc, "provider", gwName, nil)
+
+	if isDefault && len(cat.Models) > 0 {
+		var curModel string
+		if raw, ok := doc["model"]; ok {
+			_ = json.Unmarshal(raw, &curModel)
+		}
+		curProv, curModID, hasSlash := strings.Cut(curModel, "/")
+		shouldSet := curModel == ""
+		if !shouldSet && hasSlash {
+			if curProv == gwName {
+				_, exists := p.Models[curModID]
+				shouldSet = !exists
+			} else {
+				var existing json.RawMessage
+				if ok, err := jsonEntry(doc, "providers", curProv, &existing); err == nil && ok {
+					shouldSet = true
+				}
+			}
+		}
+		if shouldSet {
+			if raw, err := json.Marshal(gwName + "/" + defaultOpenCodeModelID(cat.Models)); err == nil {
+				doc["model"] = raw
+			}
+		}
+	}
+	return fsutil.WriteJSON(path, doc)
 }
 
 func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) (string, error) {
@@ -543,19 +607,28 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 		return "", err
 	}
 	var p openCodeProvider
-	ok, err := jsonEntry(doc, "provider", gwName, &p)
+	ok, err := jsonEntry(doc, "providers", gwName, &p)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s: %w", path, err)
 	case !ok:
 		return fmt.Sprintf("provider %q missing", gwName), nil
-	case p.Options.BaseURL != NormalizeBaseURL(gw.BaseURL)+"/v1":
+	case p.Package != "@ai-sdk/anthropic":
+		return "package differs", nil
+	case !slices.Equal(p.Env, []string{gw.EnvVarName()}):
+		return "env differs", nil
+	case p.Settings.BaseURL != NormalizeBaseURL(gw.BaseURL)+"/v1":
 		return "baseURL differs", nil
-	case p.Options.APIKey != openCodeAPIKey(gw):
+	case p.Settings.APIKey != openCodeAPIKey(gw):
 		return "apiKey differs", nil
+	case p.Headers["Authorization"] != openCodeAuthHeader(gw):
+		return "authorization header differs", nil
 	}
 	ids := make([]string, 0, len(p.Models))
-	for id := range p.Models {
+	for id, m := range p.Models {
+		if m.Compatibility == nil || m.Compatibility.SupportsThinkingBlockBinding {
+			return "model compatibility differs", nil
+		}
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
@@ -572,11 +645,36 @@ func (openCodeFile) remove(path, gwName string, gw config.GatewayConfig) (bool, 
 	if err != nil {
 		return false, err
 	}
+	wantURL := NormalizeBaseURL(gw.BaseURL) + "/v1"
 	var p openCodeProvider
-	if ok, err := jsonEntry(doc, "provider", gwName, &p); err != nil || !ok || p.Options.BaseURL != NormalizeBaseURL(gw.BaseURL)+"/v1" {
+	ok, err := jsonEntry(doc, "providers", gwName, &p)
+	if err != nil {
 		return false, err
 	}
-	return updateJSONEntry(path, "provider", gwName, nil)
+	matched := ok && p.Settings.BaseURL == wantURL
+	if !matched {
+		// Also check legacy V1 "provider.<gwName>" entries.
+		var legacy struct {
+			Options openCodeSettings `json:"options"`
+		}
+		if legOK, legErr := jsonEntry(doc, "provider", gwName, &legacy); legErr != nil {
+			return false, legErr
+		} else if legOK && legacy.Options.BaseURL == wantURL {
+			matched = true
+		}
+	}
+	if !matched {
+		return false, nil
+	}
+	_, _ = setJSONEntry(doc, "providers", gwName, nil)
+	_, _ = setJSONEntry(doc, "provider", gwName, nil)
+	var curModel string
+	if raw, hasModel := doc["model"]; hasModel && json.Unmarshal(raw, &curModel) == nil {
+		if strings.HasPrefix(curModel, gwName+"/") {
+			delete(doc, "model")
+		}
+	}
+	return true, fsutil.WriteJSON(path, doc)
 }
 
 // codexFile is Codex's <codex-dir>/config.toml; a gateway is

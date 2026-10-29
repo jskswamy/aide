@@ -150,9 +150,16 @@ Compared to the status quo (manual `credentials:` setup combined with external `
      * Add `EnvVar string` to `HarnessFileStatus` and update `RemoveFromHarness` signature to `(bool, error)`.
 
 4. **C-M5: Interactive TTY Prompt Guards & Shared `bufio.Reader` in `aide gateway add`**
-   * *Stages*: `egm-design` (Major 2), `egm-zoom-out` (#3), `egm-comprehension` (Major 3), `egm-structural` (Majors 1–2)
+   * *Stages*: `egm-design` (Major 2), `egm-zoom-out` (#3), `egm-comprehension` (Major 3), `egm-structural` (Majors 1–2), `egm-codebase-details` (Round 4 M2)
    * *Details*:
-     * Use a single shared `bufio.NewReader(cmd.InOrStdin())` across interactive prompts in `gatewayAddCmd` and guard `--url`, `<name>`, and `--default` prompts with `!tokenStdin && tokenEnv == "" && stdinIsTTY()`, only prompting `Gateway name [<derived>]: ` when `<name>` was omitted and `--url` was also prompted (or when the derived hostname label is invalid).
+     * Use a single shared `bufio.NewReader(cmd.InOrStdin())` across interactive prompts in `gatewayAddCmd` and guard `--url`, `<name>`, and `--default` prompts with `!tokenStdin && stdinIsTTY()`, always prompting `Gateway name [<derived>]: ` when positional `<name>` is omitted on an interactive TTY (even when `--url` was passed via flag), and accepting `<derived>` on Enter or `io.EOF`.
+
+5. **C-B8 & C-M6..M7: `aide gateway edit` and `aide gateway rename` Ordering, Secret Migration, & Harness Reconciliation**
+   * *Stages*: `egm-codebase-details` (Round 4 B1, M3, M4, N5), `egm-design` (Round 4 B1, M2, M3, N4), `egm-zoom-out` (Round 4 M1, M2, N4, N5), `egm-comprehension` (Round 4 M1, N2, N3), `egm-structural` (Round 4 M1, N2–N4)
+   * *Details*:
+     * **C-B8 (`RemoveFromHarness` & Cache/Sync Ordering)**: Read `oldCat` into memory before modifying on-disk files; invoke `gateway.RemoveFromHarness(oldCtx, oldName, oldGW, h, home)` with `oldGW` (so the `oldGW.BaseURL` guard matches the on-disk entry and `claudeFile.remove` runs *before* `newName` is written to `cache/gateway-models.json`); if `gateway.Sync` fails during an in-place token rotation or rename where `BaseURL` did not change and `oldCat != nil`, fall back to writing `oldCat` (`oldCat.Gateway = newName`) and materializing eligible harnesses before returning the sync error.
+     * **C-M6 (`checkKeyUnclaimed`, `prefs.Update`, & Shared `applyGatewayEdit`)**: Call `checkKeyUnclaimed(cfg, newGW.Store, newGW.Key)` *before* mutating `cfg.Contexts[profileName]`; use `prefs.Update(prefs.DefaultPath(home), ...)` with `prefs.ErrUnchanged` (treating `prefs.Update` errors as non-fatal warnings after `config.WriteConfig`); share `applyGatewayEdit` between `gatewayEditCmd` and `gatewayRenameCmd`; short-circuit no-op edits and require a distinct `<new-name>` in `rename`.
+     * **C-M7 (`reconcileProfileHarnesses` & Separate §6.4/§6.5 Subsections)**: After `edit`, `rename`, or `remove`, reconcile `claude` and `codex` across `updatedCtx.Gateways` so another gateway that becomes eligible under `CanSyncHarness` or `IsDefaultGateway` is materialized from its local cache; split §6.4 (`aide gateway edit`) and §6.5 (`aide gateway rename`) into symmetric subsections.
 
 ---
 
@@ -167,9 +174,12 @@ Compared to the status quo (manual `credentials:` setup combined with external `
 | **C-B5** | 🔴 Blocker | Stage 5 (#3), Stage 7 (B2, TM-M4), Stage 9 (B5) | §3 (`Programmatic Secret Store Upsert`), §6.1, §6.4, Detailed Plan §2 |
 | **C-B6** | 🔴 Blocker | Phase 2 Stage 5 (#2), Stage 6 (B1–B2), Stage 7 (B1), Stage 9 (B1–B3) | §2, §6.2, §6.3, Detailed Plan §1 |
 | **C-B7** | 🔴 Blocker | Phase 2 Stage 5 (#4), Stage 7 (B2–B3), Stage 8 (M3–M4), Stage 9 (B5, M7–M8) | §8 (`Startup Banner & aide which Redesign`), Detailed Plan §5–§6 |
+| **C-B8** | 🔴 Blocker | Round 4 Stage 6 (M1), Stage 7 (B1), Stage 9 (B1), Stage 5 (M1) | §6.4 (`aide gateway edit`), §6.5 (`aide gateway rename`), Detailed Plan §5 |
 | **C-M1** | 🟡 Major | Stage 5 (#3), Stage 6 (M1, M3), Stage 7 (M1), Stage 9 (M8) | §4, §5 (`Per-Harness Config Materialization`), Detailed Plan §3 (`writers.go`) |
 | **C-M2** | 🟡 Major | Stage 6 (M2), Stage 7 (Structural M2) | §6.2 (`aide gateway list`), §7, NFRs (`Performance`) |
 | **C-M3 (TM-2..5)** | 🟡 Major | Stage 7 (TM-M1, TM-M2, TM-M3, TM-M4) | §2, §3, §4, NFRs (`Security & Privacy`) |
 | **C-M4** | 🟡 Major | Phase 2 Stage 5 (#1), Stage 6 (M1–M2), Stage 7 (M1, M3), Stage 9 (M4, M6) | §5, §6.3, Detailed Plan §3 (`model.go`, `writers.go`) |
-| **C-M5** | 🟡 Major | Phase 2 Stage 5 (#3), Stage 6 (M3), Stage 7 (M2), Stage 8 (M1–M2) | §6.1 (`aide gateway add`), Detailed Plan §5 |
+| **C-M5** | 🟡 Major | Phase 2 Stage 5 (#3), Stage 6 (M3), Stage 7 (M2), Stage 8 (M1–M2), Round 4 Stage 9 (M2) | §6.1 (`aide gateway add`), Detailed Plan §5 |
+| **C-M6** | 🟡 Major | Round 4 Stage 5 (M2, N4, N5), Stage 9 (M3, M4, N5) | §6.4, §6.5, Detailed Plan §5 (`applyGatewayEdit`) |
+| **C-M7** | 🟡 Major | Round 4 Stage 7 (M2, M3), Stage 8 (M1, N2–N4) | §1 (Mermaid), §6.4, §6.5, Detailed Plan §5–§6 |
 | **C-N1** | 🟢 Nit | Stage 5 (#4, #5), Stage 7 (Structural N3–N7), Stage 9 (N9, N10) | §1 (Mermaid), Detailed Plan §3, §5, §6 (`Verification Plan`) |

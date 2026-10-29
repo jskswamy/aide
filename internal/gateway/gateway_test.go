@@ -827,3 +827,18 @@ func TestMaterialize_CodexUpdatesManagedModelProvider(t *testing.T) {
 		t.Fatalf("expected model_provider = beta after switching default:\n%s", body)
 	}
 }
+
+func TestInspectHarness_StandbyGatewayNilCacheDoesNotPanic(t *testing.T) {
+	f := newFixture(t)
+	f.mkdirs(t, "claude")
+	standby := config.GatewayConfig{BaseURL: f.gw.BaseURL, Store: "work", Key: "standby_token"}
+	f.ctx.Gateways = map[string]config.GatewayConfig{"corp": f.gw, "standby": standby}
+	f.ctx.DefaultCredentials = []string{"corp"}
+
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "claude", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := InspectHarness(f.ctx, "standby", standby, nil, "claude", f.home); got.State != StatePending {
+		t.Errorf("InspectHarness(standby, nil cache) = %+v, want pending", got)
+	}
+}

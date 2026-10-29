@@ -140,10 +140,12 @@ func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, 
 		return st
 	}
 	if SingleGatewayPerDir(harnessName) && !CanSyncHarness(ctx, gwName, harnessName) {
-		if _, err := os.Stat(path); err == nil {
-			if diff, err := hf.mismatch(path, gwName, gw, cat); err == nil && diff == "" && cat != nil && !IsExpired(cat, gw.TTL(), time.Now()) {
-				st.State, st.Detail = StateSynced, fmt.Sprintf("%d models", len(cat.Models))
-				return st
+		if cat != nil && !IsExpired(cat, gw.TTL(), time.Now()) {
+			if _, err := os.Stat(path); err == nil {
+				if diff, err := hf.mismatch(path, gwName, gw, cat); err == nil && diff == "" {
+					st.State, st.Detail = StateSynced, fmt.Sprintf("%d models", len(cat.Models))
+					return st
+				}
 			}
 		}
 		st.State, st.Detail = StatePending, fmt.Sprintf("not %s's active gateway; syncs when selected", harnessName)

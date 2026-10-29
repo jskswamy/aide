@@ -985,6 +985,16 @@ func TestAgeIdentity_Recipient(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--age-key") {
 		t.Errorf("YubiKey Recipient() error = %v, want one naming --age-key", err)
 	}
+	for label, id := range map[string]*AgeIdentity{
+		"unknown source": {Source: AgeKeySource(99)},
+		"missing file":   {Source: SourceEnvKeyFile, KeyData: filepath.Join(t.TempDir(), "missing.txt")},
+		"malformed key":  {Source: SourceEnvKey, KeyData: "AGE-SECRET-KEY-INVALID"},
+		"comment only":   {Source: SourceEnvKey, KeyData: "# comment only\n"},
+	} {
+		if _, err := id.Recipient(); err == nil {
+			t.Errorf("%s: Recipient() succeeded, want error", label)
+		}
+	}
 }
 
 func TestManager_SetDeleteKey_CreatesStore(t *testing.T) {

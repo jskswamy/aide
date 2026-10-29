@@ -1,4 +1,4 @@
-# Consolidated EGM Goldfish Review & Threat Modeling Report
+# Consolidated Design Review & Threat Modeling Report
 
 **Target Document:** [`docs/designs/gateway/design.md`](file:///Users/subramk/source/github.com/jskswamy/aide/docs/designs/gateway/design.md) (`FeatureRange: 1..507`, `DetailedRange: 508..765`)
 **Stage Reports:**
@@ -121,19 +121,19 @@ Compared to the status quo (manual `credentials:` setup combined with external `
 
 ---
 
-## Part 3: Phase 2 Goldfish Review Findings (`aide gateway use`, Per-Harness Defaults, Startup Banner & `aide which`)
+## Part 3: Phase 2 Design Review Findings (`aide gateway use`, Per-Harness Defaults, Startup Banner & `aide which`)
 
 ### 🔴 Blockers (Phase 2)
 
 1. **C-B6: `checkDefaultRoutes`, `BuiltinCredentialHarnesses`, and Mutually Exclusive Per-Harness Default Slots**
-   * *Stages*: `egm-codebase-details` (Blockers 1–3), `egm-design` (Blocker 1), `egm-zoom-out` (#2), `egm-comprehension` (Blockers 1–2)
+   * *Stages*: Codebase Details Auditor (Blockers 1–3), Design Critic (Blocker 1), Skeptical Architect (#2), Comprehension Reviewer (Blockers 1–2)
    * *Details*:
      * Calling `checkDefaultRoutes(ctx)` on the un-synthesized `ctx` skips gateway names explicitly listed in `ctx.DefaultCredentials`; instead construct `explicitCtx := synthCtx; explicitCtx.DefaultCredentials = ctx.DefaultCredentials` and call `checkDefaultRoutes(explicitCtx)`.
-     * Define `BuiltinCredentialHarnesses(name string) []string` (`"anthropic"` $\rightarrow$ `["claude", "pi", "opencode"]`, `"openai"` $\rightarrow$ `["pi", "opencode", "codex"]`, `"codex"` $\rightarrow$ `["codex"]`, `"openrouter"` $\rightarrow$ `["pi", "opencode", "codex"]`, `"gemini"` $\rightarrow$ `["gemini", "pi", "opencode"]`) and enforce at most one default LLM provider/gateway binding per harness in `DefaultCredentialsForHarness(synthCtx, harnessName)` so `anthropic` and `api` do not both inject tokens on `pi`/`opencode` and `anthropic` does not claim `codex`.
+     * Define `BuiltinCredentialHarnesses(name string) []string` (`"anthropic"` → `["claude", "pi", "opencode"]`, `"openai"` → `["pi", "opencode", "codex"]`, `"codex"` → `["codex"]`, `"openrouter"` → `["pi", "opencode", "codex"]`, `"gemini"` → `["gemini", "pi", "opencode"]`) and enforce at most one default LLM provider/gateway binding per harness in `DefaultCredentialsForHarness(synthCtx, harnessName)` so `anthropic` and `api` do not both inject tokens on `pi`/`opencode` and `anthropic` does not claim `codex`.
      * Reference the actual credential selection functions `PlanProfileCredentials`, `(*Selection).SelectCredentials`, and `(*Selection).PlanCredentials`.
 
 2. **C-B7: Preserve Existing `compact`, `clean`, and `boxed` Banner Template Contracts and Use Real Capability Resolution in `whichCmd`**
-   * *Stages*: `egm-design` (Blockers 2–3), `egm-codebase-details` (Blocker 5, Majors 7–8), `egm-structural` (Majors 3–4), `egm-zoom-out` (#4)
+   * *Stages*: Design Critic (Blockers 2–3), Codebase Details Auditor (Blocker 5, Majors 7–8), Document Architect (Majors 3–4), Skeptical Architect (#4)
    * *Details*:
      * Existing unit tests in `internal/ui/banner_test.go` assert on `secret:`, `env:`, `sandbox:`, `code-only`, per-capability security path lines (`✓ <name>[<variant>]`), `isolationTierLabel`, and `AUTO-APPROVE` across `compact.tmpl`, `clean.tmpl`, and `boxed.tmpl`. Keep those structural lines intact while adding `HarnessConfigDir`, `AvailableHarnesses`, `AvailableGateways`, and enriched `CredentialInfo` (`URL`, `Store`, `Key`, `IsGateway`, `ModelCount`, `ModelAge`, `TargetFile`, `TargetSync`).
      * In `whichCmd` (`cmd/aide/status.go`), resolve `agentName` via `cfg.Agents[agentName].Binary`, strip `envscrub.ConfigDirRedirects()`, and resolve capabilities via `sandbox.MergeCapNames`, `capability.AutoInclude`, `sandbox.ResolveCapabilitiesWithVariants(..., sandbox.VariantSelectionOptions{Interactive: false, ...})`, and `sandbox.ApplyOverrides(&resolvedSandbox, capOverrides)`.
@@ -143,19 +143,19 @@ Compared to the status quo (manual `credentials:` setup combined with external `
 ### 🟡 Majors (Phase 2)
 
 3. **C-M4: Deterministic `CanSyncHarness` for Claude & `codex` Materialization on `aide gateway use`**
-   * *Stages*: `egm-design` (Majors 1, 3), `egm-zoom-out` (#1), `egm-codebase-details` (Majors 4, 6), `egm-comprehension` (Majors 1–2)
+   * *Stages*: Design Critic (Majors 1, 3), Skeptical Architect (#1), Codebase Details Auditor (Majors 4, 6), Comprehension Reviewer (Majors 1–2)
    * *Details*:
      * When no custom gateway in `ctx.Gateways` is Claude's default (`IsDefaultGateway(ctx, g, "claude") == false`), `CanSyncHarness(ctx, gwName, "claude")` returns `true` only for the first custom gateway in `slices.Sorted(maps.Keys(ctx.Gateways))` that supports `claude`, preventing two non-default custom gateways from overwriting `cache/gateway-models.json`. In `InspectHarness`, report `StatePending` (`"not claude's active gateway; syncs when selected"`) when `!CanSyncHarness(ctx, gwName, "claude")`.
      * Update `codexFile.write` so `model_provider = gwName` is updated when `isDefault` is `true` and `model_provider` is unset or set to another gateway in `ctx.Gateways`, and materialize both `claude` and `codex` in `aide gateway use`.
      * Add `EnvVar string` to `HarnessFileStatus` and update `RemoveFromHarness` signature to `(bool, error)`.
 
 4. **C-M5: Interactive TTY Prompt Guards & Shared `bufio.Reader` in `aide gateway add`**
-   * *Stages*: `egm-design` (Major 2), `egm-zoom-out` (#3), `egm-comprehension` (Major 3), `egm-structural` (Majors 1–2), `egm-codebase-details` (Round 4 M2)
+   * *Stages*: Design Critic (Major 2), Skeptical Architect (#3), Comprehension Reviewer (Major 3), Document Architect (Majors 1–2), Codebase Details Auditor (Round 4 M2)
    * *Details*:
      * Use a single shared `bufio.NewReader(cmd.InOrStdin())` across interactive prompts in `gatewayAddCmd` and guard `--url`, `<name>`, and `--default` prompts with `!tokenStdin && stdinIsTTY()`, always prompting `Gateway name [<derived>]: ` when positional `<name>` is omitted on an interactive TTY (even when `--url` was passed via flag), and accepting `<derived>` on Enter or `io.EOF`.
 
 5. **C-B8 & C-M6..M7: `aide gateway edit` and `aide gateway rename` Ordering, Secret Migration, & Harness Reconciliation**
-   * *Stages*: `egm-codebase-details` (Round 4 B1, M3, M4, N5), `egm-design` (Round 4 B1, M2, M3, N4), `egm-zoom-out` (Round 4 M1, M2, N4, N5), `egm-comprehension` (Round 4 M1, N2, N3), `egm-structural` (Round 4 M1, N2–N4)
+   * *Stages*: Codebase Details Auditor (Round 4 B1, M3, M4, N5), Design Critic (Round 4 B1, M2, M3, N4), Skeptical Architect (Round 4 M1, M2, N4, N5), Comprehension Reviewer (Round 4 M1, N2, N3), Document Architect (Round 4 M1, N2–N4)
    * *Details*:
      * **C-B8 (`RemoveFromHarness` & Cache/Sync Ordering)**: Read `oldCat` into memory before modifying on-disk files; invoke `gateway.RemoveFromHarness(oldCtx, oldName, oldGW, h, home)` with `oldGW` (so the `oldGW.BaseURL` guard matches the on-disk entry and `claudeFile.remove` runs *before* `newName` is written to `cache/gateway-models.json`); if `gateway.Sync` fails during an in-place token rotation or rename where `BaseURL` did not change and `oldCat != nil`, fall back to writing `oldCat` (`oldCat.Gateway = newName`) and materializing eligible harnesses before returning the sync error.
      * **C-M6 (`checkKeyUnclaimed`, `prefs.Update`, & Shared `applyGatewayEdit`)**: Call `checkKeyUnclaimed(cfg, newGW.Store, newGW.Key)` *before* mutating `cfg.Contexts[profileName]`; use `prefs.Update(prefs.DefaultPath(home), ...)` with `prefs.ErrUnchanged` (treating `prefs.Update` errors as non-fatal warnings after `config.WriteConfig`); share `applyGatewayEdit` between `gatewayEditCmd` and `gatewayRenameCmd`; short-circuit no-op edits and require a distinct `<new-name>` in `rename`.

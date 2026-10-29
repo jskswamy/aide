@@ -10,7 +10,7 @@
 
 `aide` manages per-profile agent identities, age-encrypted secrets, and native configuration directories across coding harnesses. While `aide` can already inject environment variables per harness through `credentials.<name>.for.<harness>` routes in `~/.config/aide/config.yaml`, pointing multiple coding agents at a custom-hosted LLM gateway still requires manual setup per agent. Users must edit encrypted secret stores in `$EDITOR`, hand-write multi-harness `for:` routes, and manually create or update model catalogue files inside each harness's profile directory so the agent's model picker knows which models the gateway serves.
 
-`aide gateway` (`add`, `list`, `remove`, `sync`) automates custom gateway registration and model-catalogue synchronization across all four profile-capable harnesses in `aide` that accept custom endpoints: Claude Code (`claude`), Pi (`pi`), OpenCode (`opencode`), and Codex (`codex`). Gateway bearer tokens are stored in `aide`'s encrypted `age` secret store, gateway configuration lives in a single `profiles.<profile>.gateways.<name>` block in `~/.config/aide/config.yaml` (without duplicating entries under `credentials:`), and the normalized `/v1/models` catalogue is cached locally and written into each harness's profile configuration directory without writing secrets to disk.
+`aide gateway` (`add`, `list`, `use`, `edit`, `rename`, `sync`, `remove`) automates custom gateway registration, active gateway switching, in-place gateway editing/renaming/token rotation, and model-catalogue synchronization across all four profile-capable harnesses in `aide` that accept custom endpoints: Claude Code (`claude`), Pi (`pi`), OpenCode (`opencode`), and Codex (`codex`). Gateway bearer tokens are stored in `aide`'s encrypted `age` secret store, gateway configuration lives in a single `profiles.<profile>.gateways.<name>` block in `~/.config/aide/config.yaml` (without duplicating entries under `credentials:`), and the normalized `/v1/models` catalogue is cached locally and written into each harness's profile configuration directory without writing secrets to disk.
 
 ## The Problem
 
@@ -23,13 +23,18 @@ Teams and individual developers frequently route LLM requests through self-hoste
 
 ## Goals
 
-*   Provide `aide gateway add [<name>] --url <base-url> [--token-stdin | --token-env <VAR>] [--ttl <duration>] [--harnesses <list>] [--store <store>] [--key <key>] [--age-key <recipient>] [--profile <profile>]` to store the gateway token in the profile's `age` secret store, write the gateway definition in one place under `profiles.<profile>.gateways.<name>` in `~/.config/aide/config.yaml`, and run an initial model sync.
+*   Provide `aide gateway add [<name>] [--url <base-url>] [--default] [--token-stdin | --token-env <VAR>] [--ttl <duration>] [--harnesses <list>] [--store <store>] [--key <key>] [--age-key <recipient>] [--profile <profile>]` to prompt interactively on a TTY for omitted `--url`, `<name>`, and default-credential replacement, store the gateway token in the profile's `age` secret store, write the gateway definition in one place under `profiles.<profile>.gateways.<name>` in `~/.config/aide/config.yaml`, and run an initial model sync.
 *   Follow `aide`'s pattern of explicit configuration in `config.yaml` paired with per-harness driver conventions: `gateways.<name>` declares `base_url`, `refresh_ttl`, `store`, `key`, and `harnesses` once, while `aide`'s harness drivers map `key` to each harness's expected environment variable and config file format.
-*   Provide `aide gateway sync [<name>] [--profile <profile>]` to fetch `{base_url}/v1/models`, normalize LLM entries into `~/.local/state/aide/gateways/<profile>/<gateway>.json`, and write non-secret provider and model definitions into the profile's config directories for `claude`, `pi`, `opencode`, and `codex` with visible progress output.
+*   Resolve default gateway/credential bindings **per harness** rather than all-or-nothing across the profile, so a custom gateway added alongside `default_credentials: [anthropic]` is automatically active on harnesses not claimed by `anthropic` (such as `codex`) while `anthropic` remains default for `claude`, `pi`, and `opencode` until switched via `aide gateway use <name>` or `aide gateway add --default`.
+*   Provide `aide gateway sync [<name>] [--profile <profile>]` to fetch `{base_url}/v1/models`, normalize LLM entries into `~/.local/state/aide/gateways/<profile>/<gateway>.json`, and write non-secret provider and model definitions into the profile's config directories for `claude`, `pi`, `opencode`, and `codex` with visible progress output (writing Claude's `cache/gateway-models.json` when the gateway is Claude's default, or when no custom gateway in `ctx.Gateways` is Claude's default and `<name>` is the first custom gateway in sorted order that serves `claude`).
 *   Automatically refresh the gateway model catalogue during `aide` launch when the cached catalogue is older than `refresh_ttl` (default `24h`), displaying progress to the user and falling back to the cached catalogue with a warning if the gateway is unreachable.
-*   Materialize missing or outdated harness model files from the local gateway cache at launch when switching harnesses (`aide --agent pi`) or gateways (`aide --credential <name>`), without requiring an extra network call when the cache is fresh.
-*   Provide `aide gateway list [--profile <profile>] [--models] [--format human|json]` showing gateway metadata, cache freshness, and the on-disk status (`synced`, `stale`, `pending`) of each harness's target config file.
+*   Materialize missing or outdated harness model files from the local gateway cache at launch when switching harnesses (`aide --agent pi`) or gateways (`aide --gateway <name>`), without requiring an extra network call when the cache is fresh.
+*   Provide `aide gateway list [--profile <profile> | --all] [--models] [--format human|json]` defaulting to the active profile resolved from the current working directory (or listing all profiles with `--all`), showing both built-in provider credentials (`anthropic`, `openai`, `openrouter`, `gemini`, `codex` with their upstream URLs) and custom gateways in a unified view with active entries (`● ... [ACTIVE — default for: ...]`) sorted ahead of standby entries (`○ ... [standby — switch: aide gateway use <name>, or launch: aide --gateway <name>]`), cache freshness, and on-disk status (`synced`, `stale`, `pending`).
+*   Replace the `--credential` CLI flag with `--gateway` across `aide`, `aide which`, `aide status`, `aide project set` (repeatable `--gateway <name>`), and `aide project clear` (boolean `--gateway`) so users select or clear any custom gateway or built-in provider credential using the exact identifier shown in `aide gateway list`.
+*   Provide `aide gateway use [<name>] [--profile <profile>]` (with an interactive TTY picker when `<name>` is omitted) to switch a profile's `default_credentials` between any configured gateway or built-in credential and immediately materialize Claude's `cache/gateway-models.json` and Codex's `config.toml` (`model_provider = "<name>"`) from the local cache.
+*   Provide `aide gateway edit [<name>]` and `aide gateway rename <old-name> [<new-name>]` to rename a gateway, rotate its bearer token, or update `base_url`, `refresh_ttl`, `harnesses`, `store`, or `key` (interactively on a TTY or via flags), automatically migrating the encrypted `age` secret key, `default_credentials`, repository preferences (`preferences.json`), local model cache (`<name>.json`), and per-harness config files without leaving stale provider entries behind.
 *   Provide `aide gateway remove <name> [--profile <profile>] [--keep-secret]` to remove the gateway definition, cached catalogue, and managed provider entries across all four harnesses' config files.
+*   Redesign `aide which` and the startup banner (`compact`, `clean`, `boxed`) around five clear sections: **Profile**, **Harness** (with config dir and available harnesses), **Gateway** (with URL, secret store/key, model cache status, and available alternatives), **Env** (excluding harness config-dir plumbing), and **Sandbox + Capabilities** (fixing `aide which` so it resolves active capabilities instead of falsely reporting `code-only`).
 
 ## Non-Goals
 
@@ -84,16 +89,17 @@ Across `aide`, user-facing features follow one consistent pattern: **write expli
 
 ```mermaid
 flowchart TD
-    CLI["aide gateway add / sync"] --> SecretStore["~/.config/aide/secrets/<store>.enc.yaml (key: corp_token)"]
+    CLI["aide gateway add / use / edit / rename / sync"] --> SecretStore["~/.config/aide/secrets/<store>.enc.yaml (key: corp_token)"]
     CLI --> ConfigYAML["~/.config/aide/config.yaml (profiles.<p>.gateways.corp)"]
     CLI --> SyncEngine["internal/gateway.Sync()"]
+    CLI -->|"aide gateway use / edit / rename"| Materialize["internal/gateway.MaterializeHarness()"]
     Launcher["Launcher.Launch()"] -->|"Cache missing or age > refresh_ttl"| SyncEngine
-    Launcher -->|"Cache fresh, harness file stale/missing"| Materialize["internal/gateway.MaterializeHarness()"]
+    Launcher -->|"Cache fresh, harness file stale/missing"| Materialize
     SyncEngine -->|"1. GET {base_url}/v1/models"| RemoteGW["Custom LLM Gateway"]
     RemoteGW -->|"2. Normalize & write cache"| StateCache["~/.local/state/aide/gateways/<profile>/corp.json"]
     StateCache -->|"3. Read CachedCatalogue"| Materialize
     Materialize --> ClaudeCfg["~/.claude-<p>/cache/gateway-models.json (env: ANTHROPIC_AUTH_TOKEN)"]
-    Materialize --> PiCfg["~/.pi-<p>/models.json (apiKey: CORP_TOKEN)"]
+    Materialize --> PiCfg["~/.pi-<p>/models.json (apiKey: $CORP_TOKEN)"]
     Materialize --> OpenCodeCfg["~/.opencode-<p>/opencode.jsonc (apiKey: {env:CORP_TOKEN})"]
     Materialize --> CodexCfg["~/.codex-<p>/config.toml (env_key = CORP_TOKEN)"]
 ```
@@ -147,11 +153,16 @@ For a gateway with `key: alpha_token` and `base_url: https://alpha.gateway.examp
 | Harness | Secret Key in `<store>.enc.yaml` | Env Var Injected at Launch (`strings.ToUpper(key)` or Claude Native) | Base URL Written to Harness | Config File Written by `aide gateway sync` |
 | :--- | :--- | :--- | :--- | :--- |
 | **`claude`** | `alpha_token` | `ANTHROPIC_AUTH_TOKEN=<secret>`<br>`ANTHROPIC_BASE_URL=https://alpha.gateway.example.com`<br>`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`<br>`ANTHROPIC_API_KEY=""` | `NormalizeBaseURL(base_url)` | `~/.claude-<p>/cache/gateway-models.json` |
-| **`pi`** | `alpha_token` | `ALPHA_TOKEN=<secret>` | `NormalizeBaseURL(base_url)` | `~/.pi-<p>/models.json` (`"apiKey": "ALPHA_TOKEN"`) |
+| **`pi`** | `alpha_token` | `ALPHA_TOKEN=<secret>` | `NormalizeBaseURL(base_url)` | `~/.pi-<p>/models.json` (`"apiKey": "$ALPHA_TOKEN"`) |
 | **`opencode`** | `alpha_token` | `ALPHA_TOKEN=<secret>` | `NormalizeBaseURL(base_url) + "/v1"` | `~/.opencode-<p>/opencode.jsonc` (`"apiKey": "{env:ALPHA_TOKEN}"`) |
 | **`codex`** | `alpha_token` | `ALPHA_TOKEN=<secret>` | `NormalizeBaseURL(base_url) + "/v1"` | `~/.codex-<p>/config.toml` (`env_key = "ALPHA_TOKEN"`) |
 
-`SynthesizeGatewayCredentials(ctx Context) (Context, error)` iterates `slices.Sorted(maps.Keys(ctx.Gateways))` deterministically and constructs a `CredentialBinding{Backend: CredentialBackendAge, Store: gw.Store, Key: gw.Key, For: routes}` for each gateway. A gateway `<name>` is automatically appended to the returned `ctx.DefaultCredentials` slice if and only if none of its synthesized routes set an `env` or `set:` variable that collides with a route already claimed by an earlier entry in `ctx.DefaultCredentials` (satisfying [`checkDefaultRoutes`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/config/credentials.go#L190-L214)). Users with multiple gateways targeting the same harness can either set `default_credentials: [<preferred-gw>]` on the profile or select a non-default gateway per launch via `aide --credential <name>`.
+`SynthesizeGatewayCredentials(ctx Context) (Context, error)` iterates `slices.Sorted(maps.Keys(ctx.Gateways))` deterministically and constructs a `CredentialBinding{Backend: CredentialBackendAge, Store: gw.Store, Key: gw.Key, For: routes}` for each gateway. Default resolution is **per harness** rather than all-or-nothing across the profile:
+*   **Built-in credential harness scoping (`BuiltinCredentialHarnesses`)**: Built-in provider credentials with empty `Harnesses` and empty `For` map to their natural target harnesses via `BuiltinCredentialHarnesses(name string) []string`: `"anthropic"` → `["claude", "pi", "opencode"]`, `"openai"` → `["pi", "opencode", "codex"]`, `"codex"` → `["codex"]`, `"openrouter"` → `["pi", "opencode", "codex"]`, and `"gemini"` → `["gemini", "pi", "opencode"]` (while `CredentialBinding.AllowsHarness` remains permissive when explicitly selected via `--gateway`).
+*   **Mutually exclusive provider/gateway default slot per harness (`DefaultCredentialsForHarness` & `gateway.IsDefaultGateway`)**: `DefaultCredentialsForHarness(synthCtx Context, harnessName string) []string` (used by `PlanProfileCredentials`, `(*Selection).SelectCredentials`, `(*Selection).PlanCredentials`, and `gateway.IsDefaultGateway`) walks `synthCtx.DefaultCredentials` in order for `harnessName`. It skips any binding not scoped to `harnessName`, skips any binding whose route variables on `harnessName` collide with an earlier binding on `harnessName`, and allows at most one LLM provider/gateway binding (`_, isGW := synthCtx.Gateways[name]` or `IsBuiltinCredential(name)`) per harness while still allowing unrelated non-provider credentials (such as `github` / `GITHUB_TOKEN`) to coexist. `gateway.IsDefaultGateway(ctx, gwName, harnessName)` returns `true` early for standalone callers **only** when `gwName` is absent from both `ctx.Gateways` and `ctx.Credentials`; otherwise, whenever `len(ctx.Gateways) > 0`, it calls `config.SynthesizeGatewayCredentials(ctx)` (never testing `_, synthesized := ctx.Credentials[gwName]`, which would be true for built-in credentials even before `ctx.Gateways` are synthesized) and checks `slices.Contains(config.DefaultCredentialsForHarness(synthCtx, harnessName), gwName)`.
+*   **Synthesis & `checkDefaultRoutes` validation**: `SynthesizeGatewayCredentials` appends each gateway `<name>` (if not already present in `ctx.DefaultCredentials`) when `DefaultCredentialsForHarness` can assign it to at least one of its `EffectiveHarnesses()`. In `(*Config).validateCredentials()`, `checkDefaultRoutes` is invoked on `explicitCtx` (`explicitCtx := synthCtx; explicitCtx.DefaultCredentials = ctx.DefaultCredentials`) so explicit user-authored `default_credentials` (including explicit gateway names) are strictly validated for route collisions, while auto-appended fallback gateways in `synthCtx.DefaultCredentials` are disambiguated per harness via `DefaultCredentialsForHarness`.
+*   **Concrete behavior**: When a profile has `default_credentials: [anthropic]` (scoped to `claude`, `pi`, and `opencode`) and a custom gateway `api` (supporting `claude`, `pi`, `opencode`, and `codex`), `anthropic` remains the active default on `claude`, `pi`, and `opencode`, while `api` automatically becomes the active default for `codex`. When the user runs `aide gateway use api --profile work` (or answers `y` to the default prompt during `aide gateway add`), `default_credentials` becomes `[api]` and `api` serves all four harnesses (`claude`, `pi`, `opencode`, `codex`).
+*   **Unified endpoint URLs (`BuiltinCredentialURL` & `EndpointURL`)**: Built-in provider credentials expose their canonical upstream URL via `BuiltinCredentialURL(name string) string` (`"anthropic"` → `"https://api.anthropic.com"`, `"openai"` / `"codex"` → `"https://api.openai.com"`, `"openrouter"` → `"https://openrouter.ai/api"`, `"gemini"` → `"https://generativelanguage.googleapis.com"`) and `(b CredentialBinding) EndpointURL(name, harnessName string) string` so `aide gateway list`, `aide gateway use`, `aide which`, and the startup banner display built-in provider routes and custom gateways under a single unified mental model.
 
 Validation rules in `ValidateGateways` (called from `(*Config).validateCredentials()`):
 1.  **Identifier safety (`<name>` and `store`)**: Both the gateway map key `<name>` and `gw.Store` must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (preventing path traversal in cache paths), and `<name>` must not collide with an explicit entry in `ctx.Credentials`.
@@ -231,14 +242,14 @@ Each writer uses [`fsutil.AtomicWrite`](file:///Users/subramk/source/github.com/
 
 1.  **Claude Code (`<claude-dir>/cache/gateway-models.json`)**:
     *   Writes `{"baseUrl": normURL, "fetchedAt": cat.FetchedAt.UnixMilli(), "models": [{"id": m.ID, "display_name": m.DisplayName, "description": formatClaudeDesc(m)}]}` where `formatClaudeDesc(m)` formats `"<provider> · <N>K context"` when both are present, `"<provider>"` when `ContextWindow == 0`, `"<N>K context"` when `Provider == ""`, or `"Custom gateway model"` when both are absent.
-    *   *Multi-gateway rule for Claude*: Because `<claude-dir>/cache/gateway-models.json` is a single file per profile directory, when multiple gateways on a profile include `claude`, `aide gateway sync` (without `<name>`) only writes `cache/gateway-models.json` for the gateway that is the active/default credential for `claude` (while `Launcher.Launch` always materializes whichever gateway was selected for that `claude` launch, e.g., via `aide --credential gw-beta`).
+    *   *Single-gateway vs multi-gateway rule for Claude (`CanSyncHarness`)*: Because `<claude-dir>/cache/gateway-models.json` is a single file per profile directory, `gateway.CanSyncHarness(ctx, gwName, "claude")` returns `true` when `IsDefaultGateway(ctx, gwName, "claude")` is `true`, **or** when no custom gateway in `ctx.Gateways` is Claude's default (`IsDefaultGateway(ctx, g, "claude") == false` for all `g`) and `gwName` is the **first** custom gateway in `slices.Sorted(maps.Keys(ctx.Gateways))` whose `EffectiveHarnesses()` includes `"claude"`. Built-in provider credentials (like `credentials.anthropic`) never read `cache/gateway-models.json` (Claude Code only reads it when `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` is set by a gateway), so a custom gateway on a profile that also has `credentials.anthropic` writes `cache/gateway-models.json` deterministically during `aide gateway add` and `aide gateway sync` without two non-default custom gateways overwriting each other.
     *   On `remove`: removes `<claude-dir>/cache/gateway-models.json` if its normalized `baseUrl` matches `normURL`.
 2.  **Pi (`<pi-dir>/models.json`)**:
-    *   Reads existing `<pi-dir>/models.json` into `map[string]any` (initializing `{}` if absent), preserves all other top-level keys and other entries under `"providers"`, and sets `providers[gwName]` (omitting `contextWindow` or `maxTokens` on any model where the value is `0`):
+    *   Reads existing `<pi-dir>/models.json` into `map[string]any` (initializing `{}` if absent), preserves all other top-level keys and other entries under `"providers"`, and sets `providers[gwName]` with `"apiKey": "$" + gw.EnvVarName()` (using Pi's `$ENV_VAR` interpolation syntax so Pi resolves the environment variable rather than sending the variable name as a literal string; omitting `contextWindow` or `maxTokens` on any model where the value is `0`):
         ```json
         {
           "baseUrl": "https://gateway.example.com",
-          "apiKey": "CORP_TOKEN",
+          "apiKey": "$CORP_TOKEN",
           "authHeader": true,
           "api": "anthropic-messages",
           "models": [
@@ -253,14 +264,18 @@ Each writer uses [`fsutil.AtomicWrite`](file:///Users/subramk/source/github.com/
         ```
     *   On `remove`: deletes `providers[gwName]` from `<pi-dir>/models.json`.
 3.  **OpenCode (`<opencode-dir>/opencode.jsonc`)**:
-    *   Parses existing `opencode.jsonc` using `hujson.Standardize` (same pattern as [`internal/provision/mcp/opencodejson.go`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/provision/mcp/opencodejson.go)), preserves `mcp`, `plugin`, and other sibling keys, and sets `provider[gwName]` with `baseURL: normURL + "/v1"` (omitting `limit` or its subfields when `0`):
+    *   Parses existing `opencode.jsonc` using `hujson.Standardize` (same pattern as [`internal/provision/mcp/opencodejson.go`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/provision/mcp/opencodejson.go)), preserves `mcp`, `plugin`, and other sibling keys, cleans up any legacy V1 `provider[gwName]` entry, and sets `providers[gwName]` with `baseURL: normURL + "/v1"` (omitting `limit` or its subfields when `0`):
         ```json
         {
-          "npm": "@ai-sdk/anthropic",
+          "package": "@ai-sdk/anthropic",
           "name": "corp",
-          "options": {
+          "env": ["CORP_TOKEN"],
+          "settings": {
             "baseURL": "https://gateway.example.com/v1",
             "apiKey": "{env:CORP_TOKEN}"
+          },
+          "headers": {
+            "Authorization": "Bearer {env:CORP_TOKEN}"
           },
           "models": {
             "claude-sonnet-4-5": {
@@ -268,12 +283,16 @@ Each writer uses [`fsutil.AtomicWrite`](file:///Users/subramk/source/github.com/
               "limit": {
                 "context": 200000,
                 "output": 16384
+              },
+              "compatibility": {
+                "supportsThinkingBlockBinding": false
               }
             }
           }
         }
         ```
-    *   On `remove`: deletes `provider[gwName]` from `<opencode-dir>/opencode.jsonc`.
+    *   When `isDefault` is `true` (`gwName` is the default gateway for `opencode`) and `len(cat.Models) > 0`, sets top-level `"model": "<gwName>/<defaultModelID>"` if `model` is not yet set, points to another managed gateway in `providers`, or points to a model on `gwName` that is no longer in `cat.Models`.
+    *   On `remove`: deletes `providers[gwName]` (and any legacy `provider[gwName]`) from `<opencode-dir>/opencode.jsonc`, and clears top-level `model` if it had prefix `<gwName>/`.
 4.  **Codex (`<codex-dir>/config.toml`)**:
     *   Parses existing `config.toml` using `github.com/pelletier/go-toml/v2` (same pattern as [`internal/provision/mcp/codextoml.go`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/provision/mcp/codextoml.go)), preserves all other tables, and sets `model_providers[gwName]` with `base_url = normURL + "/v1"`:
         ```toml
@@ -283,18 +302,18 @@ Each writer uses [`fsutil.AtomicWrite`](file:///Users/subramk/source/github.com/
         env_key = "CORP_TOKEN"
         wire_api = "chat"
         ```
-    *   If top-level `model_provider` is not yet set in `config.toml` and `gwName` is the default gateway for `codex`, also sets `model_provider = "corp"` so Codex uses the gateway provider out of the box without requiring `-c model_provider=corp`.
+    *   When `isDefault` is `true` (`gwName` is the default gateway for `codex`), sets top-level `model_provider = "corp"` if `model_provider` is not yet set in `config.toml` or was previously set to another gateway in `ctx.Gateways`, so Codex uses the active default gateway out of the box without requiring `-c model_provider=corp`.
     *   On `remove`: deletes `model_providers[gwName]` from `<codex-dir>/config.toml` (and clears top-level `model_provider` if it was set to `gwName`).
 
 #### `InspectHarness` Status Predicates (`synced`, `stale`, `pending`)
 `InspectHarness(ctx, gwName, gw, cat, harnessName, home)` evaluates the on-disk state of a harness's config file:
-*   **`StatePending` (`pending`)**: The resolved harness profile directory (`~/.<harness>-<profile>`) does not exist on disk yet (lazy provisioning has not occurred yet).
+*   **`StatePending` (`pending`)**: The resolved harness profile directory (`~/.<harness>-<profile>`) does not exist on disk yet (lazy provisioning has not occurred yet), OR `harnessName == "claude"` and `!CanSyncHarness(ctx, gwName, "claude")` (`Detail: "not claude's active gateway; syncs when selected"`).
 *   **`StateStale` (`stale`)**: The harness profile directory exists, but:
     *   The local gateway cache `cat` is nil or expired (`IsExpired(cat, ttl, now)`), OR
     *   The target config file does not exist or cannot be parsed, OR
     *   For `claude`: `NormalizeBaseURL(file.BaseURL) != NormalizeBaseURL(gw.BaseURL)` or the list of model IDs in `file.Models` does not match `cat.Models`, OR
-    *   For `pi`: `providers[gwName]` is missing, `baseUrl` != `NormalizeBaseURL(gw.BaseURL)`, `apiKey` != `gw.EnvVarName()`, or the model ID list does not match `cat.Models`, OR
-    *   For `opencode`: `provider[gwName]` is missing, `options.baseURL` != `NormalizeBaseURL(gw.BaseURL)+"/v1"`, `options.apiKey` != `"{env:"+gw.EnvVarName()+"}"`, or the model ID keys under `models` do not match `cat.Models`, OR
+    *   For `pi`: `providers[gwName]` is missing, `baseUrl` != `NormalizeBaseURL(gw.BaseURL)`, `apiKey` != `"$"+gw.EnvVarName()`, or the model ID list does not match `cat.Models`, OR
+    *   For `opencode`: `providers[gwName]` is missing, `package` != `"@ai-sdk/anthropic"`, `env` != `[gw.EnvVarName()]`, `settings.baseURL` != `NormalizeBaseURL(gw.BaseURL)+"/v1"`, `settings.apiKey` != `"{env:"+gw.EnvVarName()+"}"`, `headers["Authorization"]` != `"Bearer {env:"+gw.EnvVarName()+"}"`, or the model ID keys under `models` do not match `cat.Models`, OR
     *   For `codex`: `model_providers[gwName]` is missing, `base_url` != `NormalizeBaseURL(gw.BaseURL)+"/v1"`, or `env_key` != `gw.EnvVarName()`.
 *   **`StateSynced` (`synced`)**: None of the `pending` or `stale` conditions hold.
 
@@ -311,6 +330,9 @@ Usage:
 Subcommands:
   add      Register a custom gateway, encrypt its token, and sync models
   list     Show configured gateways, cache freshness, and harness file status
+  use      Set the profile's default gateway or built-in credential
+  edit     Update a gateway's name, URL, token, TTL, or target harnesses
+  rename   Rename a gateway and migrate its secret key, cache, and harness configs
   sync     Force-refresh gateway models and update harness config files
   remove   Remove a gateway, its cached models, and harness provider entries
 ```
@@ -325,8 +347,10 @@ aide gateway add [<name>] [flags]
 
 | Argument / Flag | Required? | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `<name>` (positional) | Optional | First DNS label of `--url` hostname (or prompted on TTY) | Logical identifier for the gateway under `profiles.<profile>.gateways.<name>` (e.g., `gateway.example.com` $\rightarrow$ `gateway`). Must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. |
-| `--url <string>` | Required (or prompted on TTY) | -- | Gateway base URL (`https://...`, or `http://` only for loopback hosts `localhost`, `127.0.0.1`, `::1`). Trailing `/v1` and `/` are normalized via `NormalizeBaseURL` before saving. |
+| `<name>` (positional) | Optional | Prompted on TTY (`Gateway name [<derived>]: `) when `<name>` is omitted; non-interactively defaults to first DNS label of `--url` hostname | Logical identifier for the gateway under `profiles.<profile>.gateways.<name>` (e.g., `gateway.example.com` $\rightarrow$ `gateway`). When `<name>` is omitted on an interactive TTY (`!tokenStdin && stdinIsTTY()`), always prompts `Gateway name [<derived>]: ` (even when `--url` was passed via flag), accepting `<derived>` when the user presses Enter or on `io.EOF`. Must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. |
+| `--url <string>` | Required (or prompted on TTY) | -- | Gateway base URL (`https://...`, or `http://` only for loopback hosts `localhost`, `127.0.0.1`, `::1`). When omitted on an interactive TTY (`!tokenStdin && stdinIsTTY()`), prompts `Gateway base URL (e.g. https://gateway.example.com): `. Trailing `/v1` and `/` are normalized via `NormalizeBaseURL` before saving. |
+| `--default` | Optional | Prompted on TTY when existing `default_credentials` collides | Make `<name>` the profile's default credential in `default_credentials` (placing `<name>` first and removing any superseded provider/gateway entries such as `anthropic`). When omitted on an interactive TTY (`!tokenStdin && stdinIsTTY()`) and an existing `default_credentials` entry collides on any harness, prompts `Profile "<p>" currently uses "<existing>" by default. Make "<name>" the default instead? [Y/n]: `. |
+| `--force` | Optional | `false` | Overwrite an existing gateway definition with the same `<name>` on the target profile. |
 | `--profile <string>` | Optional | Resolved from CWD via `aide`'s profile matcher | Target profile in `~/.config/aide/config.yaml`. Errors if no profile matches CWD and `--profile` is omitted. |
 | `--token-stdin` | Optional | `false` (prompts via hidden TTY input) | Read the gateway bearer token from `stdin` (single line, trailing newline stripped). Mutually exclusive with `--token-env`. |
 | `--token-env <VAR>` | Optional | -- | Read the gateway bearer token from the named environment variable (`os.Getenv(VAR)`), e.g., `--token-env CORP_GATEWAY_TOKEN`, without exposing the secret value in CLI arguments or shell history. Mutually exclusive with `--token-stdin`. |
@@ -338,9 +362,12 @@ aide gateway add [<name>] [flags]
 
 **Terminal Output (`aide gateway add`)**:
 ```text
-# Interactive (prompts with hidden TTY input)
-$ aide gateway add corp --url https://gateway.example.com --profile work
+# Interactive (prompts for omitted URL, name, token, and default replacement on a TTY)
+$ aide gateway add --profile work
+Gateway base URL (e.g. https://gateway.example.com): https://api.acme-corp.gateway.example.com
+Gateway name [api]: acme
 Gateway bearer token (input hidden):
+Profile "work" currently uses "anthropic" by default. Make "acme" the default instead? [Y/n]: y
 
 # Non-interactive via --token-env (reads from the named environment variable)
 $ aide gateway add corp --url https://gateway.example.com --profile work --token-env CORP_GATEWAY_TOKEN
@@ -369,32 +396,44 @@ aide gateway list [flags]
 
 | Flag | Required? | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--profile <string>` | Optional | All profiles (or resolved profile if specified) | Filter output to a single profile. When omitted, lists gateways across all profiles that have a `gateways:` block. |
-| `--models` | Optional | `false` | Include the table of cached model IDs, display names, providers, and context windows under each gateway. |
+| `--profile <string>` | Optional | Resolved from CWD via `aide`'s profile matcher | Inspect gateways and built-in provider credentials for a specific profile. When both `--profile` and `--all` are omitted, resolves the active profile for the current working directory (returning an error instructing the user to pass `--profile <name>` or `--all` if no profile matches CWD). Mutually exclusive with `--all` (`--profile and --all cannot be used together`). |
+| `--all` | Optional | `false` | List gateways and built-in provider credentials across all profiles in `~/.config/aide/config.yaml` (sorted alphabetically by profile name). Mutually exclusive with `--profile`. |
+| `--models` | Optional | `false` | Include the table of cached model IDs, display names, providers, and context windows under each custom gateway. |
 | `--format <string>` | Optional | `human` | Output format: `human` or `json` (follows `--format` convention from [`cmd/aide/provision_list.go`](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/provision_list.go)). |
 
-**Terminal Output (`aide gateway list --profile work`)**:
+Within each profile, `aide gateway list` sorts the `[]GatewayListEntry` slice before `output.Emit` so active entries (`len(DefaultFor) > 0`) appear ahead of standby entries (`len(DefaultFor) == 0`), preserving alphabetical order by `Gateway` name within each group across both `human` and `json` output formats. In human output, active gateways are marked with `●` (`[ACTIVE — default for: ...]`, appending `; switch all: aide gateway use <name> --profile <profile>` when active on a subset of their target harnesses) and standby gateways are marked with `○` (`[standby — switch: aide gateway use <name> --profile <profile>, or launch: aide --gateway <name>]`). For built-in provider credentials (`Kind: "credential"`), each `HarnessFileStatus` entry uses `State: "active", Detail: "default"` when the credential is default for that harness, and `State: "available", Detail: "select with --gateway <name>"` when on standby.
+
+**Terminal Output (`aide gateway list` in a repo matched to profile `work` after `aide gateway use api --profile work`)**:
 ```text
-$ aide gateway list --profile work
+$ aide gateway list
 PROFILE: work
-  GATEWAY: corp (default for: claude, pi, opencode, codex)
-    URL:          https://gateway.example.com
-    Secret:       store=work, key=corp_token
+  ● GATEWAY: api  [ACTIVE — default for: claude, pi, opencode, codex]
+    URL:          https://api.acme-corp.gateway.example.com
+    Secret:       store=work, key=api_token
     Refresh TTL:  24h
-    Cache:        14 models (synced 2h15m ago -- fresh, next auto-refresh in 21h45m)
-                  ~/.local/state/aide/gateways/work/corp.json
+    Cache:        7 models (synced 3m ago; fresh, next auto-refresh in 23h57m)
+                  ~/.local/state/aide/gateways/work/api.json
     Harnesses:
-      HARNESS   ENV VAR                TARGET FILE                                STATUS
-      claude    ANTHROPIC_AUTH_TOKEN   ~/.claude-work/cache/gateway-models.json   synced (14 models)
-      pi        CORP_TOKEN             ~/.pi-work/models.json                     synced (14 models)
-      opencode  CORP_TOKEN             ~/.opencode-work/opencode.jsonc            pending (dir not provisioned)
-      codex     CORP_TOKEN             ~/.codex-work/config.toml                  pending (dir not provisioned)
+      HARNESS   ENV VAR               TARGET FILE                               STATUS
+      claude    ANTHROPIC_AUTH_TOKEN  ~/.claude-work/cache/gateway-models.json  synced (7 models)
+      pi        API_TOKEN             ~/.pi-work/models.json                    synced (7 models)
+      opencode  API_TOKEN             ~/.opencode-work/opencode.jsonc           synced (7 models)
+      codex     API_TOKEN             ~/.codex-work/config.toml                 pending (dir not provisioned)
+
+  ○ GATEWAY: anthropic  [standby — switch: aide gateway use anthropic --profile work, or launch: aide --gateway anthropic]
+    URL:          https://api.anthropic.com (built-in)
+    Secret:       store=work, key=anthropic_api_key
+    Harnesses:
+      HARNESS   ENV VAR            TARGET FILE  STATUS
+      claude    ANTHROPIC_API_KEY  -            available (select with --gateway anthropic)
+      pi        ANTHROPIC_API_KEY  -            available (select with --gateway anthropic)
+      opencode  ANTHROPIC_API_KEY  -            available (select with --gateway anthropic)
 ```
 
 **Terminal Output with `--models` (`aide gateway list --profile work --models`)**:
 Appends the cached model list beneath `Harnesses:`:
 ```text
-    Models (14):
+    Models (7):
       ID                          DISPLAY NAME            PROVIDER    CONTEXT   MAX OUTPUT
       claude-opus-4-6             Claude Opus 4.6         anthropic   200000    16384
       claude-sonnet-4-5           Claude Sonnet 4.5       anthropic   200000    16384
@@ -407,14 +446,16 @@ Consumes the root persistent `--format` flag via `output.FromCmd(cmd)` and `outp
 type GatewayListEntry struct {
     Profile     string                    `json:"profile"`
     Gateway     string                    `json:"gateway"`
+    Kind        string                    `json:"kind,omitempty"` // "gateway" or "credential"
     BaseURL     string                    `json:"base_url"`
     Store       string                    `json:"store"`
     Key         string                    `json:"key"`
-    RefreshTTL  string                    `json:"refresh_ttl"`
-    CachePath   string                    `json:"cache_path"`
+    RefreshTTL  string                    `json:"refresh_ttl,omitempty"`
+    CachePath   string                    `json:"cache_path,omitempty"`
     FetchedAt   *time.Time                `json:"fetched_at,omitempty"`
     Expired     bool                      `json:"expired"`
     ModelCount  int                       `json:"model_count"`
+    DefaultFor  []string                  `json:"default_for"`
     Harnesses   []gateway.HarnessFileStatus `json:"harnesses"`
     Models      []gateway.Model           `json:"models,omitempty"` // populated when --models is set
 }
@@ -422,7 +463,131 @@ type GatewayListEntry struct {
 
 ---
 
-#### 6.3 `aide gateway sync`
+#### 6.3 `aide gateway use`
+
+`aide gateway use` switches a profile's `default_credentials` to any configured custom gateway (`gateways.<name>`) or built-in provider credential (`credentials.<name>`) on that profile. It places `<name>` at index 0 of `ctx.DefaultCredentials` and removes any existing entries in `ctx.DefaultCredentials` whose target harnesses or route environment variables collide with `<name>`, while preserving any unrelated non-colliding credentials. When switching to a custom gateway `<name>`, it also immediately calls `gateway.MaterializeHarness(..., createDirIfMissing: false)` from the local cache for `claude` (`<claude-dir>/cache/gateway-models.json`) and `codex` (`<codex-dir>/config.toml` `model_provider = "<name>"`) if their profile directories exist.
+
+```text
+aide gateway use [<name>] [flags]
+```
+
+| Argument / Flag | Required? | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `<name>` (positional) | Optional on TTY | Interactive numbered picker on TTY | Name of a configured gateway or credential on the target profile. |
+| `--profile <string>` | Optional | Resolved from CWD | Target profile to update. |
+
+**Terminal Output (`aide gateway use --profile work`)**:
+```text
+$ aide gateway use --profile work
+Gateways on profile "work":
+  [1] anthropic  https://api.anthropic.com (built-in)                   [default: claude, pi, opencode]
+  [2] api        https://api.acme-corp.gateway.example.com              [default: codex]
+Select default [1]: 2
+✓ Set default gateway for profile "work" to "api" (claude, pi, opencode, codex)
+  ✓ claude  ~/.claude-work/cache/gateway-models.json  (synced, 7 models)
+```
+
+---
+
+#### 6.4 `aide gateway edit`
+
+`aide gateway edit` updates an existing custom gateway in place--renaming it, rotating its bearer token, or changing its `base_url`, `refresh_ttl`, `harnesses`, `store`, or `key`--both interactively on a terminal and non-interactively via flags. Both `aide gateway edit` and `aide gateway rename` invoke a single shared pipeline (`applyGatewayEdit`) and thread a single `*bufio.Reader` across all interactive prompts.
+
+```text
+aide gateway edit [<name>] [flags]
+```
+
+| Argument / Flag | Required? | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `<name>` (positional) | Optional on TTY | Interactive numbered picker on TTY (or auto-selected when only 1 gateway exists on the profile) | Name of the existing custom gateway on the target profile to edit. Required when `stdin` is not a terminal (`!stdinIsTTY()` or `--token-stdin`). |
+| `--name <new-name>` | Optional | Current `<name>` (or prompted on TTY in interactive mode) | Rename the gateway from `<name>` to `<new-name>` and migrate its secret key, `default_credentials`, repository preferences, cache file, and harness provider entries. |
+| `--url <string>` | Optional | Current `base_url` (or prompted on TTY in interactive mode) | Updated gateway base URL (`NormalizeBaseURL`). Changing `base_url` triggers a live `/v1/models` sync to verify the new endpoint and refresh cached models. |
+| `--ttl <duration>` | Optional | Current `refresh_ttl` (or prompted on TTY in interactive mode) | Updated model refresh interval (e.g., `12h`, `24h`, `168h`). |
+| `--harnesses <csv>` | Optional | Current `harnesses` (or `all` / `claude,pi,opencode,codex`) | Comma-separated subset of harnesses (`claude,pi,opencode,codex`), or `all` to reset `harnesses` to all four supported harnesses (`omitempty`). Passing all four default harnesses in any order normalizes `gw.Harnesses` to `nil` (`omitempty`). Any harness removed from the previous effective harness set is cleaned up on disk via `gateway.RemoveFromHarness`. |
+| `--rotate-token` | Optional | `false` (or prompted `Rotate bearer token? [y/N]: ` in interactive TTY mode) | Prompt for a new hidden bearer token on the terminal (`term.ReadPassword`), encrypt it into the secret store, and re-sync `/v1/models`. Passing `--token-stdin` or `--token-env` automatically rotates the token without requiring `--rotate-token`; passing `--rotate-token` without `--token-stdin` or `--token-env` requires `stdinIsTTY()`. |
+| `--token-stdin` | Optional | `false` | Read a new bearer token from `stdin` (single line, trailing newline stripped) and re-sync `/v1/models`. Mutually exclusive with `--token-env`. |
+| `--token-env <VAR>` | Optional | -- | Read a new bearer token from the named environment variable (`os.Getenv(VAR)`) and re-sync `/v1/models`. Mutually exclusive with `--token-stdin`. |
+| `--store <string>` | Optional | Current `store` | Advanced flag to move the gateway's bearer token to a different encrypted secret store (`~/.config/aide/secrets/<store>.enc.yaml`). |
+| `--key <string>` | Optional | Auto-migrated to `<new_name>_token` on rename if previously `<old_name>_token`, else current `key` | Advanced flag to set an explicit secret key name inside the encrypted store. |
+| `--age-key <recipient>` | Optional | Auto-discovered via `secrets.DiscoverAgeKey()` | Explicit `age1...` recipient key if `--store` creates a new secret store. |
+| `--profile <string>` | Optional | Resolved from CWD | Target profile containing `<name>`. |
+| `--force` | Optional | `false` | Allow overwriting an existing unclaimed secret key in the target store when changing `--key`, `--store`, or `--name`. |
+
+**Interactive vs Flag-Driven Mode (`aide gateway edit`)**:
+*   **Flag-driven mode**: When any modification flag (`--name`, `--url`, `--ttl`, `--harnesses`, `--store`, `--key`, `--rotate-token`, `--token-stdin`, `--token-env`) is passed, `aide gateway edit` applies only the specified changes without prompting for the other fields (unless `--rotate-token` is set without `--token-stdin`/`--token-env`, in which case it prompts only `Gateway bearer token (input hidden): `).
+*   **Interactive TTY mode**: When no modification flags are passed and `stdinIsTTY()` is true, `aide gateway edit` prompts for the 5 primary settings (`name`, `base_url`, `refresh_ttl`, `harnesses`, and token rotation) with current values in brackets (pressing Enter keeps the current value; `--store` and `--key` are flag-only since `key` auto-migrates on rename):
+    ```text
+    $ aide gateway edit --profile work
+    Gateway name [api]: acme
+    Gateway base URL [https://api.acme-corp.gateway.example.com]:
+    Refresh TTL [24h]:
+    Harnesses [claude,pi,opencode,codex]:
+    Rotate bearer token? [y/N]: n
+    ✓ Migrated secret key "api_token" → "acme_token" in ~/.config/aide/secrets/work.enc.yaml
+    ✓ Renamed gateway "api" → "acme" under profile "work" in ~/.config/aide/config.yaml
+    ✓ Moved cache ~/.local/state/aide/gateways/work/api.json → ~/.local/state/aide/gateways/work/acme.json
+      ✓ claude    ~/.claude-work/cache/gateway-models.json  (synced, 7 models)
+      ✓ pi        ~/.pi-work/models.json                    (synced, 7 models, env: ACME_TOKEN)
+      ✓ opencode  ~/.opencode-work/opencode.jsonc           (synced, 7 models, env: ACME_TOKEN)
+      - codex     ~/.codex-work/config.toml                 (pending, dir not created yet; will sync on first launch)
+    ```
+*   **No-op short-circuit**: If `newName == oldName`, `newGW` is identical to `oldGW`, and no new token was provided, `aide gateway edit` prints `No changes to gateway "<name>"` and returns `nil` without rewriting `config.yaml`, secrets, or harness files.
+*   When neither modification flags nor a TTY are present (`!stdinIsTTY()`), `aide gateway edit` returns an error instructing the caller to pass at least one edit flag (`--name`, `--url`, `--ttl`, `--harnesses`, `--store`, `--key`, `--token-stdin`, or `--token-env`).
+
+**In-Place Migration & Edge-Case Invariants (`applyGatewayEdit`)**:
+1.  **Name Collision & Config Validation**: When `newName != oldName`, `newName` must satisfy `config.IsGatewayName(newName)` and must not collide with any existing key in `ctx.Gateways` or `ctx.Credentials`. The candidate `updatedCtx` is validated via `config.ValidateGateways("profiles."+profileName, updatedCtx, cfg.NeverAllowEnv)` before any secret store or config file writes occur.
+2.  **Automatic Secret Key Migration (`<old>_token` $\rightarrow$ `<new>_token`)**:
+    *   If `newName != oldName` and `--key` was not explicitly set: when `oldGW.Key == defaultGatewayKey(oldName)` (`strings.ReplaceAll(oldName, "-", "_") + "_token"`), `newGW.Key` automatically updates to `defaultGatewayKey(newName)` so the injected environment variable (`ACME_TOKEN` instead of `API_TOKEN`) stays consistent with the new gateway name. If the user had previously configured a custom `key` (e.g., `shared_litellm_token`), `oldGW.Key` is preserved unless `--key` is explicitly passed.
+    *   Whenever `(newGW.Store, newGW.Key) != (oldGW.Store, oldGW.Key)` or the token is rotated:
+        1. Before mutating `cfg.Contexts[profileName]`, if `(newGW.Store, newGW.Key) != (oldGW.Store, oldGW.Key)` and `!force`, `checkKeyUnclaimed(cfg, newGW.Store, newGW.Key)` verifies the destination key is not already owned by a non-gateway entry.
+        2. If a new token was not provided via `--rotate-token` / `--token-stdin` / `--token-env`, the existing token is decrypted from `(oldGW.Store, oldGW.Key)` via `launcher.ResolveStoreKey`.
+        3. The token is encrypted into `(newGW.Store, newGW.Key)` via `secrets.NewManager(...).SetKey(...)`.
+        4. After `config.WriteConfig(cfg)` persists `updatedCtx`, if `(oldGW.Store, oldGW.Key) != (newGW.Store, newGW.Key)` and `secretUser(cfg, oldGW.Store, oldGW.Key) == ""` (no other gateway, credential, `env:`, or MCP server across any profile references the old `(store, key)`), `(oldGW.Store, oldGW.Key)` is removed via `DeleteKey`.
+3.  **Preserving `default_credentials` Order and Repository Preferences (`preferences.json`)**:
+    *   When `newName != oldName`, any occurrence of `oldName` in `ctx.DefaultCredentials` is replaced in place with `newName` at the exact same slice index so per-harness default priority order is preserved.
+    *   Repository preferences are updated via [`prefs.Update(prefs.DefaultPath(home), ...)`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/prefs/prefs.go#L158-L170), replacing `oldName` with `newName` in any `Preference.Credentials` slice under `f.Profiles[profileName]` and returning `prefs.ErrUnchanged` when no preference references `oldName` (so `~/.local/state/aide/preferences.json` is never created when absent). Any error from `prefs.Update` (such as a corrupt `preferences.json`) is logged as a non-fatal warning to `stderr` rather than aborting after `config.WriteConfig`.
+4.  **Non-Destructive Ordering of Harness Cleanup, Cache Migration, and Live `/v1/models` Sync**:
+    *   First, `oldCat, _ := gateway.ReadCache(home, profileName, oldName)` is read into memory before any on-disk cache or harness changes.
+    *   Because all four `RemoveFromHarness` implementations verify `NormalizeBaseURL(oldGW.BaseURL)` against the on-disk file (and `claudeFile.remove` deletes the single `<claude-dir>/cache/gateway-models.json` file if its `baseUrl` matches `oldGW.BaseURL`), `gateway.RemoveFromHarness(oldCtx, oldName, oldGW, h, home)` is always invoked with `oldGW` **before** writing `newName` to harness files:
+        *   When `newName != oldName`, `RemoveFromHarness(oldCtx, oldName, oldGW, h, home)` is called for every `h` in `oldGW.EffectiveHarnesses()`, and `gateway.RemoveCache(home, profileName, oldName)` removes `<oldName>.json`.
+        *   When `newName == oldName`, `RemoveFromHarness(oldCtx, oldName, oldGW, h, home)` is called for any harness `h` removed from `oldGW.EffectiveHarnesses()` (and for `"claude"` if `!gateway.CanSyncHarness(updatedCtx, newName, "claude")`).
+    *   Next, the updated gateway is synced or materialized:
+        *   If the token was rotated **or** `gateway.NormalizeBaseURL(newGW.BaseURL) != gateway.NormalizeBaseURL(oldGW.BaseURL)`, `applyGatewayEdit` runs `gateway.Sync` against `newGW.BaseURL` using the active token. If `gateway.Sync` fails (e.g., transient network failure or bad URL/token), `config.yaml` and the secret store retain the user's requested update (matching `aide gateway add`), and if `oldCat != nil` and `NormalizeBaseURL(newGW.BaseURL) == NormalizeBaseURL(oldGW.BaseURL)`, `oldCat` (`oldCat.Gateway = newName`) is written to `<newName>.json` and materialized to eligible harnesses as a fallback before returning the actionable error (`gateway %q was updated, but model sync failed (retry with: aide gateway sync %s --profile %s): %w`).
+        *   Otherwise (offline rename or TTL/harness/key edit), if `oldCat != nil`, `oldCat.Gateway = newName` and `oldCat.BaseURL = newGW.BaseURL` are written via `gateway.WriteCache(home, oldCat)` and materialized to each harness `h` in `newGW.EffectiveHarnesses()` where `gateway.CanSyncHarness(updatedCtx, newName, h)` is true (`createDirIfMissing: false`). (If `oldCat == nil`, harness files remain `pending`/`stale` until the next `aide gateway sync` or launch.)
+    *   Finally, `reconcileProfileHarnesses(updatedCtx, profileName, skipGateway, home)` checks if another gateway `other` on `updatedCtx` now claims `"claude"` (`CanSyncHarness(updatedCtx, other, "claude")`) or `"codex"` (`IsDefaultGateway(updatedCtx, other, "codex")`) after a rename, `--harnesses` narrowing, or `remove`, and materializes `other` from its local cache if present so `<claude-dir>/cache/gateway-models.json` and `<codex-dir>/config.toml` are never left orphaned.
+
+---
+
+#### 6.5 `aide gateway rename`
+
+`aide gateway rename` is a dedicated subcommand for renaming a custom gateway on a profile, delegating directly to `applyGatewayEdit`.
+
+```text
+aide gateway rename <old-name> [<new-name>] [flags]
+```
+
+| Argument / Flag | Required? | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `<old-name>` (positional) | Required | -- | Existing gateway name on the target profile. |
+| `<new-name>` (positional) | Optional on TTY | Prompted on TTY (`New gateway name: `) | New gateway name (`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`). Must be non-empty and distinct from `<old-name>`. Required when `stdin` is not a terminal. |
+| `--profile <string>` | Optional | Resolved from CWD | Target profile containing `<old-name>`. |
+| `--force` | Optional | `false` | Allow overwriting an existing unclaimed secret key `<new_name>_token` in the secret store. |
+
+**Terminal Output (`aide gateway rename`)**:
+```text
+$ aide gateway rename api acme --profile work
+✓ Migrated secret key "api_token" → "acme_token" in ~/.config/aide/secrets/work.enc.yaml
+✓ Renamed gateway "api" → "acme" under profile "work" in ~/.config/aide/config.yaml
+✓ Moved cache ~/.local/state/aide/gateways/work/api.json → ~/.local/state/aide/gateways/work/acme.json
+  ✓ claude    ~/.claude-work/cache/gateway-models.json  (synced, 7 models)
+  ✓ pi        ~/.pi-work/models.json                    (synced, 7 models, env: ACME_TOKEN)
+  ✓ opencode  ~/.opencode-work/opencode.jsonc           (synced, 7 models, env: ACME_TOKEN)
+  - codex     ~/.codex-work/config.toml                 (pending, dir not created yet; will sync on first launch)
+```
+
+---
+
+#### 6.6 `aide gateway sync`
 
 `aide gateway sync` **always forces an immediate refresh** from `{base_url}/v1/models` regardless of whether `refresh_ttl` has expired, updates `~/.local/state/aide/gateways/<profile>/<gateway>.json`, and updates all provisioned harness config files.
 
@@ -448,7 +613,9 @@ $ aide gateway sync --profile work
 
 ---
 
-#### 6.4 `aide gateway remove`
+#### 6.7 `aide gateway remove`
+
+`aide gateway remove` deletes `gateways.<name>` from the target profile in `config.yaml`, strips any occurrence of `<name>` from `ctx.DefaultCredentials` and repository preferences (`preferences.json`), deletes the secret key from `<store>.enc.yaml` (unless `--keep-secret` is set or another profile/credential still references `(store, key)`), removes the local model cache file, removes `<name>`'s provider entries across all four harnesses, and calls `reconcileProfileHarnesses(ctx, profileName, name, home)` so any remaining gateway that now becomes default for `claude` or `codex` is materialized on disk.
 
 ```text
 aide gateway remove <name> [flags]
@@ -474,6 +641,21 @@ $ aide gateway remove corp --profile work
 
 ---
 
+#### 6.8 `--gateway` Flag Across Launch, Inspection, and Repository Preferences (`cmd/aide/selection_flags.go`, `cmd/aide/project.go`, `internal/launcher/selection.go`)
+
+To eliminate the split between built-in provider credentials and custom gateways on the CLI, `--credential` is replaced with `--gateway` everywhere a user selects or clears a gateway/credential binding:
+
+*   **`aide`, `aide which`, and `aide status` (`cmd/aide/selection_flags.go`)**:
+    *   `--gateway <name>` (repeatable `StringArrayVar`): selects one or more custom gateways or credentials by the exact identifier shown in `aide gateway list`, replacing the saved repository preference and profile default for that invocation (`--gateway=` selects an explicit empty set).
+    *   Shell completion (`registerSelectionCompletions` / `credentialNamesForCompletion`) synthesizes gateway credentials on `rc.Context` (or unions `rc.Context.Gateways` and `rc.Context.Credentials`) so tab completion suggests both custom gateways and configured credentials.
+    *   Passthrough error message (`passthroughSelectionError`): `"--profile, --gateway and --auth api need profiles in %s (run 'aide init' or 'aide profile create <name>' to set one up)"`.
+*   **`aide project set` and `aide project clear` (`cmd/aide/project.go`, `internal/launcher/selection.go`)**:
+    *   `aide project set --gateway <name>` (repeatable `StringArrayVar`): saves the repository's preferred gateway/credential selection in `~/.local/state/aide/preferences.json` (conflicting with `--no-credentials`: `"--gateway and --no-credentials conflict: pick one"`). When called with no selection flags, errors with `"nothing to save: pass --agent, --gateway or --no-credentials"`.
+    *   `aide project clear --gateway` (boolean `BoolVar`): clears the saved gateway/credential selection for the current repository (`--reset` conflict message: `"--reset clears the whole preferences file; it takes no --agent, --gateway or --profile"`).
+    *   Saved-selection remediation hint in `explainSavedSelection` (`internal/launcher/selection.go`): `"Change them with: aide project set --gateway <name>, or clear them with: aide project clear --gateway"`.
+
+---
+
 ### 7. Launch-Time TTL Refresh & Harness Materialization (`internal/launcher/launcher.go`)
 
 In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/launcher.go#L284-L315), immediately after `ResolveCredentialEnv(credPlan, loadStore)` resolves the active credential bindings for the launch (and after any first-launch profile directory checks):
@@ -496,7 +678,52 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
         ```text
         aide: materialized 14 cached models for gateway "corp" -> ~/.opencode-work/opencode.jsonc
         ```
-    *   This makes switching harnesses (`aide --agent opencode`) or switching gateways (`aide --credential gw-beta`) work immediately without a network round-trip.
+    *   This makes switching harnesses (`aide --agent opencode`) or switching gateways (`aide --gateway gw-beta`) work immediately without a network round-trip.
+
+---
+
+### 8. Startup Banner & `aide which` Redesign (`internal/ui/`, `internal/launcher/`, `cmd/aide/status.go`)
+
+Both the interactive startup banner ([`Launcher.buildBannerData`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/launcher.go#L618-L779)) and the read-only dry-run inspector ([`whichCmd`](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/status.go#L194-L387)) share [`ui.BannerData`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/types.go#L72-L120), [`ui.CredentialInfo`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/types.go#L49-L60), [`internal/ui/funcmap.go`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/funcmap.go), and the three terminal templates ([`compact.tmpl`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/templates/compact.tmpl), [`clean.tmpl`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/templates/clean.tmpl), [`boxed.tmpl`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/templates/boxed.tmpl)).
+
+To make profile, harness, gateway, environment, and sandbox resolution self-explanatory at a glance while preserving all existing `compact`, `clean`, and `boxed` structural contracts in [`internal/ui/banner_test.go`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/banner_test.go), [`ui.BannerData`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/types.go#L72-L120) and [`ui.CredentialInfo`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/types.go#L49-L60) are extended around five structured sections:
+
+1.  **Profile**:
+    *   Displays `<icon> <profile> (<reason>)` (e.g. `🏢 work (matched ~/work/**)`).
+2.  **Harness**:
+    *   `HarnessConfigDir string`: the resolved profile config directory for the active harness (e.g. `~/.claude-work`), displayed inline as `(dir: ~/.claude-work)` alongside the agent path and source tag, and `AvailableHarnesses []HarnessOption` (`Name`, `ConfigDir`): the other installed harnesses available for this profile (`available: pi (~/.pi-work) · opencode (~/.opencode-work) · codex (~/.codex-work)`).
+    *   Harness config-dir environment variables (`envscrub.ConfigDirRedirects()`: `CLAUDE_CONFIG_DIR`, `PI_CODING_AGENT_DIR`, `OPENCODE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`) are stripped from `EnvItems` when `ctx.SelectsConfigDir()` is true so they are not duplicated in the `env:` section.
+3.  **Gateway & Credentials**:
+    *   [`ui.CredentialInfo`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/types.go#L49-L60) is enriched with:
+        *   `URL string`: resolved endpoint URL (`https://api.anthropic.com` for built-in `anthropic`, `https://api.openai.com` for `openai`/`codex`, or `gw.BaseURL` for custom gateways).
+        *   `Store string`, `Key string`: the secret store name and secret key name (`store=work, key=api_token`).
+        *   `IsGateway bool`: `true` when backed by `ctx.Gateways[name]`.
+        *   `ModelCount int`, `ModelAge string`, `TargetFile string`, `TargetSync string`: populated for custom gateways from [`gateway.ReadCache`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/gateway/cache.go) and [`gateway.InspectHarness`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/gateway/writers.go).
+    *   [`SetBannerCredentials`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/credentials.go#L288-L320) filters out keys in `b.Set` whose value is `""` (explicitly unset/blanked variables such as `ANTHROPIC_API_KEY: ""` on custom Claude gateways) so `CredentialInfo.Env` lists only variables actually injected with non-empty values.
+    *   `AvailableGateways []GatewayOption` (`Name`, `URL`): other unselected custom gateways (`ctx.Gateways`) or LLM provider credentials (`ctx.Credentials` where `b.IsLLMProvider(name)` is true) on the profile that support the active harness (`available: anthropic → https://api.anthropic.com (switch: aide gateway use anthropic)`).
+4.  **Environment (`env:`)**:
+    *   Displays only user/profile environment variables (excluding harness config-dir variables and credential variables).
+5.  **Sandbox & Capabilities (`sandbox:`)**:
+    *   Preserves the full per-capability security audit view (`sandbox: ✓ <tier> · write: cwd`, per-capability `✓ <name>[<variant>] <writable + readable paths>`, `read+`, `write+`, `deny`, and `AUTO-APPROVE` warning footer) across `compact.tmpl`, `clean.tmpl`, and `boxed.tmpl`.
+    *   [`whichCmd`](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/status.go#L222-L333) resolves the agent binary via `cfg.Agents[agentName].Binary` before `exec.LookPath` and resolves active capabilities using `sandbox.MergeCapNames`, `capability.AutoInclude`, `sandbox.ResolveCapabilitiesWithVariants(..., sandbox.VariantSelectionOptions{Interactive: false, ...})`, and `sandbox.ApplyOverrides(&resolvedSandbox, capOverrides)` before `sandbox.PolicyFromConfig`, populating `Capabilities`, `DisabledCaps`, `SuggestedCaps`, `NeverAllow`, `CompWarnings`, `ExtraWritable`, `ExtraReadable`, and `ExtraDenied` identically to [`Launcher.buildBannerData`](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/launcher.go#L618-L779).
+
+**Example Output (`compact` style)**:
+```text
+ aide v0.1.0 ──────────────────────────────────────────────────────
+  🏢 work (matched ~/work/**) · 🤖 claude → /etc/profiles/per-user/user/bin/claude (dir: ~/.claude-work) (←profile)
+  harnesses: pi (~/.pi-work) · opencode (~/.opencode-work) · codex (~/.codex-work)
+  secret: ~/.config/aide/secrets/work.enc.yaml (←profile)
+  gateway: api → https://gateway.example.com [ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY] (←profile)
+           auth: store=work, key=api_token · models: 16 cached (15m ago) · ~/.claude-work/cache/gateway-models.json (synced)
+           available: anthropic → https://api.anthropic.com (switch: aide gateway use anthropic)
+  env: GITHUB_PERSONAL_ACCESS_TOKEN=•••••••• (←secret) · SSH_AUTH_SOCK=…/Listeners
+  sandbox: ✓ primary (Seatbelt) (←default) · write: cwd
+    ✓ go             ~/go/pkg/mod · ~/.cache/go-build
+    ✓ nix            /nix (ro)
+    read+:  ~/.config/gcloud
+    deny:   ~/.ssh/id_*
+ ──────────────────────────────────────────────────────────────────
+```
 
 ---
 
@@ -527,7 +754,7 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
 *   **Cons**:
     *   Pollutes the user's home directory with unprovisioned `~/.<harness>-<profile>` directories for harnesses they may never install or run.
     *   Breaks `aide`'s lazy first-launch provisioning trigger (`internal/launcher/launcher.go`), which checks whether the harness profile directory already exists to decide whether to seed defaults or prompt for native auth.
-    *   Cannot support multi-gateway switching (`aide --credential gw-beta`) for `claude` or `codex` without making a live network request to `/v1/models` on every switch.
+    *   Cannot support multi-gateway switching (`aide --gateway gw-beta`) for `claude` or `codex` without making a live network request to `/v1/models` on every switch.
 *   **Decision**: Rejected. Caching normalized models in `~/.local/state/aide/gateways/<profile>/<gateway>.json` and materializing harness files only for existing harness directories (and on demand during `Launcher.Launch`) preserves lazy provisioning and allows offline gateway switching.
 
 ---
@@ -551,7 +778,7 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
 
 ### Rollout & Rollback
 *   **Backward Compatibility**: The `gateways:` field on `config.Context` is optional (`omitempty`). Existing profiles without `gateways:` experience zero changes in config parsing, credential resolution, environment scrubbing, or launch behavior.
-*   **Clean Removal & Rollback**: Running `aide gateway remove <name> --profile <profile>` (or deleting the `gateways:` block from `config.yaml`) removes the gateway's cache file and strips only the gateway-owned provider entries (`models.providers.<name>` in `pi`, `provider.<name>` in `opencode`, `model_providers.<name>` in `codex`, and `~/.claude-<profile>/cache/gateway-models.json` in `claude`), leaving all user-authored settings in those files intact.
+*   **Clean Removal & Rollback**: Running `aide gateway remove <name> --profile <profile>` (or deleting the `gateways:` block from `config.yaml`) removes the gateway's cache file and strips only the gateway-owned provider entries (`providers.<name>` in `pi`, `providers.<name>` and legacy `provider.<name>` in `opencode`, `model_providers.<name>` in `codex`, and `~/.claude-<profile>/cache/gateway-models.json` in `claude`), leaving all user-authored settings in those files intact.
 
 ---
 
@@ -600,12 +827,32 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
     // and DefaultCredentials maps/slices containing the synthesized CredentialBinding
     // (Backend: CredentialBackendAge) for each gateway in slices.Sorted(maps.Keys(ctx.Gateways)).
     func SynthesizeGatewayCredentials(ctx Context) (Context, error)
+
+    // DefaultCredentialsForHarness returns the ordered slice of default credential names
+    // from synthCtx.DefaultCredentials that apply to harnessName, skipping any binding whose
+    // route variables on harnessName collide with an earlier binding or that would claim a
+    // second LLM provider/gateway slot on harnessName.
+    func DefaultCredentialsForHarness(synthCtx Context, harnessName string) []string
     ```
 
-#### [MODIFY] [credentials.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/config/credentials.go) & [internal/launcher/credentials.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/credentials.go)
-*   **Why**: Invoke `ValidateGateways` and `SynthesizeGatewayCredentials` during config credential validation and launch/preview credential planning, and include gateway token env var names (`gw.EnvVarName()`) in `(*Config).CredentialScrubNames()`.
+#### [MODIFY] [credentials.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/config/credentials.go), [internal/launcher/credentials.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/credentials.go), & [internal/launcher/selection.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/selection.go)
+*   **Why**: Invoke `ValidateGateways` and `SynthesizeGatewayCredentials` during config credential validation and launch/preview credential planning, resolve default credentials per harness via `DefaultCredentialsForHarness`, attach built-in upstream URLs and target harnesses (`BuiltinCredentialURL`, `BuiltinCredentialHarnesses`, `EndpointURL`), and include gateway token env var names (`gw.EnvVarName()`) in `(*Config).CredentialScrubNames()`.
 *   **Signatures & Structural Logic**:
-    *   In `func (c *Config) validateCredentials() error` (`internal/config/credentials.go`): for each profile `name, ctx` in `c.Contexts`, call `ValidateGateways(at, ctx, c.NeverAllowEnv)` and `synthCtx, err := SynthesizeGatewayCredentials(ctx)`, then validate `synthCtx.Credentials`, `synthCtx.DefaultCredentials`, and `checkDefaultRoutes(synthCtx)`.
+    ```go
+    // BuiltinCredentialURL returns the canonical upstream base URL for known built-in provider names
+    // ("anthropic", "openai", "codex", "openrouter", "gemini"), or "" for custom bindings.
+    func BuiltinCredentialURL(name string) string
+
+    // BuiltinCredentialHarnesses returns the default target harnesses for a built-in provider
+    // credential when neither Harnesses nor For is explicitly set on the binding.
+    func BuiltinCredentialHarnesses(name string) []string
+
+    // EndpointURL returns the target base URL for a CredentialBinding on harnessName (either from
+    // RouteFor(harnessName).Set["ANTHROPIC_BASE_URL"/"OPENAI_BASE_URL"] or BuiltinCredentialURL(name)).
+    func (b CredentialBinding) EndpointURL(name, harnessName string) string
+    ```
+    *   In `func (c *Config) validateCredentials() error` (`internal/config/credentials.go`): for each profile `name, ctx` in `c.Contexts`, call `ValidateGateways(at, ctx, c.NeverAllowEnv)` and `synthCtx, err := SynthesizeGatewayCredentials(ctx)`, validate `synthCtx.Credentials` and `synthCtx.DefaultCredentials`, and call `checkDefaultRoutes(explicitCtx)` where `explicitCtx := synthCtx; explicitCtx.DefaultCredentials = ctx.DefaultCredentials` (validating explicit user-authored `ctx.DefaultCredentials`--including gateway names--for route collisions while allowing synthesized fallback gateways to be disambiguated per harness via `DefaultCredentialsForHarness`).
+    *   In `PlanProfileCredentials` (`internal/launcher/credentials.go`), `(*Selection).SelectCredentials`, and `(*Selection).PlanCredentials` (`internal/launcher/selection.go`): use `config.DefaultCredentialsForHarness(synthCtx, harnessName)` when selecting `default_credentials` for `harnessName`.
     *   In `func profileCredentials(ctx config.Context, secret string) (config.Context, []config.LegacyCredential, error)` (`internal/launcher/credentials.go`): call `SynthesizeGatewayCredentials` after `TranslateLegacyCredentials` so `Launcher.Launch`, `aide which`, and `aide status` all resolve gateway credentials.
     *   In `func (c *Config) CredentialScrubNames() []string` (`internal/config/credentials.go`): iterate `ctx.Gateways` for each `ctx` in `c.Contexts` and add `gw.EnvVarName()`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`.
 
@@ -682,6 +929,7 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
 
     type HarnessFileStatus struct {
         Harness  string           `json:"harness"`
+        EnvVar   string           `json:"env_var,omitempty"`
         FilePath string           `json:"file_path"`
         State    HarnessSyncState `json:"state"`
         Detail   string           `json:"detail,omitempty"`
@@ -726,6 +974,18 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
     // checking ctx.SelectsConfigDir(), ctx.Env[d.ProfileEnvKey], os.Getenv(d.ProfileEnvKey), and d.DefaultDir(home).
     func HarnessConfigDir(ctx config.Context, harnessName, home string) (string, error)
 
+    // IsDefaultGateway reports whether gwName is the active default credential for harnessName on ctx.
+    // Returns true for unknown standalone gwName (absent from both ctx.Gateways and ctx.Credentials);
+    // otherwise synthesizes ctx.Gateways into ctx.Credentials when len(ctx.Gateways) > 0 and checks
+    // slices.Contains(config.DefaultCredentialsForHarness(synthCtx, harnessName), gwName).
+    func IsDefaultGateway(ctx config.Context, gwName, harnessName string) bool
+
+    // CanSyncHarness reports whether background sync / gateway add may write gwName's catalogue
+    // to harnessName's config file (always true for pi/opencode/codex; true for claude when gwName
+    // is default for claude, or when no custom gateway in ctx.Gateways is claude's default and gwName
+    // is the first custom gateway in sorted order that supports claude).
+    func CanSyncHarness(ctx config.Context, gwName, harnessName string) bool
+
     // MaterializeHarness writes the cached gateway catalogue into a single harness's config file.
     // If createDirIfMissing is false and the harness profile directory does not exist yet, returns StatePending.
     func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string, createDirIfMissing bool) (HarnessFileStatus, error)
@@ -734,7 +994,7 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
     func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string) HarnessFileStatus
 
     // RemoveFromHarness strips gwName's provider/model entries from the harness's config file if present.
-    func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfig, harnessName, home string) error
+    func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfig, harnessName, home string) (bool, error)
     ```
 
 #### [NEW] [sync.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/gateway/sync.go)
@@ -767,40 +1027,63 @@ In [`Launcher.Launch`](file:///Users/subramk/source/github.com/jskswamy/aide/int
 
 ### 4. Launch-Time TTL Refresh & Materialization (`internal/launcher/`)
 
-#### [MODIFY] [launcher.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/launcher.go)
+#### [NEW] [gateway.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/gateway.go) & [MODIFY] [launcher.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/launcher.go)
 *   **Why**: Automatically refresh expired gateway catalogues on launch with visible progress output, fall back to cached models with a warning if offline, and materialize the active harness's gateway config file before `exec`.
 *   **Signatures & Structural Logic**:
-    *   Add helper `func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName, homeDir string, credPlan CredentialPlan, credEnv map[string]string) error` called inside `Launcher.Launch` immediately after `credEnv, err := ResolveCredentialEnv(credPlan, loadStore)`.
+    *   Add helper `func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName, homeDir string, credPlan CredentialPlan, credEnv map[string]string)` in `internal/launcher/gateway.go`, called inside `Launcher.Launch` immediately after `credEnv, err := ResolveCredentialEnv(credPlan, loadStore)`.
     *   Checks if any selected binding in `credPlan.Bindings` corresponds to a gateway in `rc.Context.Gateways` (extracting the already-decrypted bearer token from `credEnv["ANTHROPIC_AUTH_TOKEN"]` for `claude` or `credEnv[gw.EnvVarName()]` for `pi`, `opencode`, and `codex`).
     *   Reads `gateway.ReadCache(homeDir, rc.Name, gwName)`. If missing or `gateway.IsExpired(cat, ttl, time.Now())`, calls `gateway.Sync` with `Progress: l.stderr()` (`5s` timeout if `cat != nil`, `10s` if `cat == nil`). If `gateway.Sync` fails and `cat != nil`, prints `aide: warning: could not refresh gateway "<name>" (<err>); using cached catalogue from <age> ago (<N> models)` to `l.stderr()` and continues with `cat`.
-    *   Calls `gateway.MaterializeHarness(..., createDirIfMissing: true)` for `harnessName` so switching harnesses (`aide --agent pi`) or switching gateways (`aide --credential gw-beta`) always writes the active gateway's models before starting the agent.
+    *   Calls `gateway.MaterializeHarness(..., createDirIfMissing: true)` for `harnessName` so switching harnesses (`aide --agent pi`) or switching gateways (`aide --gateway gw-beta`) always writes the active gateway's models before starting the agent.
 
 #### [MODIFY] [launcher_test.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/launcher_test.go)
 *   **Why**: Test warm launch (no HTTP call when cache is fresh), expired-TTL launch (HTTP call + progress output + updated harness file), offline fallback when refresh fails with an existing cache, and harness-switching materialization (`claude` -> `pi` -> `opencode` -> `codex`).
 
 ---
 
-### 5. CLI Command Surface & Documentation (`cmd/aide/`, `docs/`, `RELEASE_NOTES.md`)
+### 5. CLI Command Surface, Startup Banner & `aide which`, and Documentation (`cmd/aide/`, `internal/ui/`, `docs/`, `RELEASE_NOTES.md`)
 
-#### [NEW] [gateway.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/gateway.go)
-*   **Why**: Implement `aide gateway add`, `aide gateway list`, `aide gateway remove`, and `aide gateway sync` following `cmd/aide/` naming and `output.FromCmd(cmd)` / `output.Emit` conventions.
+#### [NEW] [gateway.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/gateway.go) & [MODIFY] [selection_flags.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/selection_flags.go), [project.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/project.go), [selection.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/selection.go)
+*   **Why**: Implement `aide gateway add` (with interactive TTY prompts for `--url`, `<name>` whenever positional `<name>` is omitted on a TTY, and default switching), `aide gateway list` (defaulting to the current profile resolved from `cwd` or listing all profiles via `--all`, sorting active gateways ahead of standby gateways with `●` / `○` indicators), `aide gateway use` (switching `default_credentials` interactively or by `<name>`), `aide gateway edit` and `aide gateway rename` (in-place gateway renaming, token rotation, URL/TTL/harness updates, secret key migration, `default_credentials` and `preferences.json` migration, and harness config cleanup), `aide gateway remove`, and `aide gateway sync` following `cmd/aide/` naming and `output.FromCmd(cmd)` / `output.Emit` conventions; and replace the `--credential` CLI flag with `--gateway` across `aide`, `aide which`, `aide status`, `aide project set`, and `aide project clear`.
 *   **Signatures & Structural Logic**:
     ```go
     func gatewayCmd() *cobra.Command
     func gatewayAddCmd() *cobra.Command
     func gatewayListCmd() *cobra.Command
+    func gatewayUseCmd() *cobra.Command
+    func gatewayEditCmd() *cobra.Command
+    func gatewayRenameCmd() *cobra.Command
+    func applyGatewayEdit(ctx context.Context, out, errOut io.Writer, cfg *config.Config, profileName, oldName, newName string, oldGW, newGW config.GatewayConfig, newToken, ageKey string, tokenChanged, force bool) error
     func gatewayRemoveCmd() *cobra.Command
     func gatewaySyncCmd() *cobra.Command
     ```
 
+#### [MODIFY] [types.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/types.go), [funcmap.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/funcmap.go), [banner.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/banner.go), [compact.tmpl](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/templates/compact.tmpl), [clean.tmpl](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/templates/clean.tmpl), [boxed.tmpl](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/templates/boxed.tmpl), [launcher.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/launcher.go), [credentials.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/launcher/credentials.go), & [status.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/status.go)
+*   **Why**: Redesign the `compact`, `clean`, and `boxed` startup banner and `aide which` output to display the active harness config directory, available harnesses, active gateway URL/auth/model-cache status, available gateways (`switch: aide gateway use <name>`), non-blanked credential env vars, and resolved capabilities in `aide which`.
+*   **Signatures & Structural Logic**:
+    ```go
+    type HarnessOption struct {
+        Name      string `json:"name"`
+        ConfigDir string `json:"config_dir,omitempty"`
+    }
+
+    type GatewayOption struct {
+        Name string `json:"name"`
+        URL  string `json:"url,omitempty"`
+    }
+    ```
+    *   Extend `ui.CredentialInfo` (`internal/ui/types.go`) with `URL`, `Store`, `Key`, `IsGateway`, `ModelCount`, `ModelAge`, `TargetFile`, and `TargetSync`.
+    *   Extend `ui.BannerData` (`internal/ui/types.go`) with `HarnessConfigDir`, `AvailableHarnesses`, and `AvailableGateways`.
+    *   Filter `""` values in `SetBannerCredentials` (`internal/launcher/credentials.go`) so blanked vars (`ANTHROPIC_API_KEY: ""`) are omitted from `CredentialInfo.Env`.
+    *   Strip `envscrub.ConfigDirRedirects()` keys from `EnvItems` when `ctx.SelectsConfigDir()` is true, resolve the agent binary via `cfg.Agents[agentName].Binary`, and resolve capabilities (`capability.AutoInclude`, `sandbox.ResolveCapabilitiesWithVariants`, `sandbox.ApplyOverrides`) + extra sandbox paths in `whichCmd` (`cmd/aide/status.go`).
+
 #### [MODIFY] [commands.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/commands.go)
 *   **Why**: Register `gatewayCmd()` on the root `aide` command.
 
-#### [NEW] [gateway_test.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/gateway_test.go)
-*   **Why**: End-to-end CLI tests for `aide gateway add` (with `--token-stdin`, `--token-env`, and mutual-exclusivity error check), `aide gateway list` (`human` and `json` formats, `--models`), `aide gateway sync`, and `aide gateway remove` (including cross-profile secret preservation).
+#### [NEW] [gateway_test.go](file:///Users/subramk/source/github.com/jskswamy/aide/cmd/aide/gateway_test.go) & [MODIFY] [banner_test.go](file:///Users/subramk/source/github.com/jskswamy/aide/internal/ui/banner_test.go)
+*   **Why**: End-to-end CLI tests for `aide gateway add` (interactive TTY prompts for `--url`, `<name>` both when `--url` is prompted and when `--url` is passed via flag, and default switch via a shared `*bufio.Reader`, plus `--token-stdin`, `--token-env`, `--default`, and mutual-exclusivity error check), `aide gateway list` (`human` and `json` formats, `--models`, built-in credentials alongside custom gateways), `aide gateway use` (explicit `<name>` and interactive TTY picker, verifying `claude` and `codex` materialization), `aide gateway edit` and `aide gateway rename` (interactive and flag-driven rename, secret key migration, custom key preservation, token rotation via `--token-env`/`--token-stdin`/TTY, URL change re-sync, harness subset cleanup, `default_credentials` and `preferences.json` updates), `aide gateway sync`, `aide gateway remove` (including cross-profile secret preservation), `aide which` capability/gateway resolution, and unit tests for `compact`, `clean`, and `boxed` banner rendering.
 
 #### [MODIFY] [docs/configuration.md](file:///Users/subramk/source/github.com/jskswamy/aide/docs/configuration.md) & [RELEASE_NOTES.md](file:///Users/subramk/source/github.com/jskswamy/aide/RELEASE_NOTES.md)
-*   **Why**: Document the `gateways:` profile block and `aide gateway` CLI commands in `docs/configuration.md`, and add an entry under `### ✨ New` in `RELEASE_NOTES.md` per repository release-notes rules.
+*   **Why**: Document the `gateways:` profile block, `--gateway` flag, and `aide gateway` CLI commands (`add`, `list`, `use`, `edit`, `rename`, `sync`, `remove`) in `docs/configuration.md`, and add entries under `### 💥 Breaking changes` (`--credential` replaced by `--gateway`) and `### ✨ New` in `RELEASE_NOTES.md` per repository release-notes rules.
 
 ---
 
@@ -813,9 +1096,10 @@ Run the full test suite and targeted package tests inside the Nix development sh
 nix develop path:. --command go test -v ./internal/config -run TestGateway
 nix develop path:. --command go test -v ./internal/secrets -run TestManager_SetDeleteKey
 nix develop path:. --command go test -v ./internal/gateway/...
+nix develop path:. --command go test -v ./internal/ui/...
 nix develop path:. --command go test -v ./internal/launcher -run TestLauncher_Gateway
 nix develop path:. --command go test -v ./cmd/aide -run TestGatewayCmd
-nix develop path:. --command go test ./...
+nix develop path:. --command go test -race ./...
 ```
 
 #### Manual Verification
@@ -825,7 +1109,10 @@ nix develop path:. --command go test ./...
 2.  **Verify `aide gateway list` output**:
     *   Run `aide gateway list --profile work` and `aide gateway list --profile work --models --format json`.
     *   Confirm the output displays the gateway metadata, cached model count, and per-harness file status (`synced` or `pending` depending on whether each `~/.<harness>-work` directory exists).
-3.  **Verify credential resolution (`aide which`), harness switching, & launch-time TTL refresh**:
-    *   Run `aide which --profile work --agent pi` to confirm `LOCAL_GW_TOKEN` is selected without side effects, then launch `aide --profile work --agent pi` (with a short `--ttl 1s`), wait 2 seconds, and re-run to observe the automatic refresh progress output and materialized `~/.pi-work/models.json`.
-4.  **Verify clean removal**:
-    *   Run `aide gateway remove local-gw --profile work` and confirm `gateways.local-gw`, `~/.local/state/aide/gateways/work/local-gw.json`, and the `local-gw` provider entries in harness config files are removed cleanly.
+3.  **Verify `aide gateway use`, `aide gateway edit`, and `aide gateway rename`**:
+    *   Run `aide gateway use local-gw --profile work` to switch the profile default across harnesses.
+    *   Run `aide gateway rename local-gw acme --profile work` (and `aide gateway edit acme --ttl 12h --profile work`) and verify that `local_gw_token` is migrated to `acme_token`, `~/.local/state/aide/gateways/work/local-gw.json` is moved to `acme.json`, and `local-gw` provider entries in harness config files are replaced with `acme` (`ACME_TOKEN`).
+4.  **Verify credential resolution (`aide which`), harness switching, & launch-time TTL refresh**:
+    *   Run `aide which --profile work --agent pi` to confirm `ACME_TOKEN` is selected without side effects, then launch `aide --profile work --agent pi` (with a short `--ttl 1s`), wait 2 seconds, and re-run to observe the automatic refresh progress output and materialized `~/.pi-work/models.json`.
+5.  **Verify clean removal**:
+    *   Run `aide gateway remove acme --profile work` and confirm `gateways.acme`, `~/.local/state/aide/gateways/work/acme.json`, and the `acme` provider entries in harness config files are removed cleanly.

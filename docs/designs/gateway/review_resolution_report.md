@@ -1,4 +1,4 @@
-# Goldfish Annotated Review Report
+# Annotated Design Review Resolution Report
 
 Status: resolved
 **Target:** [`docs/designs/gateway/design.md`](file:///Users/subramk/source/github.com/jskswamy/aide/docs/designs/gateway/design.md) (`1..979`)

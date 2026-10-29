@@ -1,4 +1,4 @@
-# EGM Comprehension Review (Stage 6): `docs/designs/gateway/design.md`
+# Comprehension Review (Stage 6): `docs/designs/gateway/design.md`
 
 **Audited Scopes:** `FeatureRange: 1..507`, `DetailedRange: 508..765`
 **Standard Applied:** `re-implementation-standard.md` (Zero-Assumption Rule)

@@ -1,4 +1,4 @@
-# EGM Intermediate Zoom Out Review (Stage 8): `docs/designs/gateway/design.md`
+# Intermediate Zoom Out Review (Stage 8): `docs/designs/gateway/design.md`
 
 **Target Document:** [`docs/designs/gateway/design.md`](file:///Users/subramk/source/github.com/jskswamy/aide/docs/designs/gateway/design.md)
 **Standard Applied:** `zoom-out-standard.md`

@@ -194,13 +194,18 @@ func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfi
 // does not declare gwName, such as a single gateway passed on its own,
 // counts as its default.
 func IsDefaultGateway(ctx config.Context, gwName, harnessName string) bool {
-	if _, ok := ctx.Gateways[gwName]; !ok {
+	_, inGW := ctx.Gateways[gwName]
+	_, inCred := ctx.Credentials[gwName]
+	if !inGW && !inCred {
 		return true
 	}
-	if _, synthesized := ctx.Credentials[gwName]; !synthesized {
-		var err error
-		if ctx, err = config.SynthesizeGatewayCredentials(ctx); err != nil {
-			return false
+	for g := range ctx.Gateways {
+		if _, synthesized := ctx.Credentials[g]; !synthesized {
+			var err error
+			if ctx, err = config.SynthesizeGatewayCredentials(ctx); err != nil {
+				return false
+			}
+			break
 		}
 	}
 	if harnessName == "" {

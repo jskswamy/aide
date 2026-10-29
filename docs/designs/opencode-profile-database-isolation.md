@@ -236,7 +236,3 @@ No new file. No file is deleted. Aide does not create `opencode.db`. Tests inspe
 *   **What those tests prove**: two selecting profiles would be given different absolute `OPENCODE_DB` values, each under that profile's config dir, on the environment `Exec` receives. A relative ambient value is overwritten on a private-server launch and left alone when no config dir is selected. `service` and `mcp list` do not get the variable. `auth list` becomes `auth list --standalone`. `debug paths` does not get the flag. A blocked or non-absolute path fails before exec. No test creates a database file.
 *   **What those tests do not prove**: a live `auth list` against two real OpenCode databases. That needs the OpenCode binary and is not added as a CI test.
 *   **Static analysis**: `go test` is the check. No new linter config.
-
---------------------------------------------------------------------------------
-
-*Drafted with EGM*

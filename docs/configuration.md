@@ -372,9 +372,9 @@ profiles:
   profile.
 - A launch stops before anything runs when a selected binding is not
   defined in the profile, or its store or key is missing, or
-  `--credential` names one restricted to other agents.
+  `--gateway` names one restricted to other agents.
 - `default_credentials:` and a saved selection (`aide project set
-  --credential`) skip bindings restricted to other agents, so a profile
+  --gateway`) skip bindings restricted to other agents, so a profile
   that runs several agents lists one binding per agent:
   `default_credentials: [anthropic, openrouter]` with `anthropic`
   restricted to `harnesses: [claude]` and `openrouter` to
@@ -402,7 +402,7 @@ Pick an agent and the profile picks the credential: give a binding a
 route per agent with `for:`. Each route says which variables carry
 the key (`env:`) and which non-secret settings travel with it
 (`set:`), such as the endpoint. Switching with `--agent` then needs no
-`--credential`.
+`--gateway`.
 
 ```yaml
 profiles:
@@ -427,7 +427,7 @@ profiles:
 ```
 
 `aide` runs Claude through OpenRouter, `aide --agent pi` runs Pi
-through OpenRouter, and `aide --credential bedrock` switches Claude to
+through OpenRouter, and `aide --gateway bedrock` switches Claude to
 Bedrock. `aide --agent codex` notes that Codex has no route and uses
 its own login.
 
@@ -544,7 +544,7 @@ derives from the `gateways:` entry in memory; nothing is added under
 | :--- | :--- | :--- |
 | `claude` | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_API_KEY=""` | `<dir>/cache/gateway-models.json` |
 | `pi` | `CORP_TOKEN` (the key uppercased) | `<dir>/models.json`, `providers.corp` (`"apiKey": "$CORP_TOKEN"`) |
-| `opencode` | `CORP_TOKEN` | `<dir>/opencode.jsonc`, `provider.corp` (`"{env:CORP_TOKEN}"`) |
+| `opencode` | `CORP_TOKEN` | `<dir>/opencode.jsonc`, `providers.corp` (`"{env:CORP_TOKEN}"`) |
 | `codex` | `CORP_TOKEN` | `<dir>/config.toml`, `[model_providers.corp]` (`env_key = "CORP_TOKEN"`) |
 
 `<dir>` is the profile's config dir for that agent (`~/.pi-work` with
@@ -574,7 +574,7 @@ with at most one active LLM provider or gateway default per agent:
   `opencode`, while `api` automatically becomes the default for `codex`.
 - Switch a profile's default gateway or built-in provider credential at
   any time with `aide gateway use [<name>] [--profile <name>]` (or pass
-  `aide --credential <name>` for a single launch).
+  `aide --gateway <name>` for a single launch).
 
 Claude keeps one gateway model file per config dir. `aide gateway sync`
 writes it for Claude's default gateway (or the first custom gateway on
@@ -589,16 +589,18 @@ them again before starting the agent and prints what it did. If the
 gateway cannot be reached, the launch warns and uses the cached models;
 with no cache at all it launches without a model list. When the cache
 is fresh but the launched agent's file is missing or out of date (after
-switching with `--agent` or `--credential`), aide writes it from the
+switching with `--agent` or `--gateway`), aide writes it from the
 cache with no network call. `--auth login` launches skip all of this.
 
 ### Commands
 
-- `aide gateway list [--profile <name>] [--models] [--format json]`:
+- `aide gateway list [--profile <name> | --all] [--models] [--format json]`:
   each configured gateway and built-in provider credential on the
-  profile, its URL, secret store and key name (never the token), cache
-  age, and per-agent file status (`synced`, `stale`, `pending`, or
-  `active`/`standby` for built-in credentials).
+  active profile (or across all profiles with `--all`), with active
+  defaults (`●`) sorted ahead of standby entries (`○`), URL, secret
+  store and key name (never the token), cache age, and per-agent file
+  status (`synced`, `stale`, `pending`, or `active`/`available` for
+  built-in credentials).
 - `aide gateway use [<name>] [--profile <name>]`: switch the profile's
   default gateway or built-in provider credential (with an interactive
   numbered picker on a terminal when `<name>` is omitted) and

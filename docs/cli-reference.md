@@ -24,7 +24,7 @@ sandbox policy.
 |------|---------|-------------|
 | `--agent <name>` | | Override which agent (harness) to launch, for this run only |
 | `--profile <name>` | | Use this profile instead of the one matched for the directory |
-| `--credential <name>` | | Inject this credential binding (repeatable); replaces the saved and default selection for this run. `--credential=` selects none |
+| `--gateway <name>` | | Use this gateway or credential binding (repeatable); replaces the saved and default selection for this run. `--gateway=` selects none |
 | `--auth <mode>` | api | `api` injects the selected credentials; `login` injects none so the harness uses its native login |
 | `--with <caps>` | | Activate capabilities for this session (e.g., `--with k8s,docker`) |
 | `--without <caps>` | | Disable profile capabilities for this session |
@@ -52,10 +52,10 @@ One-time flags never change saved preferences. Precedence:
 - Harness: `--agent`, else the repository preference saved with
   `aide project set`, else a trusted `.aide.yaml` `agent:`, else the
   profile's `agent:`.
-- Credentials: `--credential` / `--auth login`, else the saved
+- Credentials: `--gateway` / `--auth login`, else the saved
   selection, else `default_credentials:`. The saved selection and
   `default_credentials:` skip bindings restricted to other agents;
-  `--credential` naming one stops the launch.
+  `--gateway` naming one stops the launch.
 
 ---
 
@@ -98,7 +98,7 @@ aide status
 
 `--agent <name>` works as for `aide which`.
 
-`aide which` and `aide status` also accept `--profile`, `--credential`
+`aide which` and `aide status` also accept `--profile`, `--gateway`
 and `--auth`, and report where each choice came from
 (`profile_source`, `harness_source`, `credential_source` and
 `credential_selection` in `--format json`).
@@ -116,8 +116,8 @@ only, never secret values, and never touch `.aide.yaml` or
 `clear` refuse; launches use the profile defaults.
 
 ```
-aide project set [--profile <name>] [--agent <harness>] [--credential <name>]... [--no-credentials]
-aide project clear [--profile <name>] [--agent] [--credential]
+aide project set [--profile <name>] [--agent <harness>] [--gateway <name>]... [--no-credentials]
+aide project clear [--profile <name>] [--agent] [--gateway]
 aide project clear --reset
 aide project show [--profile <name>] [--format json]
 ```
@@ -127,7 +127,7 @@ aide project show [--profile <name>] [--format json]
   dir, credentials defined in the profile and allowed for the
   harness). `--no-credentials` saves an explicit empty selection, for
   native-login launches.
-- `clear` with `--agent` or `--credential` clears that field; with
+- `clear` with `--agent` or `--gateway` clears that field; with
   neither, both. Cleared fields fall back to `.aide.yaml` and the
   profile defaults.
 - `clear --reset` moves the whole preferences file aside to

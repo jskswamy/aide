@@ -242,7 +242,7 @@ func (s *Selection) explainSavedSelection(err error) error {
 		return err
 	}
 	return fmt.Errorf("credentials saved for this repository: %w\n\n"+
-		"Change them with: aide project set --credential <name>, or clear them with: aide project clear --credential", err)
+		"Change them with: aide project set --gateway <name>, or clear them with: aide project clear --gateway", err)
 }
 
 // SetBannerSelection records sel's sources and credential selection on

@@ -1,4 +1,4 @@
-# EGM Implementation Readiness & Codebase Details Report (Stage 9): `docs/designs/gateway/design.md`
+# Implementation Readiness & Codebase Details Report (Stage 9): `docs/designs/gateway/design.md`
 
 **Target Scope:** [`docs/designs/gateway/design.md`](file:///Users/subramk/source/github.com/jskswamy/aide/docs/designs/gateway/design.md#L508-L765) (`DetailedRange: 508..765`, cross-checked against `FeatureRange: 1..507`)
 **Standard Applied:** `implementation-readiness-standard.md`

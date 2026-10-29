@@ -168,7 +168,7 @@ or saved routes applies to Codex, aide still launches it in the work home
 and notes that it uses its own login. Use the agent's native login flow
 there; aide does not borrow the personal or global login.
 
-An explicitly incompatible `--credential` selection or a failure to load
+An explicitly incompatible `--gateway` selection or a failure to load
 a selected credential remains an error. A missing applicable default is
 different from a broken selected credential.
 

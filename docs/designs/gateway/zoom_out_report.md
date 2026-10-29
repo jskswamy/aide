@@ -1,4 +1,4 @@
-# EGM Zoom Out Review (Stages 5 & 8): `docs/designs/gateway/design.md`
+# Zoom Out Review (Stages 5 & 8): `docs/designs/gateway/design.md`
 
 **Target Document:** [`docs/designs/gateway/design.md`](../../../docs/designs/gateway/design.md) (lines 1–766)
 **Standard Applied:** `zoom-out-standard.md`

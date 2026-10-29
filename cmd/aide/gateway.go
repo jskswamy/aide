@@ -223,6 +223,7 @@ Examples:
 func gatewayListCmd() *cobra.Command {
 	var (
 		profile string
+		all     bool
 		models  bool
 	)
 	cmd := &cobra.Command{
@@ -235,33 +236,53 @@ func gatewayListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if all && profile != "" {
+				return errors.New("--profile and --all cannot be used together")
+			}
 			env, err := cmdEnv(cmd)
 			if err != nil {
 				return err
 			}
 			cfg := env.Config()
-			if profile != "" {
-				if _, ok := cfg.Contexts[profile]; !ok {
-					return fmt.Errorf("profile %q not found", profile)
+			var profiles []string
+			if all {
+				profiles = slices.Sorted(maps.Keys(cfg.Contexts))
+			} else {
+				p, _, err := resolveGatewayProfile(cfg, env.CWD(), profile)
+				if err != nil {
+					if profile == "" {
+						return fmt.Errorf("no profile matches this directory (pass --profile <name> or --all): %w", err)
+					}
+					return err
 				}
+				profiles = []string{p}
 			}
 			home := userHomeDir()
 			entries := []GatewayListEntry{}
-			for _, p := range slices.Sorted(maps.Keys(cfg.Contexts)) {
-				if profile != "" && p != profile {
-					continue
-				}
+			for _, p := range profiles {
 				ctx := cfg.Contexts[p]
+				var pEntries []GatewayListEntry
 				for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
 					b := ctx.Credentials[name]
 					if !b.IsLLMProvider(name) {
 						continue
 					}
-					entries = append(entries, credentialListEntry(p, ctx, name, b))
+					pEntries = append(pEntries, credentialListEntry(p, ctx, name, b))
 				}
 				for _, name := range slices.Sorted(maps.Keys(ctx.Gateways)) {
-					entries = append(entries, gatewayListEntry(p, ctx, name, home, models))
+					pEntries = append(pEntries, gatewayListEntry(p, ctx, name, home, models))
 				}
+				slices.SortStableFunc(pEntries, func(a, b GatewayListEntry) int {
+					aActive, bActive := len(a.DefaultFor) > 0, len(b.DefaultFor) > 0
+					if aActive != bActive {
+						if aActive {
+							return -1
+						}
+						return 1
+					}
+					return cmp.Compare(a.Gateway, b.Gateway)
+				})
+				entries = append(entries, pEntries...)
 			}
 			return output.Emit(cmd.OutOrStdout(), format, entries, func(w io.Writer) error {
 				printGatewayList(w, entries, cfg, home, models)
@@ -270,6 +291,7 @@ func gatewayListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Show only this profile's gateways")
+	cmd.Flags().BoolVar(&all, "all", false, "Show gateways across all profiles")
 	cmd.Flags().BoolVar(&models, "models", false, "Include each gateway's cached models")
 	return cmd
 }
@@ -1417,8 +1439,8 @@ func credentialListEntry(profile string, ctx config.Context, name string, b conf
 		if isDef {
 			e.DefaultFor = append(e.DefaultFor, h)
 		}
-		state := gateway.HarnessSyncState("standby")
-		detail := "select with --credential " + name
+		state := gateway.HarnessSyncState("available")
+		detail := "select with --gateway " + name
 		if isDef {
 			state = "active"
 			detail = "default"
@@ -1472,14 +1494,16 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			fmt.Fprintf(w, "PROFILE: %s\n", e.Profile)
 			lastProfile = e.Profile
 		}
-		defaults := fmt.Sprintf("not a default; switch with: aide gateway use %s --profile %s, or pass --credential %s", e.Gateway, e.Profile, e.Gateway)
 		if len(e.DefaultFor) > 0 {
-			defaults = "default for: " + strings.Join(e.DefaultFor, ", ")
+			defaults := "default for: " + strings.Join(e.DefaultFor, ", ")
 			if len(e.DefaultFor) < len(e.Harnesses) {
-				defaults += fmt.Sprintf("; switch all with: aide gateway use %s --profile %s", e.Gateway, e.Profile)
+				defaults += fmt.Sprintf("; switch all: aide gateway use %s --profile %s", e.Gateway, e.Profile)
 			}
+			fmt.Fprintf(w, "  ● GATEWAY: %s  [ACTIVE — %s]\n", e.Gateway, defaults)
+		} else {
+			fmt.Fprintf(w, "  ○ GATEWAY: %s  [standby — switch: aide gateway use %s --profile %s, or launch: aide --gateway %s]\n",
+				e.Gateway, e.Gateway, e.Profile, e.Gateway)
 		}
-		fmt.Fprintf(w, "  GATEWAY: %s (%s)\n", e.Gateway, defaults)
 		urlDisplay := e.BaseURL
 		if e.Kind == "credential" && config.IsBuiltinCredential(e.Gateway) && urlDisplay != "" {
 			urlDisplay += " (built-in)"

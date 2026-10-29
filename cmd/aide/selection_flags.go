@@ -15,20 +15,20 @@ import (
 )
 
 const (
-	profileFlagUsage    = "Use this profile instead of the one matched for this directory"
-	credentialFlagUsage = "Inject this credential binding (repeatable); replaces the saved and default selection for this run"
-	authFlagUsage       = "Authentication: api (inject selected credentials) or login (native login, inject none)"
+	profileFlagUsage = "Use this profile instead of the one matched for this directory"
+	gatewayFlagUsage = "Use this gateway or credential binding (repeatable); replaces the saved and default selection for this run"
+	authFlagUsage    = "Authentication: api (inject selected credentials) or login (native login, inject none)"
 )
 
 // selectionFlags are the one-time launch selections: --profile,
-// --agent, --credential and --auth. They never change saved
+// --agent, --gateway and --auth. They never change saved
 // preferences.
 type selectionFlags struct {
 	profile     string
 	agent       string
 	credentials []string
 	auth        string
-	// credentialsSet reports --credential was given; filled by inputs.
+	// credentialsSet reports --gateway was given; filled by inputs.
 	credentialsSet bool
 }
 
@@ -37,7 +37,7 @@ type selectionFlags struct {
 func (f *selectionFlags) register(cmd *cobra.Command, agentUsage string) {
 	cmd.Flags().StringVar(&f.profile, "profile", "", profileFlagUsage)
 	cmd.Flags().StringVar(&f.agent, "agent", "", agentUsage)
-	cmd.Flags().StringArrayVar(&f.credentials, "credential", nil, credentialFlagUsage)
+	cmd.Flags().StringArrayVar(&f.credentials, "gateway", nil, gatewayFlagUsage)
 	cmd.Flags().StringVar(&f.auth, "auth", "", authFlagUsage)
 	registerSelectionCompletions(cmd)
 }
@@ -48,7 +48,7 @@ func (f *selectionFlags) inputs(cmd *cobra.Command) (launcher.SelectionInputs, e
 	if err != nil {
 		return launcher.SelectionInputs{}, err
 	}
-	f.credentialsSet = cmd.Flags().Changed("credential")
+	f.credentialsSet = cmd.Flags().Changed("gateway")
 	return launcher.SelectionInputs{
 		Agent:          f.agent,
 		Credentials:    nonEmpty(f.credentials),
@@ -68,14 +68,14 @@ func parseAuthFlag(v string) (launcher.AuthMode, error) {
 	return "", fmt.Errorf("--auth %q: use %s or %s", v, launcher.AuthAPI, launcher.AuthLogin)
 }
 
-// nonEmpty drops empty names, so --credential= is an explicitly empty
+// nonEmpty drops empty names, so --gateway= is an explicitly empty
 // selection.
 func nonEmpty(names []string) []string {
 	return slices.DeleteFunc(slices.Clone(names), func(s string) bool { return s == "" })
 }
 
 // registerSelectionCompletions completes profile, harness and
-// credential names for whichever of those flags cmd has.
+// gateway/credential names for whichever of those flags cmd has.
 func registerSelectionCompletions(cmd *cobra.Command) {
 	complete := func(names func(*cobra.Command) []string) cobra.CompletionFunc {
 		return func(c *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
@@ -83,9 +83,9 @@ func registerSelectionCompletions(cmd *cobra.Command) {
 		}
 	}
 	for flag, names := range map[string]func(*cobra.Command) []string{
-		"profile":    func(*cobra.Command) []string { return profileNamesForCompletion() },
-		"agent":      func(*cobra.Command) []string { return harnessNamesForCompletion() },
-		"credential": credentialNamesForCompletion,
+		"profile": func(*cobra.Command) []string { return profileNamesForCompletion() },
+		"agent":   func(*cobra.Command) []string { return harnessNamesForCompletion() },
+		"gateway": credentialNamesForCompletion,
 	} {
 		if cmd.Flags().Lookup(flag) != nil {
 			_ = cmd.RegisterFlagCompletionFunc(flag, complete(names))
@@ -132,8 +132,8 @@ func harnessNamesForCompletion() []string {
 	return names
 }
 
-// credentialNamesForCompletion lists the credential bindings of the
-// profile --profile names, else the one matched for this directory.
+// credentialNamesForCompletion lists the gateways and credential bindings
+// of the profile --profile names, else the one matched for this directory.
 func credentialNamesForCompletion(cmd *cobra.Command) []string {
 	cfg, cwd := completionConfig()
 	if cfg == nil {
@@ -143,6 +143,10 @@ func credentialNamesForCompletion(cmd *cobra.Command) []string {
 	rc, err := aidectx.ResolveSelected(cfg, cwd, aidectx.GitRemotes(cwd), profile)
 	if err != nil {
 		return nil
+	}
+	synth, err := config.SynthesizeGatewayCredentials(rc.Context)
+	if err == nil {
+		return slices.Sorted(maps.Keys(synth.Credentials))
 	}
 	return slices.Sorted(maps.Keys(rc.Context.Credentials))
 }
@@ -206,7 +210,7 @@ func addProfileFlag(cmd *cobra.Command, target *string) {
 // injects nothing, so the harness always uses its native login.
 func passthroughSelectionError(f *selectionFlags, in launcher.SelectionInputs, configFile string) error {
 	if f.profile != "" || in.CredentialsSet || in.Auth == launcher.AuthAPI {
-		return fmt.Errorf("--profile, --credential and --auth api need profiles in %s; none exists yet (create one with: aide init). "+
+		return fmt.Errorf("--profile, --gateway and --auth api need profiles in %s; none exists yet (create one with: aide init). "+
 			"Without a config aide injects no credentials and the harness uses its native login", configFile)
 	}
 	return nil

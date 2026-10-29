@@ -1,4 +1,4 @@
-# Goldfish Annotated Review Report
+# Annotated Design Review Resolution Report
 
 Status: resolved
 **Target:** [`docs/designs/gateway/design.md`](../../../docs/designs/gateway/design.md) (`1..979`)

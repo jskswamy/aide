@@ -39,7 +39,7 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 	cfgPath := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "aide", "config.yaml")
 	cfgBefore, _ := os.ReadFile(cfgPath)
 
-	out, err := runProject(t, "set", "--agent", "pi", "--credential", "openai")
+	out, err := runProject(t, "set", "--agent", "pi", "--gateway", "openai")
 	if err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
@@ -64,7 +64,7 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 	}
 
 	// A second set changes only what it names.
-	if out, err := runProject(t, "set", "--credential", "anthropic"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "anthropic"); err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, _ = savedFor(t, path, "work")
@@ -108,10 +108,10 @@ func TestProjectSet_RejectsInvalidSelections(t *testing.T) {
 	path := selectionEnv(t, selectionTestConfig)
 	for name, args := range map[string][]string{
 		"nothing to set":     {"set"},
-		"unknown credential": {"set", "--credential", "nope"},
-		"other profile's":    {"set", "--profile", "personal", "--credential", "anthropic"},
+		"unknown credential": {"set", "--gateway", "nope"},
+		"other profile's":    {"set", "--profile", "personal", "--gateway", "anthropic"},
 		"unknown harness":    {"set", "--agent", "no-such-harness-xyz"},
-		"conflicting":        {"set", "--credential", "openai", "--no-credentials"},
+		"conflicting":        {"set", "--gateway", "openai", "--no-credentials"},
 		"unknown profile":    {"set", "--profile", "ghost", "--agent", "pi"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -142,15 +142,15 @@ func TestProjectSet_RefusesWithoutRepositoryIdentity(t *testing.T) {
 
 func TestProjectClear_ClearsFieldsIndependently(t *testing.T) {
 	path := selectionEnv(t, selectionTestConfig)
-	if out, err := runProject(t, "set", "--agent", "pi", "--credential", "openai"); err != nil {
+	if out, err := runProject(t, "set", "--agent", "pi", "--gateway", "openai"); err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
-	if out, err := runProject(t, "clear", "--credential"); err != nil {
+	if out, err := runProject(t, "clear", "--gateway"); err != nil {
 		t.Fatalf("project clear: %v\n%s", err, out)
 	}
 	p, ok := savedFor(t, path, "work")
 	if !ok || p.Harness != "pi" || p.Credentials != nil {
-		t.Errorf("after clear --credential = %+v, want harness kept and credentials unset", p)
+		t.Errorf("after clear --gateway = %+v, want harness kept and credentials unset", p)
 	}
 	if out, err := runProject(t, "clear"); err != nil {
 		t.Fatalf("project clear: %v\n%s", err, out)
@@ -180,7 +180,7 @@ func TestProjectShow_JSON(t *testing.T) {
 		t.Errorf("credentials = %#v, want explicit []", got["credentials"])
 	}
 
-	if _, err := runProject(t, "clear", "--credential"); err != nil {
+	if _, err := runProject(t, "clear", "--gateway"); err != nil {
 		t.Fatal(err)
 	}
 	out, _ = runProject(t, "show", "--format", "json")

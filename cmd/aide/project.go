@@ -31,7 +31,7 @@ worktree and clone of the repository shares them under the same
 profile. They hold names only, never secret values, and never change
 .aide.yaml or config.yaml.
 
-One-time flags on aide itself (--agent, --credential, --auth) override
+One-time flags on aide itself (--agent, --gateway, --auth) override
 these for a single launch without changing them.`,
 		SilenceUsage: true,
 	}
@@ -92,17 +92,17 @@ func projectSetCmd() *cobra.Command {
 		Use:   "set",
 		Short: "Save the default harness and/or credentials for this repository",
 		Example: `  aide project set --agent pi
-  aide project set --credential openrouter
+  aide project set --gateway openrouter
   aide project set --agent claude --no-credentials   # native login`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			credsSet := cmd.Flags().Changed("credential")
+			credsSet := cmd.Flags().Changed("gateway")
 			if agent == "" && !credsSet && !noCredentials {
-				return errors.New("nothing to save: pass --agent, --credential or --no-credentials")
+				return errors.New("nothing to save: pass --agent, --gateway or --no-credentials")
 			}
 			if credsSet && noCredentials {
-				return errors.New("--credential and --no-credentials conflict: pick one")
+				return errors.New("--gateway and --no-credentials conflict: pick one")
 			}
 			t, err := resolveProjectTarget(cmd, profile)
 			if err != nil {
@@ -138,7 +138,7 @@ func projectSetCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Save under this profile instead of the one matched here")
 	cmd.Flags().StringVar(&agent, "agent", "", "Default harness for this repository")
-	cmd.Flags().StringArrayVar(&credentials, "credential", nil, "Credential binding to inject by default (repeatable); replaces the saved selection")
+	cmd.Flags().StringArrayVar(&credentials, "gateway", nil, "Gateway or credential binding to inject by default (repeatable); replaces the saved selection")
 	cmd.Flags().BoolVar(&noCredentials, "no-credentials", false, "Inject no credentials by default (native login)")
 	registerSelectionCompletions(cmd)
 	return cmd
@@ -171,7 +171,7 @@ func projectClearCmd() *cobra.Command {
 		Use:   "clear",
 		Short: "Clear saved repository preferences (all, or the fields named)",
 		Long: `Clear what aide project set saved for this repository under the current
-profile. With --agent or --credential only that field is cleared; with
+profile. With --agent or --gateway only that field is cleared; with
 neither, both are. Cleared fields fall back to .aide.yaml and the
 profile defaults.
 
@@ -183,7 +183,7 @@ when the file cannot be read. Nothing is deleted.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if reset {
 				if clearAgent || clearCredentials || profile != "" {
-					return errors.New("--reset clears the whole preferences file; it takes no --agent, --credential or --profile")
+					return errors.New("--reset clears the whole preferences file; it takes no --agent, --gateway or --profile")
 				}
 				return runProjectReset(cmd)
 			}
@@ -229,7 +229,7 @@ when the file cannot be read. Nothing is deleted.`,
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Clear under this profile instead of the one matched here")
 	cmd.Flags().BoolVar(&clearAgent, "agent", false, "Clear only the saved harness")
-	cmd.Flags().BoolVar(&clearCredentials, "credential", false, "Clear only the saved credential selection")
+	cmd.Flags().BoolVar(&clearCredentials, "gateway", false, "Clear only the saved gateway/credential selection")
 	cmd.Flags().BoolVar(&reset, "reset", false, "Move the whole preferences file aside (for a file aide cannot read)")
 	registerSelectionCompletions(cmd)
 	return cmd

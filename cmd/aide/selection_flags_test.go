@@ -111,7 +111,7 @@ func TestWhich_HonorsSavedPreferenceAndFlags(t *testing.T) {
 		t.Errorf("credential_selection = %v, want [openai]", sel)
 	}
 
-	got = runSelectionJSON(t, whichCmd(), "--agent", "claude", "--credential", "anthropic")
+	got = runSelectionJSON(t, whichCmd(), "--agent", "claude", "--gateway", "anthropic")
 	if got["agent_name"] != "claude" || got["harness_source"] != "flag" || got["credential_source"] != "flag" {
 		t.Errorf("flags did not win: agent %v from %v, credentials from %v", got["agent_name"], got["harness_source"], got["credential_source"])
 	}
@@ -299,7 +299,7 @@ func TestWhichStatus_UntrustedProjectConfigContributesNothing(t *testing.T) {
 
 	// openai allows only claude: judged against the untrusted pi it
 	// would be refused.
-	if out, err := runProject(t, "set", "--credential", "openai"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "openai"); err != nil {
 		t.Errorf("project set judged against the untrusted agent: %v\n%s", err, out)
 	}
 }

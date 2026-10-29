@@ -1,7 +1,7 @@
-# EGM Critic & Threat Modeling Report (Stage 7): `docs/designs/gateway/design.md`
+# Critic & Threat Modeling Report (Stage 7): `docs/designs/gateway/design.md`
 
 **Audited Scope:** `FeatureRange: 1..507` (cross-checked with `DetailedRange: 508..765`)
-**Standards Applied:** `feature-spec-standard.md` + Dedicated Threat Modeling Audit (`egm-design`, `egm-structural`, `egm-style`)
+**Standards Applied:** `feature-spec-standard.md` + Dedicated Threat Modeling Audit (Design Critic, Document Architect, Style Reviewer)
 
 ---
 

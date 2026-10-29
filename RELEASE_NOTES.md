@@ -43,6 +43,15 @@ longer show up across profiles. This includes a profile pinned to
 - `service`, `serve`, `mcp`, `plugin` and the other commands that use the
   shared background server do not get the profile database.
 
+#### `--credential` replaced with `--gateway`
+
+The `--credential` flag on `aide`, `aide which`, `aide status`,
+`aide project set`, and `aide project clear` has been replaced with
+`--gateway`. Pass `--gateway <name>` (repeatable) to select any custom
+gateway or built-in provider credential shown in `aide gateway list` for
+a single launch or repository preference, or `aide project clear --gateway`
+to clear a saved selection.
+
 ### ✨ New
 
 #### Custom model gateway management (`aide gateway`)
@@ -53,7 +62,7 @@ aide now manages custom-hosted LLM gateways and model catalogues across Claude C
 - Supports renaming gateways, rotating bearer tokens, and updating gateway URLs, TTLs, and target agents in place via `aide gateway edit [<name>]` and `aide gateway rename <old-name> [<new-name>]`, automatically migrating encrypted secret keys (`<old>_token` → `<new>_token`), cached model catalogues, `default_credentials`, repository preferences, and agent config files.
 - Queries `<base_url>/v1/models`, caches the normalized model catalogue under `~/.local/state/aide/gateways/<profile>/<gateway>.json`, and materializes per-agent model configuration files (`gateway-models.json` for Claude Code, `models.json` for Pi, `opencode.jsonc` for OpenCode, and `config.toml` for Codex) without writing plaintext tokens to disk.
 - Automatically refreshes expired gateway model catalogues at launch (default `refresh_ttl: 24h`) or on demand with `aide gateway sync`.
-- Resolves default credentials per agent (`DefaultCredentialsForHarness`) and switches a profile's active default between custom gateways and built-in provider credentials via `aide gateway use [<name>]` (or `--default` on `aide gateway add`, or per launch with `aide --credential <name>`). `aide gateway list`, `aide which`, and the startup banner show active and standby gateways, target endpoints, and agent config directories.
+- Resolves default credentials per agent (`DefaultCredentialsForHarness`) and switches a profile's active default between custom gateways and built-in provider credentials via `aide gateway use [<name>]` (or `--default` on `aide gateway add`, or per launch with `aide --gateway <name>`). `aide gateway list` defaults to the active profile (with `--all` to inspect all profiles), sorts active gateways (`●`) ahead of standby gateways (`○`), and shows target endpoints, cache freshness, and agent config files alongside `aide which` and the startup banner.
 - `base_url` must be `https://` except for `localhost`, `127.0.0.1` and `::1`, and `.aide.yaml` cannot declare `gateways:`.
 - Codex reaches the gateway over the OpenAI protocol, so the gateway must also serve `/v1/chat/completions`.
 

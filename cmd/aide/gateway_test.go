@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -450,9 +451,9 @@ default_profile: work
 		t.Fatalf("list: %v\n%s", err, out)
 	}
 	for _, want := range []string{
-		"GATEWAY: anthropic (default for: claude, pi, opencode",
+		"● GATEWAY: anthropic  [ACTIVE — default for: claude, pi, opencode]",
 		"https://api.anthropic.com (built-in)",
-		"GATEWAY: api (default for: codex",
+		"● GATEWAY: api  [ACTIVE — default for: codex; switch all: aide gateway use api --profile work]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list missing %q:\n%s", want, out)
@@ -475,7 +476,25 @@ default_profile: work
 		t.Errorf("DefaultCredentials after use api = %v, want [api]", got)
 	}
 
-	// Switch back to anthropic via interactive TTY picker.
+	// Verify `aide gateway list` (with no --profile flag) defaults to the active profile ("work"),
+	// sorts active "api" ahead of standby "anthropic", and marks "anthropic" as standby with --gateway hint.
+	out, err = runGateway(t, "", "list")
+	if err != nil {
+		t.Fatalf("list default profile: %v\n%s", err, out)
+	}
+	apiIdx := strings.Index(out, "● GATEWAY: api  [ACTIVE — default for: claude, pi, opencode, codex]")
+	anthIdx := strings.Index(out, "○ GATEWAY: anthropic  [standby — switch: aide gateway use anthropic --profile work, or launch: aide --gateway anthropic]")
+	if apiIdx < 0 || anthIdx < 0 || apiIdx > anthIdx {
+		t.Errorf("expected active api before standby anthropic (apiIdx=%d, anthIdx=%d):\n%s", apiIdx, anthIdx, out)
+	}
+	if !strings.Contains(out, "available (select with --gateway anthropic)") {
+		t.Errorf("expected standby anthropic harness row to suggest --gateway anthropic:\n%s", out)
+	}
+	if _, err := runGateway(t, "", "list", "--profile", "work", "--all"); err == nil {
+		t.Error("expected --profile and --all to be mutually exclusive")
+	}
+
+	// Switch back to anthropic via interactive TTY picker (api is [1] and anthropic is [2], or check order).
 	orig := stdinIsTTY
 	stdinIsTTY = func() bool { return true }
 	t.Cleanup(func() { stdinIsTTY = orig })
@@ -717,5 +736,40 @@ func TestGatewayCmd_EditInteractiveAndTokenRotation(t *testing.T) {
 	gw, ok := loaded.Contexts["work"].Gateways["acme"]
 	if !ok || gw.RefreshTTL != "12h" || len(gw.Harnesses) != 0 || gw.Key != "acme_token" {
 		t.Errorf("edited gateway acme = %+v, ok=%v", gw, ok)
+	}
+}
+
+func TestGatewayCmd_ListDefaultProfileVsAllAndGatewayCompletion(t *testing.T) {
+	e := newGatewayEnv(t)
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "home-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "home"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Default `aide gateway list` resolves only the active profile ("work") from CWD.
+	out, err := runGateway(t, "", "list")
+	if err != nil {
+		t.Fatalf("list default: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "PROFILE: work") || !strings.Contains(out, "work-gw") || strings.Contains(out, "PROFILE: home") {
+		t.Errorf("default list should include only work profile:\n%s", out)
+	}
+
+	// `aide gateway list --all` lists both profiles.
+	out, err = runGateway(t, "", "list", "--all")
+	if err != nil {
+		t.Fatalf("list --all: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "PROFILE: home") || !strings.Contains(out, "home-gw") || !strings.Contains(out, "PROFILE: work") || !strings.Contains(out, "work-gw") {
+		t.Errorf("list --all should include both home and work profiles:\n%s", out)
+	}
+
+	// Verify `--gateway` completion returns synthesized gateways on the active profile.
+	wCmd := whichCmd()
+	gotComp := credentialNamesForCompletion(wCmd)
+	if !slices.Contains(gotComp, "work-gw") {
+		t.Errorf("credentialNamesForCompletion = %v, want work-gw included", gotComp)
 	}
 }

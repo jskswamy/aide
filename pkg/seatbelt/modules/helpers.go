@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
@@ -47,6 +48,7 @@ var sensitiveHomeDirs = []string{
 	".gnupg",
 	".gpg",
 	".config/gcloud",
+	".config/gh",
 	".azure",
 	".kube",
 	".docker",
@@ -58,6 +60,61 @@ var sensitiveHomeDirs = []string{
 // that hold credentials or private keys and must never be granted
 // through a config-dir override or a tool's source path.
 func SensitiveHomeDirs() []string { return slices.Clone(sensitiveHomeDirs) }
+
+// protectedSymlinkHomeDirs are home-relative paths that symlink widening
+// inside an agent's config dir must never grant write access to (nor to any
+// ancestor that contains them, such as ~/.config or ~/.local/share). They
+// include aide's own dirs, Skillshare's dirs, and every harness's default
+// config/state dirs.
+var protectedSymlinkHomeDirs = []string{
+	".config/aide",
+	".local/share/aide",
+	".local/state/aide",
+	".cache/aide",
+	".config/skillshare",
+	".local/state/skillshare",
+	".local/share/skillshare",
+	".cache/skillshare",
+	".aider",
+	".amp",
+	".config/amp",
+	".claude",
+	".config/claude",
+	"Library/Application Support/Claude",
+	".codex",
+	".copilot",
+	".config/.copilot",
+	".config/copilot",
+	".local/state/.copilot",
+	".local/state/copilot",
+	".cursor",
+	".config/cursor",
+	".gemini",
+	".config/gemini",
+	".config/goose",
+	".local/share/goose",
+	".local/state/goose",
+	".config/opencode",
+	".local/share/opencode",
+	".local/state/opencode",
+	".cache/opencode",
+	".pi",
+}
+
+// profileDirPrefixes are the top-level $HOME directory prefixes used by
+// aide's default per-profile config dir naming (~/.<harness>-<profile>).
+var profileDirPrefixes = []string{
+	".claude-",
+	".codex-",
+	".copilot-",
+	".gemini-",
+	".opencode-",
+	".pi-",
+	".amp-",
+	".cursor-",
+	".goose-",
+	".aider-",
+}
 
 // resolveConfigDirsAdditive is like resolveConfigDirs but xdgCandidate is
 // always appended to the result (augmenting rather than replacing defaults).
@@ -102,9 +159,54 @@ func isSafeConfigOverride(home, dir string) bool {
 		return false
 	}
 	for _, sensitive := range sensitiveHomeDirs {
-		sensitiveAbs := filepath.Join(home, sensitive)
-		if fsutil.IsUnderDir(dir, sensitiveAbs) {
+		sensitiveAbs := filepath.Join(home, filepath.FromSlash(sensitive))
+		if fsutil.IsUnderDir(dir, sensitiveAbs) || fsutil.IsUnderDir(sensitiveAbs, dir) {
 			return false
+		}
+	}
+	return true
+}
+
+// isSafeSymlinkWidening reports whether a resolved symlink target/scope
+// reached from within ownDir may be granted write access. In addition to
+// isSafeConfigOverride (strictly under $HOME and not overlapping any
+// sensitive dir in either direction), it refuses:
+//   - any path overlapping protectedSymlinkHomeDirs (aide's dirs, Skillshare's
+//     dirs, or any harness's default config/state dir) unless covered by ownDir
+//   - any path under another profile's ~/.<harness>-<profile> dir
+func isSafeSymlinkWidening(home, ownDir, candidate string) bool {
+	if !isSafeConfigOverride(home, candidate) {
+		return false
+	}
+	ownClean := filepath.Clean(ownDir)
+	ownResolved := fsutil.ResolveOrSelf(ownClean)
+	isOwn := func(p string) bool {
+		return (ownClean != "" && fsutil.IsUnderDir(p, ownClean)) ||
+			(ownResolved != "" && fsutil.IsUnderDir(p, ownResolved))
+	}
+	if isOwn(candidate) {
+		return true
+	}
+	for _, rel := range protectedSymlinkHomeDirs {
+		protAbs := filepath.Join(home, filepath.FromSlash(rel))
+		if isOwn(protAbs) {
+			continue
+		}
+		if fsutil.IsUnderDir(candidate, protAbs) || fsutil.IsUnderDir(protAbs, candidate) {
+			return false
+		}
+	}
+	rel, err := filepath.Rel(filepath.Clean(home), filepath.Clean(candidate))
+	if err != nil {
+		return false
+	}
+	top := strings.SplitN(rel, string(filepath.Separator), 2)[0]
+	for _, prefix := range profileDirPrefixes {
+		if strings.HasPrefix(top, prefix) && len(top) > len(prefix) {
+			profDir := filepath.Join(home, top)
+			if !isOwn(profDir) {
+				return false
+			}
 		}
 	}
 	return true
@@ -148,11 +250,11 @@ func configDirRules(sectionName, home string, dirs []string) []seatbelt.Rule {
 	for _, dir := range dirs {
 		paths.add(dir)
 		resolved := fsutil.ResolveOrSelf(dir)
-		if resolved != dir && isSafeConfigOverride(home, resolved) {
+		if resolved != dir && isSafeSymlinkWidening(home, dir, resolved) {
 			paths.add(resolved)
 		}
-		for _, parent := range collectSymlinkTargetParents(home, resolved) {
-			paths.add(parent)
+		for _, target := range collectSymlinkTargetParents(home, resolved) {
+			paths.add(target)
 		}
 	}
 
@@ -206,7 +308,7 @@ func expandConfigDirWritable(home, dir string) []string {
 		}
 		visited[resolved] = true
 
-		if resolved != current && isSafeConfigOverride(home, resolved) {
+		if resolved != current && isSafeSymlinkWidening(home, dir, resolved) {
 			addPath(resolved)
 		}
 
@@ -234,7 +336,7 @@ func expandConfigDirWritable(home, dir string) []string {
 			if !info.IsDir() {
 				scope = filepath.Dir(target)
 			}
-			if !isSafeConfigOverride(home, scope) {
+			if !isSafeSymlinkWidening(home, dir, scope) {
 				continue
 			}
 			addPath(scope)
@@ -250,19 +352,22 @@ func expandConfigDirWritable(home, dir string) []string {
 }
 
 // collectSymlinkTargetParents walks dir at depth 1 and returns the safe
-// parent-directory paths for each top-level symlink entry. The parent
-// (not the file literal) is used so atomic-write tmp+rename siblings in
-// the dotfiles repo also work — the exact pattern that triggered #12.
+// target paths for each top-level symlink entry:
+//   - when the resolved target is a directory, the target directory itself
+//     (tight scope, matching expandConfigDirWritable on Linux)
+//   - when the resolved target is a regular file, the target's parent
+//     directory so atomic-write tmp+rename siblings in a dotfiles repo work
+//     (the pattern that triggered #12)
 //
-// Missing/unreadable dirs and broken symlinks yield no parents. Parents
-// outside $HOME or under sensitiveHomeDirs are filtered by
-// isSafeConfigOverride.
+// Missing/unreadable dirs and broken symlinks yield no paths. Targets
+// outside $HOME or overlapping sensitive/protected/profile dirs are
+// filtered by isSafeSymlinkWidening.
 func collectSymlinkTargetParents(home, dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
-	var parents []string
+	var targets []string
 	for _, e := range entries {
 		if e.Type()&os.ModeSymlink == 0 {
 			continue
@@ -275,13 +380,20 @@ func collectSymlinkTargetParents(home, dir string) []string {
 			// path that doesn't exist.
 			continue
 		}
-		parent := filepath.Dir(target)
-		if !isSafeConfigOverride(home, parent) {
+		info, statErr := os.Stat(target)
+		if statErr != nil {
 			continue
 		}
-		parents = append(parents, parent)
+		scope := target
+		if !info.IsDir() {
+			scope = filepath.Dir(target)
+		}
+		if !isSafeSymlinkWidening(home, dir, scope) {
+			continue
+		}
+		targets = append(targets, scope)
 	}
-	return parents
+	return targets
 }
 
 // prefixClosedSet collects path strings while suppressing entries whose

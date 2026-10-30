@@ -192,8 +192,8 @@ func TestExpandConfigDirWritable_BrokenSymlinkSkipped(t *testing.T) {
 }
 
 // TestExpandConfigDirWritable_ChainedSymlinkTargets is the production bug:
-// ~/.cursor/skills -> ~/.claude/skills, and ~/.claude/skills/dd-apm is itself
-// a symlink to ~/.agents/skills/dd-apm. Both intermediate and final targets
+// ~/.cursor/skills -> ~/dotfiles/shared-skills, and ~/dotfiles/shared-skills/dd-apm
+// is itself a symlink to ~/.agents/skills/dd-apm. Both intermediate and final targets
 // must end up in the writable set, or Landlock denies access at the resolved
 // inode (the user's reported symptom).
 func TestExpandConfigDirWritable_ChainedSymlinkTargets(t *testing.T) {
@@ -205,12 +205,12 @@ func TestExpandConfigDirWritable_ChainedSymlinkTargets(t *testing.T) {
 		t.Fatalf("setup real skill: %v", err)
 	}
 
-	// Layer 2: shared skills dir the user manages
-	claudeSkills := filepath.Join(home, ".claude", "skills")
-	if err := os.MkdirAll(claudeSkills, 0o700); err != nil {
-		t.Fatalf("setup claude skills: %v", err)
+	// Layer 2: shared skills dir the user manages in dotfiles
+	sharedSkills := filepath.Join(home, "dotfiles", "shared-skills")
+	if err := os.MkdirAll(sharedSkills, 0o700); err != nil {
+		t.Fatalf("setup shared skills: %v", err)
 	}
-	if err := os.Symlink(realSkill, filepath.Join(claudeSkills, "dd-apm")); err != nil {
+	if err := os.Symlink(realSkill, filepath.Join(sharedSkills, "dd-apm")); err != nil {
 		t.Fatalf("setup dd-apm symlink: %v", err)
 	}
 
@@ -219,21 +219,87 @@ func TestExpandConfigDirWritable_ChainedSymlinkTargets(t *testing.T) {
 	if err := os.MkdirAll(cursorDir, 0o700); err != nil {
 		t.Fatalf("setup cursor dir: %v", err)
 	}
-	if err := os.Symlink(claudeSkills, filepath.Join(cursorDir, "skills")); err != nil {
+	if err := os.Symlink(sharedSkills, filepath.Join(cursorDir, "skills")); err != nil {
 		t.Fatalf("setup skills symlink: %v", err)
 	}
 
 	got := expandConfigDirWritable(home, cursorDir)
 
-	// The depth-1 hop (cursor/skills → claude/skills) must contribute its
-	// target. Already worked before this fix.
-	if !slices.Contains(got, claudeSkills) {
-		t.Errorf("missing intermediate target %q; got %v", claudeSkills, got)
+	// The depth-1 hop (cursor/skills → dotfiles/shared-skills) must contribute its
+	// target.
+	if !slices.Contains(got, sharedSkills) {
+		t.Errorf("missing intermediate target %q; got %v", sharedSkills, got)
 	}
-	// The depth-2 hop (claude/skills/dd-apm → agents/skills/dd-apm) must
+	// The depth-2 hop (dotfiles/shared-skills/dd-apm → agents/skills/dd-apm) must
 	// also contribute — the original bug.
 	if !slices.Contains(got, realSkill) {
 		t.Errorf("missing nested-symlink target %q; depth-2 expansion failed; got %v", realSkill, got)
+	}
+}
+
+// TestExpandConfigDirWritable_RefusesProtectedSymlinkTargets verifies AIDE-tft4
+// on Linux Landlock: symlinks inside an agent config dir must not widen
+// Writable to directories that contain sensitive/protected dirs (~/.config,
+// ~/.local/share), Skillshare dirs (~/.config/skillshare), aide's own dirs
+// (~/.config/aide), other harness default dirs (~/.claude, ~/.codex, ~/.pi),
+// or other profile dirs (~/.claude-personal, ~/.codex-work).
+func TestExpandConfigDirWritable_RefusesProtectedSymlinkTargets(t *testing.T) {
+	cases := map[string]struct {
+		targetRel string
+		isFile    bool
+	}{
+		"contains sensitive/protected (.config)":      {targetRel: ".config"},
+		"contains protected (.local/share)":           {targetRel: ".local/share"},
+		"contains protected (.local/state)":           {targetRel: ".local/state"},
+		"file directly in .config (parent=.config)":   {targetRel: ".config/some.yaml", isFile: true},
+		"aide config dir":                             {targetRel: ".config/aide"},
+		"aide data dir":                               {targetRel: ".local/share/aide"},
+		"aide state dir":                              {targetRel: ".local/state/aide"},
+		"skillshare config dir":                       {targetRel: ".config/skillshare"},
+		"skillshare skills subdir":                    {targetRel: ".config/skillshare/skills"},
+		"skillshare state dir":                        {targetRel: ".local/state/skillshare"},
+		"skillshare file (parent=.config/skillshare)": {targetRel: ".config/skillshare/config.yaml", isFile: true},
+		"other harness default (.claude)":             {targetRel: ".claude"},
+		"other harness subdir (.claude/skills)":       {targetRel: ".claude/skills"},
+		"other harness default (.codex)":              {targetRel: ".codex"},
+		"other harness default (.pi)":                 {targetRel: ".pi"},
+		"other harness default (.config/opencode)":    {targetRel: ".config/opencode"},
+		"other profile dir (.claude-personal)":        {targetRel: ".claude-personal"},
+		"other profile subdir (.claude-personal/sub)": {targetRel: ".claude-personal/sub"},
+		"other harness profile (.codex-work)":         {targetRel: ".codex-work"},
+		"gh credentials (.config/gh)":                 {targetRel: ".config/gh"},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			home := fakeHome(t)
+			dir := filepath.Join(home, ".claude-work")
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(home, filepath.FromSlash(tc.targetRel))
+			if tc.isFile {
+				if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.MkdirAll(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink(target, filepath.Join(dir, "link")); err != nil {
+				t.Fatal(err)
+			}
+
+			got := expandConfigDirWritable(home, dir)
+
+			if len(got) != 1 || got[0] != dir {
+				t.Errorf("expected only [%q], got %v", dir, got)
+			}
+		})
 	}
 }
 

@@ -258,27 +258,27 @@ func TestConfigDirRules_SymlinkedDir(t *testing.T) {
 }
 
 // TestConfigDirRules_SymlinkedFile covers stow / chezmoi-in-symlink-mode:
-// ~/.config/aide/config.yaml is a symlink to ~/dotfiles/aide/config.yaml.
+// ~/.claude/settings.json is a symlink to ~/dotfiles/claude/settings.json.
 // The rule generator must emit an allow rule for the target's parent dir
 // (so atomic-write tmp+rename siblings under that dir also work).
 func TestConfigDirRules_SymlinkedFile(t *testing.T) {
 	home := testutil.CanonicalTempDir(t)
-	canonical := filepath.Join(home, ".config", "aide")
-	dotfilesDir := filepath.Join(home, "dotfiles", "aide")
+	canonical := filepath.Join(home, ".claude")
+	dotfilesDir := filepath.Join(home, "dotfiles", "claude")
 	if err := os.MkdirAll(canonical, 0o755); err != nil {
 		t.Fatalf("mkdir canonical: %v", err)
 	}
 	if err := os.MkdirAll(dotfilesDir, 0o755); err != nil {
 		t.Fatalf("mkdir dotfilesDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dotfilesDir, "config.yaml"), []byte("x"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dotfilesDir, "settings.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
-	if err := os.Symlink(filepath.Join(dotfilesDir, "config.yaml"), filepath.Join(canonical, "config.yaml")); err != nil {
+	if err := os.Symlink(filepath.Join(dotfilesDir, "settings.json"), filepath.Join(canonical, "settings.json")); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	rules := configDirRules("Aide", home, []string{canonical})
+	rules := configDirRules("Claude", home, []string{canonical})
 	body := allRuleStrings(rules)
 
 	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, canonical)) {
@@ -286,6 +286,103 @@ func TestConfigDirRules_SymlinkedFile(t *testing.T) {
 	}
 	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, dotfilesDir)) {
 		t.Errorf("rules must allow target parent %q so sibling writes work; got:\n%s", dotfilesDir, body)
+	}
+}
+
+// TestConfigDirRules_Depth1DirSymlinkTightScope verifies that on macOS, a
+// symlinked subdirectory inside an agent config dir (e.g. ~/.claude/skills ->
+// ~/dotfiles/claude-skills) grants the target directory itself, NOT its parent
+// (~/dotfiles), matching Linux's expandConfigDirWritable behavior.
+func TestConfigDirRules_Depth1DirSymlinkTightScope(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	canonical := filepath.Join(home, ".claude")
+	skillsTarget := filepath.Join(home, "dotfiles", "claude-skills")
+	if err := os.MkdirAll(canonical, 0o755); err != nil {
+		t.Fatalf("mkdir canonical: %v", err)
+	}
+	if err := os.MkdirAll(skillsTarget, 0o755); err != nil {
+		t.Fatalf("mkdir skillsTarget: %v", err)
+	}
+	if err := os.Symlink(skillsTarget, filepath.Join(canonical, "skills")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	rules := configDirRules("Claude", home, []string{canonical})
+	body := allRuleStrings(rules)
+
+	if !strings.Contains(body, fmt.Sprintf(`(subpath %q)`, skillsTarget)) {
+		t.Errorf("dir-symlink should grant target %q; got:\n%s", skillsTarget, body)
+	}
+	parent := filepath.Dir(skillsTarget)
+	if strings.Contains(body, fmt.Sprintf(`(subpath %q)`, parent)) {
+		t.Errorf("dir-symlink must NOT grant parent %q; got:\n%s", parent, body)
+	}
+}
+
+// TestConfigDirRules_RefusesProtectedSymlinkTargets verifies AIDE-tft4 on
+// macOS Seatbelt: symlinks inside an agent config dir must not grant write
+// access to directories that contain sensitive/protected dirs (like ~/.config
+// or ~/.local/share), Skillshare dirs (~/.config/skillshare), aide's own dirs
+// (~/.config/aide), other harness default dirs (~/.codex, ~/.pi, etc.), or
+// other profile dirs (~/.claude-personal, ~/.codex-work).
+func TestConfigDirRules_RefusesProtectedSymlinkTargets(t *testing.T) {
+	cases := map[string]struct {
+		targetRel string
+		isFile    bool
+	}{
+		"contains sensitive/protected (.config)":      {targetRel: ".config"},
+		"contains protected (.local/share)":           {targetRel: ".local/share"},
+		"contains protected (.local/state)":           {targetRel: ".local/state"},
+		"file directly in .config (parent=.config)":   {targetRel: ".config/some.yaml", isFile: true},
+		"aide config dir":                             {targetRel: ".config/aide"},
+		"aide data dir":                               {targetRel: ".local/share/aide"},
+		"aide state dir":                              {targetRel: ".local/state/aide"},
+		"skillshare config dir":                       {targetRel: ".config/skillshare"},
+		"skillshare skills subdir":                    {targetRel: ".config/skillshare/skills"},
+		"skillshare state dir":                        {targetRel: ".local/state/skillshare"},
+		"skillshare file (parent=.config/skillshare)": {targetRel: ".config/skillshare/config.yaml", isFile: true},
+		"other harness default (.codex)":              {targetRel: ".codex"},
+		"other harness subdir (.codex/skills)":        {targetRel: ".codex/skills"},
+		"other harness default (.pi)":                 {targetRel: ".pi"},
+		"other harness default (.config/opencode)":    {targetRel: ".config/opencode"},
+		"other profile dir (.claude-personal)":        {targetRel: ".claude-personal"},
+		"other profile subdir (.claude-personal/sub)": {targetRel: ".claude-personal/sub"},
+		"other harness profile (.codex-work)":         {targetRel: ".codex-work"},
+		"gh credentials (.config/gh)":                 {targetRel: ".config/gh"},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			home := testutil.CanonicalTempDir(t)
+			canonical := filepath.Join(home, ".claude-work")
+			if err := os.MkdirAll(canonical, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(home, filepath.FromSlash(tc.targetRel))
+			if tc.isFile {
+				if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.MkdirAll(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink(target, filepath.Join(canonical, "link")); err != nil {
+				t.Fatal(err)
+			}
+
+			rules := configDirRules("Claude", home, []string{canonical})
+			body := allRuleStrings(rules)
+
+			// Only canonical itself should be granted; no widened subpath.
+			if len(rules) != 2 {
+				t.Errorf("expected only section + canonical rule (2 rules), got %d:\n%s", len(rules), body)
+			}
+		})
 	}
 }
 

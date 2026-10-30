@@ -1,5 +1,14 @@
 ## Unreleased
 
+### 💥 Breaking changes
+
+- Tighten sandbox configuration-directory grants: symlinks no longer widen
+  write access into sensitive or protected state, including GitHub credentials,
+  aide/Skillshare directories, and other profiles. Broad configuration overrides
+  overlapping credential directories no longer receive those grants. On macOS,
+  directory symlinks grant access to the resolved target, not its parent.
+  Setups that relied on wider access must use safe, dedicated directories.
+
 ### 🔧 Internal
 
 - Preserve agent profile-directory environment variables under

@@ -64,14 +64,6 @@ func (m *claudeAgentModule) AgentEnv(ctx *seatbelt.Context) map[string]string {
 	}
 }
 
-// AgentEnvKeys returns the env key names this module may inject, without any
-// filesystem side effects. agentEnvKeys in sandbox.go calls this instead of
-// probing AgentEnv (which triggers os.MkdirAll) to safely discover which keys
-// filterEnv must preserve under CleanEnv mode.
-func (m *claudeAgentModule) AgentEnvKeys(_ *seatbelt.Context) []string {
-	return []string{"CLAUDE_CONFIG_DIR"}
-}
-
 // augmentLinuxPaths populates GuardResult with the Landlock-granted writable
 // paths for Claude. The primary entry is CLAUDE_CONFIG_DIR — Claude relocates
 // every piece of its state (the atomic-renamed .claude.json, settings.json,

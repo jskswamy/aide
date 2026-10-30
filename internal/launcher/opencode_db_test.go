@@ -265,7 +265,8 @@ default_profile: work
 }
 
 // clean_env filters the sandboxed env; the database path is set after
-// that filter, so it survives.
+// that filter, so it survives, and OPENCODE_CONFIG_DIR must also survive
+// so OpenCode reads config and accounts from the same profile dir.
 func TestLauncher_OpenCodeProfileDBSurvivesCleanEnv(t *testing.T) {
 	home := openCodeHome(t)
 	_, env, err := launchOpenCode(t, `
@@ -280,7 +281,11 @@ default_profile: work
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantOpenCodeDB(t, env, filepath.Join(home, ".opencode-work", "opencode.db"))
+	wantDir := filepath.Join(home, ".opencode-work")
+	if got, ok := envValue(env, "OPENCODE_CONFIG_DIR"); !ok || got != wantDir {
+		t.Errorf("OPENCODE_CONFIG_DIR = %q (set %v), want %q", got, ok, wantDir)
+	}
+	wantOpenCodeDB(t, env, filepath.Join(wantDir, "opencode.db"))
 }
 
 func TestOpenCodeProfileDBRejectsRelativeConfigDir(t *testing.T) {

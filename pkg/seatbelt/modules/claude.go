@@ -19,6 +19,14 @@ func ClaudeAgent() seatbelt.Module { return &claudeAgentModule{} }
 
 func (m *claudeAgentModule) Name() string { return "Claude Agent" }
 
+// AgentEnvKeys returns the env key names this module uses for config-dir
+// overrides, without any filesystem side effects. agentEnvKeys in sandbox.go
+// calls this so filterEnv preserves CLAUDE_CONFIG_DIR under CleanEnv mode on
+// both macOS and Linux.
+func (m *claudeAgentModule) AgentEnvKeys(_ *seatbelt.Context) []string {
+	return []string{"CLAUDE_CONFIG_DIR"}
+}
+
 func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 

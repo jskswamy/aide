@@ -72,6 +72,13 @@ type openCodeModule struct{ config, state seatbelt.Module }
 
 func (m openCodeModule) Name() string { return m.config.Name() }
 
+func (m openCodeModule) AgentEnvKeys(ctx *seatbelt.Context) []string {
+	if kp, ok := m.config.(seatbelt.EnvKeyProvider); ok {
+		return kp.AgentEnvKeys(ctx)
+	}
+	return nil
+}
+
 func (m openCodeModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	r, s := m.config.Rules(ctx), m.state.Rules(ctx)
 	r.Rules = append(r.Rules, s.Rules...)

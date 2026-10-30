@@ -13,6 +13,10 @@ func CopilotAgent() seatbelt.Module { return &copilotAgentModule{} }
 
 func (m *copilotAgentModule) Name() string { return "Copilot Agent" }
 
+func (m *copilotAgentModule) AgentEnvKeys(_ *seatbelt.Context) []string {
+	return []string{"COPILOT_HOME"}
+}
+
 func (m *copilotAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	home := ctx.HomeDir
 

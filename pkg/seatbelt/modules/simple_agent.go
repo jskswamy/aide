@@ -36,6 +36,13 @@ func NewSimpleAgent(spec AgentSpec) seatbelt.Module {
 
 func (m *simpleAgentModule) Name() string { return m.spec.DisplayName }
 
+func (m *simpleAgentModule) AgentEnvKeys(_ *seatbelt.Context) []string {
+	if m.spec.EnvKey == "" {
+		return nil
+	}
+	return []string{m.spec.EnvKey}
+}
+
 func (m *simpleAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	defaults := make([]string, 0, len(m.spec.HomeRelDefaults))
 	for _, rel := range m.spec.HomeRelDefaults {

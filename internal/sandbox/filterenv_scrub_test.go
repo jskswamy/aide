@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
+	"github.com/jskswamy/aide/pkg/seatbelt/modules"
 )
 
 // credentialKeyModule declares credential names as agent env keys, the
@@ -40,5 +41,38 @@ func TestFilterEnv_NeverKeepsRegistryCredentials(t *testing.T) {
 		if got[k] {
 			t.Errorf("filterEnv kept credential %s", k)
 		}
+	}
+}
+
+func TestFilterEnv_PreservesProfileAgentConfigDirKeys(t *testing.T) {
+	for name, tc := range map[string]struct {
+		module func() seatbelt.Module
+		envKey string
+		dir    string
+	}{
+		"opencode": {modules.OpenCodeAgent, "OPENCODE_CONFIG_DIR", "/home/user/.opencode-work"},
+		"pi":       {modules.PiAgent, "PI_CODING_AGENT_DIR", "/home/user/.pi-work"},
+		"codex":    {modules.CodexAgent, "CODEX_HOME", "/home/user/.codex-work"},
+		"claude":   {modules.ClaudeAgent, "CLAUDE_CONFIG_DIR", "/home/user/.claude-work"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := []string{
+				"PATH=/usr/bin",
+				tc.envKey + "=" + tc.dir,
+				"UNRELATED_VAR=drop-me",
+			}
+			filtered := filterEnv(env, Policy{AgentModule: tc.module()})
+			got := map[string]string{}
+			for _, e := range filtered {
+				k, v, _ := strings.Cut(e, "=")
+				got[k] = v
+			}
+			if got[tc.envKey] != tc.dir {
+				t.Errorf("%s = %q, want %q (filtered=%v)", tc.envKey, got[tc.envKey], tc.dir, filtered)
+			}
+			if _, ok := got["UNRELATED_VAR"]; ok {
+				t.Errorf("UNRELATED_VAR kept under CleanEnv: %v", filtered)
+			}
+		})
 	}
 }

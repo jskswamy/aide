@@ -540,8 +540,9 @@ func filterEnv(env []string, policy Policy) []string {
 }
 
 // agentEnvKeys returns the env keys the policy's AgentModule wants present
-// in the agent process. Returns nil when the module does not implement
-// seatbelt.EnvProvider (e.g. agents with no env-redirect needs).
+// in the agent process. Returns nil when the module implements neither
+// seatbelt.EnvKeyProvider nor seatbelt.EnvProvider (e.g. agents with no
+// env-redirect needs).
 //
 // Key discovery prefers seatbelt.EnvKeyProvider (side-effect-free) over
 // probing AgentEnv with a nil-env context. Probing AgentEnv bypasses the
@@ -551,9 +552,6 @@ func filterEnv(env []string, policy Policy) []string {
 // then be silently stripped in CleanEnv mode.
 func agentEnvKeys(policy Policy) []string {
 	if policy.AgentModule == nil {
-		return nil
-	}
-	if _, ok := policy.AgentModule.(seatbelt.EnvProvider); !ok {
 		return nil
 	}
 
@@ -569,7 +567,10 @@ func agentEnvKeys(policy Policy) []string {
 	// Fallback: probe AgentEnv with Env=nil to force the module to reveal its
 	// keys regardless of any user-set override. This path exists for modules
 	// that have not yet implemented EnvKeyProvider; it may have side effects.
-	provider, _ := policy.AgentModule.(seatbelt.EnvProvider)
+	provider, ok := policy.AgentModule.(seatbelt.EnvProvider)
+	if !ok {
+		return nil
+	}
 	probe := policy.ToSeatbeltContext()
 	probe.Env = nil
 	envMap := provider.AgentEnv(probe)

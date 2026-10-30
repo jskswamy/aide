@@ -43,6 +43,10 @@ func CursorAgent() seatbelt.Module {
 
 func (m *cursorAgentModule) Name() string { return "Cursor Agent" }
 
+func (m *cursorAgentModule) AgentEnvKeys(_ *seatbelt.Context) []string {
+	return []string{"CURSOR_CONFIG_DIR"}
+}
+
 func (m *cursorAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 	if ctx == nil || ctx.HomeDir == "" {
 		return seatbelt.GuardResult{}

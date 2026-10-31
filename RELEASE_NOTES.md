@@ -33,3 +33,5 @@
 
 - Resolve gateway lint findings without changing command behavior; check the
   rotating-token test's type assertion and format its test cases.
+
+- Reduce `AGENTS.md` to the project's beads issue-tracking notice.

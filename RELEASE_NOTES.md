@@ -1,3 +1,29 @@
+## Unreleased
+
+### 💥 Breaking changes
+
+#### OpenCode profiles keep their own snapshots and prompt history
+
+A profile that has selected an OpenCode config dir (`config_dir_name`,
+`config_dir` or `config_dirs.opencode`) now launches OpenCode with
+`XDG_DATA_HOME=<config-dir>/data` and `XDG_STATE_HOME=<config-dir>/state`.
+Snapshots of your projects, which can include uncommitted file contents,
+and your prompt history no longer go to directories every profile can
+read. The same launches that open the profile's own database get this.
+
+- Commands run by OpenCode's shell tool inherit `XDG_DATA_HOME`. Tools
+  that keep data there, such as `direnv` approvals and `uv` tools and
+  Python installs, look empty inside OpenCode until set up for the
+  profile.
+- Nothing is copied or deleted. Earlier snapshots, logs and prompt history
+  stay in `~/.local/share/opencode` and `~/.local/state/opencode`; remove
+  them yourself if they must not reach other profiles. Undoing an edit
+  from an older session may fail.
+- Snapshots sit in the config dir, so anything that copies or syncs that
+  directory copies them too.
+- A `never_allow_env` entry for either variable now stops the launch with
+  an error.
+
 ## v3.3.0 (2026-11-01)
 
 ### 💥 Breaking changes

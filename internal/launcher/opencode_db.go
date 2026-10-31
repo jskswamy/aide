@@ -40,3 +40,24 @@ func openCodeProfileDB(env, blocked []string) (string, error) {
 	}
 	return path, nil
 }
+
+// openCodeProfileEnv returns the environment that keeps a profile's
+// OpenCode files in its config dir: the database, and the data and state
+// dirs that hold snapshots of its projects and its prompt history.
+func openCodeProfileEnv(env, blocked []string) (map[string]string, error) {
+	db, err := openCodeProfileDB(env, blocked)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"XDG_DATA_HOME", "XDG_STATE_HOME"} {
+		if slices.Contains(blocked, key) {
+			return nil, fmt.Errorf("opencode profile data dirs are blocked by never_allow_env: %s", key)
+		}
+	}
+	dir := filepath.Dir(db)
+	return map[string]string{
+		"OPENCODE_DB":    db,
+		"XDG_DATA_HOME":  filepath.Join(dir, "data"),
+		"XDG_STATE_HOME": filepath.Join(dir, "state"),
+	}, nil
+}

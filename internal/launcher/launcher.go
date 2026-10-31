@@ -475,12 +475,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		env = filterNeverAllowEnv(env, blockedVars)
 	}
 
-	// An OpenCode profile with a config dir keeps its accounts in its own
-	// database there. The path is read from OPENCODE_CONFIG_DIR before the
-	// sandbox and set after it.
-	var openCodeDB string
+	// An OpenCode profile with a config dir keeps its accounts, snapshots
+	// and prompt history there. The paths are read from OPENCODE_CONFIG_DIR
+	// before the sandbox and set after it.
+	var openCodeEnv map[string]string
 	if cfg.HarnessOf(agentName) == "opencode" && rc.Context.SelectsConfigDir() && opensOpenCodeProfileDB(extraArgs) {
-		if openCodeDB, err = openCodeProfileDB(env, blockedVars); err != nil {
+		if openCodeEnv, err = openCodeProfileEnv(env, blockedVars); err != nil {
 			cleanup()
 			return err
 		}
@@ -551,8 +551,8 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			}
 		}
 	}
-	if openCodeDB != "" {
-		env = mergeEnv(env, map[string]string{"OPENCODE_DB": openCodeDB})
+	if openCodeEnv != nil {
+		env = mergeEnv(env, openCodeEnv)
 	}
 	if resolvedCapSet != nil {
 		seen := make(map[string]bool)

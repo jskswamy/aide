@@ -288,6 +288,122 @@ default_profile: work
 	wantOpenCodeDB(t, env, filepath.Join(wantDir, "opencode.db"))
 }
 
+func wantOpenCodeDataDirs(t *testing.T, env []string, wantData, wantState string) {
+	t.Helper()
+	if got, ok := envValue(env, "XDG_DATA_HOME"); !ok || got != wantData {
+		t.Errorf("XDG_DATA_HOME = %q (set %v), want %q", got, ok, wantData)
+	}
+	if got, ok := envValue(env, "XDG_STATE_HOME"); !ok || got != wantState {
+		t.Errorf("XDG_STATE_HOME = %q (set %v), want %q", got, ok, wantState)
+	}
+}
+
+// Snapshots and prompt history name a profile's files and hold its
+// prompts, so they move with the database, even over an ambient value.
+func TestLauncher_OpenCodeProfileDataDirs(t *testing.T) {
+	for name, args := range map[string][]string{
+		"tui":         nil,
+		"run":         {"run", "hi"},
+		"debug paths": {"debug", "paths"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := openCodeHome(t)
+			t.Setenv("XDG_DATA_HOME", "/ambient/data")
+			t.Setenv("XDG_STATE_HOME", "/ambient/state")
+			_, env, err := launchOpenCode(t, openCodeWorkProfile, "", args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(home, ".opencode-work")
+			wantOpenCodeDataDirs(t, env, filepath.Join(dir, "data"), filepath.Join(dir, "state"))
+		})
+	}
+}
+
+// The shared background server keeps the env of the launch that started
+// it, so a command that can start it must not carry a profile's dirs.
+func TestLauncher_OpenCodeSharedServerCommandsGetNoDataDirs(t *testing.T) {
+	for _, args := range [][]string{{"service", "stop"}, {"mcp", "list"}, {"serve"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			openCodeHome(t)
+			unsetEnvForTest(t, "XDG_DATA_HOME")
+			unsetEnvForTest(t, "XDG_STATE_HOME")
+			_, env, err := launchOpenCode(t, openCodeWorkProfile, "", args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"XDG_DATA_HOME", "XDG_STATE_HOME"} {
+				if got, ok := envValue(env, key); ok {
+					t.Errorf("%s = %q, want it unset", key, got)
+				}
+			}
+		})
+	}
+}
+
+func TestLauncher_OpenCodeNoConfigDirLeavesAmbientDataDirs(t *testing.T) {
+	openCodeHome(t)
+	t.Setenv("XDG_DATA_HOME", "/ambient/data")
+	t.Setenv("XDG_STATE_HOME", "/ambient/state")
+	_, env, err := launchOpenCode(t, "profiles:\n  me: {agent: opencode}\ndefault_profile: me\n", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOpenCodeDataDirs(t, env, "/ambient/data", "/ambient/state")
+}
+
+func TestLauncher_OpenCodeDataDirsOnlyForOpenCode(t *testing.T) {
+	openCodeHome(t)
+	unsetEnvForTest(t, "XDG_DATA_HOME")
+	_, env, err := launchOpenCode(t, `
+agents:
+  opencode: {binary: opencode}
+  pi: {binary: pi}
+profiles:
+  work:
+    agent: pi
+    config_dir_name: work
+default_profile: work
+`, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := envValue(env, "XDG_DATA_HOME"); ok {
+		t.Errorf("XDG_DATA_HOME = %q, want it unset for pi", got)
+	}
+}
+
+func TestLauncher_OpenCodeDataDirsSurviveCleanEnv(t *testing.T) {
+	home := openCodeHome(t)
+	_, env, err := launchOpenCode(t, `
+profiles:
+  work:
+    agent: opencode
+    config_dir_name: work
+    sandbox:
+      clean_env: true
+default_profile: work
+`, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".opencode-work")
+	wantOpenCodeDataDirs(t, env, filepath.Join(dir, "data"), filepath.Join(dir, "state"))
+}
+
+func TestLauncher_OpenCodeDataDirsBlockedErrorsBeforeExec(t *testing.T) {
+	for _, blocked := range []string{"XDG_DATA_HOME", "XDG_STATE_HOME"} {
+		t.Run(blocked, func(t *testing.T) {
+			openCodeHome(t)
+			_, _, err := launchOpenCode(t, openCodeWorkProfile+"never_allow_env: ["+blocked+"]\n", "", nil)
+			want := "opencode profile data dirs are blocked by never_allow_env: " + blocked
+			if err == nil || err.Error() != want {
+				t.Errorf("err = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
 func TestOpenCodeProfileDBRejectsRelativeConfigDir(t *testing.T) {
 	_, err := openCodeProfileDB([]string{"OPENCODE_CONFIG_DIR=rel"}, nil)
 	if want := "opencode profile database path is not absolute: rel/opencode.db"; err == nil || err.Error() != want {

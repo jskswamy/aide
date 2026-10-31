@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -172,6 +174,9 @@ func sandboxShowCmd() *cobra.Command {
 				}
 			}
 
+			if err := preparePiSandboxPreview(policy, cfg, rc); err != nil {
+				return err
+			}
 			tier := sandbox.PlatformIsolationTier(*policy)
 			gps := sandbox.PlatformGrantedPaths(*policy)
 
@@ -315,6 +320,9 @@ func sandboxTestCmd() *cobra.Command {
 				policy.Env = envSlice
 			}
 
+			if err := preparePiSandboxPreview(policy, cfg, rc); err != nil {
+				return err
+			}
 			sb := sandbox.NewSandbox()
 			profile, err := sb.GenerateProfile(*policy)
 			if err != nil {
@@ -330,6 +338,55 @@ func sandboxTestCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&withCaps, "with", nil, "additional capabilities to enable")
 	cmd.Flags().StringSliceVar(&withoutCaps, "without", nil, "capabilities to disable")
 	return cmd
+}
+
+// preparePiSandboxPreview uses launch's selected binary and bootstrap env,
+// without decrypting credentials or executing the selected agent.
+func preparePiSandboxPreview(policy *sandbox.Policy, cfg *config.Config, rc *aidectx.ResolvedContext) error {
+	if cfg.HarnessOf(rc.Context.Agent) != "pi" {
+		return nil
+	}
+	binary, err := launcher.ResolveAgentBinary(cfg, rc.Context.Agent)
+	if err != nil {
+		return err
+	}
+	if !filepath.IsAbs(binary) {
+		binary, err = exec.LookPath(binary)
+		if err != nil {
+			return err
+		}
+	}
+	bootstrap := make(map[string]string)
+	for _, key := range []string{"HOME", "XDG_DATA_HOME", "PATH", "PI_CODING_AGENT_DIR"} {
+		if value, ok := os.LookupEnv(key); ok && (key != "PI_CODING_AGENT_DIR" || !rc.Context.SelectsConfigDir()) {
+			bootstrap[key] = value
+		}
+		if value, ok := rc.Context.Env[key]; ok {
+			bootstrap[key] = value
+		}
+	}
+	resolved, err := config.ResolveTemplates(bootstrap, &config.TemplateData{ProjectRoot: policy.ProjectRoot, RuntimeDir: policy.RuntimeDir})
+	if err != nil {
+		return err
+	}
+	previewEnv := make(map[string]string)
+	for _, entry := range policy.Env {
+		if key, value, ok := strings.Cut(entry, "="); ok {
+			previewEnv[key] = value
+		}
+	}
+	for key, value := range rc.Context.Env {
+		previewEnv[key] = homepath.Expand(value, policy.HomeDir)
+	}
+	for key, value := range resolved {
+		previewEnv[key] = homepath.Expand(value, policy.HomeDir)
+	}
+	policy.Env = nil
+	for key, value := range previewEnv {
+		policy.Env = append(policy.Env, key+"="+value)
+	}
+	policy.AgentModule = launcher.ResolveAgentModule("pi")
+	return launcher.PrepareAgentSandbox(policy, cfg, "pi", binary)
 }
 
 // sandboxSelection resolves the profile and harness a launch from cwd

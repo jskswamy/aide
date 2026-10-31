@@ -272,7 +272,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 
 	// 5. Look up agent binary
 	agentName := rc.Context.Agent
-	binary, err := resolveAgentBinary(cfg, agentName)
+	binary, err := ResolveAgentBinary(cfg, agentName)
 	if err != nil {
 		return err
 	}
@@ -522,6 +522,10 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			// the child evaluate env-var-dependent paths from the stale
 			// pre-injection snapshot and may grant the wrong Landlock path.
 			policy.Env = env
+			if err := PrepareAgentSandbox(policy, cfg, cfg.HarnessOf(agentName), binary); err != nil {
+				cleanup()
+				return err
+			}
 
 			cmd := &exec.Cmd{
 				Path: binary,
@@ -661,8 +665,8 @@ func ageKeySourceLabel(id *secrets.AgeIdentity) string {
 	}
 }
 
-// resolveAgentBinary determines the binary path from config and agent name.
-func resolveAgentBinary(cfg *config.Config, agentName string) (string, error) {
+// ResolveAgentBinary selects the configured binary before PATH resolution.
+func ResolveAgentBinary(cfg *config.Config, agentName string) (string, error) {
 	if agentName == "" {
 		return "", fmt.Errorf("no agent specified in profile")
 	}

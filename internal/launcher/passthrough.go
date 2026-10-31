@@ -185,6 +185,10 @@ func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error
 	// env-var-dependent guards (e.g. CLAUDE_CONFIG_DIR) from the stale
 	// pre-injection snapshot.
 	policy.Env = env
+	if err := PrepareAgentSandbox(&policy, nil, name, binary); err != nil {
+		_ = rtDir.Cleanup()
+		return err
+	}
 
 	cmd := &exec.Cmd{
 		Path: binary,

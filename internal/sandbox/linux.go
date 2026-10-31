@@ -861,6 +861,16 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		"--tmpfs", "/tmp",
 	)
 
+	// Managed Pi's launcher uses lexical PATH/current links even though the
+	// grant set is canonical. Recreate links, never their private parent trees.
+	mounted := append(append(append([]string{}, writable...), readable...), linuxSystemReadable...)
+	mounted = append(mounted, linuxSystemWritable...)
+	linkArgs, err := piManagedSymlinkArgs(policy, mounted)
+	if err != nil {
+		return err
+	}
+	bwrapArgs = append(bwrapArgs, linkArgs...)
+
 	// Denied paths: directories get a fresh empty tmpfs; files get a
 	// /dev/null overlay. The earlier "parent dir restriction handles it"
 	// comment was wrong — when only a specific file is denied (e.g.

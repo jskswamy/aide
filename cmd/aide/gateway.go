@@ -118,14 +118,15 @@ Examples:
 				name = args[0]
 			} else {
 				derived, deriveErr := gatewayNameFromURL(rawURL)
-				if !tokenStdin && stdinIsTTY() {
+				switch {
+				case !tokenStdin && stdinIsTTY():
 					name, err = readGatewayName(cmd, reader, derived)
 					if err != nil {
 						return err
 					}
-				} else if deriveErr != nil {
+				case deriveErr != nil:
 					return deriveErr
-				} else {
+				default:
 					name = derived
 				}
 			}

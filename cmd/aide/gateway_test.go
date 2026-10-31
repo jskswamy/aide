@@ -216,15 +216,15 @@ func TestGatewayCmd_AddRejectsBadInput(t *testing.T) {
 		args []string
 		want string
 	}{
-		"missing url non-tty":      {[]string{"add", "corp", "--token-env", "MY_GW_TOKEN"}, "--url is required"},
-		"missing url token-stdin":  {[]string{"add", "corp", "--token-stdin"}, "--url is required"},
-		"both token sources":       {[]string{"add", "corp", "--url", e.srv.URL, "--token-stdin", "--token-env", "MY_GW_TOKEN"}, "mutually exclusive"},
-		"empty token env":          {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "UNSET_GW_TOKEN"}, "UNSET_GW_TOKEN"},
-		"no token source":          {[]string{"add", "corp", "--url", e.srv.URL}, "--token-stdin"},
-		"remote http":              {[]string{"add", "corp", "--url", "http://gw.example.com", "--token-env", "MY_GW_TOKEN"}, "https"},
-		"unknown profile":          {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--profile", "nope"}, "nope"},
-		"bad harness":              {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--harnesses", "gemini"}, "gemini"},
-		"dangerous key":            {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--key", "ld_preload"}, "LD_PRELOAD"},
+		"missing url non-tty":     {[]string{"add", "corp", "--token-env", "MY_GW_TOKEN"}, "--url is required"},
+		"missing url token-stdin": {[]string{"add", "corp", "--token-stdin"}, "--url is required"},
+		"both token sources":      {[]string{"add", "corp", "--url", e.srv.URL, "--token-stdin", "--token-env", "MY_GW_TOKEN"}, "mutually exclusive"},
+		"empty token env":         {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "UNSET_GW_TOKEN"}, "UNSET_GW_TOKEN"},
+		"no token source":         {[]string{"add", "corp", "--url", e.srv.URL}, "--token-stdin"},
+		"remote http":             {[]string{"add", "corp", "--url", "http://gw.example.com", "--token-env", "MY_GW_TOKEN"}, "https"},
+		"unknown profile":         {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--profile", "nope"}, "nope"},
+		"bad harness":             {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--harnesses", "gemini"}, "gemini"},
+		"dangerous key":           {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--key", "ld_preload"}, "LD_PRELOAD"},
 	}
 	for label, tc := range cases {
 		t.Run(label, func(t *testing.T) {
@@ -678,7 +678,13 @@ func TestGatewayCmd_EditInteractiveAndTokenRotation(t *testing.T) {
 
 	e := newGatewayEnv(t)
 	rotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		want := "Bearer " + currentToken.Load().(string)
+		token, ok := currentToken.Load().(string)
+		if !ok {
+			t.Error("current gateway token is not a string")
+			http.Error(w, "invalid test token", http.StatusInternalServerError)
+			return
+		}
+		want := "Bearer " + token
 		if r.Header.Get("Authorization") != want {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

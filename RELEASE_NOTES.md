@@ -30,3 +30,6 @@
   `sandbox.clean_env`, including `OPENCODE_CONFIG_DIR`, `PI_CODING_AGENT_DIR`,
   `CODEX_HOME`, and `CLAUDE_CONFIG_DIR`, so launches retain their configured
   profile instead of falling back to global state.
+
+- Resolve gateway lint findings without changing command behavior; check the
+  rotating-token test's type assertion and format its test cases.

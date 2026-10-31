@@ -140,7 +140,7 @@ func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, 
 		return st
 	}
 	if SingleGatewayPerDir(harnessName) && !CanSyncHarness(ctx, gwName, harnessName) {
-		if cat != nil && !IsExpired(cat, gw.TTL(), time.Now()) {
+		if MatchesBaseURL(cat, gw.BaseURL) && !IsExpired(cat, gw.TTL(), time.Now()) {
 			if _, err := os.Stat(path); err == nil {
 				if diff, err := hf.mismatch(path, gwName, gw, cat); err == nil && diff == "" {
 					st.State, st.Detail = StateSynced, fmt.Sprintf("%d models", len(cat.Models))
@@ -154,6 +154,9 @@ func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, 
 	switch {
 	case cat == nil:
 		st.State, st.Detail = StateStale, "no cached catalogue"
+		return st
+	case !MatchesBaseURL(cat, gw.BaseURL):
+		st.State, st.Detail = StateStale, "base URL changed — run: aide gateway sync"
 		return st
 	case IsExpired(cat, gw.TTL(), time.Now()):
 		st.State, st.Detail = StateStale, "cached catalogue expired"

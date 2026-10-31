@@ -779,3 +779,356 @@ func TestGatewayCmd_ListDefaultProfileVsAllAndGatewayCompletion(t *testing.T) {
 		t.Errorf("credentialNamesForCompletion = %v, want work-gw included", gotComp)
 	}
 }
+
+func TestGatewayCmd_PersistentProfileFlagAndPrecedence(t *testing.T) {
+	e := newGatewayEnv(t)
+	gwRoot := gatewayCmd()
+	if gwRoot.PersistentFlags().Lookup("profile") == nil {
+		t.Fatal("expected --profile to be registered as a PersistentFlag on gatewayCmd()")
+	}
+	for _, sub := range gwRoot.Commands() {
+		if sub.LocalNonPersistentFlags().Lookup("profile") != nil {
+			t.Fatalf("subcommand %q defines a local --profile flag shadowing persistent --profile", sub.Name())
+		}
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "home-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "home"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both `aide gateway --profile home list` and `aide gateway list --profile home` target `home` even when CWD resolves to `work`.
+	for _, args := range [][]string{
+		{"--profile", "home", "list"},
+		{"list", "--profile", "home"},
+	} {
+		out, err := runGateway(t, "", args...)
+		if err != nil {
+			t.Fatalf("%v error: %v\n%s", args, err, out)
+		}
+		if !strings.Contains(out, "PROFILE: home") || !strings.Contains(out, "home-gw") || strings.Contains(out, "PROFILE: work") {
+			t.Errorf("%v output should only list home profile:\n%s", args, out)
+		}
+	}
+
+	// `aide gateway edit --profile work home-gw` must fail and never fall back to `home`.
+	if out, err := runGateway(t, "", "edit", "--profile", "work", "home-gw", "--ttl", "6h"); err == nil || !strings.Contains(err.Error(), `profile "work" has no gateway "home-gw"`) {
+		t.Fatalf("edit --profile work home-gw = %v (%s), want profile \"work\" has no gateway \"home-gw\"", err, out)
+	}
+}
+
+func TestGatewayCmd_EditCrossProfileLookupAndPicker(t *testing.T) {
+	e := newGatewayEnv(t)
+	e.writeConfig(t, `profiles:
+  firmus:
+    agent: claude
+    config_dir_name: firmus
+  work:
+    agent: claude
+    config_dir_name: work
+default_profile: firmus
+`)
+	if _, err := runGateway(t, gwCmdToken, "add", "agentworks", "--url", e.srv.URL, "--token-stdin", "--profile", "firmus"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "aifactory", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. `aide gateway edit aifactory --ttl 6h` (no --profile) resolves `aifactory` on `work` even though CWD defaults to `firmus`.
+	out, err := runGateway(t, "", "edit", "aifactory", "--ttl", "6h")
+	if err != nil {
+		t.Fatalf("cross-profile edit aifactory: %v\n%s", err, out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Contexts["work"].Gateways["aifactory"].RefreshTTL; got != "6h" {
+		t.Errorf("work/aifactory RefreshTTL = %q, want 6h", got)
+	}
+	if got := loaded.Contexts["firmus"].Gateways["agentworks"].RefreshTTL; got != "24h" {
+		t.Errorf("firmus/agentworks RefreshTTL = %q, want 24h (untouched)", got)
+	}
+
+	// 2. Interactive `aide gateway edit` (no <name>, no --profile) shows (profile, gateway, base_url) picker; selecting [2] edits work/aifactory.
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+
+	stdin := strings.Join([]string{"2", "", "", "8h", "", "n"}, "\n") + "\n"
+	out, err = runGateway(t, stdin, "edit")
+	if err != nil {
+		t.Fatalf("interactive cross-profile picker edit: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"Configured gateways:",
+		"[1] firmus / agentworks",
+		"[2] work / aifactory",
+		`Editing gateway "aifactory" on profile "work"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("picker edit output missing %q:\n%s", want, out)
+		}
+	}
+	loaded, err = config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Contexts["work"].Gateways["aifactory"].RefreshTTL; got != "8h" {
+		t.Errorf("work/aifactory RefreshTTL after picker = %q, want 8h", got)
+	}
+
+	// 3. Interactive `aide gateway edit --profile work` (single gateway on `work`) prints the target banner before prompting.
+	stdinSingle := strings.Join([]string{"", "", "10h", "", "n"}, "\n") + "\n"
+	out, err = runGateway(t, stdinSingle, "edit", "--profile", "work")
+	if err != nil {
+		t.Fatalf("interactive single-gateway edit: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `Editing gateway "aifactory" on profile "work"`) {
+		t.Errorf("single-gateway interactive edit missing banner:\n%s", out)
+	}
+}
+
+func TestGatewayCmd_EditRotateTokenAndURLPromptMatrix(t *testing.T) {
+	var currentToken atomic.Value
+	currentToken.Store(gwCmdToken)
+
+	e := newGatewayEnv(t)
+	newSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, ok := currentToken.Load().(string)
+		if !ok {
+			t.Error("current gateway token is not a string")
+			http.Error(w, "invalid test token", http.StatusInternalServerError)
+			return
+		}
+		want := "Bearer " + token
+		if r.Header.Get("Authorization") != want {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"new-m1","display_name":"New Model One","owned_by":"acme"}]}`))
+	}))
+	t.Cleanup(newSrv.Close)
+
+	if _, err := runGateway(t, gwCmdToken, "add", "aifactory", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+
+	// 1. `--rotate-token` without field flags on a TTY prompts for fields AND rotates token without re-asking `Rotate bearer token? [y/N]: `.
+	const token1 = "rotated-tty-token-1"
+	currentToken.Store(token1)
+	stdinRotate := strings.Join([]string{"", newSrv.URL, "4h", "", token1}, "\n") + "\n"
+	out, err := runGateway(t, stdinRotate, "edit", "aifactory", "--profile", "work", "--rotate-token")
+	if err != nil {
+		t.Fatalf("edit --rotate-token: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Rotate bearer token? [y/N]:") {
+		t.Errorf("--rotate-token should not ask Rotate bearer token? [y/N]:\n%s", out)
+	}
+	if !strings.Contains(out, "Gateway base URL [") {
+		t.Errorf("--rotate-token without field flags should prompt for fields:\n%s", out)
+	}
+	if got := e.store(t, "work")["aifactory_token"]; got != token1 {
+		t.Errorf("secret after --rotate-token = %q, want %q", got, token1)
+	}
+
+	// 2. `--url <new-url>` on a TTY prompts `Rotate bearer token? [y/N]: y` and reads the new token.
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, ok := currentToken.Load().(string)
+		if !ok {
+			t.Error("current gateway token is not a string")
+			http.Error(w, "invalid test token", http.StatusInternalServerError)
+			return
+		}
+		want := "Bearer " + token
+		if r.Header.Get("Authorization") != want {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"srv2-m1"}]}`))
+	}))
+	t.Cleanup(srv2.Close)
+
+	const token2 = "rotated-url-token-2"
+	currentToken.Store(token2)
+	stdinURL := strings.Join([]string{"y", token2}, "\n") + "\n"
+	out, err = runGateway(t, stdinURL, "edit", "aifactory", "--profile", "work", "--url", srv2.URL)
+	if err != nil {
+		t.Fatalf("edit --url with token prompt: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Rotate bearer token? [y/N]:") {
+		t.Errorf("edit --url on TTY should prompt Rotate bearer token? [y/N]:\n%s", out)
+	}
+	if got := e.store(t, "work")["aifactory_token"]; got != token2 {
+		t.Errorf("secret after --url token prompt = %q, want %q", got, token2)
+	}
+
+	// 3. `--token-stdin` without field flags rotates token non-interactively without prompting for fields.
+	stdinIsTTY = func() bool { return false }
+	const token3 = "rotated-stdin-token-3"
+	currentToken.Store(token3)
+	out, err = runGateway(t, token3+"\n", "edit", "aifactory", "--profile", "work", "--token-stdin")
+	if err != nil {
+		t.Fatalf("edit --token-stdin: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Gateway base URL [") {
+		t.Errorf("--token-stdin should not prompt for fields:\n%s", out)
+	}
+	if got := e.store(t, "work")["aifactory_token"]; got != token3 {
+		t.Errorf("secret after --token-stdin = %q, want %q", got, token3)
+	}
+}
+
+func TestGatewayCmd_EditPreSaveVerificationAndURLMismatchCache(t *testing.T) {
+	e := newGatewayEnv(t)
+	if err := os.MkdirAll(filepath.Join(e.home, ".pi-work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "aifactory", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	unauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+	}))
+	t.Cleanup(unauthSrv.Close)
+
+	// 1. Pre-save verification rejects a 401 URL change before saving config.yaml, secrets, or cache.
+	out, err := runGateway(t, "", "edit", "aifactory", "--profile", "work", "--url", unauthSrv.URL)
+	if err == nil || !strings.Contains(err.Error(), `verifying gateway "aifactory"`) {
+		t.Fatalf("edit with 401 URL = %v (%s), want verifying gateway error", err, out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Contexts["work"].Gateways["aifactory"].BaseURL; got != gateway.NormalizeBaseURL(e.srv.URL) {
+		t.Errorf("BaseURL after failed edit = %q, want unchanged %q", got, e.srv.URL)
+	}
+	if cat, _ := gateway.ReadCache(e.home, "work", "aifactory"); cat == nil || !gateway.MatchesBaseURL(cat, e.srv.URL) {
+		t.Errorf("cache after failed edit = %+v, want intact cache for %s", cat, e.srv.URL)
+	}
+
+	// 2. When config.yaml has a manually changed base_url that mismatches the cache file:
+	//    `gateway list` reports base URL changed with ModelCount == 0, and `gateway use` refuses to materialize stale URL cache.
+	cfgText := strings.ReplaceAll(e.config(t), gateway.NormalizeBaseURL(e.srv.URL), "https://manual-override.example.com")
+	e.writeConfig(t, cfgText)
+
+	listOut, err := runGateway(t, "", "list", "--profile", "work")
+	if err != nil {
+		t.Fatalf("list after manual URL change: %v\n%s", err, listOut)
+	}
+	for _, want := range []string{
+		"Cache:        base URL changed (run: aide gateway sync aifactory)",
+		"stale (base URL changed — run: aide gateway sync)",
+	} {
+		if !strings.Contains(listOut, want) {
+			t.Errorf("list output missing %q:\n%s", want, listOut)
+		}
+	}
+
+	jsonOut, err := runGateway(t, "", "list", "--profile", "work", "--format", "json")
+	if err != nil {
+		t.Fatalf("list json after manual URL change: %v\n%s", err, jsonOut)
+	}
+	var entries []GatewayListEntry
+	if err := json.Unmarshal([]byte(jsonOut), &entries); err != nil {
+		t.Fatalf("unmarshal list json: %v\n%s", err, jsonOut)
+	}
+	if len(entries) != 1 || entries[0].ModelCount != 0 || entries[0].FetchedAt != nil || !entries[0].Expired {
+		t.Errorf("JSON list entry on URL mismatch = %+v, want ModelCount=0, FetchedAt=nil, Expired=true", entries)
+	}
+
+	// Remove pi models.json and verify `gateway use` does not materialize the mismatched cache.
+	piModels := filepath.Join(e.home, ".pi-work", "models.json")
+	_ = os.Remove(piModels)
+	if _, err := runGateway(t, "", "use", "aifactory", "--profile", "work"); err != nil {
+		t.Fatalf("gateway use on mismatched cache: %v", err)
+	}
+	if _, err := os.Stat(piModels); !os.IsNotExist(err) {
+		t.Errorf("gateway use materialized models.json from mismatched cache URL")
+	}
+}
+
+func TestGatewayCmd_EditFixPassCWDOrderingAmbiguousTTYAndStaleCacheMetadataEdit(t *testing.T) {
+	e := newGatewayEnv(t)
+	if err := os.MkdirAll(filepath.Join(e.home, ".pi-work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	e.writeConfig(t, `profiles:
+  alpha:
+    agent: claude
+    config_dir_name: alpha
+  beta:
+    agent: claude
+    config_dir_name: beta
+  work:
+    agent: claude
+    config_dir_name: work
+default_profile: work
+`)
+	if _, err := runGateway(t, gwCmdToken, "add", "alpha-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "shared", "--url", e.srv.URL, "--token-stdin", "--profile", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGateway(t, gwCmdToken, "add", "shared", "--url", e.srv.URL, "--token-stdin", "--profile", "beta"); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+
+	// 1. CWD-resolved profile ("work") appears as [1] ahead of alphabetically earlier "alpha".
+	stdinPicker := strings.Join([]string{"1", "", "", "5h", "", "n"}, "\n") + "\n"
+	out, err := runGateway(t, stdinPicker, "edit")
+	if err != nil {
+		t.Fatalf("picker edit: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "[1] work / work-gw") {
+		t.Errorf("expected CWD profile 'work' gateway first at [1]:\n%s", out)
+	}
+
+	// 2. Ambiguous <name> ("shared" on alpha and beta, neither is CWD profile "work") prompts on TTY.
+	out, err = runGateway(t, "2\n", "edit", "shared", "--ttl", "7h")
+	if err != nil {
+		t.Fatalf("ambiguous edit on TTY: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `Gateway "shared" exists on multiple profiles:`) || !strings.Contains(out, "Select profile to edit [1]:") {
+		t.Errorf("expected multi-profile disambiguation prompt:\n%s", out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Contexts["beta"].Gateways["shared"].RefreshTTL; got != "7h" {
+		t.Errorf("beta/shared RefreshTTL = %q, want 7h", got)
+	}
+
+	// 3. Metadata-only edit (--ttl) when config.yaml has a manually changed base_url must NOT overwrite oldCat.BaseURL or materialize stale models.
+	cfgText := strings.ReplaceAll(e.config(t), gateway.NormalizeBaseURL(e.srv.URL), "https://manual-new.example.com")
+	e.writeConfig(t, cfgText)
+	piModels := filepath.Join(e.home, ".pi-work", "models.json")
+	_ = os.Remove(piModels)
+
+	if _, err := runGateway(t, "", "edit", "work-gw", "--profile", "work", "--ttl", "9h"); err != nil {
+		t.Fatalf("metadata edit on mismatched cache: %v", err)
+	}
+	if cat, _ := gateway.ReadCache(e.home, "work", "work-gw"); cat != nil && gateway.MatchesBaseURL(cat, "https://manual-new.example.com") {
+		t.Errorf("metadata edit overwrote stale cache BaseURL to match new URL: %+v", cat)
+	}
+	if _, err := os.Stat(piModels); !os.IsNotExist(err) {
+		t.Errorf("metadata edit materialized pi models.json from mismatched cache BaseURL")
+	}
+}

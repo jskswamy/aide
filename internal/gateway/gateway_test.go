@@ -740,16 +740,18 @@ func TestRemoveFromHarness_LeavesOtherURLsEntries(t *testing.T) {
 	f := newFixture(t)
 	other := f.gw
 	other.BaseURL = "https://someone-else.example.com"
+	otherCat := *f.cat
+	otherCat.BaseURL = other.BaseURL
 	for _, h := range []string{"pi", "opencode", "codex"} {
 		f.mkdirs(t, h)
-		if _, err := MaterializeHarness(f.ctx, "corp", other, f.cat, h, f.home, false); err != nil {
+		if _, err := MaterializeHarness(f.ctx, "corp", other, &otherCat, h, f.home, false); err != nil {
 			t.Fatal(err)
 		}
 		removed, err := RemoveFromHarness(f.ctx, "corp", f.gw, h, f.home)
 		if err != nil || removed {
 			t.Errorf("%s: RemoveFromHarness() = %v, %v; want the other URL's entry kept", h, removed, err)
 		}
-		if st := InspectHarness(f.ctx, "corp", other, f.cat, h, f.home); st.State != StateSynced {
+		if st := InspectHarness(f.ctx, "corp", other, &otherCat, h, f.home); st.State != StateSynced {
 			t.Errorf("%s: entry for the other URL was disturbed: %+v", h, st)
 		}
 	}
@@ -840,5 +842,31 @@ func TestInspectHarness_StandbyGatewayNilCacheDoesNotPanic(t *testing.T) {
 	}
 	if got := InspectHarness(f.ctx, "standby", standby, nil, "claude", f.home); got.State != StatePending {
 		t.Errorf("InspectHarness(standby, nil cache) = %+v, want pending", got)
+	}
+}
+
+func TestMatchesBaseURL_AndInspectHarnessURLMismatch(t *testing.T) {
+	f := newFixture(t)
+	f.mkdirs(t, "pi", "claude")
+	if !MatchesBaseURL(f.cat, "https://gw.example.com/v1/") {
+		t.Fatal("expected normalized URLs to match")
+	}
+	if MatchesBaseURL(f.cat, "https://other.example.com") || MatchesBaseURL(nil, f.gw.BaseURL) {
+		t.Fatal("expected mismatched or nil catalogue to return false")
+	}
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	f.gw.BaseURL = "https://new-gw.example.com"
+	st := InspectHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home)
+	if st.State != StateStale || st.Detail != "base URL changed — run: aide gateway sync" {
+		t.Fatalf("InspectHarness(pi) = %+v, want stale base URL changed", st)
+	}
+	// SingleGatewayPerDir standby branch must also not report synced when cat.BaseURL mismatches gw.BaseURL.
+	standbyCtx := f.ctx
+	standbyCtx.DefaultCredentials = []string{"other"}
+	stClaude := InspectHarness(standbyCtx, "corp", f.gw, f.cat, "claude", f.home)
+	if stClaude.State == StateSynced {
+		t.Fatalf("InspectHarness(claude standby) = %+v, should not be synced on URL mismatch", stClaude)
 	}
 }

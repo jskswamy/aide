@@ -15,8 +15,11 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/jskswamy/aide/internal/config"
+	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/gateway"
 	"github.com/jskswamy/aide/internal/launcher/mocks"
+	"github.com/jskswamy/aide/internal/ui"
 )
 
 const gatewayTestToken = "gw-token-value"
@@ -307,5 +310,22 @@ func TestLauncher_GatewayIgnoresProfileEndpointForOtherHarnesses(t *testing.T) {
 	env, _ := launchGateway(t, home, cfg, "pi", "")
 	if got, _ := envValue(env, "CORP_TOKEN"); got != gatewayTestToken {
 		t.Errorf("CORP_TOKEN = %q", got)
+	}
+}
+
+func TestEnrichBannerHarnessesAndGateways_OmitsMismatchedCacheBaseURL(t *testing.T) {
+	home := t.TempDir()
+	seedCache(t, home, "https://old-gw.example.com", time.Minute, "m1", "m2")
+	configDir := t.TempDir()
+	writeMinimalConfig(t, configDir, gatewayConfig("https://new-gw.example.com"))
+	cfg, err := config.Load(configDir, "config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc := &aidectx.ResolvedContext{Name: "work", Context: cfg.Contexts["work"]}
+	data := &ui.BannerData{Credentials: []ui.CredentialInfo{{Name: "corp"}}}
+	EnrichBannerHarnessesAndGateways(data, cfg, rc, "pi", home, nil)
+	if data.Credentials[0].ModelCount != 0 || data.Credentials[0].ModelAge != "" {
+		t.Fatalf("banner credential = %+v, want ModelCount=0 and empty ModelAge on URL mismatch", data.Credentials[0])
 	}
 }

@@ -94,3 +94,9 @@ func FormatAge(d time.Duration) string {
 func IsExpired(cat *CachedCatalogue, ttl time.Duration, now time.Time) bool {
 	return cat == nil || now.Sub(cat.FetchedAt) > ttl
 }
+
+// MatchesBaseURL reports whether cat was fetched from the same normalized
+// base URL as baseURL.
+func MatchesBaseURL(cat *CachedCatalogue, baseURL string) bool {
+	return cat != nil && NormalizeBaseURL(cat.BaseURL) == NormalizeBaseURL(baseURL)
+}

@@ -41,7 +41,7 @@ func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName,
 		ttl := gw.TTL()
 		base := gateway.NormalizeBaseURL(gw.BaseURL)
 		cat, err := gateway.ReadCache(homeDir, rc.Name, name)
-		if err != nil || (cat != nil && cat.BaseURL != base) {
+		if err != nil || !gateway.MatchesBaseURL(cat, base) {
 			cat = nil // unreadable, or cached for a base_url since changed
 		}
 
@@ -155,7 +155,7 @@ func EnrichBannerHarnessesAndGateways(
 			}
 			if homeDir != "" {
 				cat, _ := gateway.ReadCache(homeDir, rc.Name, c.Name)
-				if cat != nil {
+				if gateway.MatchesBaseURL(cat, gw.BaseURL) {
 					c.ModelCount = len(cat.Models)
 					c.ModelAge = gateway.FormatAge(time.Since(cat.FetchedAt))
 				}

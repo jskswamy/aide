@@ -1,5 +1,11 @@
 ## Unreleased
 
+### 🐛 Bug Fixes
+
+- Bind gateway model cache freshness and materialization to the gateway's normalized `base_url` across `aide gateway list`, `aide gateway use`, `aide which`, startup banner enrichment, and harness inspection so changing `base_url` never reports or materializes stale models from a previous endpoint.
+- Make `--profile` a persistent flag on `aide gateway` with shell tab-completion so both `aide gateway --profile <name> <subcmd>` and `aide gateway <subcmd> --profile <name>` take highest precedence.
+- Resolve `aide gateway edit [<name>]` across profiles when `--profile` is omitted (or show a `(profile, gateway, base_url)` picker on a terminal when multiple gateways exist across profiles), print `Editing gateway "<name>" on profile "<profile>"` before interactive prompts, prompt for field edits when `--rotate-token` is passed on a terminal without field flags, offer token rotation when `--url` changes `base_url` on a terminal, and verify updated URL/token pairs against `<base_url>/v1/models` before saving secrets or `config.yaml`.
+
 ### 💥 Breaking changes
 
 - Tighten sandbox configuration-directory grants: symlinks no longer widen

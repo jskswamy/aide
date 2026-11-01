@@ -1054,7 +1054,7 @@ aide skillshare targets [--write]
 
 Generates [Skillshare](https://skillshare.runkids.cc) account targets
 (`agent:` + `config_dir:`), named `aide-<profile>-<harness>`, for every
-profile and harness (`claude`, `codex`, `pi`) that launches from a
+profile and harness (`claude`, `codex`, `opencode`, `pi`) that launches from a
 config dir of its own. Without `--write` it prints the targets, what
 would change, and what is not written and why; nothing is written.
 With `--write` it merges them into Skillshare's config

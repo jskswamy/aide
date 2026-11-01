@@ -49,7 +49,7 @@ func TestPlanTargets_ConfigDirsMatchLaunchDirs(t *testing.T) {
 
 	plan := PlanTargets(cfg, home)
 
-	want := "aide-oss-claude,aide-oss-codex,aide-oss-pi,aide-work-claude,aide-work-codex,aide-work-pi"
+	want := "aide-oss-claude,aide-oss-codex,aide-oss-opencode,aide-oss-pi,aide-work-claude,aide-work-codex,aide-work-opencode,aide-work-pi"
 	if got := targetNames(plan.Targets); got != want {
 		t.Fatalf("targets = %s, want %s", got, want)
 	}
@@ -76,12 +76,12 @@ func TestPlanTargets_DefaultDirsAreSkipped(t *testing.T) {
 
 	plan := PlanTargets(cfg, home)
 
-	if got := targetNames(plan.Targets); got != "aide-adopted-codex" {
-		t.Errorf("targets = %s, want aide-adopted-codex", got)
+	if got := targetNames(plan.Targets); got != "aide-adopted-codex,aide-adopted-opencode" {
+		t.Errorf("targets = %s, want aide-adopted-codex,aide-adopted-opencode", got)
 	}
 	reasons := skipText(plan.Skipped)
 	for _, want := range []string{
-		"personal: no config_dir_name, config_dir or config_dirs; claude, codex, pi run from their default dirs",
+		"personal: no config_dir_name, config_dir or config_dirs; claude, codex, opencode, pi run from their default dirs",
 		"adopted/claude: ~/.claude is claude's default dir",
 		"adopted/pi: ~/.pi/agent is pi's default dir",
 	} {
@@ -103,7 +103,7 @@ func TestPlanTargets_SharedDirIsSkippedForEveryUser(t *testing.T) {
 		t.Errorf("targets = %s, want aide-one-pi", got)
 	}
 	reasons := skipText(plan.Skipped)
-	for _, want := range []string{"one/claude: ~/one is also", "one/codex: ~/one is also"} {
+	for _, want := range []string{"one/claude: ~/one is also", "one/codex: ~/one is also", "one/opencode: ~/one is also"} {
 		if !strings.Contains(reasons, want) {
 			t.Errorf("skips lack %q:\n%s", want, reasons)
 		}
@@ -118,13 +118,13 @@ func TestPlanTargets_UnsupportedHarnessReportedSeparately(t *testing.T) {
 
 	plan := PlanTargets(cfg, home)
 
-	if got := targetNames(plan.Targets); got != "aide-cp-claude,aide-cp-codex,aide-cp-pi" {
+	if got := targetNames(plan.Targets); got != "aide-cp-claude,aide-cp-codex,aide-cp-opencode,aide-cp-pi" {
 		t.Errorf("targets = %s", got)
 	}
 	if len(plan.Skipped) != 0 {
 		t.Errorf("unsupported harness reported as a directory skip: %+v", plan.Skipped)
 	}
-	if got := skipText(plan.Unsupported); !strings.Contains(got, "cp/copilot: aide writes Skillshare account targets for claude, codex and pi only") {
+	if got := skipText(plan.Unsupported); !strings.Contains(got, "cp/copilot: aide writes Skillshare account targets for claude, codex, opencode and pi only") {
 		t.Errorf("unsupported = %s", got)
 	}
 }
@@ -145,7 +145,7 @@ func TestPlanTargets_OmpReportedUnsupported(t *testing.T) {
 
 	plan := PlanTargets(cfg, testHome(t))
 
-	if got := skipText(plan.Unsupported); !strings.Contains(got, "o/omp: aide writes Skillshare account targets for claude, codex and pi only") {
+	if got := skipText(plan.Unsupported); !strings.Contains(got, "o/omp: aide writes Skillshare account targets for claude, codex, opencode and pi only") {
 		t.Errorf("unsupported = %q", got)
 	}
 }
@@ -160,7 +160,7 @@ func TestPlanTargets_EnvPinnedDirIsNotCalledDefault(t *testing.T) {
 	got := skipText(plan.Skipped)
 	for _, want := range []string{
 		"legacy/claude: its dir is set through env.CLAUDE_CONFIG_DIR",
-		"legacy: no config_dir_name, config_dir or config_dirs; codex, pi run from their default dirs",
+		"legacy: no config_dir_name, config_dir or config_dirs; codex, opencode, pi run from their default dirs",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("skips lack %q:\n%s", want, got)

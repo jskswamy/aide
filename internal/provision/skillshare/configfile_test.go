@@ -202,3 +202,16 @@ func TestMerge_UpdatesAgentAndDirInOneRun(t *testing.T) {
 		t.Errorf("output:\n%s\nwant:\n%s", res.Output, want)
 	}
 }
+
+func TestMerge_RemovesStaleOpenCodeTarget(t *testing.T) {
+	cfg := "targets:\n  aide-old-opencode:\n    agent: opencode\n    config_dir: ~/.opencode-old\n"
+
+	res, err := Merge([]byte(cfg), plan(), "/home/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := strings.Join(res.Removed, ","); got != "aide-old-opencode" {
+		t.Errorf("removed = %s", got)
+	}
+}

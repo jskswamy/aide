@@ -885,17 +885,33 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 	// allowed subtree because its API has no point-deny — denied files
 	// whose parent dir is in the writable/readable allow-list remain
 	// accessible under Landlock. bwrap can close this gap; Landlock can't.
+	//
+	// Denied dirs get a read-only (0555) tmpfs, not just an empty one: a
+	// default-mode tmpfs is owner-writable, so a sandboxed process could
+	// still CREATE files inside a denied directory.
 	for _, p := range expandGlobs(denied) {
 		info, err := os.Stat(p)
 		if err != nil {
 			continue
 		}
 		if info.IsDir() {
-			bwrapArgs = append(bwrapArgs, "--tmpfs", p)
+			bwrapArgs = append(bwrapArgs, "--perms", "0555", "--tmpfs", p)
 		} else {
 			bwrapArgs = append(bwrapArgs, "--ro-bind", "/dev/null", p)
 		}
 	}
+
+	// bwrap auto-creates missing destination parents for every bind as
+	// owner-writable (0755) directories in the tmpfs root. Unmounted
+	// private state is read-denied by absence, but those auto-created
+	// parents are writable, letting a sandboxed process CREATE files next
+	// to a granted bind (e.g. ~/.pi/agent/auth.json beside the launcher's
+	// ro-bind). A non-recursive read-only remount of the sandbox root
+	// closes the whole class: every submount keeps its own permissions,
+	// so writable/readable binds, /tmp, /dev/shm and denied overlays are
+	// unaffected — only the auto-created parent directories go
+	// read-only. Must come after every mount op.
+	bwrapArgs = append(bwrapArgs, "--remount-ro", "/")
 
 	// Network isolation
 	if policy.Network == NetworkNone {

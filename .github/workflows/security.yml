@@ -24,7 +24,7 @@ jobs:
 
   codeql:
     name: CodeQL Analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -32,10 +32,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: github/codeql-action/init@v3.37.5
+      - uses: github/codeql-action/init@v4.39.1
         with:
           languages: go
 
       - run: make build
 
-      - uses: github/codeql-action/analyze@v3.37.5
+      - uses: github/codeql-action/analyze@v4.39.1

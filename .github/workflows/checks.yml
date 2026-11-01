@@ -13,7 +13,7 @@ permissions:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -21,22 +21,29 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-python@v7.0.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.x"
 
-      - uses: actions/cache@v5.1.0
+      - uses: actions/cache@v6.1.0
         with:
-          path: ~/.cache/golangci-lint
-          key: golangci-lint-${{ runner.os }}-${{ hashFiles('.golangci.yml', 'go.sum') }}
+          path: |
+            ~/.cache/golangci-lint
+            ~/.cache/pre-commit
+          key: lint-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', '.golangci.yml', 'go.sum') }}
 
-      - uses: pre-commit/action@v3.0.1
+      # Direct run instead of pre-commit/action: its latest release still
+      # calls actions/cache@v4 (Node 20) internally, which trips the runner's
+      # Node.js 20 deprecation notice.
+      - run: pipx install pre-commit
+
+      - run: pre-commit run --all-files
 
   test:
     name: Test (Linux)
     uses: ./.github/workflows/_test.yml
     with:
-      runner: ubuntu-latest
+      runner: ubuntu-26.04
       coverage: true
 
   test-macos:
@@ -48,7 +55,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1
 

@@ -1,0 +1,6 @@
+# actionlint v1.7.x does not know the ubuntu-26.04 runner label yet
+# (GitHub-hosted image, GA October 2026). Declare it until upstream
+# adds it to the built-in label list.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

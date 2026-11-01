@@ -14,7 +14,7 @@ jobs:
     name: Test (Linux)
     uses: ./.github/workflows/_test.yml
     with:
-      runner: ubuntu-latest
+      runner: ubuntu-26.04
       coverage: false
 
   test-macos:
@@ -35,7 +35,7 @@ jobs:
   goreleaser:
     name: Release
     needs: [test, test-macos, gosec, govulncheck]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
@@ -47,7 +47,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: goreleaser/goreleaser-action@v7.2.3
+      - uses: goreleaser/goreleaser-action@v7.3.0
         with:
           version: latest
           args: release --clean

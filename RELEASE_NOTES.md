@@ -1,3 +1,15 @@
+## Unreleased
+
+### ✨ New
+
+- `aide skillshare targets` now writes an `aide-<profile>-opencode` target for
+  each profile whose OpenCode config dir is its own, so `skillshare sync`
+  reaches the dir aide launches OpenCode with. If one of your own Skillshare
+  targets already uses that dir, aide reports the conflict and writes nothing
+  for it; remove your target to let aide manage the dir. An existing target
+  named `aide-*` with `agent: opencode` now counts as aide's, so aide updates
+  it or removes it when its profile goes away.
+
 ## v3.3.0 (2026-11-01)
 
 ### 💥 Breaking changes

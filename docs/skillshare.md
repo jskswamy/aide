@@ -26,8 +26,8 @@ re-pointing a profile, then `skillshare sync` again.
 ### What is written
 
 One [account target](https://skillshare.runkids.cc/docs/reference/targets/configuration#agent-config-dir)
-per profile and harness (`claude`, `codex`, `pi`) whose config dir is
-the profile's own:
+per profile and harness (`claude`, `codex`, `opencode`, `pi`) whose
+config dir is the profile's own:
 
 ```yaml
 targets:
@@ -37,6 +37,9 @@ targets:
   aide-work-codex:
     agent: codex
     config_dir: ~/.codex-work
+  aide-work-opencode:
+    agent: opencode
+    config_dir: ~/.opencode-work
   aide-work-pi:
     agent: pi
     config_dir: ~/.pi-work
@@ -45,7 +48,7 @@ targets:
 `config_dir` is the dir aide launches that harness with under that
 profile (`config_dirs:` entry, else `config_dir:`, else
 `~/.<harness>-<config_dir_name>`), computed by the same code the
-launcher uses. Every profile gets all three harnesses, since
+launcher uses. Every profile gets all four harnesses, since
 `--agent` can launch any profile under any of them; Skillshare
 creates `<config_dir>/skills` when it syncs.
 
@@ -77,12 +80,12 @@ Each is listed in the output with the reason:
 
 - **No config dir of its own**: a profile without `config_dir_name:`,
   `config_dir:` or `config_dirs:` runs every harness from its default
-  dir (`~/.claude`, `~/.codex`, `~/.pi/agent`). Skillshare forbids
-  account targets at a harness's default dir; its plain `claude`,
-  `codex` and `pi` targets cover it.
+  dir (`~/.claude`, `~/.codex`, `~/.config/opencode`, `~/.pi/agent`).
+  Skillshare forbids account targets at a harness's default dir; its
+  plain `claude`, `codex`, `opencode` and `pi` targets cover it.
 - **A dir set through `env:`**: a profile without those keys that sets
-  `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `PI_CODING_AGENT_DIR` in `env:`
-  is reported for that harness; move the dir to `config_dirs:` to get a
+  `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR` or
+  `PI_CODING_AGENT_DIR` in `env:` is reported for that harness; move the dir to `config_dirs:` to get a
   target.
 - **A harness's default dir**: a `config_dirs:` entry pointing at the
   default dir (as `aide profile migrate --adopt` writes), same reason.
@@ -91,7 +94,7 @@ Each is listed in the output with the reason:
   dir per target, so give each harness its own `config_dirs:` entry.
 - **A dir or name one of your own targets already uses.**
 - **Other harnesses**: aide writes account targets for `claude`,
-  `codex` and `pi` only (Skillshare also supports `omp`, which aide
+  `codex`, `opencode` and `pi` only (Skillshare also supports `omp`, which aide
   does not launch), so a profile whose agent is `copilot`, `gemini`,
   `omp`, ... is reported.
 

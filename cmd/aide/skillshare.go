@@ -29,8 +29,8 @@ func skillshareTargetsCmd() *cobra.Command {
 		Use:   "targets",
 		Short: "Write Skillshare account targets for your profiles' config dirs",
 		Long: `Generate Skillshare account targets (agent: + config_dir:) for every
-profile and harness (claude, codex, pi) that launches from a config dir
-of its own, so ` + "`skillshare sync`" + ` installs skills and other
+profile and harness (claude, codex, opencode, pi) that launches from a
+config dir of its own, so ` + "`skillshare sync`" + ` installs skills and other
 resources into exactly the dirs aide launches with.
 
 Without --write, prints the targets and what would change; nothing is

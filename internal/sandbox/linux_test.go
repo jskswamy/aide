@@ -202,6 +202,64 @@ func TestLinuxSandbox_ApplyBwrap_MasksDeniedFileWithDevNull(t *testing.T) {
 	}
 }
 
+// TestLinuxSandbox_ApplyBwrap_RootReadOnlyAndDeniedDirsNotWritable pins the
+// isolation fix for bwrap-created parent directories: bwrap auto-creates
+// missing destination parents as owner-writable dirs in the tmpfs root, so a
+// sandboxed process could CREATE private files beside a granted bind (e.g.
+// ~/.pi/agent/auth.json beside the launcher's ro-bind). The root must be
+// remounted read-only after every mount op, and denied-dir overlays must be
+// non-writable too — submounts keep their own permissions.
+func TestLinuxSandbox_ApplyBwrap_RootReadOnlyAndDeniedDirsNotWritable(t *testing.T) {
+	s := &LinuxSandbox{}
+	cmd := exec.Command("/usr/bin/echo")
+
+	tmp := t.TempDir()
+	secretDir := filepath.Join(tmp, "secret-dir")
+	if err := os.Mkdir(secretDir, 0o700); err != nil {
+		t.Fatalf("setup secret dir: %v", err)
+	}
+
+	policy := Policy{
+		ProjectRoot:     "/tmp/project",
+		Network:         NetworkOutbound,
+		AllowSubprocess: true,
+		ExtraDenied:     []string{secretDir},
+	}
+
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		t.Skip("bwrap not on PATH")
+	}
+	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
+		t.Fatalf("applyBwrap error: %v", err)
+	}
+
+	args := strings.Join(cmd.Args, " ")
+
+	// Denied dirs must be read-only (0555) tmpfs overlays, not just empty ones.
+	wantDeny := "--perms 0555 --tmpfs " + secretDir
+	if !strings.Contains(args, wantDeny) {
+		t.Errorf("denied dir overlay must be non-writable; missing %q in: %s", wantDeny, args)
+	}
+
+	// The sandbox root must be remounted read-only after all mount ops.
+	wantRoot := "--remount-ro /"
+	if !strings.Contains(args, wantRoot) {
+		t.Fatalf("missing %q in: %s", wantRoot, args)
+	}
+	if strings.Index(args, "--remount-ro /") < strings.LastIndex(args, "--tmpfs") {
+		t.Errorf("--remount-ro must come after every --tmpfs op: %s", args)
+	}
+	if strings.Index(args, "--remount-ro /") < strings.LastIndex(args, "--bind-try") {
+		t.Errorf("--remount-ro must come after every --bind-try op: %s", args)
+	}
+
+	// Writable binds are submounts and must keep their own permissions.
+	if !strings.Contains(args, "--bind-try /tmp/project /tmp/project") {
+		t.Errorf("missing writable bind in: %s", args)
+	}
+}
+
 func TestLinuxSandbox_ApplyBwrap_NetworkNone(t *testing.T) {
 	s := &LinuxSandbox{}
 	cmd := exec.Command("/usr/bin/echo")

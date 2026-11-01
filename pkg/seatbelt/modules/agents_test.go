@@ -297,3 +297,34 @@ func TestAgentModules(t *testing.T) {
 		})
 	}
 }
+
+// AgentEnvKeys feeds env scrubbing/preservation (clean_env) on Linux; the
+// empty-EnvKey agents must report none so their vars are not preserved.
+func TestSimpleAgent_AgentEnvKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		spec AgentSpec
+		want []string
+	}{
+		{name: "no override mechanism", spec: AgentSpec{EnvKey: ""}, want: nil},
+		{name: "env override key reported", spec: AgentSpec{EnvKey: "CODEX_HOME"}, want: []string{"CODEX_HOME"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mod := NewSimpleAgent(tt.spec)
+			keyProvider, ok := mod.(seatbelt.EnvKeyProvider)
+			if !ok {
+				t.Fatal("simpleAgentModule must implement seatbelt.EnvKeyProvider")
+			}
+			got := keyProvider.AgentEnvKeys(&seatbelt.Context{HomeDir: "/home/user"})
+			if len(got) != len(tt.want) {
+				t.Fatalf("AgentEnvKeys() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("AgentEnvKeys() = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}

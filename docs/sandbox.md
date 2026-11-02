@@ -19,12 +19,11 @@ aide separates **what** the agent can access from **how** that access is enforce
 A practical example:
 
 ```yaml
-profiles:
-  work:
-    capabilities:
-      - docker
-      - k8s
-      - aws
+# ~/.config/aide/profiles/work.yaml
+capabilities:
+  - docker
+  - k8s
+  - aws
 ```
 
 aide reads those capabilities and produces a sandbox profile that grants Docker config access, kubeconfig reads, and AWS credential reads - nothing more.
@@ -105,11 +104,10 @@ being verified.
 The preferred way to customize is through capabilities in your profile config. For fine-grained control, you can also work with guards directly:
 
 ```yaml
-profiles:
-  work:
-    sandbox:
-      denied_extra: ["~/sensitive-data"]  # deny additional paths
-      unguard: [dev-credentials]          # disable default guards
+# ~/.config/aide/profiles/work.yaml
+sandbox:
+  denied_extra: ["~/sensitive-data"]  # deny additional paths
+  unguard: [dev-credentials]          # disable default guards
 ```
 
 ### Guard configuration fields
@@ -163,12 +161,11 @@ aide sandbox list
 **Reference a profile in config**
 
 ```yaml
-profiles:
-  secure:
-    sandbox: strict
+# ~/.config/aide/profiles/secure.yaml
+sandbox: strict
 ```
 
-aide loads the `strict` sandbox profile and applies it to the `secure` aide profile.
+aide loads the `strict` sandbox profile (from `~/.config/aide/sandbox.yaml`) and applies it to the `secure` aide profile.
 
 ## Yolo Mode and Sandbox
 
@@ -178,12 +175,11 @@ Use `--no-yolo` to override config-based yolo and restore agent permission check
 
 ## Disabling Sandbox
 
-Set `sandbox: false` in your config to disable sandboxing entirely for that profile. The agent runs with full filesystem and network access, subject only to OS-level user permissions.
+Set `sandbox: false` in your profile config to disable sandboxing entirely for that profile. The agent runs with full filesystem and network access, subject only to OS-level user permissions.
 
 ```yaml
-profiles:
-  local-dev:
-    sandbox: false
+# ~/.config/aide/profiles/local-dev.yaml
+sandbox: false
 ```
 
 ## Trust Gate

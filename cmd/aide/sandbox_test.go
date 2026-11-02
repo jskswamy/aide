@@ -72,12 +72,18 @@ func TestSandboxTypes_JSONFormat(t *testing.T) {
 	}
 }
 
-// writeClaudeAgentConfig writes a minimal global config.yaml declaring
+// writeClaudeAgentConfig writes a minimal global config declaring
 // one context ("work", the default) using the given agent name.
 func writeClaudeAgentConfig(t *testing.T, dir, agent string) {
 	t.Helper()
-	yaml := "default_context: work\ncontexts:\n  work:\n    agent: " + agent + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(yaml), 0o644); err != nil {
+	cfgDir := filepath.Join(dir, "xdg", "aide")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("default_profile: work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "work.yaml"), []byte("agent: "+agent+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -178,17 +184,24 @@ func TestSandboxAllow_UnsupportedAgentSkipsSilently(t *testing.T) {
 	}
 }
 
-// writeClaudeAgentConfigWithContext writes a global config.yaml declaring
+// writeClaudeAgentConfigWithContext writes a global config declaring
 // two contexts: the default "work" (plain claude), and a second named
 // context using the given agent and a custom CLAUDE_CONFIG_DIR env value
 // (tilde-prefixed, to exercise homepath expansion via resolveContextEnv).
 func writeClaudeAgentConfigWithContext(t *testing.T, dir, contextName, agent, configDirEnv string) {
 	t.Helper()
-	yaml := "default_context: work\ncontexts:\n" +
-		"  work:\n    agent: " + agent + "\n" +
-		"  " + contextName + ":\n    agent: " + agent + "\n" +
-		"    env:\n      CLAUDE_CONFIG_DIR: " + configDirEnv + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(yaml), 0o644); err != nil {
+	cfgDir := filepath.Join(dir, "xdg", "aide")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("default_profile: work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "work.yaml"), []byte("agent: "+agent+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	named := "agent: " + agent + "\nenv:\n  CLAUDE_CONFIG_DIR: " + configDirEnv + "\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", contextName+".yaml"), []byte(named), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

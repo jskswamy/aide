@@ -153,10 +153,13 @@ func TestEnvSet_ProviderSelectorsOnlyInUserConfig(t *testing.T) {
 	}
 
 	cfgDir := filepath.Join(dir, "xdg", "aide")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("contexts:\n  work:\n    agent: claude\ndefault_context: work\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("default_profile: work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "work.yaml"), []byte("agent: claude\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := runEnvSet(t, "CLAUDE_CODE_USE_BEDROCK", "1", "--global"); err != nil {

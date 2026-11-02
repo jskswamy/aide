@@ -196,7 +196,7 @@ Examples:
 				homepath.Tilde(config.ResolveSecretPath(gw.Store), home), gw.Key)
 
 			cfg.Contexts[profileName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(out, "✓ Saved gateway %q under profile %q in %s\n", name, profileName, homepath.Tilde(config.FilePath(), home))
@@ -415,7 +415,7 @@ built-in provider credentials and prompts for a selection.`,
 
 			ctx.DefaultCredentials = setProfileDefaultCredential(ctx, name)
 			cfg.Contexts[profileName] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -736,7 +736,7 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 			}
 			updated.DefaultCredentials = slices.DeleteFunc(slices.Clone(ctx.DefaultCredentials), func(s string) bool { return s == name })
 			cfg.Contexts[profileName] = updated
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(out, "✓ Removed gateway %q from profile %q in %s\n", name, profileName, homepath.Tilde(config.FilePath(), home))
@@ -1129,7 +1129,7 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 	}
 
 	cfg.Contexts[profileName] = updatedCtx
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := saveConfigWithMigrationPrompt(nil, cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 	if newName != oldName {

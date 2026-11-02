@@ -310,7 +310,7 @@ func runAdopt(out io.Writer, in io.Reader, contextName string, yes bool) error {
 		}
 	}
 
-	if err := config.WriteConfig(env.cfg); err != nil {
+	if err := saveConfigWithMigrationPrompt(nil, env.cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 

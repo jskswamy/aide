@@ -2,9 +2,20 @@
 
 ## Config Location
 
-aide reads its global configuration from `~/.config/aide/config.yaml`. If `$XDG_CONFIG_HOME` is set, aide uses `$XDG_CONFIG_HOME/aide/config.yaml` instead.
+aide splits its global configuration by concern under `~/.config/aide/` (or `$XDG_CONFIG_HOME/aide/` when `$XDG_CONFIG_HOME` is set):
 
-Encrypted secret files live under `~/.config/aide/secrets/`.
+```
+~/.config/aide/
+├── config.yaml         # Global settings: default_profile, agents, preferences, statusline
+├── sandbox.yaml        # Security & isolation: capabilities, sandboxes, custom_guards, guard_types, never_allow, never_allow_env, scrub_env
+├── provisioning.yaml   # Shared tooling: plugins, mcp_servers, hooks
+├── profiles/           # One flat YAML file per profile (no outer profiles: wrapper)
+│   ├── work.yaml
+│   └── personal.yaml
+└── secrets/            # Age-encrypted secret stores (<name>.enc.yaml)
+```
+
+Only `config.yaml` and the files for sections you actually use need to exist on disk. To split an existing single-file `config.yaml` into this modular layout, run `aide config migrate` (preview) and `aide config migrate --write`.
 
 To override settings for a specific project, place a `.aide.yaml` file in the project root. aide walks up from the current directory and stops at the git root when searching for this file.
 
@@ -12,9 +23,10 @@ To override settings for a specific project, place a `.aide.yaml` file in the pr
 
 ## Minimal Format
 
-A flat file with no `agents:`, `profiles:` or (legacy) `contexts:` keys. aide treats it as a single default profile.
+For a single profile setup, a flat `config.yaml` with no `agents:` key acts as a single default profile:
 
 ```yaml
+# ~/.config/aide/config.yaml
 agent: claude
 env:
   ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
@@ -23,21 +35,18 @@ yolo: true          # optional: skip agent permission checks
 auto_approve: true  # alias for yolo
 ```
 
-aide registers the agent binary automatically using the name provided. Credentials belong here, not on a separate agent definition.
+aide registers the agent binary automatically using the name provided. Credentials belong on the profile, not on a separate agent definition.
 
 ---
 
 ## Full Format
 
-Use the full format for multiple projects with different agents or credentials.
-
-Earlier releases called profiles contexts. `contexts:`/`default_context:`
-still load (with `profile:`/`profile_dir:` inside each entry); a file
-must use one form or the other. `aide profile migrate` previews the
-conversion and `aide profile migrate --write` applies it (see
-[Profiles § Migrating from contexts](profiles.md#migrating-from-contexts)).
+For multiple projects with different agents, credentials, sandbox policies, or shared tooling, configure global settings in `config.yaml` and each profile in `~/.config/aide/profiles/<name>.yaml`:
 
 ```yaml
+# ~/.config/aide/config.yaml
+default_profile: personal
+
 agents:
   claude:
     binary: claude
@@ -45,65 +54,71 @@ agents:
   aider:
     binary: aider
 
-profiles:
-  work:
-    match:
-      - remote: "github.com/acme/*"
-      - path: "~/work/*"
-    icon: "💼"
-    agent: claude
-    secret: work
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-    sandbox:
-      network: outbound
-      writable:
-        - "{{ .project_root }}"
-
-  personal:
-    match:
-      - remote: "github.com/myuser/*"
-    icon: "🏠"
-    agent: claude
-    secret: personal
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-    sandbox: false
-
-  open-source:
-    match:
-      - path: "~/oss/*"
-    agent: aider
-    secret: oss
-    env:
-      OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
-    sandbox: strict
-
-  infra:
-    match:
-      - path: "~/infra/*"
-    agent: claude
-    secret: work
-    capabilities: [docker, k8s]
-    auto_approve: true
-
-default_profile: personal
-
 preferences:
   show_info: true
   info_style: compact
   info_detail: normal
 ```
 
+```yaml
+# ~/.config/aide/profiles/work.yaml
+match:
+  - remote: "github.com/acme/*"
+  - path: "~/work/*"
+icon: "💼"
+agent: claude
+secret: work
+env:
+  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+sandbox:
+  network: outbound
+  writable:
+    - "{{ .project_root }}"
+```
+
+```yaml
+# ~/.config/aide/profiles/personal.yaml
+match:
+  - remote: "github.com/myuser/*"
+icon: "🏠"
+agent: claude
+secret: personal
+env:
+  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+sandbox: false
+```
+
+```yaml
+# ~/.config/aide/profiles/open-source.yaml
+match:
+  - path: "~/oss/*"
+agent: aider
+secret: oss
+env:
+  OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
+sandbox: strict
+```
+
+```yaml
+# ~/.config/aide/profiles/infra.yaml
+match:
+  - path: "~/infra/*"
+agent: claude
+secret: work
+capabilities: [docker, k8s]
+auto_approve: true
+```
+
 ---
 
 ## Agent Definitions
 
-The `agents:` block maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only. Credentials and environment variables belong on profiles.
+The `agents:` block in `config.yaml` maps names to binaries. The agent name is the map key. `binary:` is the executable name or absolute path; if omitted, aide uses the agent name as the binary. Agents are binary definitions only. Credentials and environment variables belong on profiles.
 
 Known agents that aide detects automatically on `PATH`: `claude`, `codex`, `aider`, `goose`, `amp`, `gemini`, `copilot`, `cursor-agent`.
 
 ```yaml
+# ~/.config/aide/config.yaml
 agents:
   claude:
     binary: claude
@@ -116,42 +131,17 @@ The `icon` field (optional) sets a Unicode symbol displayed alongside the agent 
 
 ---
 
-## Top-Level Config Fields
+## Global Config Files and Fields
 
-In addition to `agents:`, `profiles:`, `default_profile:`, and `preferences:`, the following top-level fields are available:
+### `config.yaml` (Global Settings)
 
-- `capabilities:` (map) - User-defined capability definitions. Each key is a capability name mapping to a `CapabilityDef`. Example:
-
-```yaml
-capabilities:
-  k8s-dev:
-    extends: k8s
-    readable: ["~/.kube/dev-config"]
-    deny: ["~/.kube/prod-config"]
-    env_allow: [KUBECONFIG]
-```
-
-- `never_allow:` (list) - Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
-- `never_allow_env:` (list) - Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
-- `scrub_env:` (list) - Extra variable names added to the credential scrub registry (see [Credential-clean environment](#credential-clean-environment)). An entry ending in `*` matches a prefix (`CORP_LLM_*`).
-
-- `hooks:` (map) - Declarative hook set. Keys are normalized event names (`pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`); values are lists of hook entries:
-
-```yaml
-hooks:
-  pre_tool:
-    - command: "rtk hook {agent}"
-      matcher: shell   # optional: "shell" → agent-native name (e.g. Bash)
-      timeout: 30      # optional: seconds; 0 = driver default
-```
-
-The `{agent}` template variable is replaced with the resolved agent name for each profile. Reconciled by `aide sync`. See [Hooks](#hooks) below.
-
-- `plugins:` (map) - Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
-- `mcp_servers:` (map) - Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
+- `default_profile:` (string) - Fallback profile name when no profile match rules apply.
+- `agents:` (map) - Agent binary definitions.
+- `preferences:` (map) - Startup banner display settings (see [Preferences](#preferences)).
 - `statusline:` (map) - Configures the `aide statusline claude` renderer. Controls module order, per-module icons, state strings, and disabled state. Field-by-field merge with the project override; `order` is replaced wholesale when set in the project.
 
 ```yaml
+# ~/.config/aide/config.yaml
 statusline:
   order: [sandbox, network, caps, trust, context]
   sandbox:
@@ -166,7 +156,7 @@ statusline:
     icon: "⚡"        # prefix; value is comma-joined capability list
   trust:
     untrusted: "⚠️"  # only shown when .aide.yaml is untrusted
-  context:            # the matched profile's name (module keeps its name)
+  context:            # the matched profile's name
     icon: "📁"
   auto_approve:
     value: "🚨"       # always shown when active; disabled: true has no effect
@@ -181,8 +171,42 @@ didn't launch this session at all" from "aide launched it with the sandbox
 explicitly disabled." Defaults to `"💀"` for `sandbox` and `"🌫️"` for
 `network`.
 
+### `sandbox.yaml` (Security and Isolation)
+
+- `capabilities:` (map) - User-defined capability definitions. Each key is a capability name mapping to a `CapabilityDef`. Example:
+
+```yaml
+# ~/.config/aide/sandbox.yaml
+capabilities:
+  k8s-dev:
+    extends: k8s
+    readable: ["~/.kube/dev-config"]
+    deny: ["~/.kube/prod-config"]
+    env_allow: [KUBECONFIG]
+```
+
 - `sandboxes:` (map) - Named sandbox profiles referenced from profiles (`sandbox: <name>`).
+- `never_allow:` (list) - Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
+- `never_allow_env:` (list) - Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
+- `scrub_env:` (list) - Extra variable names added to the credential scrub registry (see [Credential-clean environment](#credential-clean-environment)). An entry ending in `*` matches a prefix (`CORP_LLM_*`).
 - `custom_guards:` and `guard_types:` (advanced) - Define custom seatbelt guard modules. Most users should not need these.
+
+### `provisioning.yaml` (Shared Tooling)
+
+- `plugins:` (map) - Declarative plugin set per agent. Value shape per entry decides the meaning: list = marketplace + plugin names, string = URL-direct install ref, null = declare-only marketplace. Reconciled by `aide sync`. See [Provisioning](provisioning.md).
+- `mcp_servers:` (map) - Declarative MCP server set. Each entry is an inline table with `command`+`args` (stdio) or `url` (HTTP), plus optional `env`. Reconciled by `aide sync`.
+- `hooks:` (map) - Declarative hook set. Keys are normalized event names (`pre_tool`, `post_tool`, `session_start`, `session_end`, `notification`, `stop`); values are lists of hook entries:
+
+```yaml
+# ~/.config/aide/provisioning.yaml
+hooks:
+  pre_tool:
+    - command: "rtk hook {agent}"
+      matcher: shell   # optional: "shell" → agent-native name (e.g. Bash)
+      timeout: 30      # optional: seconds; 0 = driver default
+```
+
+The `{agent}` template variable is replaced with the resolved agent name for each profile. Reconciled by `aide sync`. See [Hooks](#hooks) below.
 
 ---
 
@@ -333,26 +357,25 @@ refers to one key in an age-encrypted secret store (the same stores
 `secret:` names; see `aide secrets`).
 
 ```yaml
-profiles:
-  work:
-    agent: claude
-    credentials:
-      anthropic:
-        backend: age            # the only backend
-        store: work             # secret store, named like secret:
-        key: anthropic_api_key  # key inside that store
-      openrouter:
-        backend: age
-        store: work
-        key: openrouter_api_key
-        harnesses: [pi]         # optional: only for these agents
-      corp:                     # custom name: env: and harnesses: required
-        backend: age
-        store: corp
-        key: llm_token
-        env: [CORP_LLM_TOKEN]
-        harnesses: [pi]
-    default_credentials: [anthropic]
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+credentials:
+  anthropic:
+    backend: age            # the only backend
+    store: work             # secret store, named like secret:
+    key: anthropic_api_key  # key inside that store
+  openrouter:
+    backend: age
+    store: work
+    key: openrouter_api_key
+    harnesses: [pi]         # optional: only for these agents
+  corp:                     # custom name: env: and harnesses: required
+    backend: age
+    store: corp
+    key: llm_token
+    env: [CORP_LLM_TOKEN]
+    harnesses: [pi]
+default_credentials: [anthropic]
 ```
 
 - Built-in names and the variable each sets: `anthropic`
@@ -405,25 +428,24 @@ the key (`env:`) and which non-secret settings travel with it
 `--gateway`.
 
 ```yaml
-profiles:
-  work:
-    agent: claude
-    credentials:
-      openrouter:
-        backend: age
-        store: work
-        key: openrouter_api_key
-        for:
-          claude:                      # Claude via OpenRouter's Anthropic API
-            env: [ANTHROPIC_AUTH_TOKEN]
-            set: {ANTHROPIC_BASE_URL: "https://openrouter.ai/api", ANTHROPIC_API_KEY: ""}
-          pi:
-            env: [OPENROUTER_API_KEY]
-      bedrock:                         # keyless: AWS login via the capability
-        capabilities: [aws]
-        for:
-          claude: {set: {CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: us-east-1}}
-    default_credentials: [openrouter]
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+credentials:
+  openrouter:
+    backend: age
+    store: work
+    key: openrouter_api_key
+    for:
+      claude:                      # Claude via OpenRouter's Anthropic API
+        env: [ANTHROPIC_AUTH_TOKEN]
+        set: {ANTHROPIC_BASE_URL: "https://openrouter.ai/api", ANTHROPIC_API_KEY: ""}
+      pi:
+        env: [OPENROUTER_API_KEY]
+  bedrock:                         # keyless: AWS login via the capability
+    capabilities: [aws]
+    for:
+      claude: {set: {CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: us-east-1}}
+default_credentials: [openrouter]
 ```
 
 `aide` runs Claude through OpenRouter, `aide --agent pi` runs Pi
@@ -492,19 +514,17 @@ This prompts for the token (input hidden), then:
 
 1. Encrypts it into `~/.config/aide/secrets/work.enc.yaml` under key
    `corp_token`, without opening an editor.
-2. Saves the gateway on the profile:
+2. Saves the gateway on the profile (`~/.config/aide/profiles/work.yaml`):
 
    ```yaml
-   profiles:
-     work:
-       config_dir_name: work
-       gateways:
-         corp:
-           base_url: https://gateway.example.com
-           refresh_ttl: 24h
-           store: work
-           key: corp_token
-           # harnesses: [claude, pi]   # optional; default is all four
+   config_dir_name: work
+   gateways:
+     corp:
+       base_url: https://gateway.example.com
+       refresh_ttl: 24h
+       store: work
+       key: corp_token
+       # harnesses: [claude, pi]   # optional; default is all four
    ```
 
 3. Fetches `<base_url>/v1/models`, caches the result in
@@ -659,6 +679,8 @@ also honors:
 
 ## Profile Fields
 
+Each file in `~/.config/aide/profiles/<name>.yaml` defines one profile (the filename stem is the profile name):
+
 - `match:`: list of path or remote rules that activate the profile. Each rule sets one of `path:` (glob against CWD) or `remote:` (glob against the normalized git remote URL). `remote_name:` picks the remote a rule matches against and defaults to `origin`.
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
@@ -666,20 +688,19 @@ also honors:
 - `credentials:` / `default_credentials:`: named provider API key bindings and the ones injected by default. See [Credential bindings](#credential-bindings).
 - `gateways:` (map, optional): custom LLM gateways and the agents they serve. Manage them with `aide gateway`; see [Custom gateways](#custom-gateways).
 - `icon:` (string, optional): Unicode symbol displayed alongside the profile name in the banner and `aide prompt` output.
-- `config_dir_name:` (string, optional; `profile:` under legacy `contexts:`): names the profile's native agent config dirs. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Profiles](profiles.md).
-- `config_dir:` (string, optional; `profile_dir:` under legacy `contexts:`): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path for every agent.
+- `config_dir_name:` (string, optional): names the profile's native agent config dirs. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Profiles](profiles.md).
+- `config_dir:` (string, optional): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path for every agent.
 - `config_dirs:` (map, optional): per-agent config dir, e.g. `{claude: ~/.claude-work}`; needs `config_dir_name:` as well.
-- `plugins:` / `mcp_servers:` (per-profile overrides, optional): mapping with `extra:` / `exclude:` / `only:` deltas applied on top of the top-level set. See [Provisioning](provisioning.md).
-- `hooks:` (per-profile override, optional): delta applied on top of the top-level `hooks:` map.
+- `plugins:` / `mcp_servers:` (per-profile overrides, optional): mapping with `extra:` / `exclude:` / `only:` deltas applied on top of the global set in `provisioning.yaml`. See [Provisioning](provisioning.md).
+- `hooks:` (per-profile override, optional): delta applied on top of the global `hooks:` map in `provisioning.yaml`.
 
 ```yaml
-profiles:
-  work:
-    hooks:
-      exclude: [session_start]   # drop a top-level event entirely
-      extra:
-        pre_tool:
-          - command: "notify work-hook {agent}"
+# ~/.config/aide/profiles/work.yaml
+hooks:
+  exclude: [session_start]   # drop a top-level event entirely
+  extra:
+    pre_tool:
+      - command: "notify work-hook {agent}"
 ```
 - `capabilities:` (list) - Capability names to activate for this profile (e.g. `[docker, k8s]`). See [Capabilities](capabilities.md) for details.
 - `yolo:` (bool, optional): skip agent permission checks for this profile. The agent-specific flag is injected automatically (e.g. `--dangerously-skip-permissions` for Claude). The OS sandbox remains active.
@@ -890,6 +911,7 @@ aide sync                                               # write to agent config
 ## Viewing and Editing
 
 ```
-aide config show    # print the global config file
-aide config edit    # open $EDITOR, validate after save
+aide config show               # print all global config files (with YAML syntax highlighting on TTY)
+aide config edit               # open $EDITOR on config.yaml, validate after save
+aide config migrate [--write]  # split a single-file config.yaml into modular files
 ```

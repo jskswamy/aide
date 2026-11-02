@@ -1079,7 +1079,7 @@ aide adopt [--profile <name>] [--yes]
 ```
 
 Walks agent-installed but undeclared plugins / MCP servers /
-marketplaces and prompts to add them to `config.yaml`, then records
+marketplaces and prompts to add them to `provisioning.yaml`, then records
 them as managed in state. Use this to bring a hand-installed setup
 under aide management.
 
@@ -1125,9 +1125,9 @@ Same shape as `aide plugin list`.
 aide hook list [--profile <name>]
 ```
 
-Shows hooks declared in `config.yaml` for the profile, with a MANAGED column
+Shows hooks declared in `provisioning.yaml` and `profiles/<name>.yaml` for the profile, with a MANAGED column
 indicating whether the hook is currently written to the agent's config. The
-list is sourced from the config file, not from the agent's live state, so it
+list is sourced from the config files, not from the agent's live state, so it
 reflects what aide knows about rather than what the agent actually runs.
 
 Flags:
@@ -1141,7 +1141,7 @@ Flags:
 aide hook add --event <event> --command <cmd> [--matcher <matcher>] [--timeout <seconds>] [--profile <name>]
 ```
 
-Appends a hook entry to `config.yaml` under the profile's `hooks.extra`
+Appends a hook entry to `profiles/<name>.yaml` under the profile's `hooks.extra`
 block. Does not write anything to the agent: run `aide sync` to apply.
 
 Flags:
@@ -1159,7 +1159,7 @@ Flags:
 aide hook remove --event <event> --command <cmd> [--matcher <matcher>] [--profile <name>]
 ```
 
-Removes the matching hook entry from `config.yaml`. Does not touch the agent
+Removes the matching hook entry from `profiles/<name>.yaml`. Does not touch the agent
 until you run `aide sync`.
 
 Flags mirror `hook add`. The hook is identified by the `(event, matcher,
@@ -1175,7 +1175,7 @@ command)` triple: all three must match the entry to remove.
 aide config show
 ```
 
-Prints the contents of the config file with its path as a header.
+Prints the contents of all existing global config files (`config.yaml`, `sandbox.yaml`, `provisioning.yaml`, and `profiles/*.yaml`) with their paths as headers and YAML syntax highlighting when stdout is a terminal.
 
 ```
 aide config show
@@ -1187,11 +1187,29 @@ aide config show
 aide config edit
 ```
 
-Opens the config file in `$EDITOR` (falls back to `$VISUAL`, then `vi`).
+Opens `config.yaml` in `$EDITOR` (falls back to `$VISUAL`, then `vi`).
 Validates the config after saving.
 
 ```
 aide config edit
+```
+
+### aide config migrate
+
+```
+aide config migrate [--write] [--adopt <profile>]...
+```
+
+Splits a single-file `config.yaml` (upgrading `contexts:` to `profiles:` if needed) into the modular layout (`config.yaml`, `sandbox.yaml`, `provisioning.yaml`, and `profiles/<name>.yaml`). Without `--write` it prints the preview of each file (with YAML syntax highlighting on a terminal) and a summary; nothing is written. With `--write` it backs up the original as `config.yaml.bak` (or `config.yaml.bak-<timestamp>`), writes the split files atomically, and updates provisioning state (`managed.json`) so the split is not reported as drift.
+
+| Flag | Description |
+|------|-------------|
+| `--write` | Write the split config files (default: preview only) |
+| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}` |
+
+```
+aide config migrate
+aide config migrate --write
 ```
 
 ---

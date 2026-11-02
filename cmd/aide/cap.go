@@ -579,7 +579,7 @@ func capCreateCmd() *cobra.Command {
 
 			cfg.Capabilities[name] = capDef
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -654,7 +654,7 @@ func capEditCmd() *cobra.Command {
 
 			cfg.Capabilities[name] = capDef
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -714,7 +714,7 @@ func capEnableCmd() *cobra.Command {
 					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q enabled for context %q (global)\n", capName, ctxName)
 				}
 				cfg.Contexts[ctxName] = ctx
-				return config.WriteConfig(cfg)
+				return saveConfigWithMigrationPrompt(cmd, cfg)
 			}
 
 			// Project path: write to .aide.yaml
@@ -783,7 +783,7 @@ func capDisableCmd() *cobra.Command {
 					fmt.Fprintf(cmd.OutOrStdout(), "Capability %q disabled for context %q (global)\n", capName, ctxName)
 				}
 				cfg.Contexts[ctxName] = ctx
-				return config.WriteConfig(cfg)
+				return saveConfigWithMigrationPrompt(cmd, cfg)
 			}
 
 			// Project path
@@ -886,7 +886,7 @@ Examples:
 						return fmt.Errorf("path %q not found in never_allow", entry)
 					}
 				}
-				if err := config.WriteConfig(cfg); err != nil {
+				if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
 				if envMode {
@@ -909,7 +909,7 @@ Examples:
 				}
 				cfg.NeverAllow = append(cfg.NeverAllow, entry)
 			}
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			if envMode {

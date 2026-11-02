@@ -39,14 +39,12 @@ some agents don't expand themselves, and wiring the env var into your
 shell init, your launch script, and the sandbox rules that grant access
 to the custom dir - three places, three chances to drift.
 
-aide's `config_dir_name: <name>` field (`profile:` under legacy
-`contexts:`) collapses all of that. You write:
+aide's `config_dir_name: <name>` field collapses all of that. You write:
 
 ```yaml
-profiles:
-  work:
-    agent: claude
-    config_dir_name: work
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+config_dir_name: work
 ```
 
 and the driver does the rest: derives `~/.claude-work`, sets
@@ -63,14 +61,12 @@ happens to use this week.
 
 ## What gets managed
 
-Two top-level config blocks:
+Two global blocks in `~/.config/aide/provisioning.yaml`:
 
 - **`plugins:`** - agent plugins or marketplaces (one shape per entry)
 - **`mcp_servers:`** - MCP server definitions
 
-Both live alongside `agents:` and `profiles:` in your
-`~/.config/aide/config.yaml`. Profiles opt in to specific entries via
-overrides.
+Profiles under `~/.config/aide/profiles/<name>.yaml` inherit the global set and opt in or out of specific entries via overrides.
 
 The reconciler walks four state sources:
 
@@ -132,32 +128,35 @@ Each entry has either `command`+`args` (stdio MCP) or `url` (HTTP MCP).
 
 ## Per-profile overrides
 
-By default every profile sees the full top-level set. To customise
+By default every profile sees the full global set in `provisioning.yaml`. To customise
 per-profile, use three delta keywords with deterministic composition:
 
 ```yaml
-profiles:
-  default:
-    agent: claude
-    # inherits everything declared at the top level
+# ~/.config/aide/profiles/default.yaml
+agent: claude
+# inherits everything declared in provisioning.yaml
+```
 
-  work:
-    agent: claude
-    config_dir_name: work
-    plugins:
-      exclude:
-        - obra/superpowers-marketplace/double-shot-latte
-        - jskswamy/claude-plugins/refactor
-      extra:
-        my-org/internal: [client-tools]
+```yaml
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+config_dir_name: work
+plugins:
+  exclude:
+    - obra/superpowers-marketplace/double-shot-latte
+    - jskswamy/claude-plugins/refactor
+  extra:
+    my-org/internal: [client-tools]
+```
 
-  oss:
-    agent: claude
-    config_dir_name: oss
-    plugins:
-      only:
-        - jskswamy/claude-plugins: [commit-tools, refactor]
-        - steveyegge/beads: [beads]
+```yaml
+# ~/.config/aide/profiles/oss.yaml
+agent: claude
+config_dir_name: oss
+plugins:
+  only:
+    - jskswamy/claude-plugins: [commit-tools, refactor]
+    - steveyegge/beads: [beads]
 ```
 
 Three keywords:
@@ -175,7 +174,7 @@ from the profile's `secret:` store at sync time.
 
 `aide sync` only actually decrypts the secrets store and re-resolves
 these templates when something relevant changed since the last
-successful sync: either `config.yaml` or the encrypted secrets file
+successful sync: either the global config files or the encrypted secrets file
 itself. When neither changed, sync skips decryption entirely and
 substitutes the values already installed in the agent's config instead,
 so routine no-op sync runs don't require the age key to be available.
@@ -186,32 +185,33 @@ automatically on the next run the way it used to. Run `aide sync
 repair drift like that on demand.
 
 ```yaml
-profiles:
-  work:
-    agent: claude
-    config_dir_name: work
-    secret: work
-    mcp_servers:
-      # add GitHub + Jira on top of the inherited set
-      extra:
-        github:
-          command: npx
-          args: ["-y", "@modelcontextprotocol/server-github"]
-          env:
-            GITHUB_PERSONAL_ACCESS_TOKEN: "{{ .secrets.github_token }}"
-        jira:
-          command: npx
-          args: ["-y", "@modelcontextprotocol/server-jira"]
-          env:
-            JIRA_URL: "https://my-org.atlassian.net"
-            JIRA_API_TOKEN: "{{ .secrets.jira_token }}"
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+config_dir_name: work
+secret: work
+mcp_servers:
+  # add GitHub + Jira on top of the inherited set
+  extra:
+    github:
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-github"]
+      env:
+        GITHUB_PERSONAL_ACCESS_TOKEN: "{{ .secrets.github_token }}"
+    jira:
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-jira"]
+      env:
+        JIRA_URL: "https://my-org.atlassian.net"
+        JIRA_API_TOKEN: "{{ .secrets.jira_token }}"
+```
 
-  oss:
-    agent: claude
-    config_dir_name: oss
-    mcp_servers:
-      # OSS work only needs GitHub - replace the inherited set
-      only: [github]
+```yaml
+# ~/.config/aide/profiles/oss.yaml
+agent: claude
+config_dir_name: oss
+mcp_servers:
+  # OSS work only needs GitHub - replace the inherited set
+  only: [github]
 ```
 
 Keep the literal token inline (`GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_…"`)
@@ -256,7 +256,7 @@ Plan for profile work (agent: claude):
 
 ### `aide adopt`
 
-Promote agent-installed but undeclared items into `config.yaml`.
+Promote agent-installed but undeclared items into `provisioning.yaml`.
 
 ```
 aide adopt                 # interactive: prompts per item
@@ -386,7 +386,7 @@ See [Profiles](profiles.md) for the `config_dir_name` field details.
 
 ## Trust boundary
 
-Provisioning operates on the global `~/.config/aide/config.yaml`. The
+Provisioning operates on the global `~/.config/aide/` configuration (`provisioning.yaml` and `profiles/<name>.yaml`). The
 project-scope `.aide.yaml` does **not** participate in sync today -
 its plugin/MCP declarations are ignored by `aide sync`. This is a
 deliberate trust boundary: a malicious `.aide.yaml` in a repo you
@@ -409,16 +409,14 @@ sync is tracked separately.
 ### Minimal: one profile, three plugins
 
 ```yaml
-agents:
-  claude:
-    binary: claude
-
+# ~/.config/aide/provisioning.yaml
 plugins:
   jskswamy/claude-plugins: [commit-tools, craft, refactor]
+```
 
-profiles:
-  default:
-    agent: claude
+```yaml
+# ~/.config/aide/profiles/default.yaml
+agent: claude
 ```
 
 Run `aide sync` once and the three plugins land in `~/.claude/`.
@@ -426,25 +424,29 @@ Run `aide sync` once and the three plugins land in `~/.claude/`.
 ### Multi-profile: same agent, different config dirs
 
 ```yaml
+# ~/.config/aide/provisioning.yaml
 plugins:
   jskswamy/claude-plugins: [commit-tools, craft, jot, refactor]
   steveyegge/beads: [beads]
+```
 
-profiles:
-  work:
-    agent: claude
-    config_dir_name: work
-    # → CLAUDE_CONFIG_DIR=~/.claude-work
-    # `aide sync --profile work` installs the four plugins there
+```yaml
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+config_dir_name: work
+# → CLAUDE_CONFIG_DIR=~/.claude-work
+# `aide sync --profile work` installs the four plugins there
+```
 
-  oss:
-    agent: claude
-    config_dir_name: oss
-    plugins:
-      exclude:
-        - jskswamy/claude-plugins/refactor  # no refactor on OSS
-    # → CLAUDE_CONFIG_DIR=~/.claude-oss
-    # `aide sync --profile oss` installs three plugins there
+```yaml
+# ~/.config/aide/profiles/oss.yaml
+agent: claude
+config_dir_name: oss
+plugins:
+  exclude:
+    - jskswamy/claude-plugins/refactor  # no refactor on OSS
+# → CLAUDE_CONFIG_DIR=~/.claude-oss
+# `aide sync --profile oss` installs three plugins there
 ```
 
 ### Adoption: bring an existing setup under management
@@ -453,7 +455,7 @@ profiles:
 # You already installed claude plugins by hand. Run once:
 aide adopt --yes
 
-# config.yaml now lists everything that was installed.
+# provisioning.yaml now lists everything that was installed.
 # Subsequent syncs treat them as managed:
 aide sync --plan
 ```

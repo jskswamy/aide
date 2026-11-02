@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -40,6 +41,17 @@ plugins:
 func execProfileMigrate(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	cmd := profileCmd()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs(append([]string{"migrate"}, args...))
+	err := cmd.Execute()
+	return out.String(), errOut.String(), err
+}
+
+func execConfigMigrate(t *testing.T, args ...string) (string, string, error) {
+	t.Helper()
+	cmd := configCmd()
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -159,11 +171,9 @@ func TestProfileMigrate_WriteKeepsOwnershipWithoutFalseDrift(t *testing.T) {
 		t.Fatalf("backup missing or wrong (%v):\n%s", err, bak)
 	}
 	written, _ := os.ReadFile(cfgPath)
-	if !strings.Contains(string(written), "profiles:") || !strings.Contains(string(written), "# my aide config") {
-		t.Errorf("config not migrated or comment lost:\n%s", written)
-	}
-	if strings.Contains(string(written), ".secrets.") {
-		t.Errorf("secret template left in env:\n%s", written)
+	if strings.Contains(string(written), "contexts:") || strings.Contains(string(written), ".secrets.") ||
+		!strings.Contains(string(written), "# my aide config") {
+		t.Errorf("config.yaml not migrated or comment lost:\n%s", written)
 	}
 
 	after, err := provision.LoadState(statePath)
@@ -197,6 +207,40 @@ func TestProfileMigrate_AdoptPinsGlobalLogin(t *testing.T) {
 	written, _ := os.ReadFile(cfgPath)
 	if !strings.Contains(string(written), "claude: ~/.claude") {
 		t.Errorf("personal not pinned to the global dir:\n%s", written)
+	}
+}
+
+func TestConfigMigrate_PreviewAndWriteSplitFiles(t *testing.T) {
+	home, cfgPath, statePath := migrateFixture(t)
+
+	// Preview shows split file headers without writing
+	out, _, err := execConfigMigrate(t)
+	if err != nil {
+		t.Fatalf("config migrate preview: %v\n%s", err, out)
+	}
+	for _, want := range []string{"# === config.yaml ===", "# === provisioning.yaml ===", "# === profiles/work.yaml ===", "# === profiles/personal.yaml ==="} {
+		if !strings.Contains(out, want) {
+			t.Errorf("preview missing %q:\n%s", want, out)
+		}
+	}
+
+	// Write applies the modular split and rehashes state
+	out, _, err = execConfigMigrate(t, "--write")
+	if err != nil {
+		t.Fatalf("config migrate --write: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(cfgPath + ".bak"); err != nil {
+		t.Errorf("expected backup file: %v", err)
+	}
+	for _, rel := range []string{"config.yaml", "provisioning.yaml", "profiles/work.yaml", "profiles/personal.yaml"} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(cfgPath), rel)); err != nil {
+			t.Errorf("missing %s after config migrate --write: %v", rel, err)
+		}
+	}
+	for _, name := range []string{"work", "personal"} {
+		if d := driftOf(t, home, cfgPath, statePath, name); d != provision.DriftNone {
+			t.Errorf("%s reports drift %v after config migrate --write", name, d)
+		}
 	}
 }
 
@@ -319,5 +363,29 @@ func TestProfileMigrate_ClaudeOnlyHasNoOpenCodeNote(t *testing.T) {
 		if strings.Contains(out, openCodeNotCopiedNote) {
 			t.Errorf("migrate %v printed an OpenCode note for a Claude-only config:\n%s", args, out)
 		}
+	}
+}
+
+func TestConfigMigrate_RefusesSharedNodesOnProfilesConfig(t *testing.T) {
+	home := isolatedConfigDir(t)
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	body := "profiles:\n  work: &base\n    agent: claude\n    config_dir_name: work\n  personal:\n    <<: *base\n    config_dir_name: personal\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := execConfigMigrate(t); err == nil || !errors.Is(err, config.ErrSharedYAML) {
+		t.Fatalf("expected ErrSharedYAML from config migrate, got: %v", err)
+	}
+}
+
+func TestConfigMigrate_ValidatesMinimalConfig(t *testing.T) {
+	home := isolatedConfigDir(t)
+	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	body := "agent: claude\nplugins:\n  invalid-repo-key:\n    - commit-tools\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := execConfigMigrate(t); err == nil {
+		t.Fatal("expected validation error for invalid minimal config plugins")
 	}
 }

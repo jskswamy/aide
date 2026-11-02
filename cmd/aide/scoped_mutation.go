@@ -46,7 +46,7 @@ func runScopedMutation(out io.Writer, global bool, contextName string, m scopedM
 			return err
 		}
 		cfg.Contexts[ctxName] = ctx
-		if err := config.WriteConfig(cfg); err != nil {
+		if err := saveConfigWithMigrationPrompt(nil, cfg); err != nil {
 			return fmt.Errorf("writing config: %w", err)
 		}
 		fmt.Fprintln(out, m.successGlobal(ctxName))

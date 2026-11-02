@@ -92,9 +92,9 @@ capture sandbox-deny events from the failed run.`,
 				l.Prompter = ui.NewTTYPrompter(os.Stdin, os.Stderr)
 			}
 
-			// Check if a config file exists.
+			// Check if any config file exists.
 			configFile := config.FilePath()
-			if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			if !config.HasAnyConfigFile(config.Dir()) {
 				if err := passthroughSelectionError(&sf, sel, configFile); err != nil {
 					return err
 				}

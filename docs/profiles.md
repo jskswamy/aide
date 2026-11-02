@@ -4,30 +4,27 @@
 
 A profile binds an agent, credentials, and sandbox policy to a set of directories or git remotes. When you run `aide`, it resolves which profile applies to your current working directory and launches the correct agent with the right environment.
 
-Profiles were called contexts in earlier releases. A config that still
-uses `contexts:` and `default_context:` loads unchanged; see
-[Migrating from contexts](#migrating-from-contexts).
-
-Profiles live in `~/.config/aide/config.yaml` under the `profiles:` key:
+Each profile lives in its own flat YAML file under `~/.config/aide/profiles/<name>.yaml`, with global defaults in `~/.config/aide/config.yaml`:
 
 ```yaml
+# ~/.config/aide/config.yaml
+default_profile: work
 agents:
   claude:
     binary: claude
+```
 
-profiles:
-  work:
-    agent: claude
-    secret: work
-    match:
-      - path: ~/work/*
-      - remote: "github.com/acme/*"
-    config_dir_name: work      # claude runs from ~/.claude-work
-    credentials:
-      anthropic: {backend: age, store: work, key: ANTHROPIC_API_KEY}
-    default_credentials: [anthropic]
-
-default_profile: work
+```yaml
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+secret: work
+match:
+  - path: ~/work/*
+  - remote: "github.com/acme/*"
+config_dir_name: work      # claude runs from ~/.claude-work
+credentials:
+  anthropic: {backend: age, store: work, key: ANTHROPIC_API_KEY}
+default_credentials: [anthropic]
 ```
 
 Each profile contains: `agent`, `secret`, `env`, `match`, `sandbox`, `capabilities`, and optionally `yolo`, `config_dir_name`, `config_dir`, `config_dirs`, `credentials` and `default_credentials` (see [Configuration](configuration.md)).
@@ -93,13 +90,12 @@ Env variables merge additively; the project override wins on key conflicts. All 
 The `capabilities` field activates named capabilities for a profile. Capabilities grant the sandbox additional permissions (filesystem paths, environment variables, network access) for specific tools.
 
 ```yaml
-profiles:
-  infra:
-    agent: claude
-    match:
-      - path: ~/infra/*
-    capabilities: [docker, k8s, aws]
-    secret: work
+# ~/.config/aide/profiles/infra.yaml
+agent: claude
+match:
+  - path: ~/infra/*
+capabilities: [docker, k8s, aws]
+secret: work
 ```
 
 See [Capabilities](capabilities.md) for details on built-in and custom capabilities.
@@ -150,14 +146,20 @@ aide use --profile work               # add CWD as a match rule to existing prof
 Use separate native homes for personal, work, or client identities:
 
 ```yaml
-profiles:
-  personal:
-    agent: codex
-    config_dir_name: personal
-  work:
-    agent: claude
-    config_dir_name: work
+# ~/.config/aide/config.yaml
 default_profile: personal
+```
+
+```yaml
+# ~/.config/aide/profiles/personal.yaml
+agent: codex
+config_dir_name: personal
+```
+
+```yaml
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+config_dir_name: work
 ```
 
 `aide --profile work --agent codex` launches Codex with
@@ -219,20 +221,26 @@ aide secrets create work     --age-key age1xyz...
 Then declare the two profiles:
 
 ```yaml
-profiles:
-  personal:
-    agent: claude
-    match: [{path: ~/personal/*}]
-    secret: personal
-    config_dir_name: personal
-    credentials:
-      anthropic: {backend: age, store: personal, key: anthropic_api_key}
-    default_credentials: [anthropic]
-  work:
-    agent: claude
-    match: [{path: ~/work/*}]
-    config_dir_name: work      # native login only, no API key
+# ~/.config/aide/config.yaml
 default_profile: personal
+```
+
+```yaml
+# ~/.config/aide/profiles/personal.yaml
+agent: claude
+match: [{path: ~/personal/*}]
+secret: personal
+config_dir_name: personal
+credentials:
+  anthropic: {backend: age, store: personal, key: anthropic_api_key}
+default_credentials: [anthropic]
+```
+
+```yaml
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+match: [{path: ~/work/*}]
+config_dir_name: work      # native login only, no API key
 ```
 
 The first launch in each tree signs Claude Code in (or uses the key)
@@ -264,11 +272,14 @@ on macOS and Linux; the steps and their status are in
 To install skills and other Skillshare resources into each profile's
 own config dirs, see [Skillshare](skillshare.md).
 
-## Migrating from contexts
+## Migrating from contexts and monolithic config.yaml
 
-`aide profile migrate` prints your config converted to the `profiles:`
-schema without writing anything; `aide profile migrate --write` writes
-it, keeping the original as `config.yaml.bak`:
+`aide config migrate` previews splitting a single-file `config.yaml` (upgrading `contexts:` to `profiles:` if needed) into the modular file layout (`config.yaml`, `sandbox.yaml`, `provisioning.yaml`, and `profiles/<name>.yaml`) without writing anything; `aide config migrate --write` writes the split files and keeps the original as `config.yaml.bak`.
+
+`aide profile migrate` converts a legacy `contexts:` config to `profiles:` in place without splitting files:
+
+- Each profile is extracted into its own flat `~/.config/aide/profiles/<name>.yaml` file, sandbox/guard/capability settings move to `sandbox.yaml`, and plugins/MCP servers/hooks move to `provisioning.yaml`.
+- When mutating commands (`aide profile`, `aide gateway`, `aide sandbox`, `aide cap`, `aide hook`, `aide env`, `aide adopt`) run against a legacy single-file `config.yaml` on an interactive terminal, aide prompts to migrate before saving.
 
 - `contexts:` becomes `profiles:` and `default_context:` becomes
   `default_profile:`. Profile names stay the same.

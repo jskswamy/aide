@@ -63,7 +63,7 @@ func agentsAddCmd() *cobra.Command {
 
 			cfg.Agents[name] = config.AgentDef{Binary: binary}
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -115,7 +115,7 @@ func agentsRemoveCmd() *cobra.Command {
 			}
 
 			delete(cfg.Agents, name)
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(out, "Removed agent %q\n", name)
@@ -148,7 +148,7 @@ func agentsEditCmd() *cobra.Command {
 			}
 
 			cfg.Agents[name] = config.AgentDef{Binary: binary}
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 

@@ -552,7 +552,7 @@ Examples:
 				}
 				cfg.Contexts[contextName] = ctx
 
-				if err := config.WriteConfig(cfg); err != nil {
+				if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
 
@@ -630,7 +630,7 @@ Examples:
 				cfg.DefaultContext = ctxName
 			}
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -730,7 +730,7 @@ func setupCmd() *cobra.Command {
 					ctx.Match = append(ctx.Match, rule)
 					cfg.Contexts[selectedName] = ctx
 
-					if err := config.WriteConfig(cfg); err != nil {
+					if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 						return fmt.Errorf("writing config: %w", err)
 					}
 
@@ -862,7 +862,7 @@ func setupCmd() *cobra.Command {
 						cfg.Agents[newAgent] = config.AgentDef{Binary: newAgent}
 					}
 
-					if err := config.WriteConfig(cfg); err != nil {
+					if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 						return fmt.Errorf("writing config: %w", err)
 					}
 
@@ -1207,7 +1207,7 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 		cfg.DefaultContext = ctxName
 	}
 
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := saveConfigWithMigrationPrompt(nil, cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 

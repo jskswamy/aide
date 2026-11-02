@@ -32,13 +32,13 @@ func TestContextCreate_FullyScripted_NoHere(t *testing.T) {
 	if !strings.Contains(out, `Created profile "work"`) {
 		t.Errorf("expected create message, got: %s", out)
 	}
-	// Verify the config file was written and the context has no match rules.
-	cfgBytes, err := os.ReadFile(filepath.Join(dir, "xdg", "aide", "config.yaml"))
+	// Verify the profile file was written and the context has no match rules.
+	cfgBytes, err := os.ReadFile(filepath.Join(dir, "xdg", "aide", "profiles", "work.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(cfgBytes), "work:") {
-		t.Errorf("config did not include new context: %s", cfgBytes)
+	if !strings.Contains(string(cfgBytes), "agent: claude") {
+		t.Errorf("profile file did not include new context: %s", cfgBytes)
 	}
 	if strings.Contains(string(cfgBytes), "match:") {
 		t.Errorf("--no-here should produce no match rules: %s", cfgBytes)
@@ -54,7 +54,7 @@ func TestContextCreate_FullyScripted_WithHere(t *testing.T) {
 	if !strings.Contains(out, "Bound this folder") {
 		t.Errorf("--here should bind cwd: %s", out)
 	}
-	cfgBytes, _ := os.ReadFile(filepath.Join(dir, "xdg", "aide", "config.yaml"))
+	cfgBytes, _ := os.ReadFile(filepath.Join(dir, "xdg", "aide", "profiles", "work.yaml"))
 	if !strings.Contains(string(cfgBytes), "match:") {
 		t.Errorf("--here should produce a match rule: %s", cfgBytes)
 	}
@@ -106,8 +106,8 @@ func TestProfileSetDefault_ProfileFlag(t *testing.T) {
 		t.Fatalf("set-default --profile personal: %v\n%s", err, out)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, "xdg", "aide", "config.yaml"))
-	if !strings.Contains(string(data), "default_context: personal") {
-		t.Errorf("default not saved (legacy file keeps its schema):\n%s", data)
+	if !strings.Contains(string(data), "default_profile: personal") {
+		t.Errorf("default not saved:\n%s", data)
 	}
 	if _, err := run("work", "--profile", "personal"); err == nil {
 		t.Error("argument and --profile naming different profiles should conflict")

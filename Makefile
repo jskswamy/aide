@@ -38,13 +38,17 @@ install:     ## Install via goreleaser (matches release binary exactly)
 		exit 1; \
 	fi
 	goreleaser build --single-target --clean --output bin/aide
+	@mkdir -p $(GOBIN) $(GOPATH_BIN)
+	install -m 0755 bin/aide $(GOBIN)/aide
 	install -m 0755 bin/aide $(GOPATH_BIN)/aide
-	@echo "installed: $(GOPATH_BIN)/aide"
+	@echo "installed: $(GOBIN)/aide, $(GOPATH_BIN)/aide"
 
 install-dev: ## Install quickly without goreleaser (dev iteration)
 	go build -ldflags "$(LDFLAGS)" -o bin/aide ./cmd/aide
+	@mkdir -p $(GOBIN) $(GOPATH_BIN)
+	install -m 0755 bin/aide $(GOBIN)/aide
 	install -m 0755 bin/aide $(GOPATH_BIN)/aide
-	@echo "installed (dev): $(GOPATH_BIN)/aide ($(VERSION))"
+	@echo "installed (dev): $(GOBIN)/aide, $(GOPATH_BIN)/aide ($(VERSION))"
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 

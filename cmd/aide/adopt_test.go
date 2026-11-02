@@ -41,8 +41,8 @@ func TestAdopt_YesPromotesUnmanaged(t *testing.T) {
 		t.Errorf("missing summary:\n%s", out)
 	}
 
-	// config.yaml must include the new plugin + mcp entries.
-	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	// provisioning.yaml must include the new plugin + mcp entries.
+	cfgPath := filepath.Join(home, "xdg", "aide", "provisioning.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestAdopt_MarketplaceAgentWritesNestedShape(t *testing.T) {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
 
-	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	cfgPath := filepath.Join(home, "xdg", "aide", "provisioning.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestAdopt_PromotesUnmanagedMarketplace(t *testing.T) {
 		t.Errorf("missing summary:\n%s", out)
 	}
 
-	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	cfgPath := filepath.Join(home, "xdg", "aide", "provisioning.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestAdoptHookRewritesAgentDirPrefix(t *testing.T) {
 		t.Fatalf("execute: %v\n%s", err, out)
 	}
 
-	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
+	cfgPath := filepath.Join(home, "xdg", "aide", "provisioning.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -244,15 +244,14 @@ func TestAdoptHookRewritesAgentDirPrefix(t *testing.T) {
 func TestAdoptHookDedupAcrossAgentDirs(t *testing.T) {
 	fakeProvReset(t)
 	dir := isolatedConfigDir(t)
-	cfgYAML := `contexts:
-  work:
-    agent: fakeagent
-  hackathon:
-    agent: fakeagent
-`
-	cfgPath := filepath.Join(dir, "xdg", "aide", "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
+	profDir := filepath.Join(dir, "xdg", "aide", "profiles")
+	if err := os.MkdirAll(profDir, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	for _, p := range []string{"work", "hackathon"} {
+		if err := os.WriteFile(filepath.Join(profDir, p+".yaml"), []byte("agent: fakeagent\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// First adopt: context "work", agentDir ~/.claude-work.

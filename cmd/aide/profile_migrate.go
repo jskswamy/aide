@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/provision"
 )
@@ -71,7 +73,61 @@ review it before pasting it anywhere.`,
 	return cmd
 }
 
+func configMigrateCmd() *cobra.Command {
+	var (
+		write bool
+		adopt []string
+	)
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Split monolithic config.yaml into modular config files",
+		Long: `Split your single-file ~/.config/aide/config.yaml into modular YAML files by concern:
+
+  config.yaml         Global settings (default_profile, agents, preferences, statusline)
+  sandbox.yaml        Security & isolation (capabilities, sandboxes, guards, never_allow*)
+  provisioning.yaml   Shared tooling (plugins, mcp_servers, hooks)
+  profiles/<name>.yaml One flat YAML file per profile
+
+If config.yaml still uses the legacy contexts: schema, it is upgraded to profiles:
+at the same time. Without --write, prints the generated files and what changes;
+nothing is written. With --write, the original is kept as config.yaml.bak and the
+modular files are written atomically.`,
+		Example: `  aide config migrate                      # preview split files
+  aide config migrate --write              # apply split layout
+  aide config migrate --write --adopt personal`,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("resolving home: %w", err)
+			}
+			return runConfigMigrate(cmd.OutOrStdout(), config.FilePath(), provision.DefaultStatePath(home), home, adopt, write)
+		},
+	}
+	cmd.Flags().BoolVar(&write, "write", false, "Write the modular config files (default: preview only)")
+	cmd.Flags().StringArrayVar(&adopt, "adopt", nil,
+		"Keep this profile on its own harness's global login by pinning config_dirs to the default dir; other harnesses get fresh ~/.<harness>-<profile> dirs (repeatable)")
+	_ = cmd.RegisterFlagCompletionFunc("adopt", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return profileNamesForCompletion(), cobra.ShellCompDirectiveNoFileComp
+	})
+	return cmd
+}
+
+func isTerminalWriter(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && isInteractiveTerminal(f)
+}
+
+func runConfigMigrate(out io.Writer, cfgPath, statePath, home string, adopt []string, write bool) error {
+	return runMigrate(out, cfgPath, statePath, home, adopt, write, true)
+}
+
 func runProfileMigrate(out io.Writer, cfgPath, statePath, home string, adopt []string, write bool) error {
+	return runMigrate(out, cfgPath, statePath, home, adopt, write, false)
+}
+
+func runMigrate(out io.Writer, cfgPath, statePath, home string, adopt []string, write, splitLayout bool) error {
 	data, err := os.ReadFile(cfgPath) // #nosec G304 -- the user's own aide config
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("no config at %s; nothing to migrate", cfgPath)
@@ -83,16 +139,40 @@ func runProfileMigrate(out io.Writer, cfgPath, statePath, home string, adopt []s
 	if err != nil {
 		return fmt.Errorf("%s: %w", cfgPath, err)
 	}
-	if !m.Changed {
-		fmt.Fprintf(out, "Nothing to migrate: %s already uses profiles:.\n", cfgPath)
+	if splitLayout && m.SplitErr != nil {
+		return fmt.Errorf("%s: %w", cfgPath, m.SplitErr)
+	}
+
+	needsWrite := m.Changed
+	if splitLayout {
+		needsWrite = m.NeedsWrite()
+	}
+	if !needsWrite {
+		if loaded, lerr := config.Load(filepath.Dir(cfgPath), ""); lerr == nil {
+			gl, oc := config.InspectLoadedMigration(loaded, home)
+			if len(m.GlobalLogins) == 0 {
+				m.GlobalLogins = gl
+			}
+			if oc {
+				m.MentionsOpenCode = true
+			}
+		}
+		if splitLayout {
+			fmt.Fprintf(out, "Nothing to migrate: %s already uses the modular config layout.\n", cfgPath)
+		} else {
+			fmt.Fprintf(out, "Nothing to migrate: %s already uses profiles:.\n", cfgPath)
+		}
 		printGlobalLogins(out, m.GlobalLogins)
 		printOpenCodeNote(out, m)
 		return nil
 	}
 	if !write {
 		fmt.Fprintf(out, "Preview of %s after migration (nothing written; re-run with --write to apply):\n\n", cfgPath)
-		fmt.Fprintf(out, "%s\n", strings.TrimRight(string(m.Output), "\n"))
-		fmt.Fprintln(out)
+		preview := strings.TrimRight(string(m.Output), "\n")
+		if splitLayout {
+			preview = m.Preview()
+		}
+		fmt.Fprintf(out, "%s\n\n", display.HighlightYAML(preview, isTerminalWriter(out)))
 		printMigrationSummary(out, m)
 		return nil
 	}
@@ -108,14 +188,23 @@ func runProfileMigrate(out io.Writer, cfgPath, statePath, home string, adopt []s
 	if err != nil {
 		return err
 	}
-	if err := fsutil.AtomicWrite(cfgPath, m.Output); err != nil {
+	if splitLayout {
+		err = config.ApplyMigrationSplit(filepath.Dir(cfgPath), m)
+	} else {
+		err = fsutil.AtomicWrite(cfgPath, m.Output)
+	}
+	if err != nil {
 		return fmt.Errorf("writing %s: %w", cfgPath, err)
 	}
 	newHash, err := provision.ConfigHash(cfgPath)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Migrated %s (original kept as %s).\n", cfgPath, backup)
+	if splitLayout {
+		fmt.Fprintf(out, "Migrated %s to modular config layout (original kept as %s).\n", cfgPath, backup)
+	} else {
+		fmt.Fprintf(out, "Migrated %s (original kept as %s).\n", cfgPath, backup)
+	}
 	printMigrationSummary(out, m)
 	n, err := provision.RehashConfig(statePath, oldHash, newHash)
 	if err != nil {

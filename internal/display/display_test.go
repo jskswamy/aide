@@ -1,7 +1,10 @@
 package display
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/fatih/color"
 )
 
 func TestNetworkDisplayName(t *testing.T) {
@@ -222,5 +225,23 @@ func TestDefaultAgentIcons(t *testing.T) {
 				t.Errorf("DefaultAgentIcons[%q] = %q, want %q", tt.agent, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHighlightYAML(t *testing.T) {
+	src := "# === config.yaml ===\ndefault_profile: work\nshow_info: true\n"
+	if got := HighlightYAML(src, false); got != src {
+		t.Errorf("HighlightYAML(disabled) = %q, want unchanged %q", got, src)
+	}
+	origNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = origNoColor })
+
+	got := HighlightYAML(src, true)
+	if !strings.Contains(got, "\x1b[") {
+		t.Errorf("expected ANSI escape sequences when enabled, got %q", got)
+	}
+	if !strings.Contains(got, "# === config.yaml ===") || !strings.Contains(got, "default_profile") {
+		t.Errorf("expected comments and keys preserved, got %q", got)
 	}
 }

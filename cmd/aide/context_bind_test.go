@@ -40,23 +40,19 @@ func isolatedConfigDir(t *testing.T) string {
 	return dir
 }
 
-// writeConfig writes a minimal config.yaml with the given context names
+// writeConfig writes modular profile files with the given context names
 // (each with a no-op match rule so they are not "minimal config").
 func writeConfig(t *testing.T, dir string, contexts ...string) {
 	t.Helper()
-	var b strings.Builder
-	b.WriteString("contexts:\n")
-	for _, c := range contexts {
-		b.WriteString("  ")
-		b.WriteString(c)
-		b.WriteString(":\n")
-		b.WriteString("    agent: claude\n")
-		b.WriteString("    match:\n")
-		b.WriteString("      - path: /never/matches/anything\n")
-	}
-	path := filepath.Join(dir, "xdg", "aide", "config.yaml")
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	profDir := filepath.Join(dir, "xdg", "aide", "profiles")
+	if err := os.MkdirAll(profDir, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	for _, c := range contexts {
+		body := "agent: claude\nmatch:\n  - path: /never/matches/anything\n"
+		if err := os.WriteFile(filepath.Join(profDir, c+".yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

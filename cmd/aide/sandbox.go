@@ -551,7 +551,7 @@ func sandboxCreateCmd() *cobra.Command {
 
 			cfg.Sandboxes[name] = sp
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -639,7 +639,7 @@ func sandboxEditCmd() *cobra.Command {
 
 			cfg.Sandboxes[name] = sp
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -693,7 +693,7 @@ func sandboxRemoveCmd() *cobra.Command {
 
 			delete(cfg.Sandboxes, name)
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -1016,7 +1016,7 @@ func sandboxGuardCmd() *cobra.Command {
 					return fmt.Errorf("%s", r.Errors[0])
 				}
 				cfg.Contexts[ctxName] = ctx
-				if err := config.WriteConfig(cfg); err != nil {
+				if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
 				if len(r.Warnings) > 0 {
@@ -1084,7 +1084,7 @@ func sandboxUnguardCmd() *cobra.Command {
 					return fmt.Errorf("%s", r.Errors[0])
 				}
 				cfg.Contexts[ctxName] = ctx
-				if err := config.WriteConfig(cfg); err != nil {
+				if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
 				if len(r.Warnings) > 0 {

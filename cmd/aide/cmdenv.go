@@ -2,7 +2,9 @@
 package main
 
 import (
+	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -41,6 +43,14 @@ func cmdEnv(cmd *cobra.Command) (*Env, error) {
 	cfg, loadErr := config.Load(config.Dir(), cwd)
 	if cfg == nil {
 		cfg = config.FailedLoad(loadErr)
+	}
+	if loadErr == nil && cfg.LegacyMonolithic && shouldNudgeForCmd(cmd) {
+		home, _ := os.UserHomeDir()
+		errOut := io.Writer(os.Stderr)
+		if cmd != nil {
+			errOut = cmd.ErrOrStderr()
+		}
+		maybeNudgeConfigMigration(cfg, errOut, isInteractiveTerminal(os.Stderr), home, time.Now())
 	}
 	return &Env{cmd: cmd, cwd: cwd, cfg: cfg}, loadErr
 }

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 
@@ -235,6 +236,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolving home directory: %w", err)
+	}
+	if f, ok := l.stderr().(*os.File); ok {
+		config.MaybeNudgeMigration(cfg, l.stderr(), term.IsTerminal(int(f.Fd())), homeDir, time.Now())
 	}
 
 	// 2. Select: trust gate, profile, saved repository preference, final

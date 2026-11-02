@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteConfig_FullFormat(t *testing.T) {
@@ -98,23 +99,24 @@ func TestWriteConfig_MinimalFormat(t *testing.T) {
 		t.Fatalf("WriteConfigTo() error = %v", err)
 	}
 
-	// Load normalizes minimal to full format, so read back raw to verify minimal fields
-	raw, err := loadFile(path)
+	// WriteConfigTo promotes an in-memory minimal Config into the split layout (profiles/default.yaml)
+	loaded, err := Load(dir, "")
 	if err != nil {
-		t.Fatalf("loadFile() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 
-	if raw.Agent != "claude" {
-		t.Errorf("agent = %q, want %q", raw.Agent, "claude")
+	defCtx, ok := loaded.Contexts["default"]
+	if !ok {
+		t.Fatal("expected 'default' profile to be written in profiles/default.yaml")
 	}
-	if raw.Env["KEY"] != "value" {
-		t.Errorf("env KEY = %q, want %q", raw.Env["KEY"], "value")
+	if defCtx.Agent != "claude" {
+		t.Errorf("agent = %q, want %q", defCtx.Agent, "claude")
 	}
-	if raw.Secret != "secrets" {
-		t.Errorf("secret = %q, want %q", raw.Secret, "secrets")
+	if defCtx.Env["KEY"] != "value" {
+		t.Errorf("env KEY = %q, want %q", defCtx.Env["KEY"], "value")
 	}
-	if !raw.IsMinimal() {
-		t.Error("expected config to be minimal (no agents/contexts)")
+	if defCtx.Secret != "secrets" {
+		t.Errorf("secret = %q, want %q", defCtx.Secret, "secrets")
 	}
 }
 
@@ -191,48 +193,57 @@ func TestWriteConfig_CreatesDirectory(t *testing.T) {
 		t.Fatalf("expected file to exist at %s, got error: %v", path, err)
 	}
 
-	// Verify content
-	raw, err := loadFile(path)
+	// Verify content via Load
+	loaded, err := Load(nested, "")
 	if err != nil {
-		t.Fatalf("loadFile() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	if raw.Agent != "claude" {
-		t.Errorf("agent = %q, want %q", raw.Agent, "claude")
+	if loaded.Contexts["default"].Agent != "claude" {
+		t.Errorf("agent = %q, want %q", loaded.Contexts["default"].Agent, "claude")
 	}
 }
 
 func TestWriteConfig_Roundtrip(t *testing.T) {
 	dir := t.TempDir()
 	configDir := filepath.Join(dir, "config")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "profiles"), 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 
-	// Write an initial config file manually
-	initial := `agents:
+	// Write initial split config files manually
+	coreYAML := `agents:
   claude:
     binary: claude
   copilot:
     binary: gh-copilot
-contexts:
-  work:
-    agent: claude
-    env:
-      API_KEY: secret123
-  personal:
-    agent: copilot
-    mcp_servers:
-      - myserver
-default_context: work
-mcp_servers:
+default_profile: work
+`
+	provYAML := `mcp_servers:
   myserver:
     command: npx
     args:
       - "--yes"
       - mcp-server
 `
+	workYAML := `agent: claude
+env:
+  API_KEY: secret123
+`
+	personalYAML := `agent: copilot
+mcp_servers:
+  - myserver
+`
 	configPath := filepath.Join(configDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(initial), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(coreYAML), 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "provisioning.yaml"), []byte(provYAML), 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "profiles", "work.yaml"), []byte(workYAML), 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "profiles", "personal.yaml"), []byte(personalYAML), 0644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
@@ -353,5 +364,104 @@ func TestWriteConfig_RefusesConfigLoadWouldRefuse(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != before {
 		t.Errorf("refused write changed the file:\n%s", got)
+	}
+}
+
+func TestWriteConfig_ScattersToSplitFilesAndPreservesUnchangedMtime(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := &Config{
+		ProfileSchema:  true,
+		DefaultContext: "work",
+		Agents:         map[string]AgentDef{"claude": {Binary: "claude"}},
+		NeverAllow:     []string{"~/.kube/prod"},
+		Plugins:        PluginMap{"steveyegge/beads": PluginEntryMarketplace([]string{"beads"})},
+		Contexts: map[string]Context{
+			"work":     {Agent: "claude", Profile: "work"},
+			"personal": {Agent: "claude", Profile: "personal"},
+		},
+	}
+	if err := WriteConfigTo(cfg, path); err != nil {
+		t.Fatalf("WriteConfigTo() error = %v", err)
+	}
+
+	// Verify all split files exist and config.yaml has no inline profiles/sandbox/plugins
+	coreBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, avoid := range []string{"profiles:", "contexts:", "never_allow:", "plugins:"} {
+		if strings.Contains(string(coreBytes), avoid) {
+			t.Errorf("config.yaml still contains %q:\n%s", avoid, coreBytes)
+		}
+	}
+	workPath := filepath.Join(dir, "profiles", "work.yaml")
+	workBytes, err := os.ReadFile(workPath)
+	if err != nil {
+		t.Fatalf("missing profiles/work.yaml: %v", err)
+	}
+	if !strings.Contains(string(workBytes), "config_dir_name: work") {
+		t.Errorf("profiles/work.yaml missing config_dir_name:\n%s", workBytes)
+	}
+
+	// Record mtime on profiles/work.yaml and sandbox.yaml, then update only personal
+	sbxPath := filepath.Join(dir, "sandbox.yaml")
+	past := time.Now().Add(-10 * time.Minute)
+	_ = os.Chtimes(workPath, past, past)
+	_ = os.Chtimes(sbxPath, past, past)
+	workInfo1, _ := os.Stat(workPath)
+
+	delete(cfg.Contexts, "personal")
+	cfg.NeverAllow = nil // empty sandbox.yaml -> should be removed
+	if err := WriteConfigTo(cfg, path); err != nil {
+		t.Fatalf("second WriteConfigTo() error = %v", err)
+	}
+
+	workInfo2, _ := os.Stat(workPath)
+	if !workInfo1.ModTime().Equal(workInfo2.ModTime()) {
+		t.Errorf("unchanged profiles/work.yaml was rewritten (mtime %v -> %v)", workInfo1.ModTime(), workInfo2.ModTime())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "profiles", "personal.yaml")); !os.IsNotExist(err) {
+		t.Errorf("deleted profile file personal.yaml still exists: %v", err)
+	}
+	if _, err := os.Stat(sbxPath); !os.IsNotExist(err) {
+		t.Errorf("emptied sandbox.yaml still exists: %v", err)
+	}
+}
+
+func TestWriteConfig_RefusesLegacyMonolithicConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	orig := "profiles:\n  work:\n    agent: claude\n"
+	if err := os.WriteFile(path, []byte(orig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.DefaultContext = "work"
+	err = WriteConfigTo(loaded, path)
+	if !errors.Is(err, ErrLegacyMonolithicConfig) {
+		t.Fatalf("WriteConfigTo() error = %v, want ErrLegacyMonolithicConfig", err)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != orig {
+		t.Errorf("config.yaml was modified despite refusal:\n%s", got)
+	}
+}
+
+func TestWriteConfig_RejectsInvalidProfileFilename(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		ProfileSchema: true,
+		Contexts: map[string]Context{
+			"bad.name": {Agent: "claude"},
+		},
+	}
+	err := WriteConfigTo(cfg, filepath.Join(dir, "config.yaml"))
+	if !errors.Is(err, ErrInvalidProfileFilename) {
+		t.Fatalf("WriteConfigTo() error = %v, want ErrInvalidProfileFilename", err)
 	}
 }

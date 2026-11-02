@@ -7,8 +7,39 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/fatih/color"
+	"github.com/goccy/go-yaml/lexer"
+	"github.com/goccy/go-yaml/printer"
 	"github.com/jskswamy/aide/internal/harness"
 )
+
+// HighlightYAML applies ANSI syntax highlighting to YAML text using
+// goccy/go-yaml's lexer and printer when enabled is true and color.NoColor is false.
+func HighlightYAML(src string, enabled bool) string {
+	if !enabled || color.NoColor || src == "" {
+		return src
+	}
+	tokens := lexer.Tokenize(src)
+	if len(tokens) == 0 {
+		return src
+	}
+	prop := func(attr color.Attribute) printer.PrintFunc {
+		prefix := fmt.Sprintf("\x1b[%dm", attr)
+		suffix := fmt.Sprintf("\x1b[%dm", color.Reset)
+		return func() *printer.Property {
+			return &printer.Property{Prefix: prefix, Suffix: suffix}
+		}
+	}
+	p := printer.Printer{
+		MapKey: prop(color.FgCyan),
+		Anchor: prop(color.FgYellow),
+		Alias:  prop(color.FgYellow),
+		Bool:   prop(color.FgMagenta),
+		String: prop(color.FgGreen),
+		Number: prop(color.FgMagenta),
+	}
+	return p.PrintTokens(tokens)
+}
 
 // NetworkDisplayName converts a raw network mode to a user-friendly label.
 func NetworkDisplayName(mode string) string {

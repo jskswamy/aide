@@ -270,7 +270,7 @@ Examples:
 
 			ctx.Match = append(ctx.Match, rule)
 			cfg.Contexts[name] = ctx
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(out, "Bound this folder to profile %q (matched %s)\n", name, desc)
@@ -502,7 +502,7 @@ func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOption
 		cfg.DefaultContext = name
 	}
 
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 
@@ -556,7 +556,7 @@ func contextRenameCmd() *cobra.Command {
 				cfg.DefaultContext = newName
 			}
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -585,7 +585,7 @@ func contextRemoveCmd() *cobra.Command {
 			}
 			removedAgent := ctx.Agent
 			delete(cfg.Contexts, name)
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
@@ -636,7 +636,7 @@ func contextSetSecretCmd() *cobra.Command {
 			ctx.Secret = secretName
 			cfg.Contexts[ctxName] = ctx
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Set secret %q on profile %q\n", secretName, ctxName)
@@ -678,7 +678,7 @@ func contextRemoveSecretCmd() *cobra.Command {
 			ctx.Secret = ""
 			cfg.Contexts[ctxName] = ctx
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Removed secret %q from profile %q\n", oldSecret, ctxName)
@@ -730,7 +730,7 @@ profile is used.`,
 			}
 
 			cfg.DefaultContext = ctxName
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 

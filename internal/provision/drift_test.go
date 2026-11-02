@@ -219,3 +219,33 @@ func TestDriftStatusAgentDirHookNoFalsePositive(t *testing.T) {
 		t.Errorf("expected DriftNone (no false positive for {agent_dir} hook), got %v", got)
 	}
 }
+
+func TestConfigHash_IncludesSplitFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("default_profile: work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workPath := filepath.Join(dir, "profiles", "work.yaml")
+	if err := os.WriteFile(workPath, []byte("agent: claude\nconfig_dir_name: work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h1, err := provision.ConfigHash(cfgPath)
+	if err != nil || h1 == "" {
+		t.Fatalf("ConfigHash() = %q, %v", h1, err)
+	}
+	// Editing profiles/work.yaml must change ConfigHash even when config.yaml is untouched
+	if err := os.WriteFile(workPath, []byte("agent: claude\nconfig_dir_name: work\ncapabilities: [docker]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h2, err := provision.ConfigHash(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h1 == h2 {
+		t.Errorf("ConfigHash did not change when profiles/work.yaml changed: %s", h1)
+	}
+}

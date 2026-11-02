@@ -31,27 +31,33 @@ func hookFakeReset(t *testing.T) {
 	hookFakeProv.WriteHooksCalls = nil
 }
 
-// writeHookConfig writes a config.yaml with the given top-level hook commands
+// writeHookConfig writes modular config files with the given top-level hook commands
 // bound to "fakehookagent" and the current working directory.
 func writeHookConfig(t *testing.T, dir string, hookCmds ...string) {
 	t.Helper()
 	cwd, _ := os.Getwd()
-	var b strings.Builder
-	b.WriteString("agents:\n  fakehookagent:\n    binary: echo\n")
-	b.WriteString("contexts:\n  work:\n    agent: fakehookagent\n    match:\n      - path: ")
-	b.WriteString(cwd)
-	b.WriteString("\n")
+	cfgDir := filepath.Join(dir, "xdg", "aide")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("agents:\n  fakehookagent:\n    binary: echo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	profBody := "agent: fakehookagent\nmatch:\n  - path: " + cwd + "\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "work.yaml"), []byte(profBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if len(hookCmds) > 0 {
+		var b strings.Builder
 		b.WriteString("hooks:\n  pre_tool:\n")
 		for _, cmd := range hookCmds {
 			b.WriteString("    - command: ")
 			b.WriteString(cmd)
 			b.WriteString("\n")
 		}
-	}
-	path := filepath.Join(dir, "xdg", "aide", "config.yaml")
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
-		t.Fatal(err)
+		if err := os.WriteFile(filepath.Join(cfgDir, "provisioning.yaml"), []byte(b.String()), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -168,9 +174,9 @@ func TestHookRemoveAcceptsBothRawAndResolvedCommand(t *testing.T) {
 			}
 
 			// Config should no longer contain the hook.
-			data, _ := os.ReadFile(filepath.Join(dir, "xdg", "aide", "config.yaml"))
+			data, _ := os.ReadFile(filepath.Join(dir, "xdg", "aide", "provisioning.yaml"))
 			if strings.Contains(string(data), "rtk hook") {
-				t.Errorf("hook still in config.yaml after remove:\n%s", data)
+				t.Errorf("hook still in provisioning.yaml after remove:\n%s", data)
 			}
 		})
 	}

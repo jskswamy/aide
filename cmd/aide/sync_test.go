@@ -563,9 +563,7 @@ func TestSync_URLDirectPluginMatchedByInstallRef(t *testing.T) {
 		t.Errorf("installed plugin should match its config key, got:\n%s", out)
 	}
 
-	cwd, _ := os.Getwd()
-	cfg := "contexts:\n  work:\n    agent: fakeagent\n    match:\n      - path: " + cwd + "\n"
-	if err := os.WriteFile(filepath.Join(home, "xdg", "aide", "config.yaml"), []byte(cfg), 0o644); err != nil {
+	if err := os.Remove(filepath.Join(home, "xdg", "aide", "provisioning.yaml")); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := runSyncCmd(t, "", "--profile", "work", "--yes"); err != nil {

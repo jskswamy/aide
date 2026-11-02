@@ -283,15 +283,13 @@ aide --with k8s docker
 **Profile-scoped** (always for this project):
 
 ```yaml
-# ~/.config/aide/config.yaml
-profiles:
-  work:
-    agent: claude
-    capabilities: [docker, k8s, gcp]
-    secret: work
-    credentials:
-      anthropic: {backend: age, store: work, key: anthropic_api_key}
-    default_credentials: [anthropic]
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+capabilities: [docker, k8s, gcp]
+secret: work
+credentials:
+  anthropic: {backend: age, store: work, key: anthropic_api_key}
+default_credentials: [anthropic]
 ```
 
 **Need something not in the list?** Create your own in one command:
@@ -310,7 +308,7 @@ aide cap create my-deploy --combines docker,k8s,aws
 Custom capabilities work the same as built-ins. Use them with `--with`, persist them in `.aide.yaml`, or share them across projects via your global config:
 
 ```yaml
-# ~/.config/aide/config.yaml
+# ~/.config/aide/sandbox.yaml
 capabilities:
   bazel:
     writable: ["~/.cache/bazel"]
@@ -334,11 +332,12 @@ aide cap never-allow --env VAULT_ROOT_TOKEN   # this env var is always stripped
 
 ## Configuration
 
-All config lives under `~/.config/aide/` (or `$XDG_CONFIG_HOME/aide/`).
+All config lives under `~/.config/aide/` (or `$XDG_CONFIG_HOME/aide/`), split by concern into `config.yaml`, `sandbox.yaml`, `provisioning.yaml`, and one flat file per profile under `profiles/<name>.yaml`.
 
 **Minimal config:**
 
 ```yaml
+# ~/.config/aide/config.yaml
 agent: claude
 secret: personal
 env:
@@ -348,42 +347,46 @@ env:
 **Multi-profile config:**
 
 ```yaml
-profiles:
-  work:
-    match:
-      - remote: "github.com/work-org/*"
-      - path: "~/work/*"
-    agent: claude
-    capabilities: [docker, k8s, aws]
-    secret: work
-    env:
-      CLAUDE_CODE_USE_BEDROCK: "1"
-      AWS_PROFILE: "{{ .secrets.aws_profile }}"
-
-  personal:
-    match:
-      - remote: "github.com/myuser/*"
-    agent: codex
-    secret: personal
-    credentials:
-      openai: {backend: age, store: personal, key: openai_api_key}
-    default_credentials: [openai]
-
-  oss:
-    match:
-      - remote: "github.com/*"
-    agent: aider
-    secret: personal
-    credentials:
-      anthropic: {backend: age, store: personal, key: anthropic_api_key}
-    default_credentials: [anthropic]
-
+# ~/.config/aide/config.yaml
 default_profile: personal
 ```
 
-Profiles match git remote URL patterns and directory path globs. The most specific match wins. `default_profile` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.
+```yaml
+# ~/.config/aide/profiles/work.yaml
+match:
+  - remote: "github.com/work-org/*"
+  - path: "~/work/*"
+agent: claude
+capabilities: [docker, k8s, aws]
+secret: work
+env:
+  CLAUDE_CODE_USE_BEDROCK: "1"
+  AWS_PROFILE: "{{ .secrets.aws_profile }}"
+```
 
-Profiles were called contexts before. A `config.yaml` with `contexts:` and `default_context:` still loads; `aide profile migrate` previews the conversion and `--write` applies it. `aide context ...` and `--context` remain as deprecated aliases of `aide profile ...` and `--profile`.
+```yaml
+# ~/.config/aide/profiles/personal.yaml
+match:
+  - remote: "github.com/myuser/*"
+agent: codex
+secret: personal
+credentials:
+  openai: {backend: age, store: personal, key: openai_api_key}
+default_credentials: [openai]
+```
+
+```yaml
+# ~/.config/aide/profiles/oss.yaml
+match:
+  - remote: "github.com/*"
+agent: aider
+secret: personal
+credentials:
+  anthropic: {backend: age, store: personal, key: anthropic_api_key}
+default_credentials: [anthropic]
+```
+
+Profiles match git remote URL patterns and directory path globs. The most specific match wins. `default_profile` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.
 
 ## Secrets
 
@@ -400,16 +403,18 @@ Secrets decrypt in-process at launch and never exist as plaintext on disk. See [
 
 New machine means reinstalling every plugin by hand - miss one (say, `commit-tools`) and you won't notice until your commit messages look different from your other machine. Across a team it's the same drift, compounded: onboarding docs go stale, and six months later nobody's plugin set matches anyone else's.
 
-Declare it once in `config.yaml` and reconcile with one command:
+Declare it once in `provisioning.yaml` and reconcile with one command:
 
 ```yaml
+# ~/.config/aide/provisioning.yaml
 plugins:
   jskswamy/claude-plugins: [commit-tools, craft, refactor]
+```
 
-profiles:
-  work:
-    agent: claude
-    config_dir_name: work  # → CLAUDE_CONFIG_DIR=~/.claude-work
+```yaml
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+config_dir_name: work  # → CLAUDE_CONFIG_DIR=~/.claude-work
 ```
 
 ```bash
@@ -428,8 +433,7 @@ ahead of what's installed, so the gap doesn't go unnoticed.
 ### The other half: per-profile config dirs
 
 The reason you can declare different plugin sets for different
-projects is that each profile can carry a `config_dir_name:`
-(`profile:` under the legacy `contexts:`).
+projects is that each profile can carry a `config_dir_name:`.
 Without it, every claude invocation reads from one shared
 `~/.claude/` directory - your work plugins and your personal plugins
 fight for the same slot, your client A's session history shows up

@@ -6,19 +6,24 @@ Agent definitions are binary-only. All env vars, secrets, and settings belong on
 the profile. The same `claude` binary uses different API keys in different profiles:
 
 ```yaml
+# ~/.config/aide/config.yaml
 agents:
   claude:
     binary: claude
+```
 
-profiles:
-  personal:
-    agent: claude
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.personal_key }}"
-  work:
-    agent: claude
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.work_key }}"
+```yaml
+# ~/.config/aide/profiles/personal.yaml
+agent: claude
+env:
+  ANTHROPIC_API_KEY: "{{ .secrets.personal_key }}"
+```
+
+```yaml
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+env:
+  ANTHROPIC_API_KEY: "{{ .secrets.work_key }}"
 ```
 
 ## Literal Values
@@ -42,14 +47,13 @@ Three variables are available inside `{{ }}` expressions:
 Example using all three:
 
 ```yaml
-profiles:
-  work:
-    agent: claude
-    secret: work
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_key }}"
-      PROJECT_ROOT: "{{ .project_root }}"
-      AGENT_TMPDIR: "{{ .runtime_dir }}"
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+secret: work
+env:
+  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_key }}"
+  PROJECT_ROOT: "{{ .project_root }}"
+  AGENT_TMPDIR: "{{ .runtime_dir }}"
 ```
 
 ## Setting Env Vars
@@ -117,11 +121,10 @@ The agent starts with only aide-injected vars. aide preserves standard vars (`PA
 all other inherited shell environment:
 
 ```yaml
-profiles:
-  work:
-    agent: claude
-    sandbox:
-      clean_env: true
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+sandbox:
+  clean_env: true
 ```
 
 Clean env mode prevents credential leakage from the parent shell and makes the

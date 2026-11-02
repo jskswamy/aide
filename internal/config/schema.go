@@ -70,6 +70,12 @@ type Config struct {
 	// never convert a file implicitly.
 	ProfileSchema bool `yaml:"-"`
 
+	// LegacyMonolithic is true when config.yaml was loaded from disk and
+	// still contains inline profiles/contexts, sandbox settings, or
+	// provisioning settings (or uses the legacy contexts: schema).
+	// WriteConfig refuses LegacyMonolithic configs until migrated.
+	LegacyMonolithic bool `yaml:"-"`
+
 	// loadErr is set on the FailedLoad placeholder; writers refuse it.
 	loadErr error
 }

@@ -119,42 +119,53 @@ func setupProvisionConfig(t *testing.T, plugins []string, mcpServers []string, p
 	// new url-direct shape (string value at a plain key) and ignore
 	// the per-context plugins selection list (in v2 the top-level
 	// declaration drives desired set; per-context override is optional).
-	var b strings.Builder
+	var provB strings.Builder
 	if len(pluginDecls) > 0 {
-		b.WriteString("plugins:\n")
+		provB.WriteString("plugins:\n")
 		for name, src := range pluginDecls {
-			b.WriteString("  ")
-			b.WriteString(name)
-			b.WriteString(": \"")
-			b.WriteString(src)
-			b.WriteString("\"\n")
+			provB.WriteString("  ")
+			provB.WriteString(name)
+			provB.WriteString(": \"")
+			provB.WriteString(src)
+			provB.WriteString("\"\n")
 		}
 	}
 	if len(mcpDecls) > 0 {
-		b.WriteString("mcp_servers:\n")
+		provB.WriteString("mcp_servers:\n")
 		for name, cmd := range mcpDecls {
-			b.WriteString("  ")
-			b.WriteString(name)
-			b.WriteString(":\n    command: ")
-			b.WriteString(cmd)
-			b.WriteString("\n")
+			provB.WriteString("  ")
+			provB.WriteString(name)
+			provB.WriteString(":\n    command: ")
+			provB.WriteString(cmd)
+			provB.WriteString("\n")
 		}
 	}
-	b.WriteString("contexts:\n  work:\n    agent: fakeagent\n    match:\n      - path: ")
+	if provB.Len() > 0 {
+		provPath := filepath.Join(dir, "xdg", "aide", "provisioning.yaml")
+		if err := os.WriteFile(provPath, []byte(provB.String()), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var profB strings.Builder
+	profB.WriteString("agent: fakeagent\nmatch:\n  - path: ")
 	cwd, _ := os.Getwd()
-	b.WriteString(cwd)
-	b.WriteString("\n")
+	profB.WriteString(cwd)
+	profB.WriteString("\n")
 	_ = plugins // v2: top-level declaration drives desired set
 	if len(mcpServers) > 0 {
-		b.WriteString("    mcp_servers:\n")
+		profB.WriteString("mcp_servers:\n")
 		for _, m := range mcpServers {
-			b.WriteString("      - ")
-			b.WriteString(m)
-			b.WriteString("\n")
+			profB.WriteString("  - ")
+			profB.WriteString(m)
+			profB.WriteString("\n")
 		}
 	}
-	path := filepath.Join(dir, "xdg", "aide", "config.yaml")
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	profDir := filepath.Join(dir, "xdg", "aide", "profiles")
+	if err := os.MkdirAll(profDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profDir, "work.yaml"), []byte(profB.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir

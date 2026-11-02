@@ -17,6 +17,7 @@ import (
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/secrets"
+	"gopkg.in/yaml.v3"
 )
 
 const gwCmdToken = "cli-gateway-token"
@@ -69,18 +70,40 @@ func newGatewayEnv(t *testing.T) *gatewayEnv {
 
 func (e *gatewayEnv) writeConfig(t *testing.T, body string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(e.xdg, "aide", "config.yaml"), []byte(body), 0o600); err != nil {
+	cfgDir := filepath.Join(e.xdg, "aide")
+	_ = os.RemoveAll(filepath.Join(cfgDir, "profiles"))
+	_ = os.Remove(filepath.Join(cfgDir, "sandbox.yaml"))
+	_ = os.Remove(filepath.Join(cfgDir, "provisioning.yaml"))
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(cfgDir, e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.LegacyMonolithic = false
+	cfg.ProfileSchema = true
+	if err := config.WriteConfigTo(cfg, cfgPath); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func (e *gatewayEnv) config(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(e.xdg, "aide", "config.yaml"))
+	cfgDir := filepath.Join(e.xdg, "aide")
+	cfg, err := config.Load(cfgDir, e.home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(4)
+	if err := enc.Encode(cfg); err != nil {
+		t.Fatal(err)
+	}
+	_ = enc.Close()
+	return buf.String()
 }
 
 func (e *gatewayEnv) store(t *testing.T, name string) map[string]string {
@@ -994,7 +1017,7 @@ func TestGatewayCmd_EditPreSaveVerificationAndURLMismatchCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	unauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 	}))
 	t.Cleanup(unauthSrv.Close)

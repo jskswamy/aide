@@ -143,9 +143,12 @@ func TestHookAddRejectsDuplicate(t *testing.T) {
 	fakeProvReset(t)
 	dir := isolatedConfigDir(t)
 	cwd, _ := os.Getwd()
-	body := "contexts:\n  work:\n    agent: fakeagent\n    match:\n      - path: " + cwd + "\n"
-	cfgPath := filepath.Join(dir, "xdg", "aide", "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte(body), 0o644); err != nil {
+	profDir := filepath.Join(dir, "xdg", "aide", "profiles")
+	if err := os.MkdirAll(profDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "agent: fakeagent\nmatch:\n  - path: " + cwd + "\n"
+	if err := os.WriteFile(filepath.Join(profDir, "work.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

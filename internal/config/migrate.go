@@ -2,17 +2,24 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/jskswamy/aide/internal/envscrub"
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/statedir"
 	"github.com/jskswamy/aide/internal/yamlnode"
 )
 
@@ -72,6 +79,18 @@ type Migration struct {
 	// Changed is false.
 	Output  []byte
 	Changed bool
+	// SplitLayout is true when the input config contained inline
+	// profiles, sandbox settings, or provisioning settings that split
+	// into modular files in SplitFiles.
+	SplitLayout bool
+	// SplitFiles maps relative paths ("config.yaml", "sandbox.yaml",
+	// "provisioning.yaml", "profiles/<name>.yaml") to their migrated
+	// YAML bytes when SplitLayout is true.
+	SplitFiles map[string][]byte
+	// SplitErr holds any error encountered while splitting into modular
+	// files (e.g. YAML anchors/aliases across sections or invalid
+	// minimal config settings).
+	SplitErr error
 	// Renamed lists the key renames applied, as "old -> new".
 	Renamed      []string
 	Credentials  []MigratedCredential
@@ -79,6 +98,65 @@ type Migration struct {
 	// MentionsOpenCode reports that a profile runs OpenCode or pins an
 	// OpenCode config dir, so its accounts may now open another database.
 	MentionsOpenCode bool
+}
+
+// NeedsWrite reports whether migrating this config produces either a schema
+// rewrite (Changed) or a modular file split (SplitLayout).
+func (m *Migration) NeedsWrite() bool {
+	return m != nil && (m.Changed || m.SplitLayout)
+}
+
+// Preview renders the migration preview text: multi-file sections when
+// SplitLayout is true, otherwise Output.
+func (m *Migration) Preview() string {
+	if !m.SplitLayout || len(m.SplitFiles) == 0 {
+		return strings.TrimRight(string(m.Output), "\n")
+	}
+	var order []string
+	for _, fixed := range []string{"config.yaml", "sandbox.yaml", "provisioning.yaml"} {
+		if _, ok := m.SplitFiles[fixed]; ok {
+			order = append(order, fixed)
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(m.SplitFiles)) {
+		if strings.HasPrefix(k, "profiles/") {
+			order = append(order, k)
+		}
+	}
+	var sb strings.Builder
+	for i, rel := range order {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		fmt.Fprintf(&sb, "# === %s ===\n%s\n", rel, strings.TrimRight(string(m.SplitFiles[rel]), "\n"))
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// ApplyMigrationSplit writes m.SplitFiles atomically into configDir.
+func ApplyMigrationSplit(configDir string, m *Migration) error {
+	if m.SplitErr != nil {
+		return m.SplitErr
+	}
+	if !m.SplitLayout || len(m.SplitFiles) == 0 {
+		return writeIfChanged(filepath.Join(configDir, "config.yaml"), m.Output)
+	}
+	for _, rel := range slices.Sorted(maps.Keys(m.SplitFiles)) {
+		target := filepath.Join(configDir, filepath.FromSlash(rel))
+		if err := writeIfChanged(target, m.SplitFiles[rel]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InspectLoadedMigration populates GlobalLogins and MentionsOpenCode from an
+// already-split loaded Config when config.yaml itself has no inline profiles.
+func InspectLoadedMigration(cfg *Config, home string) ( []GlobalLogin, bool) {
+	if cfg == nil {
+		return nil, false
+	}
+	return globalLogins(cfg, sortedKeys(cfg.Contexts), home), mentionsOpenCode(cfg)
 }
 
 // MigrateProfiles converts a config.yaml from the contexts: schema to
@@ -105,7 +183,13 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 	m := &Migration{Output: data, MentionsOpenCode: mentionsOpenCode(&cfg)}
-	if len(doc.Content) == 0 || cfg.IsMinimal() {
+	if len(doc.Content) == 0 {
+		return m, nil
+	}
+	if cfg.IsMinimal() {
+		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
+			m.SplitErr = m.populateMinimalSplit(&cfg, opts.Home)
+		}
 		return m, nil
 	}
 	root := doc.Content[0]
@@ -139,6 +223,13 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	}
 	if cfg.ProfileSchema && len(moves) == 0 && len(opts.Adopt) == 0 {
 		m.GlobalLogins = globalLogins(&cfg, names, opts.Home)
+		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
+			if err := refuseSharedNodes(root, "config"); err != nil {
+				m.SplitErr = err
+			} else {
+				m.SplitErr = m.populateSplitFiles(&doc)
+			}
+		}
 		return m, nil
 	}
 	sectionKey := keyProfiles
@@ -170,6 +261,13 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	}
 
 	if len(m.Renamed) == 0 && len(m.Credentials) == 0 && !adopted {
+		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
+			if err := refuseSharedNodes(root, "config"); err != nil {
+				m.SplitErr = err
+			} else {
+				m.SplitErr = m.populateSplitFiles(&doc)
+			}
+		}
 		return m, nil
 	}
 	var buf bytes.Buffer
@@ -189,6 +287,9 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	}
 	m.Output = buf.Bytes()
 	m.Changed = true
+	if err := m.populateSplitFiles(&doc); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -484,4 +585,173 @@ func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCr
 		}
 	}
 	return nil
+}
+
+func encodeYAMLNode(node *yaml.Node) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(node); err != nil {
+		return nil, err
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (m *Migration) populateMinimalSplit(cfg *Config, home string) error {
+	norm := normalizeMinimal(cfg)
+	norm.ProfileSchema = true
+	if err := validateConfigStruct(norm, home, "migrated config"); err != nil {
+		return err
+	}
+	files := map[string][]byte{}
+	coreData, err := yaml.Marshal(norm.extractCoreConfig())
+	if err != nil {
+		return err
+	}
+	files["config.yaml"] = coreData
+	if sbx := norm.extractSandboxFile(); !sbx.IsEmpty() {
+		b, err := yaml.Marshal(sbx)
+		if err != nil {
+			return err
+		}
+		files["sandbox.yaml"] = b
+	}
+	if prov := norm.extractProvisioningFile(); !prov.IsEmpty() {
+		b, err := yaml.Marshal(prov)
+		if err != nil {
+			return err
+		}
+		files["provisioning.yaml"] = b
+	}
+	for _, name := range sortedKeys(norm.Contexts) {
+		b, err := EncodeProfileYAML(norm.Contexts[name])
+		if err != nil {
+			return err
+		}
+		files["profiles/"+name+".yaml"] = b
+	}
+	m.SplitFiles = files
+	m.SplitLayout = true
+	return nil
+}
+
+func (m *Migration) populateSplitFiles(doc *yaml.Node) error {
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	// Re-parse the current migrated YAML into a fresh document node so
+	// extracting sections does not mutate doc.
+	migratedBytes, err := encodeYAMLNode(doc)
+	if err != nil {
+		return err
+	}
+	var clone yaml.Node
+	if err := yaml.Unmarshal(migratedBytes, &clone); err != nil {
+		return err
+	}
+	if len(clone.Content) == 0 || clone.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	root := clone.Content[0]
+	files := map[string][]byte{}
+	splitHappened := false
+
+	// 1. Extract profiles/<name>.yaml
+	if profNode := yamlnode.Value(root, keyProfiles); profNode != nil && profNode.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(profNode.Content); i += 2 {
+			kNode := profNode.Content[i]
+			vNode := profNode.Content[i+1]
+			if !gatewayIdentRE.MatchString(kNode.Value) {
+				return fmt.Errorf("%w: %q must match %s", ErrInvalidProfileFilename, kNode.Value, gatewayIdentRE.String())
+			}
+			pDoc := yaml.Node{
+				Kind:        yaml.DocumentNode,
+				HeadComment: kNode.HeadComment,
+				Content:     []*yaml.Node{vNode},
+			}
+			b, err := encodeYAMLNode(&pDoc)
+			if err != nil {
+				return err
+			}
+			files["profiles/"+kNode.Value+".yaml"] = b
+			splitHappened = true
+		}
+		deleteKey(root, keyProfiles)
+	}
+
+	// 2. Extract sandbox.yaml
+	sbxRoot := &yaml.Node{Kind: yaml.MappingNode}
+	for _, k := range validSandboxFileKeys {
+		if v := yamlnode.Value(root, k); v != nil {
+			sbxRoot.Content = append(sbxRoot.Content, yamlnode.Str(k), v)
+			deleteKey(root, k)
+		}
+	}
+	if len(sbxRoot.Content) > 0 {
+		b, err := encodeYAMLNode(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{sbxRoot}})
+		if err != nil {
+			return err
+		}
+		files["sandbox.yaml"] = b
+		splitHappened = true
+	}
+
+	// 3. Extract provisioning.yaml
+	provRoot := &yaml.Node{Kind: yaml.MappingNode}
+	for _, k := range validProvisioningFileKeys {
+		if v := yamlnode.Value(root, k); v != nil {
+			provRoot.Content = append(provRoot.Content, yamlnode.Str(k), v)
+			deleteKey(root, k)
+		}
+	}
+	if len(provRoot.Content) > 0 {
+		b, err := encodeYAMLNode(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{provRoot}})
+		if err != nil {
+			return err
+		}
+		files["provisioning.yaml"] = b
+		splitHappened = true
+	}
+
+	if !splitHappened {
+		return nil
+	}
+
+	coreBytes, err := encodeYAMLNode(&clone)
+	if err != nil {
+		return err
+	}
+	files["config.yaml"] = coreBytes
+	m.SplitFiles = files
+	m.SplitLayout = true
+	return nil
+}
+
+const migrateNudgeCooldown = 7 * 24 * time.Hour
+
+type migrateNudgeState struct {
+	LastNudgedAt time.Time `json:"last_nudged_at"`
+}
+
+// MaybeNudgeMigration prints a brief one-line reminder to errOut at most
+// once every 7 days when cfg was loaded from a legacy single-file config.yaml
+// and errOut is an interactive terminal.
+func MaybeNudgeMigration(cfg *Config, errOut io.Writer, isTTY bool, homeDir string, now time.Time) {
+	if cfg == nil || !cfg.LegacyMonolithic || !isTTY || homeDir == "" {
+		return
+	}
+	stateFile := statedir.Path(homeDir, "migrate-nudge.json")
+	if data, err := os.ReadFile(stateFile); err == nil {
+		var st migrateNudgeState
+		if json.Unmarshal(data, &st) == nil && !st.LastNudgedAt.IsZero() && now.Sub(st.LastNudgedAt) < migrateNudgeCooldown {
+			return
+		}
+	}
+	fmt.Fprintln(errOut, "aide: note: config.yaml uses the legacy single-file layout; run 'aide config migrate --write' to split into modular files.")
+	if data, err := json.Marshal(migrateNudgeState{LastNudgedAt: now.UTC()}); err == nil {
+		_ = fsutil.AtomicWrite(stateFile, append(data, '\n'))
+	}
 }

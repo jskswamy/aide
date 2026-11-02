@@ -125,29 +125,76 @@ func decodeProfiles(node *yaml.Node) (map[string]Context, error) {
 	out := make(map[string]Context, len(node.Content)/2)
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		name := node.Content[i].Value
-		entry := *node.Content[i+1]
-		entry.Content = slices.Clone(entry.Content)
-		for j := 0; j+1 < len(entry.Content); j += 2 {
-			key := entry.Content[j].Value
-			for _, k := range profileDirKeys {
-				switch key {
-				case k[1]:
-					return nil, fmt.Errorf("profiles.%s: %s: is a contexts: key; under profiles: use %s: (line %d)",
-						name, k[1], k[0], entry.Content[j].Line)
-				case k[0]:
-					renamed := *entry.Content[j]
-					renamed.Value = k[1]
-					entry.Content[j] = &renamed
-				}
-			}
-		}
-		var ctx Context
-		if err := entry.Decode(&ctx); err != nil {
-			return nil, fmt.Errorf("profiles.%s: %w", name, err)
+		ctx, err := DecodeProfileYAML(name, node.Content[i+1])
+		if err != nil {
+			return nil, err
 		}
 		out[name] = ctx
 	}
 	return out, nil
+}
+
+// validProfileEntryKeys are the YAML keys permitted inside a profile
+// definition (under profiles.<name> or in profiles/<name>.yaml).
+var validProfileEntryKeys = []string{
+	"match", "agent", "icon", "secret", "env",
+	"config_dir_name", "config_dir", "config_dirs",
+	"credentials", "default_credentials", "gateways",
+	"mcp_servers", "sandbox", "yolo", "capabilities",
+	"plugins", "hooks",
+}
+
+// DecodeProfileYAML decodes a single profile YAML node (using the
+// profiles: vocabulary: config_dir_name / config_dir) into a Context,
+// rejecting legacy contexts: keys (profile / profile_dir) and unknown
+// top-level keys.
+func DecodeProfileYAML(name string, node *yaml.Node) (Context, error) {
+	if node.Kind == yaml.DocumentNode && len(node.Content) == 1 {
+		node = node.Content[0]
+	}
+	if node.Kind == 0 || node.Tag == "!!null" {
+		return Context{}, nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return Context{}, fmt.Errorf("profiles.%s: expected a mapping (line %d)", name, node.Line)
+	}
+	entry := *node
+	entry.Content = slices.Clone(entry.Content)
+	for j := 0; j+1 < len(entry.Content); j += 2 {
+		key := entry.Content[j].Value
+		for _, k := range profileDirKeys {
+			switch key {
+			case k[1]:
+				return Context{}, fmt.Errorf("profiles.%s: %s: is a contexts: key; under profiles: use %s: (line %d)",
+					name, k[1], k[0], entry.Content[j].Line)
+			case k[0]:
+				renamed := *entry.Content[j]
+				renamed.Value = k[1]
+				entry.Content[j] = &renamed
+			}
+		}
+		if key != "<<" && !slices.Contains(validProfileEntryKeys, key) {
+			return Context{}, fmt.Errorf("profiles.%s: unknown key %q (line %d)", name, key, entry.Content[j].Line)
+		}
+	}
+	var ctx Context
+	if err := entry.Decode(&ctx); err != nil {
+		return Context{}, fmt.Errorf("profiles.%s: %w", name, err)
+	}
+	return ctx, nil
+}
+
+// EncodeProfileYAML marshals a single Context into YAML bytes using
+// the profiles: vocabulary (config_dir_name and config_dir).
+func EncodeProfileYAML(ctx Context) ([]byte, error) {
+	var node yaml.Node
+	if err := node.Encode(ctx); err != nil {
+		return nil, err
+	}
+	for _, k := range profileDirKeys {
+		renameKey(&node, k[1], k[0])
+	}
+	return yaml.Marshal(&node)
 }
 
 // rejectProfileDirKeysInContexts fails when a contexts: entry uses a

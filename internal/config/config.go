@@ -25,12 +25,32 @@ import (
 // was found during the directory walk.
 func Load(configDir, projectDir string) (*Config, error) {
 	globalPath := filepath.Join(configDir, "config.yaml")
-	cfg, err := loadFile(globalPath)
+	var (
+		cfg           *Config
+		rawBytes      []byte
+		configExisted bool
+	)
+	data, err := os.ReadFile(globalPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// No global config file is not an error — return empty config
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("loading global config: %w", err)
+		}
+		if !HasAnyConfigFile(configDir) {
+			// No global config file and no split files — return empty config
 			return &Config{}, nil
 		}
+		cfg = &Config{ProfileSchema: true}
+	} else {
+		configExisted = true
+		rawBytes = data
+		var parsed Config
+		if err := yaml.Unmarshal(data, &parsed); err != nil {
+			return nil, fmt.Errorf("loading global config: parsing %s: %w", globalPath, err)
+		}
+		cfg = &parsed
+	}
+
+	if err := loadSplitFiles(configDir, cfg, configExisted, rawBytes); err != nil {
 		return nil, fmt.Errorf("loading global config: %w", err)
 	}
 
@@ -63,19 +83,6 @@ func Load(configDir, projectDir string) (*Config, error) {
 	}
 
 	return cfg, nil
-}
-
-// loadFile reads and unmarshals a single YAML config file.
-func loadFile(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	return &cfg, nil
 }
 
 // LoadProjectOverrideFile reads one .aide.yaml as written, with no
@@ -178,13 +185,21 @@ func normalizeMinimal(cfg *Config) *Config {
 				Yolo:       cfg.Yolo,
 			},
 		},
-		NeverAllow:     cfg.NeverAllow,
-		NeverAllowEnv:  cfg.NeverAllowEnv,
-		ScrubEnv:       cfg.ScrubEnv,
-		MCPServers:     cfg.MCPServers,
-		DefaultContext: "default",
-		Preferences:    cfg.Preferences,
-		ProfileSchema:  cfg.ProfileSchema,
+		Capabilities:     cfg.Capabilities,
+		Sandboxes:        cfg.Sandboxes,
+		CustomGuards:     cfg.CustomGuards,
+		GuardTypes:       cfg.GuardTypes,
+		NeverAllow:       cfg.NeverAllow,
+		NeverAllowEnv:    cfg.NeverAllowEnv,
+		ScrubEnv:         cfg.ScrubEnv,
+		Plugins:          cfg.Plugins,
+		MCPServers:       cfg.MCPServers,
+		Hooks:            cfg.Hooks,
+		DefaultContext:   "default",
+		Preferences:      cfg.Preferences,
+		Statusline:       cfg.Statusline,
+		ProfileSchema:    cfg.ProfileSchema,
+		LegacyMonolithic: cfg.LegacyMonolithic,
 	}
 }
 

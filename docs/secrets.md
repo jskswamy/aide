@@ -113,7 +113,7 @@ What each command does:
 - `aide env set ANTHROPIC_API_KEY --secret-key anthropic_api_key --global`
   - adds an env variable on the active profile whose value comes from
   the `anthropic_api_key` field inside the bound secret. `--global`
-  writes the entry to user-level config (`~/.config/aide/config.yaml`)
+  writes the entry to the user-level profile file (`~/.config/aide/profiles/<name>.yaml`)
   so it applies wherever this profile matches; drop `--global` to keep
   the entry in the project-local config.
 
@@ -121,18 +121,18 @@ If you forget which fields exist in your secret, run `aide env set
 ANTHROPIC_API_KEY --pick --global` and aide presents an interactive
 picker.
 
-**Advanced: edit the config file directly.** The two commands above
-write into `~/.config/aide/config.yaml`. If you prefer hand-editing,
-the resulting block looks like this:
+**Advanced: edit the profile file directly.** The two commands above
+write into `~/.config/aide/profiles/personal.yaml`. If you prefer hand-editing,
+the resulting file looks like this:
 
 ```yaml
-profiles:
-  personal:
-    agent: claude
-    secret: personal
-    match: ~/projects/*
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+# ~/.config/aide/profiles/personal.yaml
+agent: claude
+secret: personal
+match:
+  - path: ~/projects/*
+env:
+  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 ```
 
 The `{{ .secrets.<key> }}` Go-template syntax injects the decrypted

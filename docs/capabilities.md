@@ -125,9 +125,8 @@ are gone.
 ### Profile-scoped: config
 
 ```yaml
-profiles:
-  work:
-    capabilities: [k8s-dev, docker]
+# ~/.config/aide/profiles/work.yaml
+capabilities: [k8s-dev, docker]
 ```
 
 Every time you run `aide` in a directory matching the `work` profile, these
@@ -168,9 +167,10 @@ aide cap create k8s-dev \
   --deny "~/.kube/prod-config"
 ```
 
-This produces a config entry like:
+This produces a config entry in `~/.config/aide/sandbox.yaml`:
 
 ```yaml
+# ~/.config/aide/sandbox.yaml
 capabilities:
   k8s-dev:
     extends: k8s
@@ -186,6 +186,7 @@ and adds its own on top.
 Bundle several capabilities into one name for a common workflow:
 
 ```yaml
+# ~/.config/aide/sandbox.yaml
 capabilities:
   my-deploy:
     combines: [aws, k8s, docker]
@@ -226,9 +227,10 @@ aide cap disable k8s-dev       # remove from current profile config
 ### never_allow: the hard ceiling
 
 Some paths should never be accessible, regardless of which capabilities are
-active. `never_allow` is a top-level config field that overrides everything.
+active. `never_allow` is a field in `~/.config/aide/sandbox.yaml` that overrides everything.
 
 ```yaml
+# ~/.config/aide/sandbox.yaml
 never_allow:
   - "~/.kube/prod-config"
   - "~/.aws/accounts/production"
@@ -257,6 +259,7 @@ dev and production configs. Without protection, `aide --with k8s` would make the
 entire directory readable - including production credentials.
 
 ```yaml
+# ~/.config/aide/sandbox.yaml
 never_allow:
   - "~/.kube/prod-config"
 
@@ -276,6 +279,7 @@ exception out of it.
 ### never_allow_env: blocking sensitive variables
 
 ```yaml
+# ~/.config/aide/sandbox.yaml
 never_allow_env:
   - VAULT_ROOT_TOKEN
   - PRODUCTION_DB_PASSWORD

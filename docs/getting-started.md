@@ -37,7 +37,7 @@ into Codex's separate `--sandbox` option. Pass native Codex options after
 
 ## First-Time Setup
 
-`aide setup` runs a guided wizard for the current directory. It detects agents on PATH, optionally creates an encrypted secrets file, and writes a profile to `~/.config/aide/config.yaml`.
+`aide setup` runs a guided wizard for the current directory. It detects agents on PATH, optionally creates an encrypted secrets file, and writes a profile to `~/.config/aide/profiles/<name>.yaml`.
 
 ```
 $ cd ~/work/myproject
@@ -82,10 +82,9 @@ $ aide --with k8s docker
 For persistent capabilities, add them to a profile in config:
 
 ```yaml
-profiles:
-  infra:
-    agent: claude
-    capabilities: [docker, k8s, aws]
+# ~/.config/aide/profiles/infra.yaml
+agent: claude
+capabilities: [docker, k8s, aws]
 ```
 
 See [Capabilities](capabilities.md) for details on built-in and custom capabilities.
@@ -243,28 +242,27 @@ Created profile "oss":
 $ aide profile set-default oss
 ```
 
-Edit `~/.config/aide/config.yaml` to add env var templates that pull values from secrets:
+Edit the profile files under `~/.config/aide/profiles/` to add env var templates that pull values from secrets:
 
 ```yaml
-profiles:
-  work:
-    agent: claude
-    secret: work
-    match:
-      - path: ~/work/*
-    env:
-      CLAUDE_CODE_USE_BEDROCK: "1"
-      AWS_PROFILE: "{{ .secrets.aws_profile }}"
+# ~/.config/aide/profiles/work.yaml
+agent: claude
+secret: work
+match:
+  - path: ~/work/*
+env:
+  CLAUDE_CODE_USE_BEDROCK: "1"
+  AWS_PROFILE: "{{ .secrets.aws_profile }}"
+```
 
-  oss:
-    agent: claude
-    secret: personal
-    match:
-      - path: ~/oss/*
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-
-default_profile: oss
+```yaml
+# ~/.config/aide/profiles/oss.yaml
+agent: claude
+secret: personal
+match:
+  - path: ~/oss/*
+env:
+  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 ```
 
 ## Verifying

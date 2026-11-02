@@ -6,17 +6,21 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/output"
 )
 
 type configShowResult struct {
-	Path   string `json:"path"`
-	Exists bool   `json:"exists"`
-	Raw    string `json:"raw,omitempty"`
+	Path   string            `json:"path"`
+	Exists bool              `json:"exists"`
+	Raw    string            `json:"raw,omitempty"`
+	Files  map[string]string `json:"files,omitempty"`
 }
 
 func configCmd() *cobra.Command {
@@ -26,6 +30,7 @@ func configCmd() *cobra.Command {
 	}
 	cmd.AddCommand(configShowCmd())
 	cmd.AddCommand(configEditCmd())
+	cmd.AddCommand(configMigrateCmd())
 	return cmd
 }
 
@@ -36,26 +41,58 @@ func configShowCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			configPath := config.FilePath()
+			configDir := filepath.Dir(configPath)
 			data, err := os.ReadFile(configPath)
+			splitRels := config.SplitRelativePaths(configDir)
 			out := cmd.OutOrStdout()
 			format, ferr := output.FromCmd(cmd)
 			if ferr != nil {
 				return ferr
 			}
-			if err != nil {
-				if os.IsNotExist(err) {
-					result := configShowResult{Path: configPath, Exists: false}
-					return output.Emit(out, format, result, func(w io.Writer) error {
-						fmt.Fprintln(w, "No config file found. Run `aide init` to create one.")
-						return nil
-					})
-				}
+			if err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("reading config file: %w", err)
 			}
+			if os.IsNotExist(err) && len(splitRels) == 0 {
+				result := configShowResult{Path: configPath, Exists: false}
+				return output.Emit(out, format, result, func(w io.Writer) error {
+					fmt.Fprintln(w, "No config file found. Run `aide init` to create one.")
+					return nil
+				})
+			}
+
 			result := configShowResult{Path: configPath, Exists: true, Raw: string(data)}
+			var order []string
+			if len(splitRels) > 0 {
+				result.Files = make(map[string]string, 1+len(splitRels))
+				if err == nil {
+					result.Files["config.yaml"] = string(data)
+					order = append(order, "config.yaml")
+				}
+				for _, rel := range splitRels {
+					sb, rerr := os.ReadFile(filepath.Join(configDir, filepath.FromSlash(rel)))
+					if rerr != nil {
+						return fmt.Errorf("reading %s: %w", rel, rerr)
+					}
+					result.Files[rel] = string(sb)
+					order = append(order, rel)
+				}
+			}
+
 			return output.Emit(out, format, result, func(w io.Writer) error {
-				fmt.Fprintf(w, "# %s\n", result.Path)
-				fmt.Fprint(w, result.Raw)
+				tty := isTerminalWriter(w)
+				if len(order) > 0 {
+					var sb strings.Builder
+					for i, rel := range order {
+						if i > 0 {
+							sb.WriteString("\n")
+						}
+						fmt.Fprintf(&sb, "# === %s ===\n%s\n", rel, strings.TrimRight(result.Files[rel], "\n"))
+					}
+					fmt.Fprintln(w, display.HighlightYAML(strings.TrimRight(sb.String(), "\n"), tty))
+					return nil
+				}
+				body := fmt.Sprintf("# %s\n%s", result.Path, strings.TrimRight(result.Raw, "\n"))
+				fmt.Fprintln(w, display.HighlightYAML(body, tty))
 				return nil
 			})
 		},

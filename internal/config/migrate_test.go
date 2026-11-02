@@ -1,11 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -419,5 +422,130 @@ func TestMigrateProfiles_TemplatedEndpointStops(t *testing.T) {
 `), MigrateOptions{})
 	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_BASE_URL") {
 		t.Fatalf("error = %v, want a refusal naming the templated endpoint", err)
+	}
+}
+
+func TestMigrateProfiles_ProducesSplitFilesPreservingComments(t *testing.T) {
+	m := migrate(t, legacyMigrateConfig)
+	if !m.SplitLayout {
+		t.Fatal("expected SplitLayout = true for monolithic config")
+	}
+	for _, rel := range []string{"config.yaml", "sandbox.yaml", "profiles/work.yaml", "profiles/oss.yaml", "profiles/personal.yaml"} {
+		if _, ok := m.SplitFiles[rel]; !ok {
+			t.Errorf("SplitFiles missing %q; got keys %v", rel, slices.Sorted(maps.Keys(m.SplitFiles)))
+		}
+	}
+	if _, ok := m.SplitFiles["provisioning.yaml"]; ok {
+		t.Error("expected no provisioning.yaml when plugins/mcp_servers/hooks are empty")
+	}
+	coreStr := string(m.SplitFiles["config.yaml"])
+	if !strings.Contains(coreStr, "# aide config") || !strings.Contains(coreStr, "default_profile: personal") {
+		t.Errorf("config.yaml missing comment or default_profile:\n%s", coreStr)
+	}
+	for _, avoid := range []string{"profiles:", "contexts:", "never_allow_env:"} {
+		if strings.Contains(coreStr, avoid) {
+			t.Errorf("config.yaml still contains %q:\n%s", avoid, coreStr)
+		}
+	}
+	workStr := string(m.SplitFiles["profiles/work.yaml"])
+	if !strings.Contains(workStr, "# native dir name") || !strings.Contains(workStr, "config_dir_name: work") {
+		t.Errorf("profiles/work.yaml missing comment or config_dir_name:\n%s", workStr)
+	}
+	sbxStr := string(m.SplitFiles["sandbox.yaml"])
+	if !strings.Contains(sbxStr, "never_allow_env:") {
+		t.Errorf("sandbox.yaml missing never_allow_env:\n%s", sbxStr)
+	}
+
+	// ApplyMigrationSplit writes the split layout and Load succeeds with LegacyMonolithic == false
+	dir := t.TempDir()
+	if err := ApplyMigrationSplit(dir, m); err != nil {
+		t.Fatalf("ApplyMigrationSplit: %v", err)
+	}
+	loaded, err := Load(dir, "")
+	if err != nil {
+		t.Fatalf("Load after ApplyMigrationSplit: %v", err)
+	}
+	if loaded.LegacyMonolithic {
+		t.Error("expected LegacyMonolithic = false after ApplyMigrationSplit")
+	}
+	if len(loaded.Contexts) != 3 || loaded.DefaultContext != "personal" {
+		t.Errorf("loaded Contexts=%d DefaultContext=%q", len(loaded.Contexts), loaded.DefaultContext)
+	}
+}
+
+func TestMigrateProfiles_MinimalConfigProducesDefaultProfileSplit(t *testing.T) {
+	m := migrate(t, "agent: claude\nsecret: personal\ncapabilities:\n  custom-cap:\n    description: test\nplugins:\n  steveyegge/beads:\n    - beads\n")
+	if !m.SplitLayout || !m.NeedsWrite() {
+		t.Fatal("expected SplitLayout = true and NeedsWrite = true for minimal flat config")
+	}
+	if _, ok := m.SplitFiles["profiles/default.yaml"]; !ok {
+		t.Fatalf("expected profiles/default.yaml in SplitFiles, got %v", slices.Sorted(maps.Keys(m.SplitFiles)))
+	}
+	if _, ok := m.SplitFiles["sandbox.yaml"]; !ok {
+		t.Errorf("expected sandbox.yaml in SplitFiles for minimal config with capabilities")
+	}
+	if _, ok := m.SplitFiles["provisioning.yaml"]; !ok {
+		t.Errorf("expected provisioning.yaml in SplitFiles for minimal config with plugins")
+	}
+	preview := m.Preview()
+	for _, want := range []string{"# === config.yaml ===", "# === sandbox.yaml ===", "# === provisioning.yaml ===", "# === profiles/default.yaml ==="} {
+		if !strings.Contains(preview, want) {
+			t.Errorf("Preview() missing %q:\n%s", want, preview)
+		}
+	}
+}
+
+func TestMigrateHelpers_PreviewInspectAndNudge(t *testing.T) {
+	// Non-split Preview fallback
+	plain := &Migration{Output: []byte("default_profile: work\n")}
+	if plain.NeedsWrite() {
+		t.Error("expected NeedsWrite=false for unchanged non-split migration")
+	}
+	if got := plain.Preview(); got != "default_profile: work" {
+		t.Errorf("non-split Preview() = %q", got)
+	}
+	dir := t.TempDir()
+	if err := ApplyMigrationSplit(dir, plain); err != nil {
+		t.Fatalf("ApplyMigrationSplit(non-split): %v", err)
+	}
+	if err := ApplyMigrationSplit(dir, &Migration{SplitErr: ErrSharedYAML}); !errors.Is(err, ErrSharedYAML) {
+		t.Fatalf("expected ErrSharedYAML, got %v", err)
+	}
+
+	// Monolithic profiles: config with provisioning section
+	m := migrate(t, "default_profile: work\nplugins:\n  steveyegge/beads:\n    - beads\nprofiles:\n  work:\n    agent: opencode\n")
+	if !m.SplitLayout || !m.NeedsWrite() {
+		t.Fatal("expected SplitLayout=true for monolithic profiles config")
+	}
+	if _, ok := m.SplitFiles["provisioning.yaml"]; !ok {
+		t.Error("expected provisioning.yaml in SplitFiles")
+	}
+
+	// InspectLoadedMigration on nil and loaded Config
+	if gl, oc := InspectLoadedMigration(nil, dir); gl != nil || oc {
+		t.Errorf("InspectLoadedMigration(nil) = %v, %v", gl, oc)
+	}
+	cfg := &Config{Contexts: map[string]Context{"work": {Agent: "opencode"}}}
+	gl, oc := InspectLoadedMigration(cfg, dir)
+	if len(gl) != 1 || !oc {
+		t.Errorf("InspectLoadedMigration = %v, %v", gl, oc)
+	}
+
+	// MaybeNudgeMigration cooldown and non-TTY checks
+	home := t.TempDir()
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	var buf bytes.Buffer
+	MaybeNudgeMigration(&Config{LegacyMonolithic: true}, &buf, false, home, now)
+	if buf.Len() != 0 {
+		t.Errorf("expected no nudge on non-TTY, got %q", buf.String())
+	}
+	MaybeNudgeMigration(&Config{LegacyMonolithic: true}, &buf, true, home, now)
+	if !strings.Contains(buf.String(), "aide config migrate --write") {
+		t.Errorf("expected nudge message, got %q", buf.String())
+	}
+	buf.Reset()
+	MaybeNudgeMigration(&Config{LegacyMonolithic: true}, &buf, true, home, now.Add(24*time.Hour))
+	if buf.Len() != 0 {
+		t.Errorf("expected cooldown suppression, got %q", buf.String())
 	}
 }

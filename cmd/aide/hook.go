@@ -279,7 +279,7 @@ func runHookAdd(out io.Writer, in io.Reader, event, matcher, command, _ string) 
 	cfg.Hooks[event] = append(cfg.Hooks[event], entry)
 
 	// Write config
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := saveConfigWithMigrationPrompt(nil, cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 
@@ -326,7 +326,7 @@ func runHookRemove(out io.Writer, event, matcher, command, contextName string) e
 		cfg.Hooks[event] = newEntries
 	}
 
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := saveConfigWithMigrationPrompt(nil, cfg); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 

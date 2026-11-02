@@ -217,7 +217,7 @@ Examples:
 			ctx.Env[key] = value
 			cfg.Contexts[targetName] = ctx
 
-			if err := config.WriteConfig(cfg); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(out, "Set %s on context %q.\n", key, targetName)
@@ -385,7 +385,7 @@ func envRemoveCmd() *cobra.Command {
 				}
 				delete(ctx.Env, key)
 				cfg.Contexts[ctxName] = ctx
-				if err := config.WriteConfig(cfg); err != nil {
+				if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from context %q (global)\n", key, ctxName)

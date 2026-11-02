@@ -36,7 +36,7 @@
           version = self.shortRev or self.dirtyShortRev or "dev";
           src = self;
           subPackages = [ "cmd/aide" ];
-          vendorHash = "sha256-9fwnio68oYw72T50DOAnZXzLzePlyHuN1eTp+DlokaU=";
+          vendorHash = "sha256-JxF1iUKaCgLl9QId2Lu3gTMeksZ7NeRjroCl92lIKrI=";
 
           # ponytail: tests run via CI/pre-commit; skipping here avoids pulling
           # git+perl+python3 into the build closure just for two git-shelling tests.

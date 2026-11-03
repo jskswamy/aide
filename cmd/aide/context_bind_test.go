@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"github.com/jskswamy/aide/internal/testutil"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,38 +84,52 @@ func TestContextBind_MissingContext_NonTTY_Errors(t *testing.T) {
 func TestContextBind_PathFlag_ForcesPathRule(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeConfig(t, dir, "work")
-	out, err := runContextBind(t, "work", "--path")
+	out, err := runContextBind(t, "work", "--scope", "path")
 	if err != nil {
 		t.Fatalf("unexpected error: %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "by path") {
-		t.Errorf("--path should produce path-based match: %s", out)
+		t.Errorf("--scope path should produce path-based match: %s", out)
 	}
 }
 
 func TestContextBind_RemoteFlag_OutsideGitRepo_Errors(t *testing.T) {
-	isolatedConfigDir(t)                              // tempdir is not a git repo
-	writeConfig(t, isolatedConfigDirReuse(t), "work") // sub-helper not needed; test isolation is per-test
-	// The test above already isolated; we only care about the error.
-	_, err := runContextBind(t, "work", "--remote")
-	if err == nil || !strings.Contains(err.Error(), "not a git repo") {
+	dir := isolatedConfigDir(t) // tempdir is not a git repo
+	writeConfig(t, dir, "work")
+	_, err := runContextBind(t, "work", "--scope", "repo")
+	if err == nil || !strings.Contains(err.Error(), "requires a git repository") {
 		t.Errorf("expected git-repo error, got: %v", err)
 	}
 }
 
-// Helper used by the remote-flag test to avoid re-isolating.
-func isolatedConfigDirReuse(t *testing.T) string {
-	t.Helper()
-	cwd, _ := os.Getwd()
-	return cwd
-}
-
-func TestContextBind_PathAndRemote_MutualExclusive(t *testing.T) {
+func TestContextBind_ScopeOrg_AndSubgroup(t *testing.T) {
 	dir := isolatedConfigDir(t)
 	writeConfig(t, dir, "work")
-	_, err := runContextBind(t, "work", "--path", "--remote")
-	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Errorf("expected mutual-exclusion error, got: %v", err)
+	mustRun(t, dir, "git", "init")
+	mustRun(t, dir, "git", "remote", "add", "origin", "git@gitlab.com:acme/platform/auth/token-service.git")
+
+	out, err := runContextBind(t, "work", "--scope", "acme/platform")
+	if err != nil {
+		t.Fatalf("unexpected error for subgroup scope: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "by remote gitlab.com/acme/platform/*") {
+		t.Errorf("expected subgroup remote match, got: %s", out)
+	}
+
+	out, err = runContextBind(t, "work", "--scope", "org")
+	if err != nil {
+		t.Fatalf("unexpected error for org scope: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "by remote gitlab.com/acme/*") {
+		t.Errorf("expected org remote match, got: %s", out)
+	}
+	// Stage D should have pruned the narrower gitlab.com/acme/platform/* rule on work.
+	profBytes, err := os.ReadFile(filepath.Join(dir, "xdg", "aide", "profiles", "work.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(profBytes), "gitlab.com/acme/platform/*") {
+		t.Errorf("expected narrower subgroup rule pruned after binding org:\n%s", profBytes)
 	}
 }
 
@@ -133,7 +148,7 @@ func TestContextBind_SameFolder_DifferentContext_NonTTY_Errors(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := runContextBind(t, "personal", "--path")
+	_, err := runContextBind(t, "personal", "--scope", "path")
 	if err == nil || !strings.Contains(err.Error(), "already bound") {
 		t.Errorf("expected already-bound error, got: %v", err)
 	}
@@ -150,12 +165,99 @@ func TestContextBind_SameFolder_SameContext_IsNoop(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "xdg", "aide", "config.yaml"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runContextBind(t, "work", "--path")
+	out, err := runContextBind(t, "work", "--scope", "path")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.Contains(out, "already bound") {
 		t.Errorf("expected already-bound message, got: %s", out)
+	}
+}
+
+func runContextBindInteractive(t *testing.T, input string, args ...string) (string, error) {
+	t.Helper()
+	origTTY := isInputTTY
+	isInputTTY = func(*cobra.Command) bool { return true }
+	t.Cleanup(func() { isInputTTY = origTTY })
+
+	cmd := contextBindCmd()
+	var buf bytes.Buffer
+	cmd.SetIn(strings.NewReader(input))
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return buf.String(), err
+}
+
+func TestContextBind_InteractiveTTY_OrgScopeAndShadowingConflict(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	profDir := filepath.Join(dir, "xdg", "aide", "profiles")
+	if err := os.MkdirAll(profDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// personal has a path glob "~/*" covering dir's children; work has an older narrow repo rule.
+	if err := os.WriteFile(filepath.Join(profDir, "personal.yaml"), []byte("agent: claude\nmatch:\n  - path: ~/*\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profDir, "work.yaml"), []byte("agent: claude\nmatch:\n  - remote: github.com/acme/old-repo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repoDir := filepath.Join(dir, "billing")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(repoDir)
+	mustRun(t, repoDir, "git", "init")
+	mustRun(t, repoDir, "git", "remote", "add", "origin", "git@github.com:acme/billing.git")
+
+	// Prompt 1 (scope): "2\n" -> github.com/acme/*
+	// Prompt 2 (Stage B shadowing by personal path glob): "2\n" -> also bind remote: github.com/acme/billing to work
+	out, err := runContextBindInteractive(t, "2\n2\n", "work")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Select match scope:") || !strings.Contains(out, "Conflict:") {
+		t.Errorf("expected scope and conflict prompts in output:\n%s", out)
+	}
+	workBytes, err := os.ReadFile(filepath.Join(profDir, "work.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workStr := string(workBytes)
+	if !strings.Contains(workStr, "github.com/acme/*") || !strings.Contains(workStr, "github.com/acme/billing") {
+		t.Errorf("expected both org glob and repo override on work:\n%s", workStr)
+	}
+	if strings.Contains(workStr, "github.com/acme/old-repo") {
+		t.Errorf("expected old-repo pruned by Stage D:\n%s", workStr)
+	}
+}
+
+func TestEmptyStateAdapter_BufferedInputPreservesTTY(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeConfig(t, dir, "work")
+	mustRun(t, dir, "git", "init")
+	mustRun(t, dir, "git", "remote", "add", "origin", "git@github.com:acme/service.git")
+
+	origStdinTTY := isStdinTTY
+	isStdinTTY = func() bool { return true }
+	t.Cleanup(func() { isStdinTTY = origStdinTTY })
+
+	parentCmd := &cobra.Command{Use: "aide"}
+	var out bytes.Buffer
+	parentCmd.SetOut(&out)
+	parentCmd.SetErr(&out)
+
+	adapter := newEmptyStateAdapter(parentCmd)
+	// Simulate handleEmptyState wrapping input in a *bufio.Reader and calling SetIn.
+	if setter, ok := adapter.(interface{ SetIn(io.Reader) }); ok {
+		setter.SetIn(strings.NewReader("2\n"))
+	}
+	if err := adapter.Bind("work"); err != nil {
+		t.Fatalf("adapter.Bind failed: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Select match scope:") || !strings.Contains(out.String(), "github.com/acme/*") {
+		t.Errorf("expected interactive scope menu and org bind via emptyStateAdapter, got:\n%s", out.String())
 	}
 }
 

@@ -448,24 +448,22 @@ aide profile list
 ### aide profile bind
 
 ```
-aide profile bind <name>
+aide profile bind [name] [--scope <scope>]
 ```
 
-Attach the current folder to an existing profile. Auto-detects the match rule
-(the normalized `origin` remote, e.g. `github.com/org/repo`, when the folder
-is a git repo whose origin has a host; exact folder path otherwise). Override
-with `--path` or `--remote`. Credentials embedded in the remote URL are never
-saved.
+Attach the current folder to an existing profile. On an interactive terminal inside a git repository, presents a numbered menu to select the match scope (exact repository, parent team/subgroup prefix, organization glob, or local folder path) and interactively resolves any cross-profile match rule conflicts before saving. In non-interactive mode without `--scope`, binds the exact repository remote when inside a git repo whose `origin` has a host, or the exact folder path otherwise. Credentials embedded in the remote URL are never saved.
 
 | Flag | Description |
 |------|-------------|
-| `--path` | Force exact folder path match. |
-| `--remote` | Force git remote match (errors if not a git repo). |
+| `--scope <scope>` | Match scope without prompting: `repo`, `org`, `<org>/<subteam>` (or full `<host>/<prefix>/*`), or `path`. Supports shell tab-completion. |
 
 ```
-aide profile bind work               # auto-detect: git remote if repo, else folder path
-aide profile bind work --path        # force exact folder path match
-aide profile bind                    # interactive picker over existing profiles
+aide profile bind work                     # interactive scope menu on TTY, else repo/path
+aide profile bind work --scope repo        # bind exact git repository remote
+aide profile bind work --scope org         # bind all repos in the git remote organization
+aide profile bind work --scope acme/team   # bind all repos in a git remote team/subgroup
+aide profile bind work --scope path        # bind exact folder path
+aide profile bind                          # interactive picker over existing profiles
 ```
 
 ### aide profile create

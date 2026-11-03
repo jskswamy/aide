@@ -106,8 +106,9 @@ See [Capabilities](capabilities.md) for details on built-in and custom capabilit
 aide profile list                         # list all profiles
 aide profile create                       # create a new profile interactively
 aide profile create work --agent claude --here  # scripted: create and bind CWD
-aide profile bind work                    # attach this folder to an existing profile
-aide profile bind work --path             # force exact folder path match
+aide profile bind work                    # attach this folder (interactive scope menu on TTY)
+aide profile bind work --scope org        # bind all repos in the current git remote org
+aide profile bind work --scope path       # force exact folder path match
 aide profile set-secret personal          # set secret (auto-detects CWD)
 aide profile set-secret work --profile work
 aide profile remove-secret                # clear secret (auto-detects CWD)

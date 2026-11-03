@@ -1362,3 +1362,50 @@ func TestResolve_HostGlobDoesNotMatchOtherPort(t *testing.T) {
 		t.Errorf("host:port glob should match: %v", err)
 	}
 }
+
+func TestScoreRule_Tiers(t *testing.T) {
+	cwd := "/Users/dev/source/github.com/acme/payments"
+	remotes := func(name string) string {
+		if name == "origin" {
+			return "github.com/acme/payments"
+		}
+		return ""
+	}
+
+	pathExact := config.MatchRule{Path: cwd}
+	remoteExact := config.MatchRule{Remote: "github.com/acme/payments"}
+	pathGlob := config.MatchRule{Path: "/Users/dev/source/*"}
+	remoteGlob := config.MatchRule{Remote: "github.com/acme/*"}
+	nonMatch := config.MatchRule{Remote: "github.com/other/*"}
+
+	sPathExact := ScoreRule(&pathExact, cwd, remotes)
+	sRemoteExact := ScoreRule(&remoteExact, cwd, remotes)
+	sPathGlob := ScoreRule(&pathGlob, cwd, remotes)
+	sRemoteGlob := ScoreRule(&remoteGlob, cwd, remotes)
+	sNonMatch := ScoreRule(&nonMatch, cwd, remotes)
+
+	if sPathExact <= sRemoteExact || sRemoteExact <= sPathGlob || sPathGlob <= sRemoteGlob || sRemoteGlob <= 0 {
+		t.Fatalf("expected tier ordering pathExact(%d) > remoteExact(%d) > pathGlob(%d) > remoteGlob(%d) > 0",
+			sPathExact, sRemoteExact, sPathGlob, sRemoteGlob)
+	}
+	if sNonMatch != 0 {
+		t.Fatalf("expected non-matching rule score 0, got %d", sNonMatch)
+	}
+}
+
+func TestCanonicalizeRemotePattern(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"git@github.com:Acme/Repo.git", "github.com/Acme/Repo"},
+		{"https://token@GitHub.com/acme/repo.git/", "github.com/acme/repo"},
+		{"GitHub.com/acme/*/", "github.com/acme/*"},
+		{"GitHub.com/acme/team/*", "github.com/acme/team/*"},
+	}
+	for _, tc := range cases {
+		if got := CanonicalizeRemotePattern(tc.in); got != tc.want {
+			t.Errorf("CanonicalizeRemotePattern(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

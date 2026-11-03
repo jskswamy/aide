@@ -177,18 +177,26 @@ The first profile created automatically becomes the `default_profile`.
 
 ## Binding a Directory to an Existing Profile
 
-`aide profile bind` attaches the current folder to a profile that already exists:
+`aide profile bind` attaches the current folder to a profile that already exists. On an interactive terminal inside a git repository, it lets you choose whether to bind just this repository, a parent team/subgroup, the entire organization, or the folder path:
 
 ```
 $ cd ~/work/myproject
 $ aide profile bind work
-Bound this folder to profile "work" (matched by remote git@github.com:…/myproject.git)
+Select match scope:
+  [1] This repository only (github.com/acme/myproject) (default)
+  [2] All repositories in github.com/acme/*
+  [3] This folder path only (/home/user/work/myproject)
+Choose [1]: 2
+Bound this folder to profile "work" (matched by remote github.com/acme/*)
 ```
 
-Use `--path` to force an exact folder path match instead of a git remote match:
+Use `--scope` (`repo`, `org`, `<org>/<team>`, or `path`) to select a scope directly without prompting:
 
 ```
-$ aide profile bind work --path
+$ aide profile bind work --scope org
+Bound this folder to profile "work" (matched by remote github.com/acme/*)
+
+$ aide profile bind work --scope path
 Bound this folder to profile "work" (matched by path /home/user/work/myproject)
 ```
 

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/jskswamy/aide/internal/config"
 )
 
@@ -193,5 +195,29 @@ func TestUseAndSetup_SecondProfileGetsOwnConfigDir(t *testing.T) {
 		if got := cfg.Contexts[name].Profile; got != want {
 			t.Errorf("%s: config_dir_name = %q, want %q", name, got, want)
 		}
+	}
+}
+
+func TestContextCreate_InteractiveTTY_OrgScope(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	mustRun(t, dir, "git", "init")
+	mustRun(t, dir, "git", "remote", "add", "origin", "git@github.com:acme/new-service.git")
+
+	origTTY := isInputTTY
+	isInputTTY = func(_ *cobra.Command) bool { return true }
+	t.Cleanup(func() { isInputTTY = origTTY })
+
+	// Prompts: secret store (""), bind here ("y"), scope ("2" -> github.com/acme/*)
+	cmd := contextCreateCmd()
+	var buf bytes.Buffer
+	cmd.SetIn(strings.NewReader("\ny\n2\n"))
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"work", "--agent", "claude"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v\n%s", err, buf.String())
+	}
+	if !strings.Contains(buf.String(), "by remote github.com/acme/*") {
+		t.Errorf("expected org remote bound, got:\n%s", buf.String())
 	}
 }

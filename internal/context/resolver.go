@@ -318,6 +318,12 @@ func subtractStrings(a, b []string) []string {
 	return result
 }
 
+// ScoreRule returns the specificity score for a single MatchRule against cwd and remotes,
+// or 0 if the rule does not match.
+func ScoreRule(rule *config.MatchRule, cwd string, remotes RemoteLookup) int {
+	return scoreRule(rule, cwd, remotes)
+}
+
 // scoreRule returns a specificity score for a single match rule, or 0 if it
 // does not match.
 func scoreRule(rule *config.MatchRule, cwd string, remotes RemoteLookup) int {
@@ -446,6 +452,12 @@ func canonicalizeRemote(s string) string {
 		return c
 	}
 	return s
+}
+
+// CanonicalizeRemotePattern normalizes a remote match pattern (exact or glob)
+// into the canonical host[:port]/path form used by scoreRemoteRule.
+func CanonicalizeRemotePattern(pattern string) string {
+	return canonicalizeRemotePattern(pattern)
 }
 
 // canonicalizeRemotePattern canonicalizes a remote rule pattern. URL-shaped

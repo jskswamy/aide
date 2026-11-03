@@ -2,6 +2,8 @@
 package main
 
 import (
+	"io"
+
 	"github.com/spf13/cobra"
 
 	"github.com/jskswamy/aide/internal/launcher"
@@ -18,8 +20,13 @@ func newEmptyStateAdapter(cmd *cobra.Command) launcher.EmptyStateActions {
 	return &emptyStateAdapter{cmd: cmd}
 }
 
+func (a *emptyStateAdapter) SetIn(in io.Reader) {
+	a.cmd.SetIn(in)
+}
+
 func (a *emptyStateAdapter) Bind(name string) error {
 	bind := contextBindCmd()
+	bind.SetIn(a.cmd.InOrStdin())
 	bind.SetOut(a.cmd.OutOrStdout())
 	bind.SetErr(a.cmd.ErrOrStderr())
 	if name != "" {

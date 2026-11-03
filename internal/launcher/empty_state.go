@@ -67,6 +67,9 @@ func handleEmptyState(
 	}
 
 	reader := bufio.NewReader(in)
+	if setter, ok := actions.(interface{ SetIn(io.Reader) }); ok {
+		setter.SetIn(reader)
+	}
 
 	fmt.Fprintln(out, "aide: no profile matches this folder.")
 	fmt.Fprintln(out, "")

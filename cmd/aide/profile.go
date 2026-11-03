@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -172,10 +171,7 @@ func contextListCmd() *cobra.Command {
 }
 
 func contextBindCmd() *cobra.Command {
-	var (
-		forcePath   bool
-		forceRemote bool
-	)
+	var scopeFlag string
 
 	cmd := &cobra.Command{
 		Use:   "bind [name]",
@@ -183,19 +179,17 @@ func contextBindCmd() *cobra.Command {
 		Long: `Attach the current folder to an existing profile.
 
 Examples:
-  aide profile bind work               # auto-detect: git remote if repo, else folder path
-  aide profile bind work --path        # force exact folder path match
-  aide profile bind work --remote      # force git remote match (errors if not a git repo)
-  aide profile bind                    # interactive picker over existing profiles`,
+  aide profile bind work                     # interactive scope menu on TTY, else repo/path
+  aide profile bind work --scope repo        # bind exact git repository remote
+  aide profile bind work --scope org         # bind all repos in the git remote organization
+  aide profile bind work --scope acme/team   # bind all repos in a git remote team/subgroup
+  aide profile bind work --scope path        # bind exact folder path
+  aide profile bind                          # interactive picker over existing profiles`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if forcePath && forceRemote {
-				return fmt.Errorf("--path and --remote are mutually exclusive")
-			}
-
-			out := cmd.OutOrStdout()
-			reader := bufio.NewReader(os.Stdin)
+			pio := newPromptIO(cmd)
+			out := pio.out
 
 			env, err := cmdEnv(cmd)
 			if err != nil {
@@ -208,86 +202,71 @@ Examples:
 			if len(args) == 1 {
 				name = args[0]
 			} else {
-				picked, err := pickExistingContext(out, reader, cfg)
+				picked, err := pickExistingContext(pio, cfg)
 				if err != nil {
 					return err
 				}
 				name = picked
 			}
 
-			ctx, ok := cfg.Contexts[name]
-			if !ok {
+			if _, ok := cfg.Contexts[name]; !ok {
 				// TTY: offer to create. Non-TTY: hard error.
-				if isStdinTTY() {
+				if pio.tty {
 					fmt.Fprintf(out, "Profile %q doesn't exist. Create it now? [y/N]: ", name)
-					ans, _ := reader.ReadString('\n')
+					ans, _ := pio.reader.ReadString('\n')
 					if strings.EqualFold(strings.TrimSpace(ans), "y") {
-						return runCreateWizard(cmd, name, createOptions{here: tristateYes})
+						return runCreateWizard(cmd, name, createOptions{here: tristateYes, scope: scopeFlag, pio: pio})
 					}
 				}
 				return fmt.Errorf("profile %q not found.\nRun: aide profile create %s", name, name)
 			}
 
-			var rule config.MatchRule
-			var desc string
-			switch {
-			case forceRemote:
-				remote := aidectx.CurrentRemote(cwd)
-				if remote == "" {
-					return fmt.Errorf("--remote requires the current folder to be a git repo with an '%[1]s' remote that has a host (not a git repo, no %[1]s, or a local-path %[1]s)", aidectx.DefaultRemoteName)
-				}
-				rule = config.MatchRule{Remote: remote}
-				desc = fmt.Sprintf("by remote %s", remote)
-			case forcePath:
-				rule = config.MatchRule{Path: cwd}
-				desc = fmt.Sprintf("by path %s", cwd)
-			default:
-				rule, desc = autoDetectMatchRule(cwd)
+			rule, _, err := selectBindScope(cwd, scopeFlag, pio)
+			if err != nil {
+				return err
 			}
 
-			// Dedup: same profile already covers this repo.
-			for _, r := range ctx.Match {
-				if rulesCollide(r, rule) {
-					fmt.Fprintf(out, "This folder is already bound to profile %q.\n", name)
-					return nil
-				}
+			applied, finalDesc, err := resolveAndApplyBind(cfg, name, rule, cwd, aidectx.GitRemotes(cwd), pio)
+			if err != nil {
+				return err
+			}
+			if !applied {
+				fmt.Fprintf(out, "This folder is already bound to profile %q.\n", name)
+				return nil
 			}
 
-			// Cross-profile collision: same repo bound to a different profile.
-			if existing := findExistingBind(cfg, name, rule); existing != nil {
-				if !isStdinTTY() {
-					return fmt.Errorf("folder already bound to profile %q; re-run interactively to move it", existing.ctxName)
-				}
-				fmt.Fprintf(out, "This folder is already bound to profile %q.\n[a]bort or [m]ove to %q? [a]: ", existing.ctxName, name)
-				ans, _ := reader.ReadString('\n')
-				if strings.ToLower(strings.TrimSpace(ans)) != "m" {
-					return fmt.Errorf("aborted")
-				}
-				old := cfg.Contexts[existing.ctxName]
-				old.Match = removeMatchRule(old.Match, existing.rule)
-				cfg.Contexts[existing.ctxName] = old
-			}
-
-			ctx.Match = append(ctx.Match, rule)
-			cfg.Contexts[name] = ctx
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-			fmt.Fprintf(out, "Bound this folder to profile %q (matched %s)\n", name, desc)
+			fmt.Fprintf(out, "Bound this folder to profile %q (matched %s)\n", name, finalDesc)
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolVar(&forcePath, "path", false, "Force exact folder path match")
-	cmd.Flags().BoolVar(&forceRemote, "remote", false, "Force git remote match (errors if not a git repo)")
+	cmd.Flags().StringVar(&scopeFlag, "scope", "", "Match scope: repo, org, path, or a git remote prefix")
+	_ = cmd.RegisterFlagCompletionFunc("scope", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return []string{"path"}, cobra.ShellCompDirectiveNoFileComp
+		}
+		opts := buildBindScopeOptions(cwd, aidectx.CurrentRemote(cwd))
+		var completions []string
+		for _, opt := range opts {
+			completions = append(completions, fmt.Sprintf("%s\t%s", opt.Shorthand, opt.Label))
+			if opt.Rule.Remote != "" && opt.Shorthand != "repo" {
+				completions = append(completions, fmt.Sprintf("%s\t%s", opt.Rule.Remote, opt.Label))
+			}
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	})
 	return cmd
 }
 
 // pickExistingContext shows a numbered menu of existing profiles and
 // returns the chosen name. Returns an error in non-TTY mode (the
 // caller is expected to require a positional name in that case).
-func pickExistingContext(out io.Writer, reader *bufio.Reader, cfg *config.Config) (string, error) {
-	if !isStdinTTY() {
+func pickExistingContext(pio *promptIO, cfg *config.Config) (string, error) {
+	if pio == nil || !pio.tty {
 		return "", fmt.Errorf("a profile name is required in non-interactive mode")
 	}
 	if len(cfg.Contexts) == 0 {
@@ -299,12 +278,12 @@ func pickExistingContext(out io.Writer, reader *bufio.Reader, cfg *config.Config
 	}
 	sort.Strings(names)
 
-	fmt.Fprintln(out, "Existing profiles:")
+	fmt.Fprintln(pio.out, "Existing profiles:")
 	for i, n := range names {
-		fmt.Fprintf(out, "  [%d] %s\n", i+1, n)
+		fmt.Fprintf(pio.out, "  [%d] %s\n", i+1, n)
 	}
-	fmt.Fprint(out, "Choose [1]: ")
-	input, err := reader.ReadString('\n')
+	fmt.Fprint(pio.out, "Choose [1]: ")
+	input, err := pio.reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("reading selection: %w", err)
 	}
@@ -323,7 +302,7 @@ func pickExistingContext(out io.Writer, reader *bufio.Reader, cfg *config.Config
 // isStdinTTY reports whether stdin is connected to a terminal. Used by
 // commands that need to choose between interactive prompting and a
 // non-TTY hard error.
-func isStdinTTY() bool {
+var isStdinTTY = func() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) // #nosec G115 -- stdin fd is always 0/1/2, never overflows int
 }
 
@@ -339,6 +318,8 @@ type createOptions struct {
 	agent  string
 	secret string
 	here   createTristate
+	scope  string
+	pio    *promptIO
 }
 
 func contextCreateCmd() *cobra.Command {
@@ -397,9 +378,13 @@ Examples:
 // wizard fills in any missing fields by prompting in TTY mode, or by
 // returning a helpful error in non-TTY mode.
 func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOptions) error {
-	out := cmd.OutOrStdout()
-	reader := bufio.NewReader(os.Stdin)
-	tty := isStdinTTY()
+	pio := opts.pio
+	if pio == nil {
+		pio = newPromptIO(cmd)
+	}
+	out := pio.out
+	reader := pio.reader
+	tty := pio.tty
 
 	env, err := cmdEnv(cmd)
 	if err != nil {
@@ -490,11 +475,19 @@ func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOption
 	if secretName != "" {
 		newCtx.Secret = secretName
 	}
+	cfg.Contexts[name] = newCtx
 	var bindDesc string
 	if bindHere {
-		rule, desc := autoDetectMatchRule(cwd)
-		newCtx.Match = []config.MatchRule{rule}
-		bindDesc = desc
+		rule, _, err := selectBindScope(cwd, opts.scope, pio)
+		if err != nil {
+			return err
+		}
+		_, finalDesc, err := resolveAndApplyBind(cfg, name, rule, cwd, aidectx.GitRemotes(cwd), pio)
+		if err != nil {
+			return err
+		}
+		bindDesc = finalDesc
+		newCtx = cfg.Contexts[name]
 	}
 	isolateNewProfile(out, cfg, name, &newCtx)
 	cfg.Contexts[name] = newCtx

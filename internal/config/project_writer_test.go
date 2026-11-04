@@ -4,6 +4,7 @@ import (
 	"github.com/jskswamy/aide/internal/testutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/trust"
@@ -25,6 +26,9 @@ func TestWriteProjectOverride_CreatesFile(t *testing.T) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if strings.Contains(string(data), "\n    ") || !strings.Contains(string(data), "env:\n  FOO: bar\n") {
+		t.Errorf("expected 2-space YAML in %s, got:\n%s", path, data)
 	}
 	var loaded ProjectOverride
 	if err := yaml.Unmarshal(data, &loaded); err != nil {

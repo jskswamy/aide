@@ -465,3 +465,90 @@ func TestWriteConfig_RejectsInvalidProfileFilename(t *testing.T) {
 		t.Fatalf("WriteConfigTo() error = %v, want ErrInvalidProfileFilename", err)
 	}
 }
+
+func TestWriteConfig_TwoSpaceIndentAndPreservesUntouchedFiles(t *testing.T) {
+	dir := t.TempDir()
+	profDir := filepath.Join(dir, "profiles")
+	if err := os.MkdirAll(profDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed 2-space formatted files with comments, --- headers, and non-struct key order.
+	const (
+		coreSrc = "---\n# global config\nagents:\n  claude:\n    binary: claude\ndefault_profile: work\n"
+		sbxSrc  = "---\n# sandbox rules\nnever_allow:\n  - ~/.kube/prod\ncapabilities:\n  k8s-dev:\n    extends: k8s\n"
+		workSrc = "---\n# work profile\nagent: claude\nenv:\n  FOO: bar\n"
+		persSrc = "---\n# personal profile\nagent: claude # personal agent\nconfig_dir_name: personal\nmatch:\n  - path: ~/personal/*\n"
+	)
+	files := map[string]string{
+		filepath.Join(dir, "config.yaml"):  coreSrc,
+		filepath.Join(dir, "sandbox.yaml"): sbxSrc,
+		filepath.Join(profDir, "work.yaml"): workSrc,
+		filepath.Join(profDir, "personal.yaml"): persSrc,
+	}
+	past := time.Now().Add(-10 * time.Minute).Truncate(time.Second)
+	for p, body := range files {
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg, err := Load(dir, "")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Mutate only personal profile.
+	pers := cfg.Contexts["personal"]
+	pers.Capabilities = []string{"k8s-dev"}
+	pers.Env = map[string]string{"KEY": "val"}
+	cfg.Contexts["personal"] = pers
+
+	if err := WriteConfigTo(cfg, filepath.Join(dir, "config.yaml")); err != nil {
+		t.Fatalf("WriteConfigTo() error = %v", err)
+	}
+
+	// Untouched files keep their exact bytes (comments, ---, key order) and mtime.
+	for _, p := range []string{
+		filepath.Join(dir, "config.yaml"),
+		filepath.Join(dir, "sandbox.yaml"),
+		filepath.Join(profDir, "work.yaml"),
+	} {
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != files[p] {
+			t.Errorf("%s bytes changed:\ngot:\n%s\nwant:\n%s", filepath.Base(p), got, files[p])
+		}
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.ModTime().Equal(past) {
+			t.Errorf("%s mtime = %v, want %v", filepath.Base(p), info.ModTime(), past)
+		}
+	}
+
+	// Mutated profile is written with 2-space indentation, preserving its comments, --- header, and key order.
+	persBytes, err := os.ReadFile(filepath.Join(profDir, "personal.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	persOut := string(persBytes)
+	if strings.Contains(persOut, "\n    ") {
+		t.Errorf("personal.yaml contains 4-space indentation:\n%s", persOut)
+	}
+	for _, want := range []string{
+		"---\n# personal profile\n",
+		"agent: claude # personal agent\nconfig_dir_name: personal\n",
+		"env:\n  KEY: val\n",
+	} {
+		if !strings.Contains(persOut, want) {
+			t.Errorf("personal.yaml missing %q:\n%s", want, persOut)
+		}
+	}
+}

@@ -194,7 +194,7 @@ func EncodeProfileYAML(ctx Context) ([]byte, error) {
 	for _, k := range profileDirKeys {
 		renameKey(&node, k[1], k[0])
 	}
-	return yaml.Marshal(&node)
+	return yamlnode.Marshal(&node)
 }
 
 // rejectProfileDirKeysInContexts fails when a contexts: entry uses a

@@ -2,18 +2,22 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/trust"
-	"gopkg.in/yaml.v3"
+	"github.com/jskswamy/aide/internal/yamlnode"
 )
 
 // WriteProjectOverride writes the given ProjectOverride to the given path atomically.
 func WriteProjectOverride(path string, po *ProjectOverride) error {
-	data, err := yaml.Marshal(po)
+	data, err := yamlnode.Marshal(po)
 	if err != nil {
 		return fmt.Errorf("marshaling project override: %w", err)
+	}
+	if existing, err := os.ReadFile(path); err == nil {
+		data = yamlnode.Merge(existing, data)
 	}
 	return fsutil.AtomicWrite(path, data)
 }

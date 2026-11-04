@@ -256,16 +256,11 @@ func references(n *yaml.Node, name, path string) []string {
 }
 
 func encode(doc *yaml.Node) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(doc); err != nil {
+	out, err := yamlnode.Marshal(doc)
+	if err != nil {
 		return nil, fmt.Errorf("encoding Skillshare config: %w", err)
 	}
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("encoding Skillshare config: %w", err)
-	}
-	return buf.Bytes(), nil
+	return out, nil
 }
 
 func expand(p, home string) string { return homepath.Expand(p, home) }

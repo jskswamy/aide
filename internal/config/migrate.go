@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -139,11 +138,11 @@ func ApplyMigrationSplit(configDir string, m *Migration) error {
 		return m.SplitErr
 	}
 	if !m.SplitLayout || len(m.SplitFiles) == 0 {
-		return writeIfChanged(filepath.Join(configDir, "config.yaml"), m.Output)
+		return writeIfChanged(filepath.Join(configDir, "config.yaml"), m.Output, nil)
 	}
 	for _, rel := range slices.Sorted(maps.Keys(m.SplitFiles)) {
 		target := filepath.Join(configDir, filepath.FromSlash(rel))
-		if err := writeIfChanged(target, m.SplitFiles[rel]); err != nil {
+		if err := writeIfChanged(target, m.SplitFiles[rel], nil); err != nil {
 			return err
 		}
 	}
@@ -270,22 +269,17 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 		}
 		return m, nil
 	}
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(&doc); err != nil {
+	out, err := yamlnode.Marshal(&doc)
+	if err != nil {
 		return nil, fmt.Errorf("encoding migrated config: %w", err)
 	}
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("encoding migrated config: %w", err)
-	}
-	if err := validateLoadable(buf.Bytes(), opts.Home, "migrated config"); err != nil {
+	if err := validateLoadable(out, opts.Home, "migrated config"); err != nil {
 		return nil, err
 	}
-	if err := checkEnvKept(&cfg, buf.Bytes(), moves); err != nil {
+	if err := checkEnvKept(&cfg, out, moves); err != nil {
 		return nil, err
 	}
-	m.Output = buf.Bytes()
+	m.Output = out
 	m.Changed = true
 	if err := m.populateSplitFiles(&doc); err != nil {
 		return nil, err
@@ -587,19 +581,6 @@ func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCr
 	return nil
 }
 
-func encodeYAMLNode(node *yaml.Node) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(node); err != nil {
-		return nil, err
-	}
-	if err := enc.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
 func (m *Migration) populateMinimalSplit(cfg *Config, home string) error {
 	norm := normalizeMinimal(cfg)
 	norm.ProfileSchema = true
@@ -607,20 +588,20 @@ func (m *Migration) populateMinimalSplit(cfg *Config, home string) error {
 		return err
 	}
 	files := map[string][]byte{}
-	coreData, err := yaml.Marshal(norm.extractCoreConfig())
+	coreData, err := yamlnode.Marshal(norm.extractCoreConfig())
 	if err != nil {
 		return err
 	}
 	files["config.yaml"] = coreData
 	if sbx := norm.extractSandboxFile(); !sbx.IsEmpty() {
-		b, err := yaml.Marshal(sbx)
+		b, err := yamlnode.Marshal(sbx)
 		if err != nil {
 			return err
 		}
 		files["sandbox.yaml"] = b
 	}
 	if prov := norm.extractProvisioningFile(); !prov.IsEmpty() {
-		b, err := yaml.Marshal(prov)
+		b, err := yamlnode.Marshal(prov)
 		if err != nil {
 			return err
 		}
@@ -644,7 +625,7 @@ func (m *Migration) populateSplitFiles(doc *yaml.Node) error {
 	}
 	// Re-parse the current migrated YAML into a fresh document node so
 	// extracting sections does not mutate doc.
-	migratedBytes, err := encodeYAMLNode(doc)
+	migratedBytes, err := yamlnode.Marshal(doc)
 	if err != nil {
 		return err
 	}
@@ -672,7 +653,7 @@ func (m *Migration) populateSplitFiles(doc *yaml.Node) error {
 				HeadComment: kNode.HeadComment,
 				Content:     []*yaml.Node{vNode},
 			}
-			b, err := encodeYAMLNode(&pDoc)
+			b, err := yamlnode.Marshal(&pDoc)
 			if err != nil {
 				return err
 			}
@@ -691,7 +672,7 @@ func (m *Migration) populateSplitFiles(doc *yaml.Node) error {
 		}
 	}
 	if len(sbxRoot.Content) > 0 {
-		b, err := encodeYAMLNode(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{sbxRoot}})
+		b, err := yamlnode.Marshal(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{sbxRoot}})
 		if err != nil {
 			return err
 		}
@@ -708,7 +689,7 @@ func (m *Migration) populateSplitFiles(doc *yaml.Node) error {
 		}
 	}
 	if len(provRoot.Content) > 0 {
-		b, err := encodeYAMLNode(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{provRoot}})
+		b, err := yamlnode.Marshal(&yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{provRoot}})
 		if err != nil {
 			return err
 		}
@@ -720,7 +701,7 @@ func (m *Migration) populateSplitFiles(doc *yaml.Node) error {
 		return nil
 	}
 
-	coreBytes, err := encodeYAMLNode(&clone)
+	coreBytes, err := yamlnode.Marshal(&clone)
 	if err != nil {
 		return err
 	}

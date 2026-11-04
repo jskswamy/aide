@@ -72,15 +72,6 @@ func saveConfigWithMigrationPromptIO(cfg *config.Config, cfgPath, home string, i
 	if err != nil {
 		return fmt.Errorf("reading %s for backup: %w", cfgPath, err)
 	}
-	backup, err := backupPath(cfgPath)
-	if err != nil {
-		return err
-	}
-	if err := fsutil.AtomicWrite(backup, origData); err != nil {
-		return fmt.Errorf("writing backup %s: %w", backup, err)
-	}
-	oldHash, _ := provision.ConfigHash(cfgPath)
-
 	// Migrate legacy credentials on cfg if it was using the contexts: schema
 	if !cfg.ProfileSchema {
 		for name, ctx := range cfg.Contexts {
@@ -91,6 +82,26 @@ func saveConfigWithMigrationPromptIO(cfg *config.Config, cfgPath, home string, i
 	}
 	cfg.ProfileSchema = true
 	cfg.LegacyMonolithic = false
+
+	if err := config.ValidateForWrite(cfg, home); err != nil {
+		cfg.LegacyMonolithic = true
+		return err
+	}
+
+	backup, err := backupPath(cfgPath)
+	if err != nil {
+		cfg.LegacyMonolithic = true
+		return err
+	}
+	if err := fsutil.AtomicWrite(backup, origData); err != nil {
+		cfg.LegacyMonolithic = true
+		return fmt.Errorf("writing backup %s: %w", backup, err)
+	}
+	oldHash, _ := provision.ConfigHash(cfgPath)
+
+	if m, merr := config.MigrateProfiles(origData, config.MigrateOptions{Home: home}); merr == nil && m.SplitErr == nil && m.SplitLayout {
+		_ = config.ApplyMigrationSplit(filepath.Dir(cfgPath), m)
+	}
 
 	if err := config.WriteConfigTo(cfg, cfgPath); err != nil {
 		cfg.LegacyMonolithic = true

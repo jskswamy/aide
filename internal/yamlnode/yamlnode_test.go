@@ -33,3 +33,26 @@ func TestStr(t *testing.T) {
 		t.Errorf("Str(1) = %+v, want a !!str scalar", n)
 	}
 }
+
+func TestMarshal_TwoSpaceIndent(t *testing.T) {
+	got, err := yamlnode.Marshal(map[string]any{
+		"outer": map[string]string{"inner": "val"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "outer:\n  inner: val\n"
+	if string(got) != want {
+		t.Errorf("Marshal() = %q, want %q", string(got), want)
+	}
+}
+
+func TestMerge_PreservesCommentsDocHeaderAndKeyOrder(t *testing.T) {
+	existing := []byte("---\n# profile header\nagent: claude # inline comment\nconfig_dir_name: work\nstale: gone\n")
+	updated := []byte("agent: claude\nenv:\n  EDITOR: nvim\nconfig_dir_name: work\n")
+	got := string(yamlnode.Merge(existing, updated))
+	want := "---\n# profile header\nagent: claude # inline comment\nconfig_dir_name: work\nenv:\n  EDITOR: nvim\n"
+	if got != want {
+		t.Errorf("Merge() =\n%s\nwant:\n%s", got, want)
+	}
+}

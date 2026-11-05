@@ -39,22 +39,19 @@ func WriteConfig(cfg *Config) error {
 // Unchanged files on disk are not rewritten (preserving mtime), and stale
 // profile or emptied section files are removed.
 func WriteConfigTo(cfg *Config, path string) error {
-	if cfg.loadErr != nil {
-		return fmt.Errorf("%w (fix it first): %w", ErrConfigNotLoaded, cfg.loadErr)
-	}
 	if cfg.LegacyMonolithic {
 		return ErrLegacyMonolithicConfig
+	}
+
+	home, _ := userHome()
+	if err := ValidateForWrite(cfg, home); err != nil {
+		return err
 	}
 
 	target := cfg
 	if target.IsMinimal() && target.Agent != "" {
 		target = normalizeMinimal(target)
 		target.ProfileSchema = true
-	}
-
-	home, _ := userHome()
-	if err := validateConfigStruct(target, home, "refusing to write config: it"); err != nil {
-		return err
 	}
 
 	configDir := filepath.Dir(path)
@@ -85,9 +82,6 @@ func WriteConfigTo(cfg *Config, path string) error {
 
 	profileBytes := make(map[string][]byte, len(target.Contexts))
 	for _, name := range sortedKeys(target.Contexts) {
-		if !gatewayIdentRE.MatchString(name) {
-			return fmt.Errorf("%w: %q must match %s", ErrInvalidProfileFilename, name, gatewayIdentRE.String())
-		}
 		b, err := EncodeProfileYAML(target.Contexts[name])
 		if err != nil {
 			return fmt.Errorf("marshaling profiles/%s.yaml: %w", name, err)

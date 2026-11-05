@@ -414,6 +414,7 @@ func TestWriteConfig_ScattersToSplitFilesAndPreservesUnchangedMtime(t *testing.T
 
 	delete(cfg.Contexts, "personal")
 	cfg.NeverAllow = nil // empty sandbox.yaml -> should be removed
+	cfg.Plugins = nil    // empty provisioning.yaml -> should be removed
 	if err := WriteConfigTo(cfg, path); err != nil {
 		t.Fatalf("second WriteConfigTo() error = %v", err)
 	}
@@ -427,6 +428,9 @@ func TestWriteConfig_ScattersToSplitFilesAndPreservesUnchangedMtime(t *testing.T
 	}
 	if _, err := os.Stat(sbxPath); !os.IsNotExist(err) {
 		t.Errorf("emptied sandbox.yaml still exists: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "provisioning.yaml")); !os.IsNotExist(err) {
+		t.Errorf("emptied provisioning.yaml still exists: %v", err)
 	}
 }
 
@@ -549,6 +553,35 @@ func TestWriteConfig_TwoSpaceIndentAndPreservesUntouchedFiles(t *testing.T) {
 	} {
 		if !strings.Contains(persOut, want) {
 			t.Errorf("personal.yaml missing %q:\n%s", want, persOut)
+		}
+	}
+}
+
+func TestFailedLoad_NilErrorAndSameYAMLFallbacks(t *testing.T) {
+	cfg := FailedLoad(nil)
+	if err := ValidateForWrite(cfg, ""); !errors.Is(err, ErrConfigNotLoaded) {
+		t.Fatalf("ValidateForWrite(FailedLoad(nil)) = %v, want ErrConfigNotLoaded", err)
+	}
+
+	sameCore := sameStructYAML[CoreConfig]([]byte("default_profile: work\n"))
+	for _, bad := range []string{
+		":::invalid",
+		"unknown_key: true\n",
+		"default_profile: work\n---\ndefault_profile: other\n",
+	} {
+		if sameCore([]byte(bad)) {
+			t.Errorf("sameStructYAML(%q) = true, want false", bad)
+		}
+	}
+
+	sameProf := sameProfileYAML("work", []byte("agent: claude\n"))
+	for _, bad := range []string{
+		":::invalid",
+		"unknown_key: true\n",
+		"agent: claude\n---\nagent: codex\n",
+	} {
+		if sameProf([]byte(bad)) {
+			t.Errorf("sameProfileYAML(%q) = true, want false", bad)
 		}
 	}
 }

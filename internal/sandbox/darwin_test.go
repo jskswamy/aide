@@ -671,3 +671,13 @@ func TestSeatbeltProfile_PiAndCodexProfileDirsOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestPlatformIsolationTier_ReturnsValidTier(t *testing.T) {
+	info := PlatformIsolationTier(Policy{})
+	if info.Tier != TierPrimary {
+		t.Errorf("Tier = %v, want %v", info.Tier, TierPrimary)
+	}
+	if info.Backend != BackendSeatbelt {
+		t.Errorf("Backend = %q, want %q", info.Backend, BackendSeatbelt)
+	}
+}

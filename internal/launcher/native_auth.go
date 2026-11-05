@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
-	"github.com/jskswamy/aide/internal/harness"
-	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // nativeAuthNotice describes an authentication source in the selected
@@ -61,20 +59,12 @@ func selectedKeyNotice(harnessName string, ctx config.Context, home string, gete
 
 // launchConfigDir is the native config dir a launch of harnessName
 // under ctx uses: the profile's own dir when it selects one, else the
-// harness's dir variable from the inherited environment (getenv), else
-// its default dir. "" for a harness without a config dir variable.
+// harness's dir variable from the profile's env:, then from the
+// inherited environment (getenv), then from the harness's sandbox
+// module when sandboxing is enabled, else its default dir. "" for a
+// harness without a config dir variable.
 func launchConfigDir(harnessName string, ctx config.Context, home string, getenv func(string) string) string {
-	if ctx.SelectsConfigDir() {
-		return ctx.NativeConfigDir(harnessName, home)
-	}
-	d, ok := harness.Lookup(harnessName)
-	if !ok || d.ProfileEnvKey == "" || d.DefaultConfigDir == "" {
-		return ""
-	}
-	if v := getenv(d.ProfileEnvKey); v != "" {
-		return homepath.Expand(v, home)
-	}
-	return d.DefaultDir(home)
+	return ctx.LaunchConfigDir(harnessName, home, getenv)
 }
 
 // piProvidersByEnv maps a provider credential variable to the Pi

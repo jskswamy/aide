@@ -13,7 +13,6 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/fsutil"
-	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 )
 
@@ -59,25 +58,17 @@ func SingleGatewayPerDir(harnessName string) bool {
 // HarnessConfigDir is the config dir a launch of harnessName under ctx
 // uses: the profile's own dir when it selects one; otherwise the
 // harness's dir variable from the profile's env:, then from the
-// inherited environment, then the harness default.
+// inherited environment, then from the harness's sandbox module when
+// sandboxing is enabled, then the harness default.
 func HarnessConfigDir(ctx config.Context, harnessName, home string) (string, error) {
 	if _, err := lookupHarnessFile(harnessName); err != nil {
 		return "", err
 	}
-	if ctx.SelectsConfigDir() {
-		return ctx.NativeConfigDir(harnessName, home), nil
-	}
-	d, ok := harness.Lookup(harnessName)
-	if !ok || d.ProfileEnvKey == "" || d.DefaultConfigDir == "" {
+	dir := ctx.LaunchConfigDir(harnessName, home, os.Getenv)
+	if dir == "" {
 		return "", fmt.Errorf("gateway: %s has no known config dir", harnessName)
 	}
-	if v := ctx.Env[d.ProfileEnvKey]; v != "" {
-		return homepath.Expand(v, home), nil
-	}
-	if v := os.Getenv(d.ProfileEnvKey); v != "" {
-		return homepath.Expand(v, home), nil
-	}
-	return d.DefaultDir(home), nil
+	return dir, nil
 }
 
 // harnessTarget resolves the harness's file handler, dir and file.

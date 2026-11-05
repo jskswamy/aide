@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jskswamy/aide/internal/config"
 )
 
 func writeCodexConfig(t *testing.T, dir, name, content string) {
@@ -221,5 +223,14 @@ func unsetEnvForTest(t *testing.T, key string) {
 	t.Setenv(key, "")
 	if err := os.Unsetenv(key); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLaunchConfigDir_RespectsContextEnv(t *testing.T) {
+	home := t.TempDir()
+	ctx := config.Context{Env: map[string]string{"PI_CODING_AGENT_DIR": "~/pi-from-ctx"}}
+	got := launchConfigDir("pi", ctx, home, func(string) string { return "~/pi-from-shell" })
+	if want := filepath.Join(home, "pi-from-ctx"); got != want {
+		t.Errorf("launchConfigDir = %q, want %q", got, want)
 	}
 }

@@ -3,7 +3,6 @@ package launcher
 
 import (
 	"path/filepath"
-	"runtime"
 
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/pkg/seatbelt"
@@ -49,9 +48,9 @@ func ApplyLaunchArgs(agentName string, extraArgs []string) []string {
 // overrides. Returns nil when the agent has no module or the module
 // injects nothing.
 func SandboxAgentEnv(agentName, homeDir string, env []string) map[string]string {
-	provider, ok := ResolveAgentModule(agentName).(seatbelt.EnvProvider)
+	d, ok := launchableHarness(agentName)
 	if !ok {
 		return nil
 	}
-	return provider.AgentEnv(&seatbelt.Context{HomeDir: homeDir, Env: env, GOOS: runtime.GOOS})
+	return d.SandboxEnv(homeDir, env)
 }

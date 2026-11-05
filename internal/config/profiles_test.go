@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/harness"
 	"gopkg.in/yaml.v3"
 )
 
@@ -696,5 +697,66 @@ func TestIsolateNewProfile_DirNameTakenByResolvedDir(t *testing.T) {
 				t.Errorf("config_dir_name = %q, want new-2", ctx.Profile)
 			}
 		})
+	}
+}
+
+func TestLaunchConfigDir_AllHarnessesAndSandboxRedirect(t *testing.T) {
+	home := t.TempDir()
+	prev := harnessSandboxEnv
+	t.Cleanup(func() { harnessSandboxEnv = prev })
+
+	for _, d := range harness.All() {
+		if !d.SupportsProfiles() || d.DefaultConfigDir == "" {
+			continue
+		}
+		h := d.Name
+		redirected := filepath.Join(home, ".config", "aide", h)
+		harnessSandboxEnv = func(desc harness.Descriptor, _ string) map[string]string {
+			return map[string]string{desc.ProfileEnvKey: "~/redirect-" + desc.Name}
+		}
+
+		noEnv := func(string) string { return "" }
+		shellEnv := func(k string) string {
+			if k == d.ProfileEnvKey {
+				return "~/shell-" + h
+			}
+			return ""
+		}
+
+		// 1. Profile selecting its own config dir beats everything.
+		isolated := Context{Profile: "work", Env: map[string]string{d.ProfileEnvKey: "~/env-" + h}}
+		if got, want := isolated.LaunchConfigDir(h, home, shellEnv), filepath.Join(home, "."+h+"-work"); got != want {
+			t.Errorf("%s isolated LaunchConfigDir = %q, want %q", h, got, want)
+		}
+
+		// 2. Unisolated profile env: beats shell env and sandbox redirect.
+		withEnv := Context{Env: map[string]string{d.ProfileEnvKey: "~/env-" + h}}
+		if got, want := withEnv.LaunchConfigDir(h, home, shellEnv), filepath.Join(home, "env-"+h); got != want {
+			t.Errorf("%s env LaunchConfigDir = %q, want %q", h, got, want)
+		}
+
+		// 3. Exported shell env beats sandbox redirect.
+		if got, want := (Context{}).LaunchConfigDir(h, home, shellEnv), filepath.Join(home, "shell-"+h); got != want {
+			t.Errorf("%s shell LaunchConfigDir = %q, want %q", h, got, want)
+		}
+
+		// 4. Sandboxed launch without profile/env/shell override uses sandbox module redirect.
+		if got, want := (Context{}).LaunchConfigDir(h, home, noEnv), filepath.Join(home, "redirect-"+h); got != want {
+			t.Errorf("%s sandboxed LaunchConfigDir = %q, want %q", h, got, want)
+		}
+
+		// 5. Disabled sandbox (sandbox: false or profile: none) skips sandbox redirect and uses default dir.
+		for label, sb := range map[string]*SandboxRef{
+			"disabled": {Disabled: true},
+			"none":     {ProfileName: "none"},
+		} {
+			unsandboxed := Context{Sandbox: sb}
+			if got, want := unsandboxed.LaunchConfigDir(h, home, noEnv), d.DefaultDir(home); got != want {
+				t.Errorf("%s (%s) LaunchConfigDir = %q, want %q (not %q)", h, label, got, want, redirected)
+			}
+		}
+	}
+	if got := (Context{}).LaunchConfigDir("aider", home, nil); got != "" {
+		t.Errorf("aider LaunchConfigDir = %q, want empty", got)
 	}
 }

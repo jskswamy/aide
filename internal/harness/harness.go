@@ -11,6 +11,7 @@ package harness
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 
@@ -70,6 +71,20 @@ func (d Descriptor) DefaultDir(home string) string {
 // Launchable reports whether aide can discover, sandbox and launch the
 // harness.
 func (d Descriptor) Launchable() bool { return d.Sandbox != nil }
+
+// SandboxEnv returns the environment overrides the harness's sandbox
+// module injects for home and env on the current GOOS, or nil when the
+// harness has no sandbox module or EnvProvider.
+func (d Descriptor) SandboxEnv(home string, env []string) map[string]string {
+	if d.Sandbox == nil {
+		return nil
+	}
+	ep, ok := d.Sandbox().(seatbelt.EnvProvider)
+	if !ok {
+		return nil
+	}
+	return ep.AgentEnv(&seatbelt.Context{HomeDir: home, Env: env, GOOS: runtime.GOOS})
+}
 
 // YoloArgs returns the args that skip permission prompts, and false
 // when the harness has no yolo mode.

@@ -65,9 +65,7 @@ func codexHomes(cfg *config.Config, home string, getenv func(string) string) []s
 	add(launchConfigDir("codex", config.Context{}, home, func(string) string { return "" }))
 	add(launchConfigDir("codex", config.Context{}, home, getenv))
 	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
-		if ctx := cfg.Contexts[name]; ctx.SelectsConfigDir() {
-			add(ctx.NativeConfigDir("codex", home))
-		}
+		add(launchConfigDir("codex", cfg.Contexts[name], home, getenv))
 	}
 	return dirs
 }

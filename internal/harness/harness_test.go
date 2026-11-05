@@ -274,3 +274,32 @@ func TestDefaultDir(t *testing.T) {
 		t.Errorf("aider DefaultDir = %q, want empty (no known dir)", got)
 	}
 }
+
+type fakeEnvModule struct {
+	env map[string]string
+}
+
+func (f fakeEnvModule) Name() string                           { return "fake" }
+func (f fakeEnvModule) Rules(*seatbelt.Context) seatbelt.GuardResult { return seatbelt.GuardResult{} }
+func (f fakeEnvModule) AgentEnv(ctx *seatbelt.Context) map[string]string {
+	if ctx == nil || ctx.HomeDir == "" {
+		return nil
+	}
+	return f.env
+}
+
+func TestSandboxEnv(t *testing.T) {
+	d := harness.Descriptor{
+		Name:          "test",
+		ProfileEnvKey: "TEST_HOME",
+		Sandbox: func() seatbelt.Module {
+			return fakeEnvModule{env: map[string]string{"TEST_HOME": "/tmp/redirect"}}
+		},
+	}
+	if got := d.SandboxEnv("/home/u", nil)["TEST_HOME"]; got != "/tmp/redirect" {
+		t.Errorf("SandboxEnv = %q, want /tmp/redirect", got)
+	}
+	if got := (harness.Descriptor{}).SandboxEnv("/home/u", nil); got != nil {
+		t.Errorf("nil Sandbox SandboxEnv = %v, want nil", got)
+	}
+}

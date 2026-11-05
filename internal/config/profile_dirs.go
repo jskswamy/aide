@@ -43,6 +43,40 @@ func (c Context) SelectsConfigDir() bool {
 	return c.Profile != "" || c.ProfileDir != "" || len(c.ConfigDirs) > 0
 }
 
+var harnessSandboxEnv = func(d harness.Descriptor, home string) map[string]string {
+	return d.SandboxEnv(home, nil)
+}
+
+// LaunchConfigDir is the native config dir a launch of harness h uses
+// under this profile: the profile's own dir when it selects one, else
+// the harness's dir variable from the profile's env:, then from the
+// inherited environment (getenv), then from the harness's sandbox
+// module when sandboxing is enabled, else its default dir. "" for a
+// harness without a known config dir.
+func (c Context) LaunchConfigDir(h, home string, getenv func(string) string) string {
+	if c.SelectsConfigDir() {
+		return c.NativeConfigDir(h, home)
+	}
+	d, ok := harness.Lookup(h)
+	if !ok || d.ProfileEnvKey == "" || d.DefaultConfigDir == "" {
+		return ""
+	}
+	if v := c.Env[d.ProfileEnvKey]; v != "" {
+		return homepath.Expand(v, home)
+	}
+	if getenv != nil {
+		if v := getenv(d.ProfileEnvKey); v != "" {
+			return homepath.Expand(v, home)
+		}
+	}
+	if c.Sandbox == nil || (!c.Sandbox.Disabled && c.Sandbox.ProfileName != "none") {
+		if v := harnessSandboxEnv(d, home)[d.ProfileEnvKey]; v != "" {
+			return homepath.Expand(v, home)
+		}
+	}
+	return d.DefaultDir(home)
+}
+
 // ErrInvalidConfigDirs reports a malformed config_dirs map.
 var ErrInvalidConfigDirs = errors.New("invalid config_dirs")
 

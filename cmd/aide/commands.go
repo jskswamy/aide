@@ -2,13 +2,9 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
@@ -47,81 +43,6 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(explainCmd())
 	rootCmd.AddCommand(statuslineCmd())
 	rootCmd.AddCommand(sandboxApplyCmd())
-}
-
-// askMatchRule prompts the user with human-friendly questions to build a match rule.
-// cwd is used as the default for "this folder" option.
-func askMatchRule(out io.Writer, reader *bufio.Reader, cwd string) (config.MatchRule, error) {
-	fmt.Fprintln(out, "  How should aide recognize this context?")
-	fmt.Fprintf(out, "    [1] This folder (%s)\n", cwd)
-	fmt.Fprintln(out, "    [2] A folder path or pattern")
-	fmt.Fprintln(out, "    [3] By git repository URL")
-	fmt.Fprint(out, "  Select [1]: ")
-
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return config.MatchRule{}, fmt.Errorf("reading selection: %w", err)
-	}
-	input = strings.TrimSpace(input)
-
-	choice := 1
-	if input != "" {
-		choice, err = strconv.Atoi(input)
-		if err != nil || choice < 1 || choice > 3 {
-			return config.MatchRule{}, fmt.Errorf("invalid selection: %q", input)
-		}
-	}
-
-	switch choice {
-	case 1:
-		path := cwd
-		fmt.Fprint(out, "  Include all subfolders? (Y/n): ")
-		answer, err := reader.ReadString('\n')
-		if err != nil {
-			return config.MatchRule{}, fmt.Errorf("reading response: %w", err)
-		}
-		answer = strings.TrimSpace(strings.ToLower(answer))
-		if answer == "" || answer == "y" || answer == "yes" {
-			path = cwd + "/**"
-		}
-		return config.MatchRule{Path: path}, nil
-
-	case 2:
-		fmt.Fprint(out, "  Folder path: ")
-		pathInput, err := reader.ReadString('\n')
-		if err != nil {
-			return config.MatchRule{}, fmt.Errorf("reading path: %w", err)
-		}
-		path := strings.TrimSpace(pathInput)
-		if path == "" {
-			return config.MatchRule{}, fmt.Errorf("path cannot be empty")
-		}
-		fmt.Fprint(out, "  Include all subfolders? (Y/n): ")
-		answer, err := reader.ReadString('\n')
-		if err != nil {
-			return config.MatchRule{}, fmt.Errorf("reading response: %w", err)
-		}
-		answer = strings.TrimSpace(strings.ToLower(answer))
-		if answer == "" || answer == "y" || answer == "yes" {
-			path = strings.TrimRight(path, "/") + "/**"
-		}
-		return config.MatchRule{Path: path}, nil
-
-	case 3:
-		fmt.Fprintln(out, "  Examples: github.com/company/*, gitlab.com/team/project")
-		fmt.Fprint(out, "  Git remote URL pattern: ")
-		urlInput, err := reader.ReadString('\n')
-		if err != nil {
-			return config.MatchRule{}, fmt.Errorf("reading URL: %w", err)
-		}
-		url := strings.TrimSpace(urlInput)
-		if url == "" {
-			return config.MatchRule{}, fmt.Errorf("URL pattern cannot be empty")
-		}
-		return config.MatchRule{Remote: url}, nil
-	}
-
-	return config.MatchRule{}, fmt.Errorf("invalid selection")
 }
 
 // resolveContextForMutation loads config via cmdEnv, resolves the context name,

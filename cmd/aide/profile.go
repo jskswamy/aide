@@ -206,6 +206,9 @@ Examples:
 				if err != nil {
 					return err
 				}
+				if picked == "" {
+					return runCreateWizard(cmd, "", createOptions{here: tristateYes, scope: scopeFlag, pio: pio})
+				}
 				name = picked
 			}
 
@@ -282,6 +285,7 @@ func pickExistingContext(pio *promptIO, cfg *config.Config) (string, error) {
 	for i, n := range names {
 		fmt.Fprintf(pio.out, "  [%d] %s\n", i+1, n)
 	}
+	fmt.Fprintf(pio.out, "  [%d] Create a new profile\n", len(names)+1)
 	fmt.Fprint(pio.out, "Choose [1]: ")
 	input, err := pio.reader.ReadString('\n')
 	if err != nil {
@@ -291,10 +295,13 @@ func pickExistingContext(pio *promptIO, cfg *config.Config) (string, error) {
 	choice := 1
 	if input != "" {
 		n, err := strconv.Atoi(input)
-		if err != nil || n < 1 || n > len(names) {
+		if err != nil || n < 1 || n > len(names)+1 {
 			return "", fmt.Errorf("invalid selection: %q", input)
 		}
 		choice = n
+	}
+	if choice == len(names)+1 {
+		return "", nil
 	}
 	return names[choice-1], nil
 }

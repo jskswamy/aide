@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -142,43 +141,79 @@ func TestContextCreate_ProfilesDefaultToOwnConfigDir(t *testing.T) {
 	}
 }
 
-// aide use and the setup wizard create profiles with default per-profile isolation.
+// aide use and the deprecated setup forwarder create profiles with default per-profile isolation.
 func TestUseAndSetup_ProfilesDefaultToOwnConfigDir(t *testing.T) {
 	dir := isolatedConfigDir(t)
-	runIn := func(sub string, run func() (string, error)) string {
+	if !useCmd().Hidden {
+		t.Error("expected useCmd to be Hidden: true")
+	}
+	if !setupCmd().Hidden {
+		t.Error("expected setupCmd to be Hidden: true")
+	}
+
+	runIn := func(sub string, run func() (string, string, error)) (string, string) {
 		t.Helper()
 		wd := filepath.Join(dir, sub)
 		if err := os.MkdirAll(wd, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		t.Chdir(wd)
-		out, err := run()
+		stdout, stderr, err := run()
 		if err != nil {
-			t.Fatalf("%s: %v\n%s", sub, err, out)
+			t.Fatalf("%s: %v\nstdout: %s\nstderr: %s", sub, err, stdout, stderr)
 		}
-		return out
+		return stdout, stderr
 	}
-	use := func() (string, error) {
+	use := func() (string, string, error) {
 		cmd := useCmd()
-		var buf bytes.Buffer
-		cmd.SetOut(&buf)
-		cmd.SetErr(&buf)
+		var outBuf, errBuf bytes.Buffer
+		cmd.SetOut(&outBuf)
+		cmd.SetErr(&errBuf)
 		cmd.SetArgs([]string{"claude"})
 		err := cmd.Execute()
-		return buf.String(), err
+		return outBuf.String(), errBuf.String(), err
 	}
-	runIn("first", use)
-	runIn("second", use)
-	runIn("third", func() (string, error) {
-		cfg, err := config.Load(filepath.Join(dir, "xdg", "aide"), dir)
-		if err != nil {
-			return "", err
-		}
-		wd, _ := os.Getwd()
-		var buf bytes.Buffer
-		err = setupCreateNew(&buf, bufio.NewReader(strings.NewReader(strings.Repeat("claude\n", 1)+strings.Repeat("\n", 20))), cfg, wd)
-		return buf.String(), err
+	_, stderr1 := runIn("first", use)
+	if !strings.Contains(stderr1, "aide use is deprecated; use 'aide profile bind'") {
+		t.Errorf("expected use deprecation warning on stderr, got: %q", stderr1)
+	}
+	_, stderr2 := runIn("second", use)
+	if !strings.Contains(stderr2, "aide use is deprecated; use 'aide profile bind'") {
+		t.Errorf("expected use deprecation warning on stderr, got: %q", stderr2)
+	}
+
+	origTTY := isInputTTY
+	isInputTTY = func(_ *cobra.Command) bool { return true }
+	t.Cleanup(func() { isInputTTY = origTTY })
+
+	// Place only "claude" on PATH so singleAgentOnPath auto-detects it.
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	// With 2 existing profiles (first, second), setupCmd delegates to contextBindCmd,
+	// which offers [3] Create a new profile -> name "third", secret ""
+	stdout3, stderr3 := runIn("third", func() (string, string, error) {
+		cmd := setupCmd()
+		var outBuf, errBuf bytes.Buffer
+		cmd.SetIn(strings.NewReader("3\nthird\n\n"))
+		cmd.SetOut(&outBuf)
+		cmd.SetErr(&errBuf)
+		err := cmd.Execute()
+		return outBuf.String(), errBuf.String(), err
 	})
+	if !strings.Contains(stderr3, "aide setup is deprecated; use 'aide profile bind'") {
+		t.Errorf("expected setup deprecation warning on stderr, got: %q", stderr3)
+	}
+	if !strings.Contains(stdout3, "[3] Create a new profile") {
+		t.Errorf("expected [3] Create a new profile in bind picker, got:\n%s", stdout3)
+	}
+
 	cfg, err := config.Load(filepath.Join(dir, "xdg", "aide"), dir)
 	if err != nil {
 		t.Fatal(err)
@@ -187,6 +222,128 @@ func TestUseAndSetup_ProfilesDefaultToOwnConfigDir(t *testing.T) {
 		if got := cfg.Contexts[name].Profile; got != name {
 			t.Errorf("%s: config_dir_name = %q, want %q", name, got, name)
 		}
+	}
+}
+
+func TestSetupCmd_NoProfiles_DelegatesToCreate(t *testing.T) {
+	dir := isolatedConfigDir(t)
+
+	origTTY := isInputTTY
+	isInputTTY = func(_ *cobra.Command) bool { return true }
+	t.Cleanup(func() { isInputTTY = origTTY })
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	// No profiles exist -> setupCmd delegates to contextCreateCmd.
+	// Prompts: profile name ("work"), secret store (""), bind here ("y")
+	cmd := setupCmd()
+	var outBuf, errBuf bytes.Buffer
+	cmd.SetIn(strings.NewReader("work\n\ny\n"))
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&errBuf)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("setupCmd failed: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "aide setup is deprecated; use 'aide profile bind'") {
+		t.Errorf("expected setup deprecation warning on stderr, got: %q", errBuf.String())
+	}
+	if !strings.Contains(outBuf.String(), `Created profile "work"`) {
+		t.Errorf("expected Created profile \"work\", got:\n%s", outBuf.String())
+	}
+}
+
+func TestContextBind_NoArgs_CreateNewProfileOption(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	writeConfig(t, dir, "default")
+
+	origTTY := isInputTTY
+	isInputTTY = func(_ *cobra.Command) bool { return true }
+	t.Cleanup(func() { isInputTTY = origTTY })
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	// Menu has [1] default, [2] Create a new profile.
+	// Select 2 -> profile name "work", secret store "". Because here=tristateYes, it binds immediately.
+	cmd := contextBindCmd()
+	var outBuf bytes.Buffer
+	cmd.SetIn(strings.NewReader("2\nwork\n\n"))
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&outBuf)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("contextBindCmd failed: %v\n%s", err, outBuf.String())
+	}
+	out := outBuf.String()
+	if !strings.Contains(out, "[2] Create a new profile") {
+		t.Errorf("expected [2] Create a new profile in menu, got:\n%s", out)
+	}
+	if !strings.Contains(out, `Created profile "work"`) || !strings.Contains(out, "Bound this folder") {
+		t.Errorf("expected profile created and folder bound, got:\n%s", out)
+	}
+}
+
+func TestInitCmd_SecretsSetup_DefaultNameAndResolveRecipient(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	cfgDir := filepath.Join(dir, "xdg", "aide")
+	unsetEnv(t, "SOPS_AGE_KEY")
+	unsetEnv(t, "SOPS_AGE_KEY_FILE")
+
+	origTTY := isInputTTY
+	isInputTTY = func(_ *cobra.Command) bool { return true }
+	t.Cleanup(func() { isInputTTY = origTTY })
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	editorScript := filepath.Join(binDir, "fake-editor")
+	if err := os.WriteFile(editorScript, []byte("#!/bin/sh\nprintf 'api_key: test-secret\\n' > \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("EDITOR", editorScript)
+
+	// Prompts:
+	// 1. Primary agent (default: claude): ""
+	// 2. Set up secrets? (y/N): "y"
+	// 3. Secrets file name (default: default): ""
+	// 4. ResolveRecipient (0 keys on TTY -> Select [1] to generate): "1"
+	cmd := initCmd()
+	var out bytes.Buffer
+	cmd.SetIn(strings.NewReader("\ny\n\n1\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("initCmd with secrets failed: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Secrets file name (default: default): ") {
+		t.Errorf("expected default secrets file name prompt, got:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Created secrets/default.enc.yaml") {
+		t.Errorf("expected Created secrets/default.enc.yaml, got:\n%s", out.String())
+	}
+	cfg, err := config.Load(cfgDir, dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if got := cfg.Contexts["default"].Secret; got != "default" {
+		t.Errorf("default profile secret = %q, want %q", got, "default")
 	}
 }
 

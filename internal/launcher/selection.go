@@ -82,8 +82,12 @@ func (l *Launcher) ResolveSelection(cfg *config.Config, cwd, homeDir string, in 
 	var err error
 	if l.IgnoreProjectConfig {
 		cfg.DropProjectConfig()
-	} else if res.Gate, err = l.applyTrustGate(cfg); err != nil {
-		return res, err
+	} else {
+		res.Gate, err = l.applyTrustGate(cfg)
+		l.promptProjectTrust = false
+		if err != nil {
+			return res, err
+		}
 	}
 	remotes := aidectx.GitRemotes(cwd)
 	if res.RC, err = aidectx.ResolveSelected(cfg, cwd, remotes, l.Profile); err != nil {

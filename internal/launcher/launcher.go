@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -169,11 +170,13 @@ type Launcher struct {
 	PrefsPath string
 
 	// Variant selection inputs (optional; zero value disables variant flow).
-	VariantOverrides map[string][]string
-	ConsentStore     *consent.Store
-	Prompter         capability.Prompter
-	AutoYes          bool
-	Interactive      bool
+	VariantOverrides   map[string][]string
+	ConsentStore       *consent.Store
+	Prompter           capability.Prompter
+	AutoYes            bool
+	Interactive        bool
+	inReader           *bufio.Reader
+	promptProjectTrust bool
 
 	// Diagnose enables post-mortem report generation (forks instead of execve).
 	Diagnose bool
@@ -201,6 +204,18 @@ func (l *Launcher) stderr() io.Writer {
 		return l.Stderr
 	}
 	return os.Stderr
+}
+
+// stdinReader returns the shared buffered stdin reader for interactive prompts.
+func (l *Launcher) stdinReader() *bufio.Reader {
+	if l.inReader == nil {
+		if l.Stdin != nil {
+			l.inReader = bufio.NewReader(l.Stdin)
+		} else {
+			l.inReader = bufio.NewReader(os.Stdin)
+		}
+	}
+	return l.inReader
 }
 
 // prefsPath returns the effective repository preferences file.
@@ -243,6 +258,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 
 	// 2. Select: trust gate, profile, saved repository preference, final
 	// harness and its profile env, as every preview does.
+	l.promptProjectTrust = l.Interactive && !l.IgnoreProjectConfig
 	res, err := l.ResolveSelection(cfg, cwd, homeDir, SelectionInputs{
 		Agent:          agentOverride,
 		Credentials:    l.Credentials,
@@ -422,6 +438,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// Merge capability overrides into sandbox config before PolicyFromConfig.
+	if l.Prompter == nil && l.Interactive {
+		l.Prompter = ui.NewTTYPrompter(l.stdinReader(), l.stderr())
+	}
 	variantOpts := sandbox.VariantSelectionOptions{
 		ProjectRoot:  projectRoot,
 		FS:           os.DirFS(projectRoot),
@@ -1117,14 +1136,11 @@ func (l *Launcher) handleEmptyStateLaunch(
 	cwd string,
 	remotes aidectx.RemoteLookup,
 ) (*aidectx.ResolvedContext, *config.Config, error) {
-	isTTY, in := isStdinTTY, io.Reader(os.Stdin)
+	isTTY := isStdinTTY
 	if l.StdinIsTTY != nil {
 		isTTY = l.StdinIsTTY
 	}
-	if l.Stdin != nil {
-		in = l.Stdin
-	}
-	rc, err := handleEmptyState(cfg, in, l.stderr(), isTTY(), l.EmptyStateActions)
+	rc, err := handleEmptyState(cfg, l.stdinReader(), l.stderr(), isTTY(), l.EmptyStateActions)
 	if err == nil {
 		return rc, cfg, nil
 	}

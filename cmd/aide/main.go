@@ -88,9 +88,6 @@ capture sandbox-deny events from the failed run.`,
 				CredentialsSet:      sel.CredentialsSet,
 				Auth:                sel.Auth,
 			}
-			if l.Interactive {
-				l.Prompter = ui.NewTTYPrompter(os.Stdin, os.Stderr)
-			}
 
 			// Check if any config file exists.
 			configFile := config.FilePath()

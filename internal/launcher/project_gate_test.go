@@ -363,3 +363,301 @@ func TestGate_SymlinkedCheckoutDirKeepsOneIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectGate_InteractiveTrust_YesPersistsAndMerges(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	aideFile := filepath.Join(cwd, ".aide.yaml")
+	writeGateFile(t, aideFile, "agent: pi\ncapabilities: [go]\n")
+	store := trust.NewStore(t.TempDir())
+
+	l := &Launcher{
+		TrustStore:  store,
+		Interactive: true,
+		Stdin:       strings.NewReader("y\n"),
+	}
+	env, stderr, err := selectionLaunch(t, selectionConfig, cwd, l, "")
+	if err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+	if !strings.Contains(stderr, "[aide] Untrusted .aide.yaml at") {
+		t.Errorf("stderr missing trust prompt header:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "wants: pi agent · go capability") {
+		t.Errorf("stderr missing wants summary:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "Trusted: ") {
+		t.Errorf("stderr missing Trusted confirmation:\n%s", stderr)
+	}
+	if got, _ := envValue(env, "AIDE_AGENT"); got != "pi" {
+		t.Errorf("AIDE_AGENT = %q, want pi from trusted .aide.yaml", got)
+	}
+	if got, _ := envValue(env, "AIDE_CAPS"); !strings.Contains(got, "go") {
+		t.Errorf("AIDE_CAPS = %q, want go capability from trusted .aide.yaml", got)
+	}
+	if got, _ := envValue(env, "AIDE_TRUST"); got != "trusted" {
+		t.Errorf("AIDE_TRUST = %q, want trusted", got)
+	}
+	fc, err := store.CheckFile(aideFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fc.Status != trust.Trusted {
+		t.Errorf("store status = %v, want Trusted", fc.Status)
+	}
+}
+
+func TestProjectGate_InteractiveTrust_SkipAndEmptyDefault(t *testing.T) {
+	for _, input := range []string{"s\n", "\n", ""} {
+		t.Run("input_"+strings.TrimSpace(input), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cwd := t.TempDir()
+			aideFile := filepath.Join(cwd, ".aide.yaml")
+			writeGateFile(t, aideFile, "agent: pi\ncapabilities: [go]\n")
+			store := trust.NewStore(t.TempDir())
+
+			l := &Launcher{
+				TrustStore:  store,
+				Interactive: true,
+				Stdin:       strings.NewReader(input),
+			}
+			env, stderr, err := selectionLaunch(t, selectionConfig, cwd, l, "")
+			if err != nil {
+				t.Fatalf("Launch error: %v", err)
+			}
+			if !strings.Contains(stderr, "[aide] Untrusted .aide.yaml at") {
+				t.Errorf("stderr missing trust prompt:\n%s", stderr)
+			}
+			if got, _ := envValue(env, "AIDE_AGENT"); got != "claude" {
+				t.Errorf("AIDE_AGENT = %q, want profile default claude when skipped", got)
+			}
+			if got, _ := envValue(env, "AIDE_TRUST"); got != "untrusted" {
+				t.Errorf("AIDE_TRUST = %q, want untrusted when skipped", got)
+			}
+			fc, err := store.CheckFile(aideFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fc.Status != trust.Untrusted {
+				t.Errorf("store status = %v, want Untrusted (skip must not persist)", fc.Status)
+			}
+
+			// Calling applyTrustGate again on the same Launcher after ResolveSelection
+			// must not prompt a second time.
+			cfg := loadGateConfig(t, cwd)
+			gate, err := l.applyTrustGate(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(gate.Files) != 1 || gate.Files[0].Status != "untrusted" {
+				t.Errorf("second gate files = %+v, want 1 untrusted", gate.Files)
+			}
+		})
+	}
+}
+
+func TestProjectGate_InteractiveTrust_NoRepromptAfterResolveSelection(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	aideFile := filepath.Join(cwd, ".aide.yaml")
+	writeGateFile(t, aideFile, "capabilities: [go]\n")
+	store := trust.NewStore(t.TempDir())
+
+	var stderr strings.Builder
+	l := &Launcher{
+		TrustStore:         store,
+		Interactive:        true,
+		promptProjectTrust: true,
+		Stdin:              strings.NewReader("s\n"),
+		Stderr:             &stderr,
+		LookPath:           okLookPath,
+	}
+	cfg := loadGateConfig(t, cwd)
+	res, err := l.ResolveSelection(cfg, cwd, t.TempDir(), SelectionInputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Gate.Files) != 1 || res.Gate.Files[0].Status != "untrusted" {
+		t.Fatalf("gate files = %+v, want 1 untrusted", res.Gate.Files)
+	}
+	firstPromptCount := strings.Count(stderr.String(), "[aide] Untrusted .aide.yaml")
+	if firstPromptCount != 1 {
+		t.Fatalf("prompt count = %d, want 1", firstPromptCount)
+	}
+
+	// Reloading config and calling applyTrustGate again must not prompt again.
+	reloadedCfg := loadGateConfig(t, cwd)
+	gate2, err := l.applyTrustGate(reloadedCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gate2.Files) != 1 || gate2.Files[0].Status != "untrusted" {
+		t.Errorf("reloaded gate files = %+v, want 1 untrusted", gate2.Files)
+	}
+	if got := strings.Count(stderr.String(), "[aide] Untrusted .aide.yaml"); got != 1 {
+		t.Errorf("prompt count after reload = %d, want still 1", got)
+	}
+}
+
+func TestProjectGate_InteractiveTrust_DenyPersistsAndDoesNotReprompt(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	aideFile := filepath.Join(cwd, ".aide.yaml")
+	writeGateFile(t, aideFile, "agent: pi\ncapabilities: [go]\n")
+	store := trust.NewStore(t.TempDir())
+
+	l1 := &Launcher{
+		TrustStore:  store,
+		Interactive: true,
+		Stdin:       strings.NewReader("d\n"),
+	}
+	env, stderr, err := selectionLaunch(t, selectionConfig, cwd, l1, "")
+	if err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+	if !strings.Contains(stderr, "Denied: ") || !strings.Contains(stderr, "run 'aide trust ") {
+		t.Errorf("stderr missing Denied confirmation:\n%s", stderr)
+	}
+	if got, _ := envValue(env, "AIDE_AGENT"); got != "claude" {
+		t.Errorf("AIDE_AGENT = %q, want claude when denied", got)
+	}
+	fc, err := store.CheckFile(aideFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fc.Status != trust.Denied {
+		t.Errorf("store status = %v, want Denied", fc.Status)
+	}
+
+	// A second interactive launch must not prompt for the denied file.
+	l2 := &Launcher{
+		TrustStore:  store,
+		Interactive: true,
+		Stdin:       strings.NewReader("y\n"),
+	}
+	_, stderr2, err := selectionLaunch(t, selectionConfig, cwd, l2, "")
+	if err != nil {
+		t.Fatalf("second Launch error: %v", err)
+	}
+	if strings.Contains(stderr2, "[aide] Untrusted .aide.yaml") {
+		t.Errorf("denied file should not re-prompt on subsequent launch:\n%s", stderr2)
+	}
+}
+
+func TestProjectGate_InteractiveTrust_InvalidInputRetries(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	aideFile := filepath.Join(cwd, ".aide.yaml")
+	writeGateFile(t, aideFile, "{}\n")
+	store := trust.NewStore(t.TempDir())
+
+	l := &Launcher{
+		TrustStore:  store,
+		Interactive: true,
+		Stdin:       strings.NewReader("maybe\ny\n"),
+	}
+	_, stderr, err := selectionLaunch(t, selectionConfig, cwd, l, "")
+	if err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+	if !strings.Contains(stderr, "wants: (no special grants)") {
+		t.Errorf("stderr missing empty wants placeholder:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "please answer y (trust), s (skip), or d (deny)") {
+		t.Errorf("stderr missing retry message:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "Trusted: ") {
+		t.Errorf("stderr missing Trusted confirmation after retry:\n%s", stderr)
+	}
+	fc, err := store.CheckFile(aideFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fc.Status != trust.Trusted {
+		t.Errorf("store status = %v, want Trusted", fc.Status)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) {
+	return 0, errors.New("unexpected Stdin read in non-interactive/preview mode")
+}
+
+func TestProjectGate_NonInteractiveAndPreviewNeverPrompt(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	aideFile := filepath.Join(cwd, ".aide.yaml")
+	writeGateFile(t, aideFile, "agent: pi\ncapabilities: [go]\n")
+	store := trust.NewStore(t.TempDir())
+
+	// 1. GateProjectConfig preview never prompts.
+	cfg := loadGateConfig(t, cwd)
+	gate, err := GateProjectConfig(cfg)
+	if err != nil {
+		t.Fatalf("GateProjectConfig error: %v", err)
+	}
+	if len(gate.Files) != 1 || gate.Files[0].Status != "untrusted" {
+		t.Errorf("GateProjectConfig files = %+v, want 1 untrusted", gate.Files)
+	}
+
+	// 2. Non-interactive launch never reads Stdin or prompts.
+	l := &Launcher{
+		TrustStore:  store,
+		Interactive: false,
+		Stdin:       failingReader{},
+	}
+	env, stderr, err := selectionLaunch(t, selectionConfig, cwd, l, "")
+	if err != nil {
+		t.Fatalf("non-interactive Launch error: %v", err)
+	}
+	if strings.Contains(stderr, "[aide] Untrusted .aide.yaml") {
+		t.Errorf("non-interactive launch should not prompt:\n%s", stderr)
+	}
+	if got, _ := envValue(env, "AIDE_AGENT"); got != "claude" {
+		t.Errorf("AIDE_AGENT = %q, want claude", got)
+	}
+}
+
+func TestProjectGate_InteractiveTrust_InheritedAndSymlinkOriginNotes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	mainFile, localFile, wtDir := worktreeGateFixture(t)
+	target := filepath.Join(t.TempDir(), "real-local.aide.yaml")
+	writeGateFile(t, target, "capabilities: [python]\n")
+	if err := os.Remove(localFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, localFile); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	store := trust.NewStore(t.TempDir())
+
+	// Answer "y" to inherited mainFile and "s" to symlinked localFile.
+	l := &Launcher{
+		TrustStore:  store,
+		Interactive: true,
+		Stdin:       strings.NewReader("y\ns\n"),
+	}
+	env, stderr, err := selectionLaunch(t, gateConfigYAML, wtDir, l, "")
+	if err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+	if !strings.Contains(stderr, "(inherited from main checkout)") {
+		t.Errorf("stderr missing inherited origin note:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "(symlink to ") {
+		t.Errorf("stderr missing symlink origin note:\n%s", stderr)
+	}
+	if got, _ := envValue(env, "AIDE_CAPS"); !strings.Contains(got, "go") || strings.Contains(got, "python") {
+		t.Errorf("AIDE_CAPS = %q, want go (trusted) and not python (skipped)", got)
+	}
+	fcMain, err := store.CheckFile(mainFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fcMain.Status != trust.Trusted {
+		t.Errorf("mainFile status = %v, want Trusted", fcMain.Status)
+	}
+}
+
+

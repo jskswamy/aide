@@ -94,12 +94,59 @@ func (l *Launcher) applyTrustGate(cfg *config.Config) (ProjectGate, error) {
 		switch fc.Status {
 		case trust.Trusted:
 		case trust.Denied:
-			gate.Files = append(gate.Files, ui.TrustInfo{Status: "denied", Path: display, Source: layer.Source})
+			ti := ui.TrustInfo{Status: "denied", Path: display, Source: layer.Source}
+			if fc.Target != "" {
+				ti.Target = homepath.Collapse(fc.Target, homeDir)
+			}
+			gate.Files = append(gate.Files, ti)
 		default:
-			gate.Files = append(gate.Files, buildTrustInfo(display, layer.Source, layer.Override))
-		}
-		if fc.Status != trust.Trusted && fc.Target != "" {
-			gate.Files[len(gate.Files)-1].Target = homepath.Collapse(fc.Target, homeDir)
+			ti := buildTrustInfo(display, layer.Source, layer.Override)
+			if fc.Target != "" {
+				ti.Target = homepath.Collapse(fc.Target, homeDir)
+			}
+			if l.promptProjectTrust {
+				originNote := ""
+				if layer.Source == config.LayerInherited {
+					originNote += " (inherited from main checkout)"
+				}
+				if ti.Target != "" {
+					originNote += fmt.Sprintf(" (symlink to %s)", ti.Target)
+				}
+				wantsLine := formatTrustWants(ti.Wants)
+				fmt.Fprintf(l.stderr(), "[aide] Untrusted .aide.yaml at %s%s\n  %s\n\n  [y] Trust this file    [s] Skip for this launch (default)    [d] Deny permanently\n> ", display, originNote, wantsLine)
+				for {
+					line, readErr := l.stdinReader().ReadString('\n')
+					ans := strings.ToLower(strings.TrimSpace(line))
+					if readErr != nil && ans == "" {
+						ans = "s"
+					}
+					switch ans {
+					case "y", "yes":
+						if err := store.Trust(fc.Path, fc.Contents); err != nil {
+							return ProjectGate{}, err
+						}
+						layer.Rejected = false
+						fmt.Fprintf(l.stderr(), "Trusted: %s\n", display)
+					case "d", "deny":
+						if err := store.Deny(fc.Path); err != nil {
+							return ProjectGate{}, err
+						}
+						layer.Rejected = true
+						gate.Files = append(gate.Files, ui.TrustInfo{Status: "denied", Path: display, Source: layer.Source, Target: ti.Target})
+						fmt.Fprintf(l.stderr(), "Denied: %s (run 'aide trust %s' to allow later)\n", display, display)
+					case "s", "skip", "n", "no", "":
+						layer.Rejected = true
+						gate.Files = append(gate.Files, ti)
+					default:
+						fmt.Fprintln(l.stderr(), "please answer y (trust), s (skip), or d (deny)")
+						fmt.Fprint(l.stderr(), "> ")
+						continue
+					}
+					break
+				}
+			} else {
+				gate.Files = append(gate.Files, ti)
+			}
 		}
 	}
 	cfg.ProjectOverride = config.MergeProjectLayers(cfg.ProjectLayers)
@@ -153,6 +200,40 @@ func buildTrustInfo(displayPath, source string, po *config.ProjectOverride) ui.T
 	}
 	sort.Strings(ti.Wants.EnvVars)
 	return ti
+}
+
+// formatTrustWants summarizes the grants requested by an untrusted .aide.yaml.
+func formatTrustWants(w ui.TrustWants) string {
+	var parts []string
+	if w.Agent != "" {
+		parts = append(parts, w.Agent+" agent")
+	}
+	for _, c := range w.Capabilities {
+		parts = append(parts, c+" capability")
+	}
+	if w.SandboxDisabled {
+		parts = append(parts, "sandbox off")
+	}
+	if w.AutoApprove {
+		parts = append(parts, "auto-approve")
+	}
+	if w.Network != "" {
+		parts = append(parts, "network "+w.Network)
+	}
+	parts = append(parts, w.Writable...)
+	parts = append(parts, w.Readable...)
+	parts = append(parts, w.Unguard...)
+	if len(w.Guards) > 0 {
+		parts = append(parts, "guards "+strings.Join(w.Guards, ","))
+	}
+	parts = append(parts, w.Allow...)
+	if len(w.EnvVars) > 0 {
+		parts = append(parts, strings.Join(w.EnvVars, ", "))
+	}
+	if len(parts) == 0 {
+		return "wants: (no special grants)"
+	}
+	return "wants: " + strings.Join(parts, " · ")
 }
 
 // inheritedGrants lists the security-sensitive settings that the

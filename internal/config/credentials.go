@@ -545,15 +545,19 @@ func bindingFor(ctx Context, envVar string) string {
 	return ""
 }
 
-// legacyBindingName is the built-in name injecting exactly envVar, or
+// LegacyBindingName is the built-in name injecting exactly envVar, or
 // envVar lowercased.
-func legacyBindingName(envVar string) string {
+func LegacyBindingName(envVar string) string {
 	for _, name := range slices.Sorted(maps.Keys(builtinCredentialEnv)) {
 		if slices.Equal(builtinCredentialEnv[name], []string{envVar}) {
 			return name
 		}
 	}
 	return strings.ToLower(envVar)
+}
+
+func legacyBindingName(envVar string) string {
+	return LegacyBindingName(envVar)
 }
 
 // suggestedBinding renders the credentials: block replacing a legacy

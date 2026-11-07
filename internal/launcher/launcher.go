@@ -317,10 +317,22 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if len(credPlan.Ignored) > 0 {
 		fmt.Fprintf(l.stderr(), "aide: note: native login: not injecting credentials %s\n", strings.Join(credPlan.Ignored, ", "))
 	}
-	loadStore := CachingStoreLoader(loadSecretStore)
-	credEnv, err := ResolveCredentialEnv(credPlan, loadStore)
-	if err != nil {
-		return err
+	loadStore := CachingStoreLoader(loadStoreFrom(filepath.Join(l.configDir(), "secrets")))
+	credEnv := map[string]string{}
+	var ambientHandled bool
+	if len(credPlan.Bindings) == 0 && credPlan.Auth != AuthLogin && !l.CredentialsSet {
+		rc, ambientHandled, err = l.handleAmbientProviderKeys(cfg, rc, cwd, homeDir, inputs, &sel, &credPlan, credEnv, nil)
+		if err != nil {
+			return err
+		}
+		agentName = rc.Context.Agent
+		scrubNames = ScrubNames(cfg, homeDir)
+	}
+	if !ambientHandled {
+		credEnv, err = ResolveCredentialEnv(credPlan, loadStore)
+		if err != nil {
+			return err
+		}
 	}
 	l.ensureGatewaySynced(rc, cfg.HarnessOf(agentName), homeDir, credPlan, credEnv)
 

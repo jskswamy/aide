@@ -344,3 +344,22 @@ func TestLoad_InvalidCredentialRoutesFail(t *testing.T) {
 		t.Errorf("set: ANTHROPIC_API_KEY: \"\" should load: %v", err)
 	}
 }
+
+func TestLegacyBindingName(t *testing.T) {
+	cases := map[string]string{
+		"ANTHROPIC_API_KEY":    "anthropic",
+		"OPENAI_API_KEY":       "openai",
+		"GEMINI_API_KEY":       "gemini",
+		"CODEX_API_KEY":        "codex",
+		"OPENROUTER_API_KEY":   "openrouter",
+		"ANTHROPIC_AUTH_TOKEN": "anthropic_auth_token",
+		"CORP_LLM_TOKEN":       "corp_llm_token",
+		"GROQ_API_KEY":         "groq_api_key",
+	}
+	for envVar, want := range cases {
+		if got := LegacyBindingName(envVar); got != want {
+			t.Errorf("LegacyBindingName(%q) = %q, want %q", envVar, got, want)
+		}
+	}
+}
+

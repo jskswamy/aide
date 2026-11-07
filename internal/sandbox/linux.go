@@ -819,23 +819,16 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 	readable := gps.Readable
 	denied := gps.Denied
 
-	// Writable paths: --bind-try src src
-	for _, p := range writable {
-		bwrapArgs = append(bwrapArgs, "--bind-try", p, p)
-	}
-
-	// Readable paths: --ro-bind-try src src
-	for _, p := range readable {
-		bwrapArgs = append(bwrapArgs, "--ro-bind-try", p, p)
-	}
-
-	// System essentials. Mirror linuxSystemReadable so the bwrap fallback
-	// grants the same baseline the Landlock backend grants — TLS bundle,
-	// NSS resolution, passwd/group lookup, ld.so cache, /nix/store and
-	// Linuxbrew on those hosts. Without this, Go/Node TLS lookups and
-	// getpwuid resolution fail under bwrap with no equivalent failure
-	// under Landlock. --ro-bind-try silently skips paths absent on this
-	// host (e.g. /lib32 on pure-64-bit distros).
+	// System essentials first so baseline mounts (notably --tmpfs /tmp)
+	// establish the root layout before policy writable/readable submounts
+	// under /tmp (such as RuntimeDir or temp project roots) are bound on top.
+	// Mirror linuxSystemReadable so the bwrap fallback grants the same
+	// baseline the Landlock backend grants — TLS bundle, NSS resolution,
+	// passwd/group lookup, ld.so cache, /nix/store and Linuxbrew on those
+	// hosts. Without this, Go/Node TLS lookups and getpwuid resolution fail
+	// under bwrap with no equivalent failure under Landlock. --ro-bind-try
+	// silently skips paths absent on this host (e.g. /lib32 on pure-64-bit
+	// distros).
 	for _, p := range linuxSystemReadable {
 		if p == "/proc" {
 			continue // bwrap mounts a fresh procfs via --proc below
@@ -860,6 +853,16 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 		"--bind-try", "/run", "/run",
 		"--tmpfs", "/tmp",
 	)
+
+	// Writable paths: --bind-try src src
+	for _, p := range writable {
+		bwrapArgs = append(bwrapArgs, "--bind-try", p, p)
+	}
+
+	// Readable paths: --ro-bind-try src src
+	for _, p := range readable {
+		bwrapArgs = append(bwrapArgs, "--ro-bind-try", p, p)
+	}
 
 	// Managed Pi's launcher uses lexical PATH/current links even though the
 	// grant set is canonical. Recreate links, never their private parent trees.

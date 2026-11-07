@@ -35,7 +35,9 @@ func TestDiscoverPrivateRootNotRead(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		<-done
+		if err := <-done; err != nil {
+			t.Log(err)
+		}
 		_ = fd.Close()
 		t.Fatal("discovery read private metadata before rejecting its root")
 	}

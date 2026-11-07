@@ -30,10 +30,14 @@ func DetectKernelCapabilities() KernelCapabilities {
 				break
 			}
 		}
-	}
-
-	if caps.LandlockEnabled {
-		caps.LandlockABI = probeLandlockABI()
+		if caps.LandlockEnabled {
+			caps.LandlockABI = probeLandlockABI()
+		}
+	} else if abi := probeLandlockABI(); abi > 0 {
+		// In containers where securityfs (/sys/kernel/security) is not mounted,
+		// fall back to the kernel's LANDLOCK_CREATE_RULESET_VERSION syscall probe.
+		caps.LandlockEnabled = true
+		caps.LandlockABI = abi
 	}
 
 	if _, err := exec.LookPath("bwrap"); err == nil {

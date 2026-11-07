@@ -214,21 +214,21 @@ func TestLinuxIntegration_DefaultPolicy_ProjectRootReadable(t *testing.T) {
 	bwrapPath, _ := exec.LookPath("bwrap")
 	// Build bwrap args manually using GrantedPathSet
 	var bwrapArgs []string
-	for _, p := range gps.Writable {
-		bwrapArgs = append(bwrapArgs, "--bind", p, p)
-	}
-	for _, p := range gps.Readable {
-		bwrapArgs = append(bwrapArgs, "--ro-bind-try", p, p)
-	}
 	bwrapArgs = append(bwrapArgs,
 		"--ro-bind", "/usr", "/usr",
 		"--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
 		"--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
 	)
-	for _, lib := range []string{"/lib", "/lib64"} {
+	for _, lib := range []string{"/bin", "/lib", "/lib64"} {
 		if _, err := os.Stat(lib); err == nil {
 			bwrapArgs = append(bwrapArgs, "--ro-bind", lib, lib)
 		}
+	}
+	for _, p := range gps.Writable {
+		bwrapArgs = append(bwrapArgs, "--bind", p, p)
+	}
+	for _, p := range gps.Readable {
+		bwrapArgs = append(bwrapArgs, "--ro-bind-try", p, p)
 	}
 	bwrapArgs = append(bwrapArgs, "--", "/bin/cat", testFile)
 
@@ -264,19 +264,33 @@ func TestLinuxIntegration_AllowSubprocessFalse_Bwrap_BlocksFork(t *testing.T) {
 		AllowSubprocess: false,
 	}
 
+	// Without 2>/dev/null so POSIX shells like dash/ash (which apply parent-side
+	// redirections before fork() and abort non-interactive shells on EPERM with
+	// "Cannot fork" to fd 2) still emit observable output proving the shell ran
+	// and fork() failed.
 	cmd := exec.Command("/bin/sh", "-c",
-		`/bin/true 2>/dev/null && echo FORK_WORKED || echo FORK_BLOCKED`)
+		`echo SHELL_STARTED; /bin/true && echo FORK_WORKED || echo FORK_BLOCKED`)
 	if err := s.applyBwrap(cmd, policy, bwrapPath); err != nil {
 		t.Fatalf("applyBwrap: %v", err)
+	}
+	// applyBwrap records the parent-side memfd FD for raw syscall.Exec;
+	// exec.Cmd.CombinedOutput remaps ExtraFiles[0] to FD 3 in the child.
+	for i := 0; i+1 < len(cmd.Args); i++ {
+		if cmd.Args[i] == "--seccomp" {
+			cmd.Args[i+1] = "3"
+		}
 	}
 
 	out, _ := cmd.CombinedOutput()
 	output := string(out)
+	if !strings.Contains(output, "SHELL_STARTED") {
+		t.Fatalf("expected sandboxed shell to start; got: %s", output)
+	}
 	if strings.Contains(output, "FORK_WORKED") {
 		t.Errorf("AllowSubprocess=false should block subprocess creation; output: %s", output)
 	}
-	if !strings.Contains(output, "FORK_BLOCKED") {
-		t.Errorf("expected FORK_BLOCKED in output; got: %s", output)
+	if !strings.Contains(output, "FORK_BLOCKED") && !strings.Contains(strings.ToLower(output), "cannot fork") && !strings.Contains(strings.ToLower(output), "operation not permitted") {
+		t.Errorf("expected FORK_BLOCKED or fork error in output; got: %s", output)
 	}
 }
 

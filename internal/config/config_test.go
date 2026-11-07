@@ -6,50 +6,6 @@ import (
 	"testing"
 )
 
-func TestLoad_MinimalConfig(t *testing.T) {
-	configDir := t.TempDir()
-	projectDir := t.TempDir()
-
-	// Write minimal config.yaml
-	configYAML := `agent: claude
-env:
-  ANTHROPIC_API_KEY: "sk-test"
-secret: personal
-mcp_servers: [git, context7]
-`
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configYAML), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := Load(configDir, projectDir)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	// IsMinimal should be true on the raw config (flat fields populated)
-	if cfg.IsMinimal() {
-		t.Error("expected IsMinimal() to be false after loading (should be normalized)")
-	}
-
-	// After normalization, should have a "default" context
-	ctx, ok := cfg.Contexts["default"]
-	if !ok {
-		t.Fatal("expected 'default' context after normalization")
-	}
-	if ctx.Agent != "claude" {
-		t.Errorf("expected agent 'claude', got %q", ctx.Agent)
-	}
-	if ctx.Env["ANTHROPIC_API_KEY"] != "sk-test" {
-		t.Errorf("expected env ANTHROPIC_API_KEY='sk-test', got %q", ctx.Env["ANTHROPIC_API_KEY"])
-	}
-	if ctx.Secret != "personal" {
-		t.Errorf("expected secret 'personal', got %q", ctx.Secret)
-	}
-	if len(ctx.MCPServers) != 2 || ctx.MCPServers[0] != "context7" || ctx.MCPServers[1] != "git" {
-		t.Errorf("expected mcp_servers [context7, git] (sorted), got %v", ctx.MCPServers)
-	}
-}
-
 func TestLoad_FullConfig(t *testing.T) {
 	configDir := t.TempDir()
 	projectDir := t.TempDir()
@@ -78,9 +34,6 @@ default_context: personal
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.IsMinimal() {
-		t.Error("expected IsMinimal() false for full config")
-	}
 	if len(cfg.Contexts) != 2 {
 		t.Errorf("expected 2 contexts, got %d", len(cfg.Contexts))
 	}
@@ -180,8 +133,8 @@ func TestLoad_NoConfigFile(t *testing.T) {
 	}
 
 	// Should return empty config
-	if !cfg.IsMinimal() {
-		t.Error("expected IsMinimal() true for empty config")
+	if len(cfg.Agents) != 0 || len(cfg.Contexts) != 0 {
+		t.Errorf("expected empty config, got agents=%d contexts=%d", len(cfg.Agents), len(cfg.Contexts))
 	}
 }
 

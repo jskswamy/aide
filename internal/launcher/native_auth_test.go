@@ -2,9 +2,9 @@ package launcher
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -150,10 +150,11 @@ func TestNativeAuthNotice_AgentAliasOfClaude(t *testing.T) {
 	}
 }
 
-// Two profiles on Claude's global login would share it: launching
-// either is refused, while a profile with its own dir still launches.
-func TestLauncher_RefusesProfileSharingGlobalLogin(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+// Profiles without an explicit config_dir_name get isolated ~/.<harness>-<profile>
+// directories by default so they never share the global login.
+func TestLauncher_ProfilesDefaultToIsolatedConfigDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	configDir, cwd := t.TempDir(), t.TempDir()
 	writeMinimalConfig(t, configDir, `
 agents:
@@ -164,34 +165,32 @@ profiles:
     agent: claude
   personal:
     agent: claude
-  oss:
-    agent: claude
-    config_dir_name: oss
 default_profile: work
 `)
-	l := &Launcher{ConfigDir: configDir, Stderr: &bytes.Buffer{},
-		LookPath: func(file string) (string, error) { return "/usr/local/bin/" + file, nil }}
-	err := l.Launch(cwd, "", nil, false, false, nil, nil)
-	if !errors.Is(err, config.ErrProfileDirAlias) {
-		t.Fatalf("Launch err = %v, want ErrProfileDirAlias", err)
-	}
-	if !strings.Contains(err.Error(), `"personal"`) {
-		t.Errorf("error does not name the other profile: %v", err)
-	}
-
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)
-	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	l.Execer, l.Profile = mockExec, "oss"
+	var gotEnv []string
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ string, _ []string, env []string) error {
+			gotEnv = env
+			return nil
+		},
+	)
+	l := &Launcher{ConfigDir: configDir, Stderr: &bytes.Buffer{}, Execer: mockExec,
+		LookPath: func(file string) (string, error) { return "/usr/local/bin/" + file, nil }}
 	if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
-		t.Fatalf("isolated profile: Launch err = %v", err)
+		t.Fatalf("Launch err = %v", err)
+	}
+	want := "CLAUDE_CONFIG_DIR=" + filepath.Join(home, ".claude-work")
+	if !slices.Contains(gotEnv, want) {
+		t.Errorf("env missing %q in %v", want, gotEnv)
 	}
 }
 
-// The refusal follows the launch's final harness: two aider profiles
-// may not both run Claude from ~/.claude through --agent claude.
-func TestLauncher_RefusesAgentOverrideOntoSharedGlobalLogin(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+// Overriding an aider profile with --agent claude also isolates to ~/.claude-<profile>.
+func TestLauncher_AgentOverrideOntoProfileCapableHarnessUsesIsolatedDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	configDir, cwd := t.TempDir(), t.TempDir()
 	writeMinimalConfig(t, configDir, `
 agents:
@@ -202,9 +201,22 @@ profiles:
   b: {agent: aider}
 default_profile: a
 `)
-	l := &Launcher{ConfigDir: configDir, Stderr: &bytes.Buffer{},
+	ctrl := gomock.NewController(t)
+	mockExec := mocks.NewMockExecer(ctrl)
+	var gotEnv []string
+	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ string, _ []string, env []string) error {
+			gotEnv = env
+			return nil
+		},
+	)
+	l := &Launcher{ConfigDir: configDir, Stderr: &bytes.Buffer{}, Execer: mockExec,
 		LookPath: func(file string) (string, error) { return "/usr/local/bin/" + file, nil }}
-	if err := l.Launch(cwd, "claude", nil, false, false, nil, nil); !errors.Is(err, config.ErrProfileDirAlias) {
-		t.Fatalf("Launch --agent claude: err = %v, want ErrProfileDirAlias", err)
+	if err := l.Launch(cwd, "claude", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("Launch --agent claude: err = %v", err)
+	}
+	want := "CLAUDE_CONFIG_DIR=" + filepath.Join(home, ".claude-a")
+	if !slices.Contains(gotEnv, want) {
+		t.Errorf("env missing %q in %v", want, gotEnv)
 	}
 }

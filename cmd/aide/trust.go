@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -81,15 +80,6 @@ func validateCmd() *cobra.Command {
 							))
 						}
 					}
-				}
-			}
-
-			// Profiles sharing their harness's global login: launching
-			// them is refused (config.GlobalLoginError).
-			home, _ := os.UserHomeDir()
-			for ctxName, ctx := range cfg.Contexts {
-				if err := cfg.GlobalLoginError(ctxName, cfg.HarnessOf(ctx.Agent), home); err != nil && !slices.Contains(errors, err.Error()) {
-					errors = append(errors, err.Error())
 				}
 			}
 

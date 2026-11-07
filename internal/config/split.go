@@ -94,12 +94,7 @@ func (c *Config) hasInlineProvisioning() bool {
 }
 
 func (c *Config) hasInlineProfiles() bool {
-	return len(c.Contexts) > 0 ||
-		c.Agent != "" ||
-		len(c.Env) > 0 ||
-		c.Secret != "" ||
-		c.Sandbox != nil ||
-		c.Yolo != nil
+	return len(c.Contexts) > 0
 }
 
 func (c *Config) extractSandboxFile() SandboxFile {
@@ -234,6 +229,7 @@ func loadSplitFiles(configDir string, cfg *Config, configExisted bool, rawBytes 
 		cfg.Contexts[name] = ctx
 	}
 
+	cfg.applyDefaultProfileDirs()
 	return nil
 }
 

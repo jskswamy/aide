@@ -49,11 +49,6 @@ func WriteConfigTo(cfg *Config, path string) error {
 	}
 
 	target := cfg
-	if target.IsMinimal() && target.Agent != "" {
-		target = normalizeMinimal(target)
-		target.ProfileSchema = true
-	}
-
 	configDir := filepath.Dir(path)
 
 	// 1. Marshal all files in memory first before touching disk.
@@ -82,7 +77,7 @@ func WriteConfigTo(cfg *Config, path string) error {
 
 	profileBytes := make(map[string][]byte, len(target.Contexts))
 	for _, name := range sortedKeys(target.Contexts) {
-		b, err := EncodeProfileYAML(target.Contexts[name])
+		b, err := EncodeProfileYAML(name, target.Contexts[name])
 		if err != nil {
 			return fmt.Errorf("marshaling profiles/%s.yaml: %w", name, err)
 		}
@@ -141,10 +136,6 @@ func ValidateForWrite(cfg *Config, home string) error {
 		return fmt.Errorf("%w (fix it first): %w", ErrConfigNotLoaded, cfg.loadErr)
 	}
 	target := cfg
-	if target.IsMinimal() && target.Agent != "" {
-		target = normalizeMinimal(target)
-		target.ProfileSchema = true
-	}
 	if err := validateConfigStruct(target, home, "refusing to write config: it"); err != nil {
 		return err
 	}
@@ -157,6 +148,7 @@ func ValidateForWrite(cfg *Config, home string) error {
 }
 
 func validateConfigStruct(cfg *Config, home, what string) error {
+	cfg.applyDefaultProfileDirs()
 	checks := []func() error{
 		cfg.validateCredentials,
 		cfg.ValidatePlugins,
@@ -221,7 +213,7 @@ func sameProfileYAML(name string, want []byte) func([]byte) bool {
 		if err != nil {
 			return false
 		}
-		got, err := EncodeProfileYAML(ctx)
+		got, err := EncodeProfileYAML(name, ctx)
 		return err == nil && bytes.Equal(got, want)
 	}
 }

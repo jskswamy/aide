@@ -46,14 +46,14 @@ func TestResolveByName_UnknownProfileListsDefined(t *testing.T) {
 	}
 }
 
-func TestResolveByName_MinimalConfigDefault(t *testing.T) {
-	cfg := &config.Config{Agent: "claude"}
+func TestResolveByName_EmptyConfigDefault(t *testing.T) {
+	cfg := &config.Config{}
 	rc, err := ResolveByName(cfg, "default")
 	if err != nil || rc.Name != "default" {
-		t.Fatalf("ResolveByName(minimal, default) = %v, %v", rc, err)
+		t.Fatalf("ResolveByName(empty, default) = %v, %v", rc, err)
 	}
 	if _, err := ResolveByName(cfg, "work"); err == nil {
-		t.Error("minimal config has no profile work")
+		t.Error("empty config has no profile work")
 	}
 }
 

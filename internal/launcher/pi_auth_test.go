@@ -108,9 +108,9 @@ default_profile: work
 	}
 }
 
-// A Pi profile without a config dir of its own uses the default
-// ~/.pi/agent (or an exported PI_CODING_AGENT_DIR); its stored logins
-// shadow a selected key just the same.
+// A Pi profile without an explicit config_dir_name defaults to
+// ~/.pi-<profile>/agent (or uses an env: PI_CODING_AGENT_DIR); its
+// stored logins shadow a selected key just the same.
 func TestLauncher_PiStoredLoginNoticeWithoutProfileDir(t *testing.T) {
 	store, _ := fixtureStore(t)
 	cfg := fmt.Sprintf(`
@@ -128,24 +128,34 @@ default_profile: work
 	if err := os.Unsetenv("PI_CODING_AGENT_DIR"); err != nil {
 		t.Fatal(err)
 	}
-	writePiAuth(t, filepath.Join(home, ".pi", "agent"), piAuthWithLogins)
+	writePiAuth(t, filepath.Join(home, ".pi-work"), piAuthWithLogins)
 	_, stderr, err := launchCredentialsIn(t, home, cfg, "", "", true)
 	if err != nil {
 		t.Fatalf("Launch() error = %v", err)
 	}
-	if !strings.Contains(stderr, filepath.Join(home, ".pi", "agent", "auth.json")+" has a stored Pi login for anthropic") {
-		t.Errorf("no notice for the default Pi dir:\n%s", stderr)
+	if !strings.Contains(stderr, filepath.Join(home, ".pi-work", "auth.json")+" has a stored Pi login for anthropic") {
+		t.Errorf("no notice for the default profile Pi dir:\n%s", stderr)
 	}
 
 	home = t.TempDir()
 	exported := filepath.Join(home, "my-pi")
 	writePiAuth(t, exported, piAuthWithLogins)
-	t.Setenv("PI_CODING_AGENT_DIR", exported)
-	_, stderr, err = launchCredentialsIn(t, home, cfg, "", "", true)
+	envCfg := fmt.Sprintf(`
+profiles:
+  work:
+    agent: pi
+    env:
+      PI_CODING_AGENT_DIR: %s
+    credentials:
+      anthropic: {backend: age, store: %s, key: anthropic_api_key}
+    default_credentials: [anthropic]
+default_profile: work
+`, exported, store)
+	_, stderr, err = launchCredentialsIn(t, home, envCfg, "", "", true)
 	if err != nil {
 		t.Fatalf("Launch() error = %v", err)
 	}
 	if !strings.Contains(stderr, filepath.Join(exported, "auth.json")+" has a stored Pi login") {
-		t.Errorf("no notice for an exported PI_CODING_AGENT_DIR:\n%s", stderr)
+		t.Errorf("no notice for env PI_CODING_AGENT_DIR:\n%s", stderr)
 	}
 }

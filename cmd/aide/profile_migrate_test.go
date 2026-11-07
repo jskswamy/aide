@@ -131,7 +131,7 @@ func TestProfileMigrate_PreviewWritesNothing(t *testing.T) {
 		t.Fatalf("migrate: %v\n%s", err, out)
 	}
 	for _, want := range []string{"profiles:", "default_profile: personal", "config_dir_name: work",
-		"credentials:", "nothing written", "--write", "personal", "~/.claude", "--adopt <profile> (one of: personal)"} {
+		"credentials:", "nothing written", "--write", "personal"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("preview missing %q:\n%s", want, out)
 		}
@@ -199,17 +199,6 @@ func TestProfileMigrate_WriteKeepsOwnershipWithoutFalseDrift(t *testing.T) {
 	}
 }
 
-func TestProfileMigrate_AdoptPinsGlobalLogin(t *testing.T) {
-	_, cfgPath, _ := migrateFixture(t)
-	if _, _, err := execProfileMigrate(t, "--write", "--adopt", "personal"); err != nil {
-		t.Fatal(err)
-	}
-	written, _ := os.ReadFile(cfgPath)
-	if !strings.Contains(string(written), "claude: ~/.claude") {
-		t.Errorf("personal not pinned to the global dir:\n%s", written)
-	}
-}
-
 func TestConfigMigrate_PreviewAndWriteSplitFiles(t *testing.T) {
 	home, cfgPath, statePath := migrateFixture(t)
 
@@ -240,21 +229,6 @@ func TestConfigMigrate_PreviewAndWriteSplitFiles(t *testing.T) {
 	for _, name := range []string{"work", "personal"} {
 		if d := driftOf(t, home, cfgPath, statePath, name); d != provision.DriftNone {
 			t.Errorf("%s reports drift %v after config migrate --write", name, d)
-		}
-	}
-}
-
-// The preview spells out that adopting moves the profile's other
-// harnesses off their global logins.
-func TestProfileMigrate_AdoptPreviewNamesOtherHarnessDirs(t *testing.T) {
-	migrateFixture(t)
-	out, _, err := execProfileMigrate(t, "--adopt", "personal")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"under --agent <other harness>", "codex ~/.codex-personal", "pi ~/.pi-personal", "its own login"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("preview missing %q:\n%s", want, out)
 		}
 	}
 }
@@ -292,25 +266,6 @@ func TestProfileMigrate_NeverTouchesProjectConfig(t *testing.T) {
 	}
 }
 
-// Several profiles on one global login: the preview says launches are
-// refused and that the others need their own dirs before any adoption.
-func TestProfileMigrate_PreviewReportsSharedGlobalLogin(t *testing.T) {
-	home := isolatedConfigDir(t)
-	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte("profiles:\n  work: {agent: claude}\n  personal: {agent: claude}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out, _, err := execProfileMigrate(t)
-	if err != nil {
-		t.Fatalf("migrate: %v\n%s", err, out)
-	}
-	for _, want := range []string{"refuses to launch", "all but one", "personal", "work"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("preview missing %q:\n%s", want, out)
-		}
-	}
-}
-
 const openCodeNotCopiedNote = "OpenCode accounts and sessions were not copied and were not deleted. " +
 	"They remain in the database OpenCode was already opening, which is not always under the data directory."
 
@@ -327,9 +282,8 @@ func TestProfileMigrate_OpenCodeNotCopiedNote(t *testing.T) {
 		"already profiles write":  {"profiles:\n  work: {agent: opencode, config_dir_name: work}\n", []string{"--write"}},
 		"config_dirs key": {"profiles:\n  work:\n    agent: claude\n    config_dir_name: work\n" +
 			"    config_dirs: {opencode: ~/oc-work}\n", nil},
-		"global login row":   {"profiles:\n  personal: {agent: opencode}\n", nil},
-		"adopt global login": {"profiles:\n  personal: {agent: opencode}\n", []string{"--write", "--adopt", "personal"}},
-		"agents alias":       {"agents:\n  oc: {binary: opencode}\nprofiles:\n  work: {agent: oc, config_dir_name: work}\n", nil},
+		"global login row": {"profiles:\n  personal: {agent: opencode}\n", nil},
+		"agents alias":     {"agents:\n  oc: {binary: opencode}\nprofiles:\n  work: {agent: oc, config_dir_name: work}\n", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := isolatedConfigDir(t)
@@ -378,14 +332,14 @@ func TestConfigMigrate_RefusesSharedNodesOnProfilesConfig(t *testing.T) {
 	}
 }
 
-func TestConfigMigrate_ValidatesMinimalConfig(t *testing.T) {
+func TestConfigMigrate_ValidatesInlinePlugins(t *testing.T) {
 	home := isolatedConfigDir(t)
 	cfgPath := filepath.Join(home, "xdg", "aide", "config.yaml")
-	body := "agent: claude\nplugins:\n  invalid-repo-key:\n    - commit-tools\n"
+	body := "default_profile: default\nplugins:\n  invalid-repo-key:\n    - commit-tools\n"
 	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := execConfigMigrate(t); err == nil {
-		t.Fatal("expected validation error for invalid minimal config plugins")
+		t.Fatal("expected validation error for invalid inline config plugins")
 	}
 }

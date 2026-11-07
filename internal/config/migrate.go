@@ -17,22 +17,14 @@ import (
 	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/harness"
-	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/statedir"
 	"github.com/jskswamy/aide/internal/yamlnode"
 )
-
-// ErrAdopt reports an --adopt choice migration cannot apply.
-var ErrAdopt = errors.New("cannot adopt global login")
 
 // MigrateOptions tunes MigrateProfiles.
 type MigrateOptions struct {
 	// Home expands ~ in native config dirs for validation.
 	Home string
-	// Adopt names profiles that keep their harness's global login:
-	// each gets config_dir_name: <profile> and config_dirs pinning its
-	// harness to the harness's default dir.
-	Adopt []string
 }
 
 // MigratedCredential is a legacy env: provider credential rewritten
@@ -49,27 +41,6 @@ type MigratedCredential struct {
 	// binding's route for Harness, so the key keeps its endpoint.
 	Set     map[string]string
 	Harness string
-}
-
-// GlobalLogin is a profile that selects no native config dir, so its
-// harness runs from the harness's default dir and shares that login
-// with every other such profile.
-type GlobalLogin struct {
-	Profile string
-	Harness string
-	Dir     string // ~-relative default dir
-	Adopted bool
-	// OtherDirs are the dirs the other profile-capable harnesses would
-	// use under this profile once adopted (config_dir_name: <profile>):
-	// fresh dirs needing their own login, instead of each harness's
-	// global login.
-	OtherDirs []OtherHarnessDir
-}
-
-// OtherHarnessDir is the native config dir one harness uses.
-type OtherHarnessDir struct {
-	Harness string
-	Dir     string
 }
 
 // Migration is the result of MigrateProfiles. Nothing is written.
@@ -91,9 +62,8 @@ type Migration struct {
 	// minimal config settings).
 	SplitErr error
 	// Renamed lists the key renames applied, as "old -> new".
-	Renamed      []string
-	Credentials  []MigratedCredential
-	GlobalLogins []GlobalLogin
+	Renamed     []string
+	Credentials []MigratedCredential
 	// MentionsOpenCode reports that a profile runs OpenCode or pins an
 	// OpenCode config dir, so its accounts may now open another database.
 	MentionsOpenCode bool
@@ -149,13 +119,13 @@ func ApplyMigrationSplit(configDir string, m *Migration) error {
 	return nil
 }
 
-// InspectLoadedMigration populates GlobalLogins and MentionsOpenCode from an
-// already-split loaded Config when config.yaml itself has no inline profiles.
-func InspectLoadedMigration(cfg *Config, home string) ( []GlobalLogin, bool) {
+// InspectLoadedMigration reports MentionsOpenCode from an already-split loaded
+// Config when config.yaml itself has no inline profiles.
+func InspectLoadedMigration(cfg *Config) bool {
 	if cfg == nil {
-		return nil, false
+		return false
 	}
-	return globalLogins(cfg, sortedKeys(cfg.Contexts), home), mentionsOpenCode(cfg)
+	return mentionsOpenCode(cfg)
 }
 
 // MigrateProfiles converts a config.yaml from the contexts: schema to
@@ -185,13 +155,19 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	if len(doc.Content) == 0 {
 		return m, nil
 	}
-	if cfg.IsMinimal() {
-		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
-			m.SplitErr = m.populateMinimalSplit(&cfg, opts.Home)
+	root := doc.Content[0]
+	if len(cfg.Agents) == 0 && len(cfg.Contexts) == 0 {
+		if cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
+			if err := refuseSharedNodes(root, "config"); err != nil {
+				m.SplitErr = err
+			} else if err := validateConfigStruct(&cfg, opts.Home, "migrated config"); err != nil {
+				m.SplitErr = err
+			} else {
+				m.SplitErr = m.populateSplitFiles(&doc)
+			}
 		}
 		return m, nil
 	}
-	root := doc.Content[0]
 
 	names := sortedKeys(cfg.Contexts)
 	moves := map[string][]MigratedCredential{}
@@ -220,8 +196,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 			moves[name] = append(moves[name], mc)
 		}
 	}
-	if cfg.ProfileSchema && len(moves) == 0 && len(opts.Adopt) == 0 {
-		m.GlobalLogins = globalLogins(&cfg, names, opts.Home)
+	if cfg.ProfileSchema && len(moves) == 0 {
 		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
 			if err := refuseSharedNodes(root, "config"); err != nil {
 				m.SplitErr = err
@@ -253,13 +228,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 		}
 	}
 
-	m.GlobalLogins = globalLogins(&cfg, names, opts.Home)
-	adopted, err := m.adopt(&cfg, section, opts.Adopt, opts.Home)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(m.Renamed) == 0 && len(m.Credentials) == 0 && !adopted {
+	if len(m.Renamed) == 0 && len(m.Credentials) == 0 {
 		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
 			if err := refuseSharedNodes(root, "config"); err != nil {
 				m.SplitErr = err
@@ -371,84 +340,15 @@ func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
 	return nil
 }
 
-// mentionsOpenCode reports whether the flat agent or any profile runs
-// OpenCode, or a profile pins an OpenCode config dir. Every OpenCode
-// global-login row is a profile that runs OpenCode.
+// mentionsOpenCode reports whether any profile runs OpenCode, or a
+// profile pins an OpenCode config dir.
 func mentionsOpenCode(cfg *Config) bool {
-	if cfg.HarnessOf(cfg.Agent) == "opencode" {
-		return true
-	}
 	for _, ctx := range cfg.Contexts {
 		if _, ok := ctx.ConfigDirs["opencode"]; ok || cfg.HarnessOf(ctx.Agent) == "opencode" {
 			return true
 		}
 	}
 	return false
-}
-
-// globalLogins lists the profiles whose harness supports profiles but
-// which select no native config dir.
-func globalLogins(cfg *Config, names []string, home string) []GlobalLogin {
-	var out []GlobalLogin
-	for _, name := range names {
-		ctx := cfg.Contexts[name]
-		if ctx.SelectsConfigDir() {
-			continue
-		}
-		h := cfg.HarnessOf(ctx.Agent)
-		d, ok := harness.Lookup(h)
-		if !ok || !d.SupportsProfiles() || d.DefaultConfigDir == "" {
-			continue
-		}
-		gl := GlobalLogin{Profile: name, Harness: d.Name, Dir: homepath.Tilde(d.DefaultDir(home), home)}
-		for _, other := range profileHarnesses() {
-			if other != d.Name {
-				gl.OtherDirs = append(gl.OtherDirs, OtherHarnessDir{Harness: other,
-					Dir: homepath.Tilde(harness.ProfileConfigDir(other, name, "", home), home)})
-			}
-		}
-		out = append(out, gl)
-	}
-	return out
-}
-
-// adopt pins each named profile to its harness's global dir. Two
-// profiles cannot both be pinned to the same dir, nor one while another
-// profile still runs from it: they would share one login while the
-// pinned one appeared isolated.
-func (m *Migration) adopt(cfg *Config, section *yaml.Node, names []string, home string) (bool, error) {
-	pinned := map[string]string{} // dir -> profile
-	for _, name := range names {
-		i := slices.IndexFunc(m.GlobalLogins, func(g GlobalLogin) bool { return g.Profile == name })
-		if i < 0 {
-			if yamlnode.Value(section, name) == nil {
-				return false, fmt.Errorf("%w: no profile named %q", ErrAdopt, name)
-			}
-			return false, fmt.Errorf("%w: profile %q already selects its own config dir; only profiles on a harness's global login can be adopted", ErrAdopt, name)
-		}
-		gl := &m.GlobalLogins[i]
-		if prev, ok := pinned[gl.Dir]; ok && prev != name {
-			return false, fmt.Errorf("%w: profiles %q and %q would both use %s, one %s login for two identities; adopt one of them "+
-				"and give the other its own config_dir_name, then log in there", ErrAdopt, prev, name, gl.Dir, gl.Harness)
-		}
-		pinned[gl.Dir] = name
-		for _, other := range cfg.globalLoginProfiles(gl.Harness, home) {
-			if !slices.Contains(names, other) {
-				return false, fmt.Errorf("%w: profile %q selects no config dir, so it would still run %s from %s, sharing the login "+
-					"%q adopts; give %q its own config_dir_name: first (it will need a fresh %s login there), then adopt %q",
-					ErrAdopt, other, gl.Harness, gl.Dir, name, other, gl.Harness, name)
-			}
-		}
-		if gl.Adopted {
-			continue
-		}
-		entry := yamlnode.Value(section, name)
-		ensureValue(entry, "config_dir_name", yaml.ScalarNode).Value = name
-		dirs := ensureValue(entry, "config_dirs", yaml.MappingNode)
-		dirs.Content = append(dirs.Content, yamlnode.Str(gl.Harness), yamlnode.Str(gl.Dir))
-		gl.Adopted = true
-	}
-	return len(pinned) > 0, nil
 }
 
 // validateLoadable checks config text (what names it in errors) the
@@ -578,44 +478,6 @@ func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCr
 			return fmt.Errorf("migration would change profiles.%s env: beyond the moved credentials; nothing written", name)
 		}
 	}
-	return nil
-}
-
-func (m *Migration) populateMinimalSplit(cfg *Config, home string) error {
-	norm := normalizeMinimal(cfg)
-	norm.ProfileSchema = true
-	if err := validateConfigStruct(norm, home, "migrated config"); err != nil {
-		return err
-	}
-	files := map[string][]byte{}
-	coreData, err := yamlnode.Marshal(norm.extractCoreConfig())
-	if err != nil {
-		return err
-	}
-	files["config.yaml"] = coreData
-	if sbx := norm.extractSandboxFile(); !sbx.IsEmpty() {
-		b, err := yamlnode.Marshal(sbx)
-		if err != nil {
-			return err
-		}
-		files["sandbox.yaml"] = b
-	}
-	if prov := norm.extractProvisioningFile(); !prov.IsEmpty() {
-		b, err := yamlnode.Marshal(prov)
-		if err != nil {
-			return err
-		}
-		files["provisioning.yaml"] = b
-	}
-	for _, name := range sortedKeys(norm.Contexts) {
-		b, err := EncodeProfileYAML(norm.Contexts[name])
-		if err != nil {
-			return err
-		}
-		files["profiles/"+name+".yaml"] = b
-	}
-	m.SplitFiles = files
-	m.SplitLayout = true
 	return nil
 }
 

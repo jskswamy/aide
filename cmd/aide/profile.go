@@ -489,7 +489,6 @@ func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOption
 		bindDesc = finalDesc
 		newCtx = cfg.Contexts[name]
 	}
-	isolateNewProfile(out, cfg, name, &newCtx)
 	cfg.Contexts[name] = newCtx
 	if cfg.DefaultContext == "" {
 		cfg.DefaultContext = name
@@ -736,19 +735,3 @@ profile is used.`,
 	return cmd
 }
 
-// isolateNewProfile gives a profile being created its own config dirs
-// when another profile already uses its harness's global login
-// (config.IsolateNewProfile), and says so.
-func isolateNewProfile(out io.Writer, cfg *config.Config, name string, ctx *config.Context) {
-	others := cfg.IsolateNewProfile(name, ctx)
-	if len(others) == 0 {
-		return
-	}
-	key := "config_dir_name"
-	if !cfg.ProfileSchema {
-		key = "profile"
-	}
-	h := cfg.HarnessOf(ctx.Agent)
-	fmt.Fprintf(out, "Profile %q gets its own config dirs (%s: %s), so it does not share %s's global login with %s. "+
-		"Log in to %s again under this profile.\n", name, key, ctx.Profile, h, strings.Join(others, ", "), h)
-}

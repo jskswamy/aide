@@ -158,27 +158,6 @@ func TestResolve_FallbackToDefault(t *testing.T) {
 	}
 }
 
-func TestResolve_MinimalConfig(t *testing.T) {
-	cfg := &config.Config{
-		Agent: "claude",
-		Env:   map[string]string{"KEY": "val"},
-	}
-
-	rc, err := Resolve(cfg, "/tmp/somedir", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if rc.Name != "default" {
-		t.Errorf("expected context name 'default', got %q", rc.Name)
-	}
-	if rc.Context.Agent != "claude" {
-		t.Errorf("expected agent 'claude', got %q", rc.Context.Agent)
-	}
-	if rc.Context.Env["KEY"] != "val" {
-		t.Errorf("expected env KEY=val, got %v", rc.Context.Env)
-	}
-}
-
 func TestResolve_ProjectOverrideMergesEnvAdditively(t *testing.T) {
 	cfg := &config.Config{
 		Contexts: map[string]config.Context{
@@ -832,36 +811,6 @@ func TestResolve_PreferencesDefaults(t *testing.T) {
 	}
 	if rc.Preferences.InfoDetail != "normal" {
 		t.Errorf("expected InfoDetail %q by default, got %q", "normal", rc.Preferences.InfoDetail)
-	}
-}
-
-func TestResolve_MinimalConfig_YoloPassedThrough(t *testing.T) {
-	tr := true
-	cfg := &config.Config{
-		Agent: "claude",
-		Yolo:  &tr,
-	}
-
-	rc, err := Resolve(cfg, "/tmp/somedir", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if rc.Context.Yolo == nil || !*rc.Context.Yolo {
-		t.Errorf("expected Yolo=true in resolved context, got %v", rc.Context.Yolo)
-	}
-}
-
-func TestResolve_MinimalConfig_YoloNilByDefault(t *testing.T) {
-	cfg := &config.Config{
-		Agent: "claude",
-	}
-
-	rc, err := Resolve(cfg, "/tmp/somedir", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if rc.Context.Yolo != nil {
-		t.Errorf("expected Yolo=nil in resolved context, got %v", rc.Context.Yolo)
 	}
 }
 

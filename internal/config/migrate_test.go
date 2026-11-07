@@ -38,11 +38,11 @@ default_context: personal
 never_allow_env: [FOO]
 `
 
-func migrate(t *testing.T, body string, adopt ...string) *Migration {
+func migrate(t *testing.T, body string) *Migration {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	m, err := MigrateProfiles([]byte(body), MigrateOptions{Home: home, Adopt: adopt})
+	m, err := MigrateProfiles([]byte(body), MigrateOptions{Home: home})
 	if err != nil {
 		t.Fatalf("MigrateProfiles: %v", err)
 	}
@@ -142,91 +142,6 @@ func TestMigrateProfiles_UntranslatableCredentialFails(t *testing.T) {
 	}
 }
 
-func TestMigrateProfiles_ListsGlobalLoginsWithoutChangingThem(t *testing.T) {
-	m := migrate(t, legacyMigrateConfig)
-	if len(m.GlobalLogins) != 1 {
-		t.Fatalf("GlobalLogins = %+v, want personal only", m.GlobalLogins)
-	}
-	gl := m.GlobalLogins[0]
-	if gl.Profile != "personal" || gl.Harness != "claude" || gl.Dir != "~/.claude" || gl.Adopted {
-		t.Errorf("global login = %+v", gl)
-	}
-	personal := decodeMigrated(t, m).Contexts["personal"]
-	if personal.SelectsConfigDir() {
-		t.Errorf("personal changed without --adopt: %+v", personal)
-	}
-}
-
-func TestMigrateProfiles_AdoptPinsTheGlobalDir(t *testing.T) {
-	m := migrate(t, legacyMigrateConfig, "personal")
-	personal := decodeMigrated(t, m).Contexts["personal"]
-	if personal.Profile != "personal" || personal.ConfigDirs["claude"] != "~/.claude" {
-		t.Errorf("adopted personal = %+v", personal)
-	}
-	if !m.GlobalLogins[0].Adopted {
-		t.Errorf("report not marked adopted: %+v", m.GlobalLogins)
-	}
-}
-
-func TestMigrateProfiles_AdoptRefusals(t *testing.T) {
-	twoGlobal := `contexts:
-  a:
-    agent: claude
-  b:
-    agent: claude
-  c:
-    agent: claude
-    profile: c
-`
-	cases := map[string][]string{
-		"two on one dir": {"a", "b"},
-		"isolated":       {"c"},
-		"unknown":        {"nope"},
-	}
-	for name, adopt := range cases {
-		t.Run(name, func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			_, err := MigrateProfiles([]byte(twoGlobal), MigrateOptions{Home: home, Adopt: adopt})
-			if !errors.Is(err, ErrAdopt) {
-				t.Fatalf("err = %v, want ErrAdopt", err)
-			}
-		})
-	}
-	m := migrate(t, twoGlobal)
-	if len(m.GlobalLogins) != 2 {
-		t.Errorf("GlobalLogins = %+v, want a and b", m.GlobalLogins)
-	}
-}
-
-// Adopting a profile's global dir while another profile still runs
-// from it would make the adopted profile look isolated when it is not.
-func TestMigrateProfiles_AdoptRefusesWhileAnotherProfileSharesTheGlobalDir(t *testing.T) {
-	body := `profiles:
-  a:
-    agent: claude
-  b:
-    agent: codex
-`
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	_, err := MigrateProfiles([]byte(body), MigrateOptions{Home: home, Adopt: []string{"a"}})
-	if !errors.Is(err, ErrAdopt) {
-		t.Fatalf("err = %v, want ErrAdopt", err)
-	}
-	for _, want := range []string{`"b"`, "~/.claude", "config_dir_name"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not mention %s", err, want)
-		}
-	}
-	// Each adopting its own harness's dir leaves no profile on the
-	// other's global dir.
-	m := migrate(t, body, "a", "b")
-	if !m.GlobalLogins[0].Adopted || !m.GlobalLogins[1].Adopted {
-		t.Errorf("GlobalLogins = %+v, want both adopted", m.GlobalLogins)
-	}
-}
-
 func TestMigrateProfiles_AlreadyMigratedIsUnchanged(t *testing.T) {
 	body := `profiles:
   work:
@@ -312,7 +227,7 @@ func TestMigrateProfiles_AnchorsInMigratedFileWithNothingToDo(t *testing.T) {
 // Every migrated profile keeps its effective env: except the moved
 // credential entries.
 func TestMigrateProfiles_EffectiveEnvKept(t *testing.T) {
-	m := migrate(t, legacyMigrateConfig, "personal")
+	m := migrate(t, legacyMigrateConfig)
 	var before Config
 	if err := yaml.Unmarshal([]byte(legacyMigrateConfig), &before); err != nil {
 		t.Fatal(err)
@@ -369,20 +284,6 @@ func TestMigrateProfiles_CustomCredentialWithoutKnownHarness(t *testing.T) {
 				t.Errorf("confusing harness name in error: %v", err)
 			}
 		})
-	}
-}
-
-func TestMigrateProfiles_AdoptReportsOtherHarnessDirs(t *testing.T) {
-	m := migrate(t, legacyMigrateConfig, "personal")
-	gl := m.GlobalLogins[0]
-	var got []string
-	for _, o := range gl.OtherDirs {
-		got = append(got, o.Harness+"="+o.Dir)
-	}
-	joined := strings.Join(got, ",")
-	if !strings.Contains(joined, "codex=~/.codex-personal") || !strings.Contains(joined, "pi=~/.pi-personal") ||
-		strings.Contains(joined, "claude=") {
-		t.Errorf("OtherDirs = %v", got)
 	}
 }
 
@@ -473,19 +374,19 @@ func TestMigrateProfiles_ProducesSplitFilesPreservingComments(t *testing.T) {
 	}
 }
 
-func TestMigrateProfiles_MinimalConfigProducesDefaultProfileSplit(t *testing.T) {
-	m := migrate(t, "agent: claude\nsecret: personal\ncapabilities:\n  custom-cap:\n    description: test\nplugins:\n  steveyegge/beads:\n    - beads\n")
+func TestMigrateProfiles_InlineSectionsProduceSplitFiles(t *testing.T) {
+	m := migrate(t, "default_profile: default\nprofiles:\n  default:\n    agent: claude\n    secret: personal\ncapabilities:\n  custom-cap:\n    description: test\nplugins:\n  steveyegge/beads:\n    - beads\n")
 	if !m.SplitLayout || !m.NeedsWrite() {
-		t.Fatal("expected SplitLayout = true and NeedsWrite = true for minimal flat config")
+		t.Fatal("expected SplitLayout = true and NeedsWrite = true for inline sections")
 	}
 	if _, ok := m.SplitFiles["profiles/default.yaml"]; !ok {
 		t.Fatalf("expected profiles/default.yaml in SplitFiles, got %v", slices.Sorted(maps.Keys(m.SplitFiles)))
 	}
 	if _, ok := m.SplitFiles["sandbox.yaml"]; !ok {
-		t.Errorf("expected sandbox.yaml in SplitFiles for minimal config with capabilities")
+		t.Errorf("expected sandbox.yaml in SplitFiles for config with capabilities")
 	}
 	if _, ok := m.SplitFiles["provisioning.yaml"]; !ok {
-		t.Errorf("expected provisioning.yaml in SplitFiles for minimal config with plugins")
+		t.Errorf("expected provisioning.yaml in SplitFiles for config with plugins")
 	}
 	preview := m.Preview()
 	for _, want := range []string{"# === config.yaml ===", "# === sandbox.yaml ===", "# === provisioning.yaml ===", "# === profiles/default.yaml ==="} {
@@ -522,13 +423,12 @@ func TestMigrateHelpers_PreviewInspectAndNudge(t *testing.T) {
 	}
 
 	// InspectLoadedMigration on nil and loaded Config
-	if gl, oc := InspectLoadedMigration(nil, dir); gl != nil || oc {
-		t.Errorf("InspectLoadedMigration(nil) = %v, %v", gl, oc)
+	if InspectLoadedMigration(nil) {
+		t.Error("InspectLoadedMigration(nil) = true")
 	}
 	cfg := &Config{Contexts: map[string]Context{"work": {Agent: "opencode"}}}
-	gl, oc := InspectLoadedMigration(cfg, dir)
-	if len(gl) != 1 || !oc {
-		t.Errorf("InspectLoadedMigration = %v, %v", gl, oc)
+	if !InspectLoadedMigration(cfg) {
+		t.Error("InspectLoadedMigration = false, want true")
 	}
 
 	// MaybeNudgeMigration cooldown and non-TTY checks

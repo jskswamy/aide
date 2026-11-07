@@ -124,12 +124,12 @@ func (l *Launcher) ResolveSelection(cfg *config.Config, cwd, homeDir string, in 
 	// A profile mis-config must stop the launch rather than silently
 	// run against the wrong directory.
 	h := cfg.HarnessOf(rc.Context.Agent)
+	cfg.ApplyDefaultProfileDir(rc.Name, &rc.Context)
 	env, err := provision.InjectProfileEnv(h, rc.Context, rc.Context.Env, homeDir)
 	if err != nil {
 		return res, fmt.Errorf("profile %q: %w", rc.Name, err)
 	}
 	rc.Context.Env = env
-	res.Refused = cfg.GlobalLoginError(rc.Name, h, homeDir)
 	return res, nil
 }
 

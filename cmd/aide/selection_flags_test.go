@@ -392,9 +392,9 @@ default_profile: work
 	}
 }
 
-// which/status report a launch the shared global login would refuse,
-// and validate fails on it, while the config itself still loads.
-func TestWhichStatusValidate_ReportSharedGlobalLogin(t *testing.T) {
+// which/status/validate succeed cleanly when profiles omit config_dir_name
+// because each profile defaults to its own isolated directory.
+func TestWhichStatusValidate_ProfilesDefaultToIsolatedDirs(t *testing.T) {
 	selectionEnv(t, `
 profiles:
   work: {agent: claude}
@@ -403,14 +403,12 @@ default_profile: work
 `)
 	for name, cmd := range map[string]*cobra.Command{"which": whichCmd(), "status": statusCmd()} {
 		got := runSelectionJSON(t, cmd)
-		var found bool
 		for _, key := range []string{"warnings", "notices"} {
 			for _, w := range names(got[key]) {
-				found = found || (strings.Contains(w, "launch would fail") && strings.Contains(w, `"personal"`))
+				if strings.Contains(w, "launch would fail") {
+					t.Errorf("%s: unexpected launch failure notice in %v", name, got)
+				}
 			}
-		}
-		if !found {
-			t.Errorf("%s: no shared global login notice in %v", name, got)
 		}
 	}
 
@@ -419,8 +417,8 @@ default_profile: work
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(nil)
-	if err := cmd.Execute(); err == nil || !strings.Contains(out.String(), "~/.claude") {
-		t.Errorf("validate: err = %v, want a shared-login error\n%s", err, out.String())
+	if err := cmd.Execute(); err != nil {
+		t.Errorf("validate: err = %v, want nil\n%s", err, out.String())
 	}
 }
 

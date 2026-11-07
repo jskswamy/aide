@@ -67,7 +67,6 @@ func TestLoad_DetectsLegacyMonolithic(t *testing.T) {
 	cases := map[string]string{
 		"inline profiles":     "profiles:\n  work:\n    agent: claude\n",
 		"inline contexts":     "contexts:\n  work:\n    agent: claude\n",
-		"minimal flat":        "agent: claude\nsecret: personal\n",
 		"inline capabilities": "default_profile: work\ncapabilities:\n  foo:\n    readable: [~/a]\n",
 		"inline plugins":      "default_profile: work\nplugins:\n  a/b: [c]\n",
 		"default_context key": "default_context: work\n",

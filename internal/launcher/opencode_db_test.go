@@ -157,7 +157,7 @@ func TestLauncher_OpenCodeSharedServerCommandsGetNoDB(t *testing.T) {
 }
 
 func TestLauncher_OpenCodeConfigDirsWins(t *testing.T) {
-	for name, dir := range map[string]string{"own dir": "oc-login", "global pin": ".config/opencode"} {
+	for name, dir := range map[string]string{"own dir": "oc-login", "nested dir": ".config/opencode-custom"} {
 		t.Run(name, func(t *testing.T) {
 			home := openCodeHome(t)
 			_, env, err := launchOpenCode(t, `
@@ -182,7 +182,7 @@ default_profile: work
 func TestLauncher_OpenCodeNoConfigDirLeavesAmbientDB(t *testing.T) {
 	openCodeHome(t)
 	t.Setenv("OPENCODE_DB", "relative.db")
-	_, env, err := launchOpenCode(t, "profiles:\n  me: {agent: opencode}\ndefault_profile: me\n", "", nil)
+	_, env, err := launchOpenCode(t, "profiles:\n  me:\n    agent: opencode\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/claude-me\ndefault_profile: me\n", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

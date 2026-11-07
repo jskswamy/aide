@@ -60,7 +60,7 @@ func initCmd() *cobra.Command {
 			fmt.Fprintln(out, "Welcome to aide! Let's set up your configuration.")
 			fmt.Fprintln(out)
 
-			reader := bufio.NewReader(os.Stdin)
+			reader := bufio.NewReader(cmd.InOrStdin())
 
 			// Detect agents on PATH
 			result := launcher.ScanAgents(exec.LookPath)
@@ -114,7 +114,7 @@ func initCmd() *cobra.Command {
 
 			fmt.Fprintln(out)
 
-			yamlContent := fmt.Sprintf("agent: %s\n", agentName)
+			var secretsName string
 
 			// Secrets setup (optional)
 			fmt.Fprint(out, "Set up secrets? (y/N): ")
@@ -136,16 +136,14 @@ func initCmd() *cobra.Command {
 				}
 
 				fmt.Fprint(out, "Secrets file name (e.g. personal): ")
-				secretsName, err := reader.ReadString('\n')
+				secretsInput, err := reader.ReadString('\n')
 				if err != nil {
 					return fmt.Errorf("reading secrets name: %w", err)
 				}
-				secretsName = strings.TrimSpace(secretsName)
+				secretsName = strings.TrimSpace(secretsInput)
 				if secretsName == "" {
 					return fmt.Errorf("secrets file name cannot be empty")
 				}
-
-				yamlContent += fmt.Sprintf("secret: %s\n", secretsName)
 
 				// Create the secrets file
 				secretsDir := config.SecretsDir()
@@ -162,16 +160,33 @@ func initCmd() *cobra.Command {
 				return fmt.Errorf("creating config directory: %w", err)
 			}
 
-			if err := fsutil.AtomicWrite(configPath, []byte(yamlContent)); err != nil {
+			defaultCtx := config.Context{Agent: agentName}
+			if secretsName != "" {
+				defaultCtx.Secret = secretsName
+			}
+			agentsMap := make(map[string]config.AgentDef, len(result.Found))
+			for name := range result.Found {
+				agentsMap[name] = config.AgentDef{Binary: name}
+			}
+			if len(agentsMap) == 0 {
+				agentsMap[agentName] = config.AgentDef{Binary: agentName}
+			}
+			cfg := &config.Config{
+				ProfileSchema:  true,
+				DefaultContext: "default",
+				Agents:         agentsMap,
+				Contexts: map[string]config.Context{
+					"default": defaultCtx,
+				},
+			}
+			if err := config.WriteConfigTo(cfg, configPath); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 
 			// Show generated config
+			profilePath := filepath.Join(filepath.Dir(configPath), "profiles", "default.yaml")
 			fmt.Fprintln(out)
-			fmt.Fprintf(out, "Created %s:\n\n", configPath)
-			for _, line := range strings.Split(strings.TrimRight(yamlContent, "\n"), "\n") {
-				fmt.Fprintf(out, "  %s\n", line)
-			}
+			fmt.Fprintf(out, "Created %s and %s\n", configPath, profilePath)
 
 			// Next steps
 			fmt.Fprintln(out)
@@ -617,9 +632,6 @@ Examples:
 					ctx.Sandbox = &config.SandboxRef{ProfileName: sandboxProfile}
 				}
 			}
-			if !exists {
-				isolateNewProfile(out, cfg, ctxName, &ctx)
-			}
 			cfg.Contexts[ctxName] = ctx
 
 			if _, ok := cfg.Agents[agentName]; !ok {
@@ -855,7 +867,6 @@ func setupCmd() *cobra.Command {
 					if len(newEnv) > 0 {
 						newCtx.Env = newEnv
 					}
-					isolateNewProfile(out, cfg, ctxName, &newCtx)
 					cfg.Contexts[ctxName] = newCtx
 
 					if _, ok := cfg.Agents[newAgent]; !ok {
@@ -1196,7 +1207,6 @@ func setupCreateNew(out io.Writer, reader *bufio.Reader, cfg *config.Config, cwd
 	if selectedSandbox != nil {
 		ctx.Sandbox = selectedSandbox
 	}
-	isolateNewProfile(out, cfg, ctxName, &ctx)
 	cfg.Contexts[ctxName] = ctx
 
 	if _, ok := cfg.Agents[agentName]; !ok {

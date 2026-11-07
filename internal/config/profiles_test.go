@@ -295,7 +295,6 @@ func TestLoad_InvalidConfigDirsFail(t *testing.T) {
 		"harness w/o profiles": {"config_dir_name: w\n    config_dirs: {amp: ~/x}", "amp"},
 		"outside home":         {"config_dir_name: w\n    config_dirs: {claude: /opt/x}", "$HOME"},
 		"empty path":           {"config_dir_name: w\n    config_dirs: {claude: \"\"}", "claude"},
-		"without dir name":     {"config_dirs: {claude: ~/x}", "config_dir_name"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -443,21 +442,20 @@ func symlink(t *testing.T, target, link string) {
 	}
 }
 
-// A profile pinned to a harness's global dir shares that login with a
-// profile that selects no config dir and so runs from the same dir.
-func TestLoad_PinnedGlobalDirAliasesUnisolatedProfileFails(t *testing.T) {
-	for name, pin := range map[string]string{
-		"config_dirs": "    config_dir_name: a\n    config_dirs: {claude: ~/.claude}\n",
-		"config_dir":  "    config_dir_name: a\n    config_dir: ~/.claude\n",
+// Any profile that pins or resolves a harness's config dir to its global
+// default dir (e.g. ~/.claude) is rejected at Load.
+func TestLoad_ForbidsGlobalDefaultHarnessDir(t *testing.T) {
+	for name, body := range map[string]string{
+		"config_dirs": "profiles:\n  a:\n    agent: claude\n    config_dirs: {claude: ~/.claude}\n",
+		"config_dir":  "profiles:\n  a:\n    agent: claude\n    config_dir: ~/.claude\n",
+		"env":         "profiles:\n  a:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := loadYAML(t, "profiles:\n"+
-				"  a:\n    agent: claude\n"+pin+
-				"  b:\n    agent: codex\n")
+			_, err := loadYAML(t, body)
 			if !errors.Is(err, ErrProfileDirAlias) {
 				t.Fatalf("Load() error = %v, want ErrProfileDirAlias", err)
 			}
-			for _, want := range []string{`"a"`, `"b"`, "~/.claude", "config_dir_name"} {
+			for _, want := range []string{`"a"`, "~/.claude"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("error %q does not mention %s", err, want)
 				}
@@ -466,145 +464,48 @@ func TestLoad_PinnedGlobalDirAliasesUnisolatedProfileFails(t *testing.T) {
 	}
 }
 
-// Profiles that all select no config dir load (they never claimed
-// isolation); the shared global login is refused per launch instead.
-func TestGlobalLoginError(t *testing.T) {
-	home := t.TempDir()
-	cfg, err := loadYAML(t, "contexts:\n"+
+func TestLoad_DefaultProfileConfigDirName(t *testing.T) {
+	cfg, err := loadYAML(t, "agents:\n  my-claude: {binary: claude}\nprofiles:\n"+
 		"  work:\n    agent: claude\n"+
-		"  personal:\n    agent: claude\n"+
+		"  aliased:\n    agent: my-claude\n"+
+		"  explicit:\n    agent: claude\n    config_dir_name: custom\n"+
 		"  redirected:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-r}\n"+
-		"  own:\n    agent: claude\n    profile: own\n")
+		"  nonprofile:\n    agent: aider\n")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	err = cfg.GlobalLoginError("work", "claude", home)
-	if !errors.Is(err, ErrProfileDirAlias) {
-		t.Fatalf("work: err = %v, want ErrProfileDirAlias", err)
+	if got := cfg.Contexts["work"].Profile; got != "work" {
+		t.Errorf("work.Profile = %q, want work", got)
 	}
-	for _, want := range []string{`"personal"`, `"work"`, "~/.claude", "contexts.work: add `profile: work`"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not mention %s", err, want)
-		}
+	if got := cfg.Contexts["aliased"].Profile; got != "aliased" {
+		t.Errorf("aliased.Profile = %q, want aliased", got)
 	}
-	for _, name := range []string{"redirected", "own"} {
-		if err := cfg.GlobalLoginError(name, "claude", home); err != nil {
-			t.Errorf("%s: err = %v, want nil", name, err)
-		}
+	if got := cfg.Contexts["explicit"].Profile; got != "custom" {
+		t.Errorf("explicit.Profile = %q, want custom", got)
 	}
-	if err := cfg.GlobalLoginError("work", "aider", home); err != nil {
-		t.Errorf("harness without profile support: err = %v, want nil", err)
+	if got := cfg.Contexts["redirected"].Profile; got != "" {
+		t.Errorf("redirected.Profile = %q, want empty when env override is set", got)
 	}
-
-	single, err := loadYAML(t, "profiles:\n"+
-		"  work:\n    agent: claude\n"+
-		"  personal:\n    agent: claude\n    config_dir_name: personal\n")
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if err := single.GlobalLoginError("work", "claude", home); err != nil {
-		t.Errorf("one profile on the global login: err = %v, want nil", err)
+	if got := cfg.Contexts["nonprofile"].Profile; got != "" {
+		t.Errorf("nonprofile.Profile = %q, want empty for harness without profile support", got)
 	}
 }
 
-// A profile whose own agent cannot select a dir does not count against
-// others, but launching it under a profile-capable harness does.
-func TestGlobalLoginError_AgentWithoutProfileSupport(t *testing.T) {
-	home := t.TempDir()
-	cfg, err := loadYAML(t, "profiles:\n  work: {agent: claude}\n  scratch: {agent: aider}\ndefault_profile: work\n")
+func TestEncodeProfileYAML_OmitsDefaultConfigDirName(t *testing.T) {
+	out, err := EncodeProfileYAML("work", Context{Agent: "claude", Profile: "work"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("EncodeProfileYAML: %v", err)
 	}
-	if err := cfg.GlobalLoginError("work", "claude", home); err != nil {
-		t.Errorf("work: err = %v, want nil", err)
-	}
-	err = cfg.GlobalLoginError("scratch", "claude", home)
-	// Its agent cannot take config_dir_name:, so the remedy is env: or
-	// no --agent.
-	if !errors.Is(err, ErrProfileDirAlias) || !strings.Contains(err.Error(), "launch it without --agent claude") ||
-		!strings.Contains(err.Error(), "CLAUDE_CONFIG_DIR: ~/.claude-scratch") || strings.Contains(err.Error(), "config_dir_name: scratch") {
-		t.Errorf("scratch under --agent claude: err = %v", err)
-	}
-}
-
-// Profiles whose agents cannot select a dir still may not share a
-// global login through --agent: with each other, or with a profile
-// pinned to that dir.
-func TestGlobalLoginError_AgentOverrideSharing(t *testing.T) {
-	home := t.TempDir()
-	cfg, err := loadYAML(t, "profiles:\n  a: {agent: aider}\n  b: {agent: aider}\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"a", "b"} {
-		if err := cfg.GlobalLoginError(name, "claude", home); !errors.Is(err, ErrProfileDirAlias) {
-			t.Errorf("%s --agent claude: err = %v, want ErrProfileDirAlias", name, err)
-		}
-	}
-	if err := cfg.GlobalLoginError("a", "aider", home); err != nil {
-		t.Errorf("a on its own agent: err = %v", err)
+	if strings.Contains(string(out), "config_dir_name") {
+		t.Errorf("EncodeProfileYAML included default config_dir_name:\n%s", out)
 	}
 
-	cfg, err = loadYAML(t, "profiles:\n"+
-		"  p:\n    agent: claude\n    config_dir_name: p\n    config_dirs: {claude: ~/.claude}\n"+
-		"  s: {agent: aider}\n")
+	custom, err := EncodeProfileYAML("work", Context{Agent: "claude", Profile: "acme"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("EncodeProfileYAML(custom): %v", err)
 	}
-	home, _ = os.UserHomeDir() // loadYAML's HOME, which the pin expands against
-	err = cfg.GlobalLoginError("s", "claude", home)
-	if !errors.Is(err, ErrProfileDirAlias) || !strings.Contains(err.Error(), `To keep "p"`) {
-		t.Errorf("s --agent claude beside p's pin: err = %v", err)
-	}
-	if err := cfg.GlobalLoginError("p", "claude", home); err != nil {
-		t.Errorf("p on its own agent: err = %v (s only shares under --agent)", err)
-	}
-}
-
-// An env: dir variable set to the default dir is not isolation.
-func TestGlobalLoginError_EnvPointingAtDefaultDir(t *testing.T) {
-	cfg, err := loadYAML(t, "profiles:\n"+
-		"  a: {agent: claude, env: {CLAUDE_CONFIG_DIR: ~/.claude}}\n"+
-		"  b: {agent: claude}\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	home, _ := os.UserHomeDir()
-	if err := cfg.GlobalLoginError("b", "claude", home); !errors.Is(err, ErrProfileDirAlias) {
-		t.Errorf("err = %v, want ErrProfileDirAlias", err)
-	}
-}
-
-// A new profile gets its own dir only when another profile already
-// runs its harness from the global dir.
-func TestIsolateNewProfile(t *testing.T) {
-	cfg := &Config{ProfileSchema: true, Contexts: map[string]Context{}}
-	first := Context{Agent: "claude"}
-	if others := cfg.IsolateNewProfile("work", &first); others != nil || first.Profile != "" {
-		t.Errorf("first profile: others=%v profile=%q, want it left on the global dir", others, first.Profile)
-	}
-	cfg.Contexts["work"] = first
-	second := Context{Agent: "codex"}
-	if others := cfg.IsolateNewProfile("my.repo", &second); len(others) != 1 || others[0] != "work" || second.Profile != "my-repo" {
-		t.Errorf("second profile: others=%v profile=%q, want [work] and my-repo", others, second.Profile)
-	}
-	cfg.Contexts["my.repo"] = second
-	if err := cfg.GlobalLoginError("work", "codex", t.TempDir()); err != nil {
-		t.Errorf("after isolating the new profile: %v", err)
-	}
-	// A derived name another profile already uses gets a suffix.
-	cfg.Contexts["my-repo"] = Context{Agent: "claude", Profile: "my-repo-2"}
-	third := Context{Agent: "claude"}
-	if cfg.IsolateNewProfile("my_repo", &third); third.Profile != "my_repo" {
-		t.Errorf("valid name changed: %q", third.Profile)
-	}
-	fourth := Context{Agent: "claude"}
-	if cfg.IsolateNewProfile("my repo", &fourth); fourth.Profile != "my-repo-3" {
-		t.Errorf("colliding name = %q, want my-repo-3", fourth.Profile)
-	}
-	tool := Context{Agent: "aider"}
-	if cfg.IsolateNewProfile("tool", &tool); tool.Profile != "" {
-		t.Errorf("agent without profile support got config_dir_name %q", tool.Profile)
+	if !strings.Contains(string(custom), "config_dir_name: acme") {
+		t.Errorf("EncodeProfileYAML omitted non-default config_dir_name:\n%s", custom)
 	}
 }
 
@@ -658,45 +559,6 @@ func TestLoad_DistinctEnvRedirectedDirsLoad(t *testing.T) {
 		"  d:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: \"{{ .ProjectRoot }}/.claude\"}\n")
 	if err != nil {
 		t.Fatalf("Load() error = %v, want nil (distinct or templated dirs)", err)
-	}
-}
-
-// The profile told to keep the global login is one that can select a
-// dir, so the native profile is never asked to move off it because of
-// a default profile whose agent cannot.
-func TestGlobalLoginError_KeepsAProfileThatCanSelectADir(t *testing.T) {
-	cfg, err := loadYAML(t, "profiles:\n  a: {agent: aider}\n  w: {agent: claude}\ndefault_profile: a\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	home, _ := os.UserHomeDir()
-	err = cfg.GlobalLoginError("a", "claude", home)
-	if !errors.Is(err, ErrProfileDirAlias) {
-		t.Fatalf("a --agent claude: err = %v, want ErrProfileDirAlias", err)
-	}
-	if !strings.Contains(err.Error(), `To keep "w"`) || strings.Contains(err.Error(), "config_dir_name: w") {
-		t.Errorf("err = %v, want w kept on the login and a told to move", err)
-	}
-}
-
-// A derived dir name is taken when another profile already runs a
-// harness from the dir it would derive, however that profile got there.
-func TestIsolateNewProfile_DirNameTakenByResolvedDir(t *testing.T) {
-	for name, other := range map[string]Context{
-		"env dir":    {Agent: "claude", Env: map[string]string{"CLAUDE_CONFIG_DIR": "~/.claude-new"}},
-		"pinned dir": {Agent: "codex", Profile: "x", ConfigDirs: map[string]string{"codex": "~/.codex-new"}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
-			cfg := &Config{ProfileSchema: true, Contexts: map[string]Context{
-				"global": {Agent: "claude"},
-				"other":  other,
-			}}
-			ctx := Context{Agent: "claude"}
-			if cfg.IsolateNewProfile("new", &ctx); ctx.Profile != "new-2" {
-				t.Errorf("config_dir_name = %q, want new-2", ctx.Profile)
-			}
-		})
 	}
 }
 

@@ -135,11 +135,11 @@ func TestLauncher_ConfigDirRedirectKeptWithoutProfile(t *testing.T) {
 
 	env, _ := launchCapturingEnvAndStderr(t, `
 agents:
-  claude:
-    binary: claude
+  aider:
+    binary: aider
 contexts:
   work:
-    agent: claude
+    agent: aider
 default_context: work
 `, "")
 

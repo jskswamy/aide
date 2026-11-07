@@ -67,8 +67,12 @@ const (
 // env merges additively (override wins on conflict), agent/secret/mcp_servers/sandbox
 // replace if set.
 func Resolve(cfg *config.Config, cwd string, remotes RemoteLookup) (*ResolvedContext, error) {
-	if cfg.IsMinimal() {
-		return finishResolved(cfg, minimalContext(cfg)), nil
+	if len(cfg.Agents) == 0 && len(cfg.Contexts) == 0 {
+		return finishResolved(cfg, &ResolvedContext{
+			Name:        "default",
+			MatchReason: "default",
+			Source:      SourceDefault,
+		}), nil
 	}
 
 	rc := bestMatch(cfg, cwd, remotes)
@@ -95,16 +99,13 @@ func ResolveSelected(cfg *config.Config, cwd string, remotes RemoteLookup, name 
 
 // ResolveByName selects the named profile regardless of match rules,
 // then applies preferences and the project override as Resolve does.
-// A minimal config has only the profile "default".
 func ResolveByName(cfg *config.Config, name string) (*ResolvedContext, error) {
-	if cfg.IsMinimal() {
-		if name != "default" {
-			return nil, fmt.Errorf("profile %q not found: this config defines no profiles (only %q)", name, "default")
-		}
-		rc := minimalContext(cfg)
-		rc.Source = SourceFlag
-		rc.MatchReason = "--profile default"
-		return finishResolved(cfg, rc), nil
+	if len(cfg.Agents) == 0 && len(cfg.Contexts) == 0 && name == "default" {
+		return finishResolved(cfg, &ResolvedContext{
+			Name:        "default",
+			MatchReason: "--profile default",
+			Source:      SourceFlag,
+		}), nil
 	}
 	ctx, ok := cfg.Contexts[name]
 	if !ok {
@@ -120,33 +121,6 @@ func ResolveByName(cfg *config.Config, name string) (*ResolvedContext, error) {
 		Context:     ctx,
 		Source:      SourceFlag,
 	}), nil
-}
-
-// minimalContext builds the synthetic "default" context of a minimal
-// (flat) config.
-func minimalContext(cfg *config.Config) *ResolvedContext {
-	// Materialise the legacy list-of-names from a polymorphic
-	// MCPServerMap whose entries are zero-valued (the unmarshaller
-	// uses that shape to represent `mcp_servers: [a, b]`).
-	var mcpList []string
-	for k, v := range cfg.MCPServers {
-		if v.Command == "" && v.URL == "" {
-			mcpList = append(mcpList, k)
-		}
-	}
-	return &ResolvedContext{
-		Name:        "default",
-		MatchReason: "minimal config (default)",
-		Source:      SourceDefault,
-		Context: config.Context{
-			Agent:      cfg.Agent,
-			Env:        cfg.Env,
-			Secret:     cfg.Secret,
-			MCPServers: mcpList,
-			Sandbox:    config.SandboxPolicyToRef(cfg.Sandbox),
-			Yolo:       cfg.Yolo,
-		},
-	}
 }
 
 // bestMatch returns the highest-scoring context, or nil if no rule

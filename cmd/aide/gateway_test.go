@@ -429,8 +429,8 @@ func TestGatewayCmd_RemoveKeepsSecretUsedByEnvTemplate(t *testing.T) {
 	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--token-stdin"); err != nil {
 		t.Fatal(err)
 	}
-	cfg := strings.Replace(e.config(t), "        config_dir_name: home\n",
-		"        config_dir_name: home\n        secret: work\n        env:\n            CORP: '{{ .secrets.corp_token }}'\n", 1)
+	cfg := strings.Replace(e.config(t), "        agent: pi\n",
+		"        agent: pi\n        secret: work\n        env:\n            CORP: '{{ .secrets.corp_token }}'\n", 1)
 	if !strings.Contains(cfg, "CORP:") {
 		t.Fatalf("could not seed env template:\n%s", cfg)
 	}

@@ -7,13 +7,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the top-level configuration, supporting both minimal and
-// full formats. When the YAML contains "agents", "contexts" or
-// "profiles" keys, it is the full (structured) format; profiles:
-// entries load into Contexts. Otherwise it is the minimal (flat)
-// format, treated as a single default context.
+// Config is the top-level configuration.
 type Config struct {
-	// --- Full format fields ---
 	Agents         map[string]AgentDef      `yaml:"agents,omitempty"`
 	Contexts       map[string]Context       `yaml:"contexts,omitempty"`
 	DefaultContext string                   `yaml:"default_context,omitempty"`
@@ -25,23 +20,10 @@ type Config struct {
 	NeverAllowEnv  []string                 `yaml:"never_allow_env,omitempty"`
 	ScrubEnv       []string                 `yaml:"scrub_env,omitempty"` // extra names for internal/envscrub
 	Plugins        PluginMap                `yaml:"plugins,omitempty"`
-	// MCPServers is the v2 top-level mcp_servers map. The custom
-	// MCPServerMap unmarshaller also accepts the legacy minimal-format
-	// list-of-names form; those names are stored with empty MCPServer
-	// values so normalizeMinimal can still propagate them as a
-	// MCPServersList on the synthesised default context.
-	MCPServers  MCPServerMap      `yaml:"mcp_servers,omitempty"`
-	Hooks       HooksMap          `yaml:"hooks,omitempty"`
-	Preferences *Preferences      `yaml:"preferences,omitempty"`
-	Statusline  *StatuslineConfig `yaml:"statusline,omitempty"`
-
-	// --- Minimal (flat) format fields ---
-	// These are promoted to a synthetic "default" context during loading.
-	Agent   string            `yaml:"agent,omitempty"`
-	Env     map[string]string `yaml:"env,omitempty"`
-	Secret  string            `yaml:"secret,omitempty"`
-	Sandbox *SandboxPolicy    `yaml:"sandbox,omitempty"`
-	Yolo    *bool             `yaml:"yolo,omitempty"`
+	MCPServers     MCPServerMap             `yaml:"mcp_servers,omitempty"`
+	Hooks          HooksMap                 `yaml:"hooks,omitempty"`
+	Preferences    *Preferences             `yaml:"preferences,omitempty"`
+	Statusline     *StatuslineConfig        `yaml:"statusline,omitempty"`
 
 	// --- Project override (populated by loader, not from YAML) ---
 	// Holds .aide.yaml data to be merged on top of the matched context at
@@ -78,12 +60,6 @@ type Config struct {
 
 	// loadErr is set on the FailedLoad placeholder; writers refuse it.
 	loadErr error
-}
-
-// IsMinimal returns true when the config uses the flat single-context format.
-// Detection: if neither "agents" nor "contexts" maps are populated, it is minimal. (DD-12)
-func (c *Config) IsMinimal() bool {
-	return len(c.Agents) == 0 && len(c.Contexts) == 0
 }
 
 // CapabilityDef defines a reusable capability that grants filesystem and

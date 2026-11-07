@@ -13,9 +13,10 @@ import (
 )
 
 // TestLauncher_GatewayUnisolatedProfileWritesToLinuxSandboxRedirect pins
-// that launching Claude on an unisolated profile (no config_dir_name) on
-// Linux materializes gateway-models.json into ~/.config/aide/claude/cache/
-// — the same CLAUDE_CONFIG_DIR the Linux sandbox injects at launch.
+// that launching Claude on a profile whose Profile stays empty (because
+// another harness's env var is set) on Linux materializes
+// gateway-models.json into ~/.config/aide/claude/cache/ — the same
+// CLAUDE_CONFIG_DIR the Linux sandbox injects at launch.
 func TestLauncher_GatewayUnisolatedProfileWritesToLinuxSandboxRedirect(t *testing.T) {
 	fakeGatewayStore(t)
 	unsetEnvForTest(t, "CLAUDE_CONFIG_DIR")
@@ -37,6 +38,8 @@ func TestLauncher_GatewayUnisolatedProfileWritesToLinuxSandboxRedirect(t *testin
 profiles:
   default:
     agent: claude
+    env:
+      CODEX_HOME: ~/.codex-custom
     gateways:
       corp:
         base_url: ` + gs.URL + `

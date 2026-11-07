@@ -96,7 +96,7 @@ func TestSkillshareTargets_PreviewWritesNothing(t *testing.T) {
 	for _, want := range []string{
 		"aide-work-claude:\n", "config_dir: ~/.claude-work",
 		"+ aide-work-codex",
-		"personal: no config_dir_name, config_dir or config_dirs",
+		"aide-personal-claude:\n", "config_dir: ~/.claude-personal",
 		"Nothing written",
 	} {
 		if !strings.Contains(out.String(), want) {

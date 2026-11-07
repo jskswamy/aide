@@ -105,3 +105,42 @@ func keysOf(m map[string]capability.Capability) []string {
 	}
 	return out
 }
+
+func TestCmdEnv_ResolveContextAndProjectMutation(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	xdgHome := filepath.Join(dir, "xdg")
+	aideDir := filepath.Join(xdgHome, "aide")
+	if err := os.MkdirAll(filepath.Join(aideDir, "profiles"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", xdgHome)
+	if err := os.WriteFile(filepath.Join(aideDir, "config.yaml"), []byte("default_profile: default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(aideDir, "profiles", "default.yaml"), []byte("agent: claude\nconfig_dir_name: default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := cmdEnv(helperCmd())
+	if err != nil {
+		t.Fatalf("cmdEnv: %v", err)
+	}
+	cfg, name, ctx, err := env.ResolveContextForMutation("")
+	if err != nil {
+		t.Fatalf("ResolveContextForMutation: %v", err)
+	}
+	if cfg == nil || name != "default" || ctx.Agent != "claude" {
+		t.Fatalf("unexpected context resolution: name=%q agent=%q", name, ctx.Agent)
+	}
+
+	_, po, poPath, err := env.ResolveProjectOverrideForMutation(false)
+	if err != nil {
+		t.Fatalf("ResolveProjectOverrideForMutation: %v", err)
+	}
+	if po == nil || poPath == "" {
+		t.Fatalf("unexpected project override resolution: po=%v path=%q", po, poPath)
+	}
+}
+

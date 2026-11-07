@@ -71,6 +71,7 @@ func (c *Config) UnmarshalYAML(node *yaml.Node) error {
 			ErrMixedProfileDeclarations, strings.Join(legacyKeys, " and "), strings.Join(newKeys, " and "))
 	}
 	if len(newKeys) == 0 {
+		c.applyDefaultProfileDirs()
 		return nil
 	}
 	var raw struct {
@@ -87,11 +88,22 @@ func (c *Config) UnmarshalYAML(node *yaml.Node) error {
 	c.Contexts = profiles
 	c.DefaultContext = raw.DefaultProfile
 	c.ProfileSchema = true
+	c.applyDefaultProfileDirs()
 	return nil
 }
 
 // MarshalYAML writes the schema the config was loaded in.
 func (c Config) MarshalYAML() (interface{}, error) {
+	if len(c.Contexts) > 0 {
+		cloned := make(map[string]Context, len(c.Contexts))
+		for name, ctx := range c.Contexts {
+			if ctx.Profile == configDirName(name) {
+				ctx.Profile = ""
+			}
+			cloned[name] = ctx
+		}
+		c.Contexts = cloned
+	}
 	type plain Config
 	if !c.ProfileSchema {
 		return plain(c), nil
@@ -181,12 +193,17 @@ func DecodeProfileYAML(name string, node *yaml.Node) (Context, error) {
 	if err := entry.Decode(&ctx); err != nil {
 		return Context{}, fmt.Errorf("profiles.%s: %w", name, err)
 	}
+	applyDefaultProfileDir(name, &ctx, nil)
 	return ctx, nil
 }
 
 // EncodeProfileYAML marshals a single Context into YAML bytes using
-// the profiles: vocabulary (config_dir_name and config_dir).
-func EncodeProfileYAML(ctx Context) ([]byte, error) {
+// the profiles: vocabulary (config_dir_name and config_dir), omitting
+// config_dir_name when it matches the default derived from name.
+func EncodeProfileYAML(name string, ctx Context) ([]byte, error) {
+	if name != "" && ctx.Profile == configDirName(name) {
+		ctx.Profile = ""
+	}
 	var node yaml.Node
 	if err := node.Encode(ctx); err != nil {
 		return nil, err

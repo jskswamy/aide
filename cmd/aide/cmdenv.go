@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
+	aidectx "github.com/jskswamy/aide/internal/context"
 )
 
 // Env captures the typical CLI subcommand preamble: cwd + loaded
@@ -74,3 +76,37 @@ func (e *Env) Registry() map[string]capability.Capability {
 	}
 	return e.registry
 }
+
+// ResolveContextForMutation resolves the target context name (defaulting to
+// the active context for e.cwd when contextName is empty) and returns the
+// loaded config, resolved context name, and Context struct for mutation.
+func (e *Env) ResolveContextForMutation(contextName string) (*config.Config, string, config.Context, error) {
+	if contextName == "" {
+		rc, err := aidectx.Resolve(e.cfg, e.cwd, aidectx.GitRemotes(e.cwd))
+		if err != nil {
+			return nil, "", config.Context{}, fmt.Errorf("resolving profile: %w", err)
+		}
+		contextName = rc.Name
+	}
+	ctx, ok := e.cfg.Contexts[contextName]
+	if !ok {
+		return nil, "", config.Context{}, fmt.Errorf("context %q not found", contextName)
+	}
+	return e.cfg, contextName, ctx, nil
+}
+
+// ResolveProjectOverrideForMutation resolves the project override file to
+// edit for e.cwd (or the main checkout when main is true) and returns the
+// loaded global config, the raw ProjectOverride, and the target file path.
+func (e *Env) ResolveProjectOverrideForMutation(main bool) (*config.Config, *config.ProjectOverride, string, error) {
+	poPath, err := config.ProjectConfigWriteTarget(e.cwd, main)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	po, err := config.LoadProjectOverrideFile(poPath)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("loading project config %s: %w", poPath, err)
+	}
+	return e.cfg, po, poPath, nil
+}
+

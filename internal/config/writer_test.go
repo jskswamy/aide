@@ -85,21 +85,26 @@ func TestWriteConfig_FullFormat(t *testing.T) {
 	}
 }
 
-func TestWriteConfig_MinimalFormat(t *testing.T) {
+func TestWriteConfig_SingleDefaultProfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := &Config{
-		Agent:  "claude",
-		Env:    map[string]string{"KEY": "value"},
-		Secret: "secrets",
+		ProfileSchema:  true,
+		DefaultContext: "default",
+		Contexts: map[string]Context{
+			"default": {
+				Agent:  "claude",
+				Env:    map[string]string{"KEY": "value"},
+				Secret: "secrets",
+			},
+		},
 	}
 
 	if err := WriteConfigTo(cfg, path); err != nil {
 		t.Fatalf("WriteConfigTo() error = %v", err)
 	}
 
-	// WriteConfigTo promotes an in-memory minimal Config into the split layout (profiles/default.yaml)
 	loaded, err := Load(dir, "")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -132,7 +137,7 @@ func TestWriteConfig_AtomicOnError(t *testing.T) {
 	original := filepath.Join(dir, "config.yaml")
 
 	// Write an original config
-	origCfg := &Config{Agent: "original"}
+	origCfg := &Config{DefaultContext: "original"}
 	if err := WriteConfigTo(origCfg, original); err != nil {
 		t.Fatalf("initial WriteConfigTo() error = %v", err)
 	}
@@ -162,7 +167,7 @@ func TestWriteConfig_AtomicOnError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(readOnlyDir, 0755) })
 
 	// Try to write a new config — should fail
-	newCfg := &Config{Agent: "modified"}
+	newCfg := &Config{DefaultContext: "modified"}
 	err = WriteConfigTo(newCfg, readOnlyPath)
 	if err == nil {
 		t.Fatal("expected error writing to read-only directory, got nil")
@@ -183,7 +188,11 @@ func TestWriteConfig_CreatesDirectory(t *testing.T) {
 	nested := filepath.Join(dir, "a", "b", "c")
 	path := filepath.Join(nested, "config.yaml")
 
-	cfg := &Config{Agent: "claude"}
+	cfg := &Config{
+		ProfileSchema:  true,
+		DefaultContext: "default",
+		Contexts:       map[string]Context{"default": {Agent: "claude"}},
+	}
 	if err := WriteConfigTo(cfg, path); err != nil {
 		t.Fatalf("WriteConfigTo() error = %v", err)
 	}
@@ -299,7 +308,7 @@ func TestWriteConfig_RenameFailure_CleansTmpFile(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	cfg := &Config{Agent: "claude"}
+	cfg := &Config{DefaultContext: "default"}
 	err := WriteConfigTo(cfg, targetPath)
 	if err == nil {
 		t.Fatal("expected error when rename target is a non-empty directory, got nil")
@@ -401,8 +410,8 @@ func TestWriteConfig_ScattersToSplitFilesAndPreservesUnchangedMtime(t *testing.T
 	if err != nil {
 		t.Fatalf("missing profiles/work.yaml: %v", err)
 	}
-	if !strings.Contains(string(workBytes), "config_dir_name: work") {
-		t.Errorf("profiles/work.yaml missing config_dir_name:\n%s", workBytes)
+	if !strings.Contains(string(workBytes), "agent: claude") || strings.Contains(string(workBytes), "config_dir_name:") {
+		t.Errorf("profiles/work.yaml unexpected content:\n%s", workBytes)
 	}
 
 	// Record mtime on profiles/work.yaml and sandbox.yaml, then update only personal
@@ -548,7 +557,7 @@ func TestWriteConfig_TwoSpaceIndentAndPreservesUntouchedFiles(t *testing.T) {
 	}
 	for _, want := range []string{
 		"---\n# personal profile\n",
-		"agent: claude # personal agent\nconfig_dir_name: personal\n",
+		"agent: claude # personal agent\n",
 		"env:\n  KEY: val\n",
 	} {
 		if !strings.Contains(persOut, want) {

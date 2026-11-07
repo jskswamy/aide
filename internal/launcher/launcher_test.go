@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"go.uber.org/mock/gomock"
+	"gopkg.in/yaml.v3"
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/launcher/mocks"
@@ -32,11 +33,39 @@ func repoTestdataDir(t *testing.T) string {
 	return filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata")
 }
 
-// writeMinimalConfig writes a minimal config.yaml to the given configDir.
+// writeMinimalConfig writes a config.yaml to the given configDir.
+// If content uses shorthand top-level profile fields (agent, env, secret,
+// sandbox, yolo) without contexts/profiles, it wraps them into a default profile.
 func writeMinimalConfig(t *testing.T, configDir string, content string) {
 	t.Helper()
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := yaml.Unmarshal([]byte(content), &raw); err == nil && raw != nil {
+		_, hasContexts := raw["contexts"]
+		_, hasProfiles := raw["profiles"]
+		if !hasContexts && !hasProfiles {
+			prof := map[string]any{}
+			for _, k := range []string{"agent", "env", "secret", "sandbox", "yolo"} {
+				if v, ok := raw[k]; ok {
+					prof[k] = v
+					delete(raw, k)
+				}
+			}
+			if len(prof) > 0 {
+				if agent, ok := prof["agent"].(string); ok && agent != "" {
+					if _, hasAgents := raw["agents"]; !hasAgents {
+						raw["agents"] = map[string]any{agent: map[string]any{"binary": agent}}
+					}
+				}
+				raw["profiles"] = map[string]any{"default": prof}
+				raw["default_profile"] = "default"
+				if b, err := yaml.Marshal(raw); err == nil {
+					content = string(b)
+				}
+			}
+		}
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -1790,7 +1819,6 @@ func TestApplyTrustGate_FailClosedOnReadError(t *testing.T) {
 
 	// Create a config with a ProjectOverride pointing to a non-existent file
 	cfg := &config.Config{
-		Agent:             "/usr/local/bin/my-agent",
 		ProjectConfigPath: "/nonexistent/path/.aide.yaml",
 		ProjectOverride: &config.ProjectOverride{
 			Agent: "claude",

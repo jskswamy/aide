@@ -8,42 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestConfig_IsMinimal_True(t *testing.T) {
-	input := `
-agent: claude
-env:
-  ANTHROPIC_API_KEY: "sk-test"
-secret: personal
-mcp_servers: [git, context7]
-`
-	var cfg config.Config
-	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if !cfg.IsMinimal() {
-		t.Error("expected IsMinimal() to return true for flat config")
-	}
-	if cfg.Agent != "claude" {
-		t.Errorf("Agent = %q, want %q", cfg.Agent, "claude")
-	}
-	if cfg.Env["ANTHROPIC_API_KEY"] != "sk-test" {
-		t.Errorf("Env[ANTHROPIC_API_KEY] = %q, want %q", cfg.Env["ANTHROPIC_API_KEY"], "sk-test")
-	}
-	if cfg.Secret != "personal" {
-		t.Errorf("Secret = %q, want %q", cfg.Secret, "personal")
-	}
-	if len(cfg.MCPServers) != 2 {
-		t.Errorf("MCPServers = %v, want 2 entries", cfg.MCPServers)
-	}
-	if _, ok := cfg.MCPServers["git"]; !ok {
-		t.Errorf("MCPServers missing git: %v", cfg.MCPServers)
-	}
-	if _, ok := cfg.MCPServers["context7"]; !ok {
-		t.Errorf("MCPServers missing context7: %v", cfg.MCPServers)
-	}
-}
-
-func TestConfig_IsMinimal_False(t *testing.T) {
+func TestConfig_UnmarshalFull(t *testing.T) {
 	input := `
 agents:
   claude:
@@ -60,9 +25,6 @@ default_context: personal
 	var cfg config.Config
 	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
-	}
-	if cfg.IsMinimal() {
-		t.Error("expected IsMinimal() to return false for full config")
 	}
 	if len(cfg.Agents) != 1 {
 		t.Errorf("len(Agents) = %d, want 1", len(cfg.Agents))
@@ -82,35 +44,6 @@ default_context: personal
 	}
 	if cfg.DefaultContext != "personal" {
 		t.Errorf("DefaultContext = %q, want %q", cfg.DefaultContext, "personal")
-	}
-}
-
-func TestConfig_UnmarshalMinimal_RoundTrip(t *testing.T) {
-	original := config.Config{
-		Agent:      "claude",
-		Env:        map[string]string{"KEY": "val"},
-		Secret:     "test",
-		MCPServers: config.MCPServerMap{"git": {Command: "git-mcp"}},
-	}
-	data, err := yaml.Marshal(&original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var decoded config.Config
-	if err := yaml.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if decoded.Agent != original.Agent {
-		t.Errorf("Agent = %q, want %q", decoded.Agent, original.Agent)
-	}
-	if decoded.Env["KEY"] != "val" {
-		t.Errorf("Env[KEY] = %q, want %q", decoded.Env["KEY"], "val")
-	}
-	if decoded.Secret != original.Secret {
-		t.Errorf("Secret = %q, want %q", decoded.Secret, original.Secret)
-	}
-	if len(decoded.MCPServers) != 1 || decoded.MCPServers["git"].Command != "git-mcp" {
-		t.Errorf("MCPServers = %v, want git", decoded.MCPServers)
 	}
 }
 
@@ -196,13 +129,13 @@ func TestConfig_UnmarshalFull_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestConfig_EmptyYAML_IsMinimal(t *testing.T) {
+func TestConfig_EmptyYAML(t *testing.T) {
 	var cfg config.Config
 	if err := yaml.Unmarshal([]byte(""), &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !cfg.IsMinimal() {
-		t.Error("expected IsMinimal() to return true for empty YAML")
+	if len(cfg.Agents) != 0 || len(cfg.Contexts) != 0 {
+		t.Errorf("expected empty Agents/Contexts for empty YAML, got %d/%d", len(cfg.Agents), len(cfg.Contexts))
 	}
 }
 
@@ -322,23 +255,18 @@ func TestNetworkPolicy_UnmarshalString_AllModes(t *testing.T) {
 
 func TestSandboxPolicy_NetworkBackwardCompat(t *testing.T) {
 	input := `
-agent: claude
-sandbox:
-  writable: ["/tmp"]
-  network: outbound
+writable: ["/tmp"]
+network: outbound
 `
-	var cfg config.Config
-	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if cfg.Sandbox == nil {
-		t.Fatal("Sandbox is nil")
-	}
-	if cfg.Sandbox.Network == nil {
+	if sp.Network == nil {
 		t.Fatal("Sandbox.Network is nil")
 	}
-	if cfg.Sandbox.Network.Mode != "outbound" {
-		t.Errorf("Sandbox.Network.Mode = %q, want %q", cfg.Sandbox.Network.Mode, "outbound")
+	if sp.Network.Mode != "outbound" {
+		t.Errorf("Sandbox.Network.Mode = %q, want %q", sp.Network.Mode, "outbound")
 	}
 }
 
@@ -557,20 +485,6 @@ default_context: work
 	}
 }
 
-func TestConfig_MinimalYoloField(t *testing.T) {
-	input := `
-agent: claude
-yolo: true
-`
-	var cfg config.Config
-	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if cfg.Yolo == nil || !*cfg.Yolo {
-		t.Errorf("Config.Yolo = %v, want true", cfg.Yolo)
-	}
-}
-
 func TestProjectOverride_YoloField(t *testing.T) {
 	input := `
 agent: codex
@@ -640,15 +554,23 @@ func TestConfigRoundTrip_SandboxExtraFields(t *testing.T) {
 	configPath := dir + "/config.yaml"
 
 	original := &config.Config{
-		Agent: "claude",
-		Sandbox: &config.SandboxPolicy{
-			Writable:      []string{"/tmp"},
-			WritableExtra: []string{"/tmp/myproject"},
-			Readable:      []string{"/etc"},
-			ReadableExtra: []string{"/opt/tools"},
-			Denied:        []string{"/root"},
-			DeniedExtra:   []string{"~/.kube", "~/.terraform.d"},
-			Network:       &config.NetworkPolicy{Mode: "outbound"},
+		ProfileSchema:  true,
+		DefaultContext: "default",
+		Contexts: map[string]config.Context{
+			"default": {
+				Agent: "claude",
+				Sandbox: &config.SandboxRef{
+					Inline: &config.SandboxPolicy{
+						Writable:      []string{"/tmp"},
+						WritableExtra: []string{"/tmp/myproject"},
+						Readable:      []string{"/etc"},
+						ReadableExtra: []string{"/opt/tools"},
+						Denied:        []string{"/root"},
+						DeniedExtra:   []string{"~/.kube", "~/.terraform.d"},
+						Network:       &config.NetworkPolicy{Mode: "outbound"},
+					},
+				},
+			},
 		},
 	}
 
@@ -820,23 +742,20 @@ capabilities:
 // --- SandboxPolicy.UnmarshalYAML edge cases ---
 
 func TestSandboxPolicy_UnmarshalYAML_BoolFalse(t *testing.T) {
-	input := `sandbox: false`
-	var cfg config.Config
-	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+	input := `false`
+	var sp config.SandboxPolicy
+	if err := yaml.Unmarshal([]byte(input), &sp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if cfg.Sandbox == nil {
-		t.Fatal("Sandbox is nil")
-	}
-	if !cfg.Sandbox.Disabled {
+	if !sp.Disabled {
 		t.Error("expected Sandbox.Disabled to be true for sandbox: false")
 	}
 }
 
 func TestSandboxPolicy_UnmarshalYAML_BoolTrue_Error(t *testing.T) {
-	input := `sandbox: true`
-	var cfg config.Config
-	err := yaml.Unmarshal([]byte(input), &cfg)
+	input := `true`
+	var sp config.SandboxPolicy
+	err := yaml.Unmarshal([]byte(input), &sp)
 	if err == nil {
 		t.Fatal("expected error for sandbox: true, got nil")
 	}

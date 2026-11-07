@@ -124,34 +124,14 @@ func askMatchRule(out io.Writer, reader *bufio.Reader, cwd string) (config.Match
 	return config.MatchRule{}, fmt.Errorf("invalid selection")
 }
 
-// resolveContextForMutation loads config, resolves the context name, and returns
-// the config, context name, and context for modification.
-//
-// This helper does not use cmdEnv because it has no *cobra.Command in scope —
-// callers invoke it from several RunE bodies with arguments other than cmd.
-// The preamble it performs is identical in shape to cmdEnv but is duplicated
-// here intentionally to keep the signature *cobra.Command-free.
+// resolveContextForMutation loads config via cmdEnv, resolves the context name,
+// and returns the config, context name, and context for modification.
 func resolveContextForMutation(contextName string) (*config.Config, string, config.Context, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, "", config.Context{}, fmt.Errorf("getting working directory: %w", err)
-	}
-	cfg, err := config.Load(config.Dir(), cwd)
+	env, err := cmdEnv(nil)
 	if err != nil {
 		return nil, "", config.Context{}, fmt.Errorf("loading config: %w", err)
 	}
-	if contextName == "" {
-		rc, err := aidectx.Resolve(cfg, cwd, aidectx.GitRemotes(cwd))
-		if err != nil {
-			return nil, "", config.Context{}, fmt.Errorf("resolving profile: %w", err)
-		}
-		contextName = rc.Name
-	}
-	ctx, ok := cfg.Contexts[contextName]
-	if !ok {
-		return nil, "", config.Context{}, fmt.Errorf("context %q not found", contextName)
-	}
-	return cfg, contextName, ctx, nil
+	return env.ResolveContextForMutation(contextName)
 }
 
 // resolveEffectiveCapabilities returns the resolved context name and its
@@ -199,33 +179,18 @@ func resolveEffectiveCapabilities(cfg *config.Config, cwd, contextName, homeDir 
 	return contextName, capability.AutoInclude(ctx.Capabilities, nil, homeDir, os.Getenv), nil
 }
 
-// resolveProjectOverrideForMutation loads the global config and the
+// resolveProjectOverrideForMutation loads the global config via cmdEnv and the
 // project file to edit. Returns the global config (for validation),
 // that file's override as written (empty if it does not exist; never
 // the merged or path-rewritten view a launch uses), and its path. In a
 // linked worktree the file is the worktree's own .aide.yaml; main
 // selects the main checkout's instead.
-//
-// Like resolveContextForMutation, this helper has no *cobra.Command in scope
-// and so performs its own preamble rather than using cmdEnv.
 func resolveProjectOverrideForMutation(main bool) (*config.Config, *config.ProjectOverride, string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("getting working directory: %w", err)
-	}
-	cfg, err := config.Load(config.Dir(), cwd)
+	env, err := cmdEnv(nil)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("loading config: %w", err)
 	}
-	poPath, err := config.ProjectConfigWriteTarget(cwd, main)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	po, err := config.LoadProjectOverrideFile(poPath)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("loading project config %s: %w", poPath, err)
-	}
-	return cfg, po, poPath, nil
+	return env.ResolveProjectOverrideForMutation(main)
 }
 
 // validateMainScope rejects --main combined with --global.

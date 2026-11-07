@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -52,11 +51,6 @@ func Load(configDir, projectDir string) (*Config, error) {
 
 	if err := loadSplitFiles(configDir, cfg, configExisted, rawBytes); err != nil {
 		return nil, fmt.Errorf("loading global config: %w", err)
-	}
-
-	// Normalize minimal format into full format (DD-12)
-	if cfg.IsMinimal() && cfg.Agent != "" {
-		cfg = normalizeMinimal(cfg)
 	}
 
 	if err := cfg.loadProjectConfig(projectDir); err != nil {
@@ -153,58 +147,8 @@ func (c *Config) loadProjectConfig(projectDir string) error {
 	return nil
 }
 
-// normalizeMinimal converts a flat (minimal) config into the full
-// internal representation with a single "default" context.
-func normalizeMinimal(cfg *Config) *Config {
-	agentName := cfg.Agent
-	if agentName == "" {
-		agentName = "default"
-	}
-	// Minimal-format mcp_servers may be either a list of names (old
-	// shape) or a v2 map; the MCPServerMap unmarshaller stores both
-	// the same way (map with empty MCPServer values for the list form).
-	var mcpList []string
-	for k, v := range cfg.MCPServers {
-		// Treat zero-value entries as legacy list-form names.
-		if v.Command == "" && v.URL == "" {
-			mcpList = append(mcpList, k)
-		}
-	}
-	sort.Strings(mcpList)
-	return &Config{
-		Agents: map[string]AgentDef{
-			agentName: {Binary: agentName},
-		},
-		Contexts: map[string]Context{
-			"default": {
-				Agent:      agentName,
-				Env:        cfg.Env,
-				Secret:     cfg.Secret,
-				MCPServers: mcpList,
-				Sandbox:    SandboxPolicyToRef(cfg.Sandbox),
-				Yolo:       cfg.Yolo,
-			},
-		},
-		Capabilities:     cfg.Capabilities,
-		Sandboxes:        cfg.Sandboxes,
-		CustomGuards:     cfg.CustomGuards,
-		GuardTypes:       cfg.GuardTypes,
-		NeverAllow:       cfg.NeverAllow,
-		NeverAllowEnv:    cfg.NeverAllowEnv,
-		ScrubEnv:         cfg.ScrubEnv,
-		Plugins:          cfg.Plugins,
-		MCPServers:       cfg.MCPServers,
-		Hooks:            cfg.Hooks,
-		DefaultContext:   "default",
-		Preferences:      cfg.Preferences,
-		Statusline:       cfg.Statusline,
-		ProfileSchema:    cfg.ProfileSchema,
-		LegacyMonolithic: cfg.LegacyMonolithic,
-	}
-}
-
 // SandboxPolicyToRef wraps a SandboxPolicy pointer into a SandboxRef.
-// Used when promoting a minimal config's or project override's sandbox field to a context.
+// Used when promoting a project override's sandbox field to a context.
 func SandboxPolicyToRef(sp *SandboxPolicy) *SandboxRef {
 	if sp == nil {
 		return nil

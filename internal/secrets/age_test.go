@@ -1,12 +1,16 @@
 package secrets
 
 import (
+	"bufio"
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+
+	"filippo.io/age"
 )
 
 // isolateConfigDir redirects os.UserConfigDir() and the XDG fallback into a
@@ -344,10 +348,410 @@ func TestDiscoverAgeKey_NoneFound(t *testing.T) {
 		"SOPS_AGE_KEY",
 		"SOPS_AGE_KEY_FILE",
 		"age-keygen",
-		"aide setup",
+		"aide init",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error message missing %q:\n%s", want, msg)
 		}
 	}
+}
+
+func TestDiscoverRecipients_SingleAndMultiple(t *testing.T) {
+	id1, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id3, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	yubikeyPub := "age1yubikey1qwt50d05yubikeytestrecipient0000000000000000000000000"
+
+	defaultFile := isolateConfigDir(t)
+	if err := os.MkdirAll(filepath.Dir(defaultFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Default file has id3 and a duplicate of id2.
+	defaultContent := strings.Join([]string{
+		"# default key",
+		"# public key: " + id3.Recipient().String(),
+		id3.String(),
+		"",
+		"# duplicate of id2",
+		id2.String(),
+	}, "\n") + "\n"
+	if err := os.WriteFile(defaultFile, []byte(defaultContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// SOPS_AGE_KEY_FILE has id2 and a YubiKey plugin recipient comment.
+	envKeyFile := filepath.Join(t.TempDir(), "env-keys.txt")
+	envFileContent := strings.Join([]string{
+		"# created: 2026-01-15T10:00:00Z",
+		"# public key: " + id2.Recipient().String(),
+		id2.String(),
+		"",
+		"# YubiKey slot 1",
+		"# Recipient: " + yubikeyPub,
+		"AGE-PLUGIN-YUBIKEY-1FAKEPLUGINIDENTITY000000000000",
+	}, "\n") + "\n"
+	if err := os.WriteFile(envKeyFile, []byte(envFileContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// SOPS_AGE_KEY has leading comment lines + id1.
+	envKey := "# env key comment\n# public key: " + id1.Recipient().String() + "\n" + id1.String() + "\n"
+	t.Setenv("PATH", "")
+	t.Setenv("SOPS_AGE_KEY", envKey)
+	t.Setenv("SOPS_AGE_KEY_FILE", envKeyFile)
+
+	// Also verify DiscoverAgeKey accepts SOPS_AGE_KEY with leading comments.
+	discoveredID, err := DiscoverAgeKey()
+	if err != nil {
+		t.Fatalf("DiscoverAgeKey with comment header failed: %v", err)
+	}
+	if discoveredID.Source != SourceEnvKey {
+		t.Errorf("DiscoverAgeKey source = %v, want SourceEnvKey", discoveredID.Source)
+	}
+	if gotRec, err := discoveredID.Recipient(); err != nil || gotRec != id1.Recipient().String() {
+		t.Errorf("discoveredID.Recipient() = %q, %v; want %q", gotRec, err, id1.Recipient().String())
+	}
+
+	recs, err := DiscoverRecipients()
+	if err != nil {
+		t.Fatalf("DiscoverRecipients() error = %v", err)
+	}
+	if len(recs) != 4 {
+		t.Fatalf("DiscoverRecipients() returned %d recipients, want 4: %+v", len(recs), recs)
+	}
+
+	wantPubs := []string{
+		id1.Recipient().String(),
+		id2.Recipient().String(),
+		yubikeyPub,
+		id3.Recipient().String(),
+	}
+	for i, want := range wantPubs {
+		if recs[i].PublicKey != want {
+			t.Errorf("recs[%d].PublicKey = %q, want %q", i, recs[i].PublicKey, want)
+		}
+	}
+	if recs[0].Source != "env:SOPS_AGE_KEY" || recs[0].Label != "env key comment" {
+		t.Errorf("recs[0] = %+v, want source env:SOPS_AGE_KEY and label 'env key comment'", recs[0])
+	}
+	if recs[1].Source != envKeyFile || recs[1].Label != "created: 2026-01-15T10:00:00Z" {
+		t.Errorf("recs[1] = %+v, want source %q and label 'created: 2026-01-15T10:00:00Z'", recs[1], envKeyFile)
+	}
+	if recs[2].Source != envKeyFile || recs[2].Label != "YubiKey slot 1" {
+		t.Errorf("recs[2] = %+v, want source %q and label 'YubiKey slot 1'", recs[2], envKeyFile)
+	}
+	if recs[3].Source != defaultFile || recs[3].Label != "default key" {
+		t.Errorf("recs[3] = %+v, want source %q and label 'default key'", recs[3], defaultFile)
+	}
+}
+
+func TestDiscoverRecipients_UnreadableEnvKeyFileErrors(t *testing.T) {
+	isolateConfigDir(t)
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", filepath.Join(t.TempDir(), "missing.txt"))
+
+	if _, err := DiscoverRecipients(); err == nil {
+		t.Fatal("expected error when SOPS_AGE_KEY_FILE points to a missing file")
+	}
+}
+
+func TestGenerateDefaultAgeKey(t *testing.T) {
+	defaultFile := isolateConfigDir(t)
+	t.Setenv("PATH", "")
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	// Generate initial key at default path (passing "" uses defaultKeyPath()).
+	rec1, err := GenerateDefaultAgeKey("")
+	if err != nil {
+		t.Fatalf("GenerateDefaultAgeKey(\"\") error = %v", err)
+	}
+	if rec1.Source != defaultFile {
+		t.Errorf("rec1.Source = %q, want %q", rec1.Source, defaultFile)
+	}
+	if rec1.Label != "generated" {
+		t.Errorf("rec1.Label = %q, want \"generated\"", rec1.Label)
+	}
+	if err := ValidateRecipient(rec1.PublicKey); err != nil {
+		t.Errorf("ValidateRecipient(rec1.PublicKey) error = %v", err)
+	}
+
+	info, err := os.Stat(defaultFile)
+	if err != nil {
+		t.Fatalf("stat generated key file: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("generated key file mode = %o, want 0600", info.Mode().Perm())
+	}
+
+	// Generate a second key into the same file and verify it appends cleanly.
+	rec2, err := GenerateDefaultAgeKey(defaultFile)
+	if err != nil {
+		t.Fatalf("second GenerateDefaultAgeKey error = %v", err)
+	}
+	if rec2.PublicKey == rec1.PublicKey {
+		t.Errorf("expected distinct generated public keys, both were %q", rec1.PublicKey)
+	}
+
+	recs, err := DiscoverRecipients()
+	if err != nil {
+		t.Fatalf("DiscoverRecipients() error = %v", err)
+	}
+	if len(recs) != 2 || recs[0].PublicKey != rec1.PublicKey || recs[1].PublicKey != rec2.PublicKey {
+		t.Fatalf("DiscoverRecipients() = %+v, want [%s, %s]", recs, rec1.PublicKey, rec2.PublicKey)
+	}
+
+	// Verify round-trip encryption and decryption with the generated key.
+	id, err := DiscoverAgeKey()
+	if err != nil {
+		t.Fatalf("DiscoverAgeKey() error = %v", err)
+	}
+	secretsDir := filepath.Join(t.TempDir(), "secrets")
+	mgr := NewManager(secretsDir, t.TempDir())
+	if err := mgr.SetKeys("test", secretsDir, map[string]string{"token": "secret-val"}, rec1.PublicKey); err != nil {
+		t.Fatalf("SetKeys() error = %v", err)
+	}
+	got, err := DecryptSecretsFile(filepath.Join(secretsDir, "test.enc.yaml"), id)
+	if err != nil {
+		t.Fatalf("DecryptSecretsFile() error = %v", err)
+	}
+	if got["token"] != "secret-val" {
+		t.Errorf("decrypted token = %q, want \"secret-val\"", got["token"])
+	}
+}
+
+func TestValidateRecipient(t *testing.T) {
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		pubKey  string
+		wantErr bool
+	}{
+		{"valid x25519", id.Recipient().String(), false},
+		{"valid x25519 with whitespace", "  " + id.Recipient().String() + "\n", false},
+		{"valid yubikey plugin", "age1yubikey1qwt50d05yubikeytestrecipient0000000000000000000000000", false},
+		{"empty", "", true},
+		{"whitespace only", "   ", true},
+		{"wrong prefix", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5", true},
+		{"malformed standard age1", "age1invalid", true},
+		{"contains internal whitespace", "age1yubikey1abc def", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRecipient(tt.pubKey)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateRecipient(%q) error = %v, wantErr %v", tt.pubKey, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveRecipient(t *testing.T) {
+	id1, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	customID, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("explicit valid key", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		got, err := ResolveRecipient("  "+id1.Recipient().String()+" ", nil, &out, false)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if got != id1.Recipient().String() {
+			t.Errorf("got %q, want %q", got, id1.Recipient().String())
+		}
+	})
+
+	t.Run("explicit invalid key", func(t *testing.T) {
+		isolateConfigDir(t)
+		if _, err := ResolveRecipient("not-an-age-key", nil, nil, false); err == nil {
+			t.Fatal("expected error for invalid explicit key")
+		}
+	})
+
+	t.Run("1 key auto-selected", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("SOPS_AGE_KEY", id1.String())
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		got, err := ResolveRecipient("", nil, &out, true)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if got != id1.Recipient().String() {
+			t.Errorf("got %q, want %q", got, id1.Recipient().String())
+		}
+		if !strings.Contains(out.String(), "Using age key: "+id1.Recipient().String()+" (env:SOPS_AGE_KEY)") {
+			t.Errorf("unexpected output: %q", out.String())
+		}
+	})
+
+	t.Run("multi-key non-TTY selects first", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("SOPS_AGE_KEY", id1.String()+"\n"+id2.String()+"\n")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("2\n")), &out, false)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if got != id1.Recipient().String() {
+			t.Errorf("got %q, want %q", got, id1.Recipient().String())
+		}
+	})
+
+	t.Run("multi-key TTY selects [2]", func(t *testing.T) {
+		isolateConfigDir(t)
+		content := "# first key\n" + id1.String() + "\n# second key\n" + id2.String() + "\n"
+		t.Setenv("SOPS_AGE_KEY", content)
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("2\n")), &out, true)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if got != id2.Recipient().String() {
+			t.Errorf("got %q, want %q", got, id2.Recipient().String())
+		}
+		if !strings.Contains(out.String(), "Multiple age keys found:") || !strings.Contains(out.String(), "second key") {
+			t.Errorf("expected multi-key menu with labels, got:\n%s", out.String())
+		}
+	})
+
+	t.Run("multi-key TTY default Enter selects [1]", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("SOPS_AGE_KEY", id1.String()+"\n"+id2.String()+"\n")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("\n")), &out, true)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if got != id1.Recipient().String() {
+			t.Errorf("got %q, want %q", got, id1.Recipient().String())
+		}
+	})
+
+	t.Run("multi-key TTY selects [N+1] custom key", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("SOPS_AGE_KEY", id1.String()+"\n"+id2.String()+"\n")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		in := bufio.NewReader(strings.NewReader("3\n" + customID.Recipient().String() + "\n"))
+		got, err := ResolveRecipient("", in, &out, true)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if got != customID.Recipient().String() {
+			t.Errorf("got %q, want %q", got, customID.Recipient().String())
+		}
+	})
+
+	t.Run("multi-key TTY invalid selection", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("SOPS_AGE_KEY", id1.String()+"\n"+id2.String()+"\n")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		_, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("99\n")), &out, true)
+		if err == nil || !strings.Contains(err.Error(), "invalid selection") {
+			t.Fatalf("expected invalid selection error, got: %v", err)
+		}
+	})
+
+	t.Run("0-key TTY auto-generates on Enter", func(t *testing.T) {
+		defaultFile := isolateConfigDir(t)
+		t.Setenv("PATH", "")
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("\n")), &out, true)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if err := ValidateRecipient(got); err != nil {
+			t.Errorf("generated recipient invalid: %v", err)
+		}
+		if _, err := os.Stat(defaultFile); err != nil {
+			t.Errorf("expected generated key file at %s: %v", defaultFile, err)
+		}
+		if !strings.Contains(out.String(), "✓ Generated age key at "+defaultFile) {
+			t.Errorf("unexpected output:\n%s", out.String())
+		}
+	})
+
+	t.Run("0-key TTY custom public key [2]", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("PATH", "")
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		in := bufio.NewReader(strings.NewReader("2\n" + customID.Recipient().String() + "\n"))
+		got, err := ResolveRecipient("", in, &out, true)
+		if err != nil {
+			t.Fatalf("ResolveRecipient() error = %v", err)
+		}
+		if got != customID.Recipient().String() {
+			t.Errorf("got %q, want %q", got, customID.Recipient().String())
+		}
+	})
+
+	t.Run("0-key TTY invalid selection", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("PATH", "")
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		_, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("9\n")), &out, true)
+		if err == nil || !strings.Contains(err.Error(), "invalid selection") {
+			t.Fatalf("expected invalid selection error, got: %v", err)
+		}
+	})
+
+	t.Run("0-key non-TTY returns DiscoverAgeKey error", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("PATH", "")
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		_, err := ResolveRecipient("", nil, nil, false)
+		if err == nil || !strings.Contains(err.Error(), "no age identity found") {
+			t.Fatalf("expected no age identity found error, got: %v", err)
+		}
+	})
 }

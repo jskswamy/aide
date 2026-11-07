@@ -1107,3 +1107,48 @@ func TestManager_SetDeleteKey_DeleteKey(t *testing.T) {
 		t.Errorf("store still exists after its last key was deleted (stat err %v)", err)
 	}
 }
+
+func TestManager_SetKeys_BatchNewStore(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+
+	// Empty kv must error.
+	if err := mgr.SetKeys("batch", secretsDir, nil, ""); err == nil {
+		t.Fatal("expected error when SetKeys is called with empty map")
+	}
+
+	// Encrypt multiple keys in a single pass to an external recipient whose
+	// private key is NOT in SOPS_AGE_KEY_FILE (proving no intermediate decrypt).
+	extID, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := map[string]string{
+		"anthropic_api_key": "sk-ant-batch",
+		"openai_api_key":    "sk-oa-batch",
+	}
+	if err := mgr.SetKeys("external", secretsDir, batch, extID.Recipient().String()); err != nil {
+		t.Fatalf("SetKeys() to external recipient failed: %v", err)
+	}
+
+	extPath := filepath.Join(secretsDir, "external.enc.yaml")
+	gotExt, err := DecryptSecretsFile(extPath, &AgeIdentity{Source: SourceEnvKey, KeyData: extID.String()})
+	if err != nil {
+		t.Fatalf("decrypting external store: %v", err)
+	}
+	if gotExt["anthropic_api_key"] != "sk-ant-batch" || gotExt["openai_api_key"] != "sk-oa-batch" {
+		t.Errorf("decrypted external store = %v, want %v", gotExt, batch)
+	}
+
+	// Also verify batch update on an existing store encrypted with the default test key.
+	if err := mgr.SetKeys("work", secretsDir, map[string]string{"k1": "v1", "k2": "v2"}, ""); err != nil {
+		t.Fatalf("SetKeys() initial work store: %v", err)
+	}
+	if err := mgr.SetKeys("work", secretsDir, map[string]string{"k2": "v2-updated", "k3": "v3"}, ""); err != nil {
+		t.Fatalf("SetKeys() update work store: %v", err)
+	}
+	gotWork := decryptStore(t, filepath.Join(secretsDir, "work.enc.yaml"))
+	if gotWork["k1"] != "v1" || gotWork["k2"] != "v2-updated" || gotWork["k3"] != "v3" {
+		t.Errorf("updated work store = %v, want k1=v1, k2=v2-updated, k3=v3", gotWork)
+	}
+}

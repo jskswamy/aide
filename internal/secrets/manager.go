@@ -448,18 +448,20 @@ func (m *Manager) secureTempDir(prefix string) (string, func(), error) {
 	return tmpDir, cleanup, nil
 }
 
-// SetKey sets key to value in the store storeName under secretsDir
-// without an editor and without writing plaintext anywhere: an existing
-// store is decrypted, updated and re-encrypted in memory for its
-// current recipients; a missing store is created for
-// explicitAgePubKey, or for the discovered identity's recipient when
-// that is empty.
-func (m *Manager) SetKey(storeName, secretsDir, key, value, explicitAgePubKey string) error {
+// SetKeys sets all entries in kv in the store storeName under secretsDir
+// in a single decrypt/encrypt pass without an editor and without staging
+// plaintext on disk.
+func (m *Manager) SetKeys(storeName, secretsDir string, kv map[string]string, explicitAgePubKey string) error {
 	if err := validateName(storeName); err != nil {
 		return err
 	}
-	if key == "" {
-		return errors.New("secret key name cannot be empty")
+	if len(kv) == 0 {
+		return fmt.Errorf("no keys provided")
+	}
+	for k := range kv {
+		if k == "" {
+			return errors.New("secret key name cannot be empty")
+		}
 	}
 	path := filepath.Join(secretsDir, storeName+".enc.yaml")
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
@@ -473,7 +475,7 @@ func (m *Manager) SetKey(storeName, secretsDir, key, value, explicitAgePubKey st
 				return err
 			}
 		}
-		content, err := yamlpkg.Marshal(map[string]string{key: value})
+		content, err := yamlpkg.Marshal(kv)
 		if err != nil {
 			return fmt.Errorf("serializing secrets: %w", err)
 		}
@@ -485,8 +487,20 @@ func (m *Manager) SetKey(storeName, secretsDir, key, value, explicitAgePubKey st
 	if err != nil {
 		return err
 	}
-	data[key] = value
+	for k, v := range kv {
+		data[k] = v
+	}
 	return reencryptMap(path, data)
+}
+
+// SetKey sets key to value in the store storeName under secretsDir
+// without an editor and without writing plaintext anywhere: an existing
+// store is decrypted, updated and re-encrypted in memory for its
+// current recipients; a missing store is created for
+// explicitAgePubKey, or for the discovered identity's recipient when
+// that is empty.
+func (m *Manager) SetKey(storeName, secretsDir, key, value, explicitAgePubKey string) error {
+	return m.SetKeys(storeName, secretsDir, map[string]string{key: value}, explicitAgePubKey)
 }
 
 // DeleteKey removes key from the store storeName under secretsDir. A

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -53,8 +54,12 @@ func secretsCreateCmd() *cobra.Command {
 			name := args[0]
 			secretsDir := config.SecretsDir()
 			runtimeDir := os.TempDir()
+			recipient, err := secrets.ResolveRecipient(ageKey, bufio.NewReader(cmd.InOrStdin()), cmd.OutOrStdout(), isInputTTY(cmd))
+			if err != nil {
+				return err
+			}
 			mgr := secrets.NewManager(secretsDir, runtimeDir)
-			if err := mgr.Create(name, secretsDir, ageKey); err != nil {
+			if err := mgr.Create(name, secretsDir, recipient); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Created secrets/%s.enc.yaml\n", name)
@@ -62,8 +67,7 @@ func secretsCreateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&ageKey, "age-key", "", "Age public key for encryption (required)")
-	_ = cmd.MarkFlagRequired("age-key")
+	cmd.Flags().StringVar(&ageKey, "age-key", "", "Age public key for encryption (discovered automatically if omitted)")
 	return cmd
 }
 

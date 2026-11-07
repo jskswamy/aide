@@ -143,4 +143,3 @@ func TestCmdEnv_ResolveContextAndProjectMutation(t *testing.T) {
 		t.Fatalf("unexpected project override resolution: po=%v path=%q", po, poPath)
 	}
 }
-

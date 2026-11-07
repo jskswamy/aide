@@ -51,4 +51,3 @@ func XDG(value, home, def string) string {
 	}
 	return filepath.Join(home, filepath.FromSlash(def))
 }
-

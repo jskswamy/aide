@@ -21,4 +21,3 @@ import "github.com/jskswamy/aide/pkg/seatbelt"
 func IsUnderDir(path, dir string) bool {
 	return seatbelt.IsUnderDir(path, dir)
 }
-

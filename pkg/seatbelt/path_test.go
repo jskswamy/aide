@@ -106,6 +106,18 @@ func TestPathPrimitives(t *testing.T) {
 	if got := ExpandHome("~", "/Users/alice"); got != "/Users/alice" {
 		t.Errorf("ExpandHome(~) = %q, want /Users/alice", got)
 	}
+	if got := ExpandHome("/abs/path", "/Users/alice"); got != "/abs/path" {
+		t.Errorf("ExpandHome(/abs/path) = %q, want /abs/path", got)
+	}
+	if got := ExpandHome("~/foo", ""); got == "~/foo" {
+		t.Errorf("ExpandHome(~/foo, empty home) = %q, expected expansion via UserHomeDir", got)
+	}
+	if got := ResolveOrSelf("/nonexistent/seatbelt/path/xyz"); got != "/nonexistent/seatbelt/path/xyz" {
+		t.Errorf("ResolveOrSelf(nonexistent) = %q, want unchanged", got)
+	}
+	if !IsUnderDir("/Users/alice", "/Users/alice") {
+		t.Error("expected /Users/alice under /Users/alice")
+	}
 	if !IsUnderDir("/Users/alice/sub", "/Users/alice") {
 		t.Error("expected /Users/alice/sub under /Users/alice")
 	}
@@ -118,6 +130,9 @@ func TestPathPrimitives(t *testing.T) {
 	if err := os.MkdirAll(realDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if resolved, changed, underHome := ResolveWidening(realDir, home); changed || !underHome || resolved != realDir {
+		t.Errorf("ResolveWidening(realDir) = (%q, %v, %v), want (%q, false, true)", resolved, changed, underHome, realDir)
+	}
 	linkDir := filepath.Join(home, "link")
 	if err := os.Symlink(realDir, linkDir); err != nil {
 		t.Fatal(err)
@@ -127,4 +142,3 @@ func TestPathPrimitives(t *testing.T) {
 		t.Errorf("ResolveWidening = (%q, %v, %v), want (%q, true, true)", resolved, changed, underHome, realDir)
 	}
 }
-

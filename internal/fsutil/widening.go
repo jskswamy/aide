@@ -36,4 +36,3 @@ import "github.com/jskswamy/aide/pkg/seatbelt"
 func ResolveWidening(path, home string) (resolved string, changed, underHome bool) {
 	return seatbelt.ResolveWidening(path, home)
 }
-

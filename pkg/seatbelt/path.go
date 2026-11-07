@@ -121,4 +121,3 @@ func ResolveWidening(path, home string) (resolved string, changed, underHome boo
 	underHome = home != "" && IsUnderDir(resolved, home)
 	return resolved, true, underHome
 }
-

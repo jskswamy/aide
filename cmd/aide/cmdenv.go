@@ -109,4 +109,3 @@ func (e *Env) ResolveProjectOverrideForMutation(main bool) (*config.Config, *con
 	}
 	return e.cfg, po, poPath, nil
 }
-

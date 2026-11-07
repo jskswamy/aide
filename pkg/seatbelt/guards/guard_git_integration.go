@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -131,7 +130,7 @@ func addSSHSigningRules(result *seatbelt.GuardResult, home, signingKey string) {
 
 	// Resolve ~, then symlinks. Strip surrounding quotes if present.
 	signingKey = strings.Trim(signingKey, `"`)
-	resolved := homepath.Expand(signingKey, home)
+	resolved := seatbelt.ExpandHome(signingKey, home)
 	if !filepath.IsAbs(resolved) {
 		result.Skipped = append(result.Skipped, fmt.Sprintf(
 			"git-integration: user.signingkey %q is not an absolute path — skipped", signingKey))

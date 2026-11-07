@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -57,7 +56,7 @@ func (g *customGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 			if len(parts) == 1 {
 				defaultPath := ""
 				if len(g.cfg.Paths) == 1 {
-					defaultPath = homepath.Expand(g.cfg.Paths[0], ctx.HomeDir)
+					defaultPath = seatbelt.ExpandHome(g.cfg.Paths[0], ctx.HomeDir)
 				}
 				result.Overrides = append(result.Overrides, seatbelt.Override{
 					EnvVar:      g.cfg.EnvOverride,
@@ -82,7 +81,7 @@ func (g *customGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 
 	// Allow rules for explicitly allowed paths.
 	for _, a := range g.cfg.Allowed {
-		expanded := filepath.Clean(homepath.Expand(a, ctx.HomeDir))
+		expanded := filepath.Clean(seatbelt.ExpandHome(a, ctx.HomeDir))
 		result.Rules = append(result.Rules, AllowReadFile(expanded))
 		result.Allowed = append(result.Allowed, expanded)
 	}
@@ -105,7 +104,7 @@ func (g *customGuard) resolvePaths(ctx *seatbelt.Context) []string {
 
 	var out []string
 	for _, p := range g.cfg.Paths {
-		out = append(out, homepath.Expand(p, ctx.HomeDir))
+		out = append(out, seatbelt.ExpandHome(p, ctx.HomeDir))
 	}
 	return out
 }

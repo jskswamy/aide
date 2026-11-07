@@ -6,8 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jskswamy/aide/internal/fsutil"
-	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -28,7 +26,7 @@ import (
 func resolveConfigDirs(ctx *seatbelt.Context, envKey string, candidates []string) []string {
 	if envKey != "" {
 		if dir, ok := ctx.EnvLookup(envKey); ok && dir != "" {
-			return []string{homepath.Expand(dir, ctx.HomeDir)}
+			return []string{seatbelt.ExpandHome(dir, ctx.HomeDir)}
 		}
 	}
 	var dirs []string
@@ -130,7 +128,7 @@ func resolveConfigDirsAdditive(ctx *seatbelt.Context, overrideKey, xdgCandidate 
 
 	if overrideKey != "" {
 		if dir, ok := ctx.EnvLookup(overrideKey); ok && dir != "" {
-			expanded := homepath.Expand(dir, home)
+			expanded := seatbelt.ExpandHome(dir, home)
 			if isSafeConfigOverride(home, expanded) {
 				return []string{expanded}
 			}
@@ -155,12 +153,12 @@ func resolveConfigDirsAdditive(ctx *seatbelt.Context, overrideKey, xdgCandidate 
 // at the call site so future readers don't have to infer it from a
 // missing-separator subtlety in the prefix check.
 func isSafeConfigOverride(home, dir string) bool {
-	if home == "" || !fsutil.IsUnderDir(dir, home) || filepath.Clean(dir) == filepath.Clean(home) {
+	if home == "" || !seatbelt.IsUnderDir(dir, home) || filepath.Clean(dir) == filepath.Clean(home) {
 		return false
 	}
 	for _, sensitive := range sensitiveHomeDirs {
 		sensitiveAbs := filepath.Join(home, filepath.FromSlash(sensitive))
-		if fsutil.IsUnderDir(dir, sensitiveAbs) || fsutil.IsUnderDir(sensitiveAbs, dir) {
+		if seatbelt.IsUnderDir(dir, sensitiveAbs) || seatbelt.IsUnderDir(sensitiveAbs, dir) {
 			return false
 		}
 	}
@@ -179,10 +177,10 @@ func isSafeSymlinkWidening(home, ownDir, candidate string) bool {
 		return false
 	}
 	ownClean := filepath.Clean(ownDir)
-	ownResolved := fsutil.ResolveOrSelf(ownClean)
+	ownResolved := seatbelt.ResolveOrSelf(ownClean)
 	isOwn := func(p string) bool {
-		return (ownClean != "" && fsutil.IsUnderDir(p, ownClean)) ||
-			(ownResolved != "" && fsutil.IsUnderDir(p, ownResolved))
+		return (ownClean != "" && seatbelt.IsUnderDir(p, ownClean)) ||
+			(ownResolved != "" && seatbelt.IsUnderDir(p, ownResolved))
 	}
 	if isOwn(candidate) {
 		return true
@@ -192,7 +190,7 @@ func isSafeSymlinkWidening(home, ownDir, candidate string) bool {
 		if isOwn(protAbs) {
 			continue
 		}
-		if fsutil.IsUnderDir(candidate, protAbs) || fsutil.IsUnderDir(protAbs, candidate) {
+		if seatbelt.IsUnderDir(candidate, protAbs) || seatbelt.IsUnderDir(protAbs, candidate) {
 			return false
 		}
 	}
@@ -249,7 +247,7 @@ func configDirRules(sectionName, home string, dirs []string) []seatbelt.Rule {
 	paths := newPrefixClosedSet()
 	for _, dir := range dirs {
 		paths.add(dir)
-		resolved := fsutil.ResolveOrSelf(dir)
+		resolved := seatbelt.ResolveOrSelf(dir)
 		if resolved != dir && isSafeSymlinkWidening(home, dir, resolved) {
 			paths.add(resolved)
 		}
@@ -302,7 +300,7 @@ func expandConfigDirWritable(home, dir string) []string {
 		current := queue[0]
 		queue = queue[1:]
 
-		resolved := fsutil.ResolveOrSelf(current)
+		resolved := seatbelt.ResolveOrSelf(current)
 		if visited[resolved] {
 			continue
 		}
@@ -321,7 +319,7 @@ func expandConfigDirWritable(home, dir string) []string {
 				continue
 			}
 			link := filepath.Join(resolved, e.Name())
-			target := fsutil.ResolveOrSelf(link)
+			target := seatbelt.ResolveOrSelf(link)
 			if target == link {
 				// Broken symlink: ResolveOrSelf falls back to input on
 				// EvalSymlinks error. Skip; we don't widen the sandbox to
@@ -373,7 +371,7 @@ func collectSymlinkTargetParents(home, dir string) []string {
 			continue
 		}
 		link := filepath.Join(dir, e.Name())
-		target := fsutil.ResolveOrSelf(link)
+		target := seatbelt.ResolveOrSelf(link)
 		if target == link {
 			// Broken symlink — ResolveOrSelf falls back to the input on
 			// EvalSymlinks error. Skip; we don't widen the sandbox to a
@@ -414,7 +412,7 @@ func (s *prefixClosedSet) add(p string) {
 		return
 	}
 	for _, existing := range s.entries {
-		if fsutil.IsUnderDir(p, existing) {
+		if seatbelt.IsUnderDir(p, existing) {
 			return
 		}
 	}

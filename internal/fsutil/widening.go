@@ -1,5 +1,7 @@
 package fsutil
 
+import "github.com/jskswamy/aide/pkg/seatbelt"
+
 // ResolveWidening reports how a capability path classifies once
 // symlinks are followed: (resolved target, did it differ from the
 // input, does the resolved target live under home).
@@ -32,10 +34,6 @@ package fsutil
 // a "no home, no safety floor" mode should handle the empty-home
 // case explicitly upstream.
 func ResolveWidening(path, home string) (resolved string, changed, underHome bool) {
-	resolved = ResolveOrSelf(path)
-	if resolved == path {
-		return path, false, home != "" && IsUnderDir(path, home)
-	}
-	underHome = home != "" && IsUnderDir(resolved, home)
-	return resolved, true, underHome
+	return seatbelt.ResolveWidening(path, home)
 }
+

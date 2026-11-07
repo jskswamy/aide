@@ -4,11 +4,11 @@
 package homepath
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
 // Expand replaces a leading "~" or "~/" in path with home.
@@ -18,21 +18,7 @@ import (
 // empty, os.UserHomeDir is consulted; if that fails, path is returned
 // unchanged. Lone "~" expands to home; "~user" forms are not expanded.
 func Expand(path, home string) string {
-	if path == "~" {
-		h := resolveHome(home)
-		if h == "" {
-			return path
-		}
-		return h
-	}
-	if strings.HasPrefix(path, "~/") {
-		h := resolveHome(home)
-		if h == "" {
-			return path
-		}
-		return h + "/" + path[2:]
-	}
-	return path
+	return seatbelt.ExpandHome(path, home)
 }
 
 // Collapse rewrites occurrences of home in s with "~" (inverse of Expand).
@@ -66,13 +52,3 @@ func XDG(value, home, def string) string {
 	return filepath.Join(home, filepath.FromSlash(def))
 }
 
-func resolveHome(home string) string {
-	if home != "" {
-		return home
-	}
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return h
-}

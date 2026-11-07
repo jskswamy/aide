@@ -1,9 +1,6 @@
 package fsutil
 
-import (
-	"path/filepath"
-	"strings"
-)
+import "github.com/jskswamy/aide/pkg/seatbelt"
 
 // IsUnderDir reports whether path is dir itself or nested below it,
 // using path-separator-aware comparison so that, e.g., "/home/user-other"
@@ -22,10 +19,6 @@ import (
 // returns false (filepath.Clean turns "" into ".", which never matches
 // an absolute or non-trivial relative path).
 func IsUnderDir(path, dir string) bool {
-	p := filepath.Clean(path)
-	d := filepath.Clean(dir)
-	if p == d {
-		return true
-	}
-	return strings.HasPrefix(p, d+string(filepath.Separator))
+	return seatbelt.IsUnderDir(path, dir)
 }
+

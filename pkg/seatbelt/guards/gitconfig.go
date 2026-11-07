@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	gitconfig "github.com/go-git/go-git/v5/plumbing/format/config"
-	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
 // GitConfigResult holds all file paths discovered from git configuration.
@@ -61,10 +61,10 @@ func ParseGitConfigWithEnv(homeDir, projectRoot string, envLookup func(string) (
 	systemConfig := ResolveSymlink("/etc/gitconfig")
 
 	if val, ok := envLookup("GIT_CONFIG_GLOBAL"); ok && val != "" {
-		globalConfig = ResolveSymlink(homepath.Expand(val, homeDir))
+		globalConfig = ResolveSymlink(seatbelt.ExpandHome(val, homeDir))
 	}
 	if val, ok := envLookup("GIT_CONFIG_SYSTEM"); ok && val != "" {
-		systemConfig = ResolveSymlink(homepath.Expand(val, homeDir))
+		systemConfig = ResolveSymlink(seatbelt.ExpandHome(val, homeDir))
 	}
 
 	result.ConfigFiles = []string{
@@ -86,10 +86,10 @@ func ParseGitConfigWithEnv(homeDir, projectRoot string, envLookup func(string) (
 	}
 
 	if val := configValue(parsed, "core", "", "excludesFile"); val != "" {
-		result.ExcludesFile = ResolveSymlink(homepath.Expand(val, homeDir))
+		result.ExcludesFile = ResolveSymlink(seatbelt.ExpandHome(val, homeDir))
 	}
 	if val := configValue(parsed, "core", "", "attributesFile"); val != "" {
-		result.AttributesFile = ResolveSymlink(homepath.Expand(val, homeDir))
+		result.AttributesFile = ResolveSymlink(seatbelt.ExpandHome(val, homeDir))
 	}
 	extractGPGConfig(parsed, result)
 
@@ -135,7 +135,7 @@ func resolveIncludes(cfg *gitconfig.Config, homeDir, projectRoot string, result 
 	if includeSection != nil {
 		for _, opt := range includeSection.Options {
 			if opt.Key == "path" {
-				path := homepath.Expand(opt.Value, homeDir)
+				path := seatbelt.ExpandHome(opt.Value, homeDir)
 				if !filepath.IsAbs(path) {
 					path = filepath.Join(homeDir, path)
 				}
@@ -157,7 +157,7 @@ func resolveIncludes(cfg *gitconfig.Config, homeDir, projectRoot string, result 
 		if path == "" {
 			continue
 		}
-		path = homepath.Expand(path, homeDir)
+		path = seatbelt.ExpandHome(path, homeDir)
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(homeDir, path)
 		}
@@ -177,10 +177,10 @@ func resolveIncludes(cfg *gitconfig.Config, homeDir, projectRoot string, result 
 // [includeIf]) would be missed.
 func extractCoreOverrides(cfg *gitconfig.Config, homeDir string, result *GitConfigResult) {
 	if val := configValue(cfg, "core", "", "excludesFile"); val != "" {
-		result.ExcludesFile = ResolveSymlink(homepath.Expand(val, homeDir))
+		result.ExcludesFile = ResolveSymlink(seatbelt.ExpandHome(val, homeDir))
 	}
 	if val := configValue(cfg, "core", "", "attributesFile"); val != "" {
-		result.AttributesFile = ResolveSymlink(homepath.Expand(val, homeDir))
+		result.AttributesFile = ResolveSymlink(seatbelt.ExpandHome(val, homeDir))
 	}
 	extractGPGConfig(cfg, result)
 }
@@ -217,7 +217,7 @@ func evaluateIncludeCondition(condition, projectRoot, homeDir string) bool {
 
 func matchGitDir(pattern, projectRoot, homeDir string, caseInsensitive bool) bool {
 	gitDir := filepath.Join(projectRoot, ".git")
-	pattern = homepath.Expand(pattern, homeDir)
+	pattern = seatbelt.ExpandHome(pattern, homeDir)
 
 	// Trailing / in gitdir: patterns means "match as prefix" (any repo
 	// under this directory). expandTilde uses string concatenation

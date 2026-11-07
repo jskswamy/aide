@@ -4,7 +4,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -67,5 +66,5 @@ func pathExists(path string) bool {
 // path if resolution fails. Thin wrapper over fsutil.ResolveOrSelf so
 // the symlink-resolution contract has one implementation in the repo.
 func ResolveSymlink(path string) string {
-	return fsutil.ResolveOrSelf(path)
+	return seatbelt.ResolveOrSelf(path)
 }

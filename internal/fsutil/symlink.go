@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
 // ResolveOrSelf returns filepath.EvalSymlinks(path) when resolution
@@ -20,10 +22,7 @@ import (
 // guards resolve before emitting deny rules. Single-sourcing it here
 // keeps the contract consistent.
 func ResolveOrSelf(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return path
+	return seatbelt.ResolveOrSelf(path)
 }
 
 // CheckSymlinkCycle returns a non-nil error iff path traverses a symlink

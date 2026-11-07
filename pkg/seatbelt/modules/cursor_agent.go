@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -64,8 +63,8 @@ func (m *cursorAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		// external volume, for example) the seatbelt rule must reference
 		// the kernel-resolved target — macOS fires file-write* policy on
 		// the resolved path, not the literal syscall argument.
-		activeVerDir = fsutil.ResolveOrSelf(activeVerDir)
-		logsDir = fsutil.ResolveOrSelf(logsDir)
+		activeVerDir = seatbelt.ResolveOrSelf(activeVerDir)
+		logsDir = seatbelt.ResolveOrSelf(logsDir)
 		rules = append(rules,
 			seatbelt.SectionAllow("Cursor install"),
 			seatbelt.AllowSubpath(logsDir, "file-read*", "file-write*"),

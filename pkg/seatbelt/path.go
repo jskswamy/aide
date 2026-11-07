@@ -55,3 +55,70 @@ func ExpandGlobs(patterns []string) []string {
 	}
 	return result
 }
+
+// ExpandHome replaces a leading "~" or "~/" in path with home.
+// Trailing slashes are preserved by using string concatenation instead of
+// filepath.Join. When home is empty, os.UserHomeDir is consulted; if that
+// fails, path is returned unchanged. Lone "~" expands to home; "~user" forms
+// are not expanded.
+func ExpandHome(path, home string) string {
+	if path == "~" {
+		h := resolveHomeDir(home)
+		if h == "" {
+			return path
+		}
+		return h
+	}
+	if strings.HasPrefix(path, "~/") {
+		h := resolveHomeDir(home)
+		if h == "" {
+			return path
+		}
+		return h + "/" + path[2:]
+	}
+	return path
+}
+
+func resolveHomeDir(home string) string {
+	if home != "" {
+		return home
+	}
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// ResolveOrSelf returns filepath.EvalSymlinks(path) when resolution succeeds,
+// otherwise the input path unchanged.
+func ResolveOrSelf(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+// IsUnderDir reports whether path is dir itself or nested below it, using
+// path-separator-aware comparison after filepath.Clean.
+func IsUnderDir(path, dir string) bool {
+	p := filepath.Clean(path)
+	d := filepath.Clean(dir)
+	if p == d {
+		return true
+	}
+	return strings.HasPrefix(p, d+string(filepath.Separator))
+}
+
+// ResolveWidening reports how a capability path classifies once symlinks are
+// followed: (resolved target, did it differ from the input, does the resolved
+// target live under home).
+func ResolveWidening(path, home string) (resolved string, changed, underHome bool) {
+	resolved = ResolveOrSelf(path)
+	if resolved == path {
+		return path, false, home != "" && IsUnderDir(path, home)
+	}
+	underHome = home != "" && IsUnderDir(resolved, home)
+	return resolved, true, underHome
+}
+

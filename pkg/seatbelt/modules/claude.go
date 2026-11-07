@@ -8,7 +8,6 @@ package modules
 import (
 	"path/filepath"
 
-	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -82,7 +81,7 @@ func (m *claudeAgentModule) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 func claudeAccountStateRules(ctx *seatbelt.Context) []seatbelt.Rule {
 	home := ctx.HomeDir
 	if dir, ok := ctx.EnvLookup("CLAUDE_CONFIG_DIR"); ok && dir != "" {
-		lock := filepath.Clean(homepath.Expand(dir, home)) + ".lock"
+		lock := filepath.Clean(seatbelt.ExpandHome(dir, home)) + ".lock"
 		return []seatbelt.Rule{
 			seatbelt.SectionAllow("Claude config dir lock"),
 			seatbelt.AllowLiteral(lock, "file-read*", "file-write*"),

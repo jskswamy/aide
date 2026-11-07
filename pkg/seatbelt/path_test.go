@@ -98,3 +98,33 @@ func TestExpandGlobs_Nil(t *testing.T) {
 		t.Errorf("expected empty result for nil input, got %v", got)
 	}
 }
+
+func TestPathPrimitives(t *testing.T) {
+	if got := ExpandHome("~/foo/", "/Users/alice"); got != "/Users/alice/foo/" {
+		t.Errorf("ExpandHome(~/foo/) = %q, want /Users/alice/foo/", got)
+	}
+	if got := ExpandHome("~", "/Users/alice"); got != "/Users/alice" {
+		t.Errorf("ExpandHome(~) = %q, want /Users/alice", got)
+	}
+	if !IsUnderDir("/Users/alice/sub", "/Users/alice") {
+		t.Error("expected /Users/alice/sub under /Users/alice")
+	}
+	if IsUnderDir("/Users/alice-other", "/Users/alice") {
+		t.Error("expected /Users/alice-other not under /Users/alice")
+	}
+
+	home := ResolveOrSelf(t.TempDir())
+	realDir := filepath.Join(home, "real")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(home, "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+	resolved, changed, underHome := ResolveWidening(linkDir, home)
+	if !changed || !underHome || resolved != realDir {
+		t.Errorf("ResolveWidening = (%q, %v, %v), want (%q, true, true)", resolved, changed, underHome, realDir)
+	}
+}
+

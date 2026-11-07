@@ -1,6 +1,38 @@
 package seatbelt
 
-import "testing"
+import (
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+func TestNoInternalImports(t *testing.T) {
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		f, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return parseErr
+		}
+		for _, imp := range f.Imports {
+			pkgPath, _ := strconv.Unquote(imp.Path.Value)
+			if strings.HasPrefix(pkgPath, "github.com/jskswamy/aide/internal/") {
+				t.Errorf("public pkg/seatbelt file %s imports internal package %q", path, pkgPath)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking pkg/seatbelt: %v", err)
+	}
+}
+
 
 func TestRuleIntent_AllowRule(t *testing.T) {
 	r := AllowRule("(allow file-read* (subpath \"/usr\"))")

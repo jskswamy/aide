@@ -1,6 +1,5 @@
-## v3.4.1 (2026-11-06)
+## v3.5.0 (2026-11-07)
 
-### 🐛 Bug Fixes
+### 🔧 Internal
 
-- Emit 2-space indented YAML across all config writers (`config.yaml`, `sandbox.yaml`, `provisioning.yaml`, `profiles/<name>.yaml`, and `.aide.yaml`), preserve comments, `---` headers, and key order when updating existing YAML files, and skip writing split files whose semantic contents did not change.
-- Resolve unisolated profile config directories across `aide gateway`, `aide which`, startup banner enrichment, and launch-time gateway sync through the harness sandbox module's `EnvProvider` overrides (such as Claude's `~/.config/aide/claude` redirect on Linux) and profile `env:` overrides before falling back to the harness default directory.
+- Decouple `pkg/seatbelt` (`guards` and `modules`) from `internal/fsutil` and `internal/homepath` by moving `ExpandHome`, `ResolveOrSelf`, `IsUnderDir`, and `ResolveWidening` into `pkg/seatbelt` and enforcing the boundary in `TestNoInternalImports`.

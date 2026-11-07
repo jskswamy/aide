@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -142,7 +141,7 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 				seen[p] = true
 				denyTargets = append(denyTargets, p)
 			}
-			if resolved := fsutil.ResolveOrSelf(p); resolved != p && !seen[resolved] {
+			if resolved := seatbelt.ResolveOrSelf(p); resolved != p && !seen[resolved] {
 				seen[resolved] = true
 				denyTargets = append(denyTargets, resolved)
 			}
@@ -163,12 +162,12 @@ func (g *filesystemGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 // whose target differs from path AND lives under home. Returns ("", false)
 // for non-symlinks, missing paths, and targets that escape $HOME.
 //
-// This is the guard's drop-if-unsafe wrapper around fsutil.ResolveWidening.
+// This is the guard's drop-if-unsafe wrapper around seatbelt.ResolveWidening.
 // Outside-$HOME widening is intentionally suppressed at rule-emission time;
 // surfacing it (for audit) and opt-in widening (for the AIDE-mu8 escape
 // hatch) belong in higher layers (aide cap show, config load).
 func safeResolvedWidening(path, home string) (string, bool) {
-	resolved, changed, underHome := fsutil.ResolveWidening(path, home)
+	resolved, changed, underHome := seatbelt.ResolveWidening(path, home)
 	if !changed || !underHome {
 		return "", false
 	}

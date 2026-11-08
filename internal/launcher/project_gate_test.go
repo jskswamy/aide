@@ -659,5 +659,3 @@ func TestProjectGate_InteractiveTrust_InheritedAndSymlinkOriginNotes(t *testing.
 		t.Errorf("mainFile status = %v, want Trusted", fcMain.Status)
 	}
 }
-
-

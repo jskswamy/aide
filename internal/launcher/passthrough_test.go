@@ -638,4 +638,3 @@ func TestZeroConfigLaunch_NoConfigNoAgents_ErrorListsCursorAgent(t *testing.T) {
 		t.Errorf("error message should mention cursor-agent, got: %s", err.Error())
 	}
 }
-

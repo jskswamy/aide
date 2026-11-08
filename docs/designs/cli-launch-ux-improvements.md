@@ -286,7 +286,7 @@ The implementation modifies or creates only the following repository-relative fi
                     No age encryption key found.
                       [1] Generate a new age key at <defaultKeyPath()> (default)
                       [2] Enter an existing age public key (age1...)
-                    Select [1]: 
+                    Select [1]:
                     ```
                     Read line from `in`; default empty to `1`.
                     *   Case `1`: call `rec, err := GenerateDefaultAgeKey(defaultKeyPath())`, print `fmt.Fprintf(out, "✓ Generated age key at %s (public key: %s)\n", rec.Source, rec.PublicKey)`, and return `rec.PublicKey, nil`.
@@ -344,7 +344,7 @@ The implementation modifies or creates only the following repository-relative fi
                   <wantsLine>
 
                   [y] Trust this file    [s] Skip for this launch (default)    [d] Deny permanently
-                > 
+                >
                 ```
                 (where `<originNote>` is `" (inherited from main checkout)"` when `layer.Source == config.LayerInherited` and/or `" (symlink to <target>)"` when `fc.Target != ""`).
             *   Read answer from `l.stdinReader()`:

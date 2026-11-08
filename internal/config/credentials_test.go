@@ -362,4 +362,3 @@ func TestLegacyBindingName(t *testing.T) {
 		}
 	}
 }
-

@@ -19,6 +19,16 @@ import (
 // config dir, so their logins would not be isolated.
 var ErrProfileDirAlias = errors.New("profiles share a native config dir")
 
+// DefaultProfileName is the reserved name of the built-in profile that always
+// uses each harness's native configuration directory (~/.claude, ~/.codex,
+// ~/.pi/agent, ~/.config/opencode).
+const DefaultProfileName = "default"
+
+// IsDefaultProfile reports whether name is the reserved built-in "default" profile.
+func IsDefaultProfile(name string) bool {
+	return name == DefaultProfileName
+}
+
 // dirUse is one profile's native config dir for one harness.
 type dirUse struct {
 	profile string
@@ -28,11 +38,18 @@ type dirUse struct {
 
 // NativeConfigDir is the config dir harness h (canonical name) uses
 // under this profile: ConfigDirs[h] when set, else the single
-// ProfileDir pin (all harnesses), else ~/.<h>-<Profile>. Paths are
-// tilde-expanded against home. Meaningful only when SelectsConfigDir.
+// ProfileDir pin (all harnesses), else ~/.<h>-<Profile>, or the
+// harness's default dir when the profile does not select an isolated
+// config dir. Paths are tilde-expanded against home.
 func (c Context) NativeConfigDir(h, home string) string {
 	if dir := c.ConfigDirs[h]; dir != "" {
 		return homepath.Expand(dir, home)
+	}
+	if !c.SelectsConfigDir() {
+		if d, ok := harness.Lookup(h); ok {
+			return d.DefaultDir(home)
+		}
+		return ""
 	}
 	return harness.ProfileConfigDir(h, c.Profile, c.ProfileDir, home)
 }
@@ -50,10 +67,9 @@ var harnessSandboxEnv = func(d harness.Descriptor, home string) map[string]strin
 // LaunchConfigDir is the native config dir a launch of harness h uses
 // under this profile: the profile's own dir when it selects one, else
 // the harness's dir variable from the profile's env:, then from the
-// inherited environment (getenv), then from the harness's sandbox
-// module when sandboxing is enabled, else its default dir. "" for a
-// harness without a known config dir.
-func (c Context) LaunchConfigDir(h, home string, getenv func(string) string) string {
+// harness's sandbox module when sandboxing is enabled, else its
+// default dir. "" for a harness without a known config dir.
+func (c Context) LaunchConfigDir(h, home string, _ func(string) string) string {
 	if c.SelectsConfigDir() {
 		return c.NativeConfigDir(h, home)
 	}
@@ -63,11 +79,6 @@ func (c Context) LaunchConfigDir(h, home string, getenv func(string) string) str
 	}
 	if v := c.Env[d.ProfileEnvKey]; v != "" {
 		return homepath.Expand(v, home)
-	}
-	if getenv != nil {
-		if v := getenv(d.ProfileEnvKey); v != "" {
-			return homepath.Expand(v, home)
-		}
 	}
 	if c.Sandbox == nil || (!c.Sandbox.Disabled && c.Sandbox.ProfileName != "none") {
 		if v := harnessSandboxEnv(d, home)[d.ProfileEnvKey]; v != "" {
@@ -186,6 +197,12 @@ func (c *Config) applyDefaultProfileDirs() {
 }
 
 func applyDefaultProfileDir(name string, ctx *Context, harnessOf func(string) string) {
+	if IsDefaultProfile(name) {
+		if stripDefaultConfigDirOverrides(ctx) {
+			ctx.IgnoredDefaultConfigDir = true
+		}
+		return
+	}
 	if name == "" || ctx.Profile != "" {
 		return
 	}
@@ -201,6 +218,28 @@ func applyDefaultProfileDir(name string, ctx *Context, harnessOf func(string) st
 		return
 	}
 	ctx.Profile = configDirName(name)
+}
+
+func stripDefaultConfigDirOverrides(ctx *Context) bool {
+	if ctx == nil {
+		return false
+	}
+	stripped := ctx.Profile != "" || ctx.ProfileDir != "" || len(ctx.ConfigDirs) > 0
+	ctx.Profile = ""
+	ctx.ProfileDir = ""
+	ctx.ConfigDirs = nil
+	for _, d := range harness.All() {
+		for _, key := range d.ConfigEnvKeys {
+			if _, ok := ctx.Env[key]; ok {
+				delete(ctx.Env, key)
+				stripped = true
+			}
+		}
+	}
+	if len(ctx.Env) == 0 {
+		ctx.Env = nil
+	}
+	return stripped
 }
 
 func hasExplicitProfileEnv(ctx Context) bool {

@@ -2,9 +2,9 @@ package launcher
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -183,12 +183,6 @@ type Launcher struct {
 	// DiagnoseTrace implies Diagnose; additionally captures macOS sandbox denials.
 	DiagnoseTrace bool
 
-	// EmptyStateActions is invoked when context resolution fails AND
-	// no default_context is configured. May be nil; nil disables the
-	// interactive empty-state prompt and falls back to the legacy
-	// hard error.
-	EmptyStateActions EmptyStateActions
-
 	// Version, Commit, BuildDate carry the goreleaser-injected build
 	// metadata. They are populated in cmd/aide/main.go and surfaced in
 	// the --diagnose report's Environment section. Empty values are
@@ -241,6 +235,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	cfg, err := config.Load(l.configDir(), cwd)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+	if err := l.ensureDefaultProfileOnDisk(cfg, agentOverride); err != nil {
+		return err
 	}
 
 	// Resolve the user's home directory once. Every downstream caller
@@ -801,15 +798,11 @@ func wrapTemplateError(err error, contextName string, secret string) error {
 
 // launchScrubRegistry is the credential registry for a configured
 // launch. permitted (capability env_allow) re-admits ambient cloud
-// variables only. Harness config-dir redirects are scrubbed only when
-// the context selects its own native config dir; otherwise a
-// shell-exported redirect is the user's global choice.
-func launchScrubRegistry(ctx config.Context, permitted []string) envscrub.Registry {
-	reg := envscrub.Credentials().Permit(permitted...)
-	if ctx.SelectsConfigDir() {
-		reg = reg.With(envscrub.ConfigDirRedirects()...)
-	}
-	return reg
+// variables only. Harness config-dir redirects are always scrubbed so
+// custom profiles use their isolated directory and "default" uses the
+// native harness directory without ambient shell interference.
+func launchScrubRegistry(_ config.Context, permitted []string) envscrub.Registry {
+	return envscrub.Credentials().Permit(permitted...).With(envscrub.ConfigDirRedirects()...)
 }
 
 // warnLegacyCredentialEnv flags context env: entries whose names are
@@ -1140,43 +1133,94 @@ func (l *Launcher) trustStore() *trust.Store {
 	return trust.DefaultStore()
 }
 
-// handleEmptyStateLaunch delegates to the empty-state helper and, on
-// ErrEmptyStateActionRanReloadNeeded, reloads config and re-resolves
-// context so Launch can continue normally.
-func (l *Launcher) handleEmptyStateLaunch(
-	cfg *config.Config,
-	cwd string,
-	remotes aidectx.RemoteLookup,
-) (*aidectx.ResolvedContext, *config.Config, error) {
-	isTTY := isStdinTTY
-	if l.StdinIsTTY != nil {
-		isTTY = l.StdinIsTTY
+// ensureDefaultProfileOnDisk materializes config.yaml and profiles/default.yaml
+// when "default" is missing on disk (SynthesizedDefault or absent) and cfg is
+// not a legacy single-file config.
+func (l *Launcher) ensureDefaultProfileOnDisk(cfg *config.Config, agentOverride string) error {
+	if cfg.LegacyMonolithic {
+		return nil
 	}
-	rc, err := handleEmptyState(cfg, l.stdinReader(), l.stderr(), isTTY(), l.EmptyStateActions)
-	if err == nil {
-		return rc, cfg, nil
+	if _, hasDefault := cfg.Contexts[config.DefaultProfileName]; hasDefault && !cfg.SynthesizedDefault {
+		return nil
 	}
-	if errors.Is(err, ErrEmptyStateCancelled) {
-		return nil, cfg, err
+
+	lookPath := l.lookPath()
+	scan := ScanAgents(lookPath)
+	foundNames := slices.Sorted(maps.Keys(scan.Found))
+	if len(foundNames) > 0 && cfg.Agents == nil {
+		cfg.Agents = make(map[string]config.AgentDef, len(foundNames))
 	}
-	if errors.Is(err, ErrEmptyStateActionRanReloadNeeded) {
-		newCfg, lerr := config.Load(l.configDir(), cwd)
-		if lerr != nil {
-			return nil, cfg, fmt.Errorf("reloading config after empty-state action: %w", lerr)
+	for _, name := range foundNames {
+		if _, exists := cfg.Agents[name]; !exists {
+			cfg.Agents[name] = config.AgentDef{Binary: name}
 		}
-		// The reloaded config passes the same .aide.yaml gate.
-		if l.IgnoreProjectConfig {
-			newCfg.DropProjectConfig()
-		} else if _, gerr := l.applyTrustGate(newCfg); gerr != nil {
-			return nil, cfg, gerr
-		}
-		newRc, rerr := aidectx.Resolve(newCfg, cwd, remotes)
-		if rerr != nil {
-			return nil, cfg, fmt.Errorf("resolving profile after empty-state action: %w", rerr)
-		}
-		return newRc, newCfg, nil
 	}
-	return nil, cfg, err
+
+	var defaultAgent string
+	switch len(foundNames) {
+	case 0:
+		if agentOverride != "" {
+			if err := ValidateAgentOverride(cfg, agentOverride, lookPath); err != nil {
+				return err
+			}
+			defaultAgent = agentOverride
+			if cfg.Agents == nil {
+				cfg.Agents = make(map[string]config.AgentDef)
+			}
+			if _, exists := cfg.Agents[defaultAgent]; !exists {
+				cfg.Agents[defaultAgent] = config.AgentDef{Binary: defaultAgent}
+			}
+		} else if existing, ok := cfg.Contexts[config.DefaultProfileName]; ok && existing.Agent != "" {
+			defaultAgent = existing.Agent
+		} else if len(cfg.Agents) > 0 {
+			defaultAgent = config.DefaultAgentCandidate(slices.Collect(maps.Keys(cfg.Agents)))
+		} else {
+			return fmt.Errorf(
+				"no known agents found on PATH (supported: %s)",
+				strings.Join(KnownAgents, ", "),
+			)
+		}
+	case 1:
+		defaultAgent = foundNames[0]
+	default:
+		candidate := config.DefaultAgentCandidate(foundNames)
+		isTTY := isStdinTTY
+		if l.StdinIsTTY != nil {
+			isTTY = l.StdinIsTTY
+		}
+		if l.Interactive && isTTY() && agentOverride == "" {
+			fmt.Fprintf(l.stderr(), "Detected agents on PATH: %s\n", strings.Join(foundNames, ", "))
+			fmt.Fprintf(l.stderr(), "Default agent for profile %q [%s]: ", config.DefaultProfileName, candidate)
+			raw, _ := l.stdinReader().ReadString('\n')
+			picked := strings.TrimSpace(raw)
+			if picked == "" {
+				picked = candidate
+			} else if err := ValidateAgentOverride(cfg, picked, lookPath); err != nil {
+				return err
+			}
+			defaultAgent = picked
+		} else {
+			defaultAgent = candidate
+		}
+	}
+
+	if cfg.Contexts == nil {
+		cfg.Contexts = make(map[string]config.Context)
+	}
+	defCtx := cfg.Contexts[config.DefaultProfileName]
+	defCtx.Agent = defaultAgent
+	cfg.Contexts[config.DefaultProfileName] = defCtx
+	if cfg.DefaultContext == "" {
+		cfg.DefaultContext = config.DefaultProfileName
+	}
+	cfg.SynthesizedDefault = false
+	cfg.SynthesizedDefaultContext = false
+
+	cfgPath := filepath.Join(l.configDir(), "config.yaml")
+	if err := config.WriteConfigTo(cfg, cfgPath); err != nil {
+		return fmt.Errorf("writing default profile: %w", err)
+	}
+	return nil
 }
 
 // isStdinTTY reports whether os.Stdin is connected to a terminal.

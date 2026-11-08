@@ -357,13 +357,16 @@ func preparePiSandboxPreview(policy *sandbox.Policy, cfg *config.Config, rc *aid
 		}
 	}
 	bootstrap := make(map[string]string)
-	for _, key := range []string{"HOME", "XDG_DATA_HOME", "PATH", "PI_CODING_AGENT_DIR"} {
-		if value, ok := os.LookupEnv(key); ok && (key != "PI_CODING_AGENT_DIR" || !rc.Context.SelectsConfigDir()) {
+	for _, key := range []string{"HOME", "XDG_DATA_HOME", "PATH"} {
+		if value, ok := os.LookupEnv(key); ok {
 			bootstrap[key] = value
 		}
 		if value, ok := rc.Context.Env[key]; ok {
 			bootstrap[key] = value
 		}
+	}
+	if value, ok := rc.Context.Env["PI_CODING_AGENT_DIR"]; ok {
+		bootstrap["PI_CODING_AGENT_DIR"] = value
 	}
 	resolved, err := config.ResolveTemplates(bootstrap, &config.TemplateData{ProjectRoot: policy.ProjectRoot, RuntimeDir: policy.RuntimeDir})
 	if err != nil {

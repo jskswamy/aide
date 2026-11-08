@@ -1358,3 +1358,32 @@ func TestCanonicalizeRemotePattern(t *testing.T) {
 		}
 	}
 }
+
+func TestResolve_FallbackToBuiltinDefaultWhenDefaultContextUnset(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"default": {Agent: "claude"},
+			"work": {
+				Agent: "codex",
+				Match: []config.MatchRule{{Path: "/work/only"}},
+			},
+		},
+	}
+
+	rc, err := Resolve(cfg, "/unmatched/dir", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc.Name != "default" || rc.Source != SourceDefault || rc.Context.Agent != "claude" {
+		t.Errorf("got Name=%q Source=%q Agent=%q, want default / SourceDefault / claude", rc.Name, rc.Source, rc.Context.Agent)
+	}
+
+	cfg.DefaultContext = "work"
+	rc2, err := Resolve(cfg, "/unmatched/dir", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc2.Name != "work" || rc2.Source != SourceDefault || rc2.Context.Agent != "codex" {
+		t.Errorf("got Name=%q Source=%q Agent=%q, want work / SourceDefault / codex", rc2.Name, rc2.Source, rc2.Context.Agent)
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -105,12 +106,13 @@ func contextListCmd() *cobra.Command {
 			}
 			sort.Strings(names)
 
+			effectiveDefault := cmp.Or(cfg.DefaultContext, config.DefaultProfileName)
 			entries := make([]contextEntry, 0, len(names))
 			for _, name := range names {
 				ctx := cfg.Contexts[name]
 				e := contextEntry{
 					Name:    name,
-					Default: name == cfg.DefaultContext,
+					Default: name == effectiveDefault,
 					Agent:   ctx.Agent,
 					Secret:  ctx.Secret,
 				}
@@ -416,6 +418,9 @@ func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOption
 			return fmt.Errorf("profile name cannot be empty")
 		}
 	}
+	if config.IsDefaultProfile(name) {
+		return fmt.Errorf("profile %q is built-in and already exists", name)
+	}
 	if _, exists := cfg.Contexts[name]; exists {
 		return fmt.Errorf("profile %q already exists", name)
 	}
@@ -498,7 +503,7 @@ func runCreateWizard(cmd *cobra.Command, prefilledName string, opts createOption
 	}
 	cfg.Contexts[name] = newCtx
 	if cfg.DefaultContext == "" {
-		cfg.DefaultContext = name
+		cfg.DefaultContext = config.DefaultProfileName
 	}
 
 	if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
@@ -533,6 +538,13 @@ func contextRenameCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			oldName := args[0]
 			newName := args[1]
+
+			if config.IsDefaultProfile(oldName) {
+				return fmt.Errorf("cannot rename built-in profile %q", oldName)
+			}
+			if config.IsDefaultProfile(newName) {
+				return fmt.Errorf("cannot rename profile to reserved built-in name %q", newName)
+			}
 
 			env, err := cmdEnv(cmd)
 			if err != nil {
@@ -573,6 +585,9 @@ func contextRemoveCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if config.IsDefaultProfile(name) {
+				return fmt.Errorf("cannot remove built-in profile %q", name)
+			}
 			env, err := cmdEnv(cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
@@ -584,6 +599,10 @@ func contextRemoveCmd() *cobra.Command {
 			}
 			removedAgent := ctx.Agent
 			delete(cfg.Contexts, name)
+			if cfg.DefaultContext == name {
+				cfg.DefaultContext = config.DefaultProfileName
+				cfg.SynthesizedDefaultContext = false
+			}
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
@@ -594,7 +613,10 @@ func contextRemoveCmd() *cobra.Command {
 			// Check for orphaned agent
 			if removedAgent != "" {
 				stillUsed := false
-				for _, c := range cfg.Contexts {
+				for ctxName, c := range cfg.Contexts {
+					if ctxName == config.DefaultProfileName && cfg.SynthesizedDefault {
+						continue
+					}
 					if c.Agent == removedAgent {
 						stillUsed = true
 						break
@@ -729,6 +751,10 @@ profile is used.`,
 			}
 
 			cfg.DefaultContext = ctxName
+			cfg.SynthesizedDefaultContext = false
+			if ctxName == config.DefaultProfileName {
+				cfg.SynthesizedDefault = false
+			}
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}

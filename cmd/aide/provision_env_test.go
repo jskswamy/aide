@@ -20,26 +20,19 @@ func unsetEnv(t *testing.T, key string) {
 	}
 }
 
-// A CLAUDE_CONFIG_DIR exported in the shell reaches the launched agent,
-// so sync must target it too, sandboxed or not.
-func TestResolveProvisionContext_InheritsExportedProfileEnv(t *testing.T) {
-	for name, sb := range map[string]*config.SandboxRef{
-		"sandboxed":   nil,
-		"unsandboxed": {Disabled: true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			home := t.TempDir()
-			exported := filepath.Join(home, "claude-elsewhere")
-			t.Setenv("CLAUDE_CONFIG_DIR", exported)
-			ctx := config.Context{Agent: "claude", Sandbox: sb}
-			pCtx, err := resolveProvisionContext(&config.Config{}, "c", ctx, home, home)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := pCtx.Env["CLAUDE_CONFIG_DIR"]; got != exported {
-				t.Errorf("CLAUDE_CONFIG_DIR = %q, want exported %q", got, exported)
-			}
-		})
+// Unisolated contexts do not inherit a shell-exported CLAUDE_CONFIG_DIR
+// (LaunchScrubRegistry drops config-dir redirects unconditionally).
+func TestResolveProvisionContext_IgnoresExportedProfileEnv(t *testing.T) {
+	home := t.TempDir()
+	exported := filepath.Join(home, "claude-elsewhere")
+	t.Setenv("CLAUDE_CONFIG_DIR", exported)
+	ctx := config.Context{Agent: "claude", Sandbox: &config.SandboxRef{Disabled: true}}
+	pCtx, err := resolveProvisionContext(&config.Config{}, "c", ctx, home, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pCtx.Env["CLAUDE_CONFIG_DIR"]; got != "" {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want empty (exported shell var ignored)", got)
 	}
 }
 
@@ -57,7 +50,7 @@ func TestResolveProvisionContext_ContextEnvBeatsExported(t *testing.T) {
 	}
 }
 
-func TestResolveProvisionContext_InheritsExportedPiDir(t *testing.T) {
+func TestResolveProvisionContext_IgnoresExportedPiDir(t *testing.T) {
 	home := t.TempDir()
 	exported := filepath.Join(home, "pi-elsewhere")
 	t.Setenv("PI_CODING_AGENT_DIR", exported)
@@ -65,8 +58,8 @@ func TestResolveProvisionContext_InheritsExportedPiDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pCtx.Env["PI_CODING_AGENT_DIR"]; got != exported {
-		t.Errorf("PI_CODING_AGENT_DIR = %q, want exported %q", got, exported)
+	if got := pCtx.Env["PI_CODING_AGENT_DIR"]; got != "" {
+		t.Errorf("PI_CODING_AGENT_DIR = %q, want empty (exported shell var ignored)", got)
 	}
 }
 

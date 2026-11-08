@@ -327,25 +327,6 @@ func TestWhichStatus_ReportNotices(t *testing.T) {
 	}
 }
 
-func TestPassthroughSelectionError(t *testing.T) {
-	for name, tc := range map[string]struct {
-		f       selectionFlags
-		in      launcher.SelectionInputs
-		refused bool
-	}{
-		"none":       {},
-		"profile":    {f: selectionFlags{profile: "work"}, refused: true},
-		"credential": {in: launcher.SelectionInputs{CredentialsSet: true}, refused: true},
-		"auth api":   {in: launcher.SelectionInputs{Auth: launcher.AuthAPI}, refused: true},
-		"auth login": {in: launcher.SelectionInputs{Auth: launcher.AuthLogin}},
-	} {
-		err := passthroughSelectionError(&tc.f, tc.in, "/cfg/config.yaml")
-		if (err != nil) != tc.refused {
-			t.Errorf("%s: err = %v, refused want %v", name, err, tc.refused)
-		}
-	}
-}
-
 // Every command that takes --context also takes --profile, and
 // --context is hidden as the deprecated alias.
 func TestContextFlagIsDeprecatedAliasEverywhere(t *testing.T) {

@@ -369,8 +369,8 @@ func TestMigrateProfiles_ProducesSplitFilesPreservingComments(t *testing.T) {
 	if loaded.LegacyMonolithic {
 		t.Error("expected LegacyMonolithic = false after ApplyMigrationSplit")
 	}
-	if len(loaded.Contexts) != 3 || loaded.DefaultContext != "personal" {
-		t.Errorf("loaded Contexts=%d DefaultContext=%q", len(loaded.Contexts), loaded.DefaultContext)
+	if len(loaded.Contexts) != 4 || loaded.DefaultContext != "personal" || !loaded.SynthesizedDefault {
+		t.Errorf("loaded Contexts=%d DefaultContext=%q SynthesizedDefault=%v", len(loaded.Contexts), loaded.DefaultContext, loaded.SynthesizedDefault)
 	}
 }
 

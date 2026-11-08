@@ -33,8 +33,8 @@ func TestLoad_SplitLayout(t *testing.T) {
 	if cfg.DefaultContext != "work" {
 		t.Errorf("DefaultContext = %q, want work", cfg.DefaultContext)
 	}
-	if len(cfg.Contexts) != 1 || cfg.Contexts["work"].Profile != "work" {
-		t.Errorf("Contexts = %+v, want work profile with Profile=work", cfg.Contexts)
+	if len(cfg.Contexts) != 2 || cfg.Contexts["work"].Profile != "work" || !cfg.SynthesizedDefault || cfg.Contexts["default"].SelectsConfigDir() {
+		t.Errorf("Contexts = %+v, want work profile (Profile=work) and synthesized default profile", cfg.Contexts)
 	}
 	if len(cfg.Capabilities) != 1 || len(cfg.NeverAllow) != 1 {
 		t.Errorf("sandbox.yaml not merged: caps=%v never_allow=%v", cfg.Capabilities, cfg.NeverAllow)

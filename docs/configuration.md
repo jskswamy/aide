@@ -135,7 +135,7 @@ The `icon` field (optional) sets a Unicode symbol displayed alongside the agent 
 
 ### `config.yaml` (Global Settings)
 
-- `default_profile:` (string) - Fallback profile name when no profile match rules apply.
+- `default_profile:` (string) - Fallback profile name when no profile match rules apply (defaults to `"default"`).
 - `agents:` (map) - Agent binary definitions.
 - `preferences:` (map) - Startup banner display settings (see [Preferences](#preferences)).
 - `statusline:` (map) - Configures the `aide statusline claude` renderer. Controls module order, per-module icons, state strings, and disabled state. Field-by-field merge with the project override; `order` is replaced wholesale when set in the project.
@@ -246,12 +246,12 @@ not `--clean-env` is set:
   `AZURE_CLIENT_CERTIFICATE_PATH`, `AZURE_FEDERATED_TOKEN_FILE`, ...);
 - aide's own secret material: `SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`;
 - names you list in `scrub_env:`;
-- when the profile selects its own config dir (`profile:`,
-  `config_dir_name:`, `config_dir:` or `config_dirs:`), every agent
-  config-dir redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+- every agent config-dir redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
   `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `COPILOT_HOME`,
-  `OPENCODE_CONFIG`, ...).
-  Without one, a redirect you export is kept as your global choice.
+  `OPENCODE_CONFIG`, ...). Unisolated profiles (such as the built-in
+  `default` profile) always use the agent's native default directory
+  (`~/.claude`, `~/.codex`, etc.); custom profiles isolate into
+  `~/.<agent>-<name>`.
 
 The full list lives in `internal/envscrub`. What still reaches the
 agent:
@@ -339,9 +339,7 @@ inject such a key, bind it with a custom `credentials:` entry
 names you always want removed in `scrub_env:`. MCP server tokens
 (`bearer_token_env_var`) are resource credentials and are left alone.
 
-The no-config passthrough (`aide` with no `config.yaml`) only removes
-`SOPS_AGE_KEY` and `SOPS_AGE_KEY_FILE`; shell API keys still reach the
-agent there. Passthrough is not an isolation guarantee.
+Every launch (including zero-config launches when `default` is synthesized from `PATH`) runs through the full credential scrub and sandbox policy.
 
 Every env name a `credentials:` binding declares (in any profile) is
 also scrubbed from the inherited environment, so a custom key exported
@@ -678,6 +676,8 @@ also honors:
 ---
 
 ## Profile Fields
+
+- Each custom profile automatically defaults to `config_dir_name: <name>` (`~/.<agent>-<name>`), while the built-in `default` profile is always unisolated and uses the agent's native config directory (`~/.claude`, `~/.codex`, etc.). Config-dir overrides (`config_dir_name:`, `config_dir:`, `config_dirs:`, or `CLAUDE_CONFIG_DIR` in `env:`) on `default` are ignored with a startup notice.
 
 Each file in `~/.config/aide/profiles/<name>.yaml` defines one profile (the filename stem is the profile name):
 

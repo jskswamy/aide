@@ -205,13 +205,3 @@ func addProfileFlag(cmd *cobra.Command, target *string) {
 	}
 }
 
-// passthroughSelectionError refuses selections that need a config when
-// none exists (passthrough). --auth login is accepted: passthrough
-// injects nothing, so the harness always uses its native login.
-func passthroughSelectionError(f *selectionFlags, in launcher.SelectionInputs, configFile string) error {
-	if f.profile != "" || in.CredentialsSet || in.Auth == launcher.AuthAPI {
-		return fmt.Errorf("--profile, --gateway and --auth api need profiles in %s; none exists yet (create one with: aide init). "+
-			"Without a config aide injects no credentials and the harness uses its native login", configFile)
-	}
-	return nil
-}

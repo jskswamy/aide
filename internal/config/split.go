@@ -118,8 +118,12 @@ func (c *Config) extractProvisioningFile() ProvisioningFile {
 }
 
 func (c *Config) extractCoreConfig() CoreConfig {
+	defaultProfile := c.DefaultContext
+	if c.SynthesizedDefaultContext && defaultProfile == DefaultProfileName {
+		defaultProfile = ""
+	}
 	return CoreConfig{
-		DefaultProfile: c.DefaultContext,
+		DefaultProfile: defaultProfile,
 		Agents:         c.Agents,
 		Preferences:    c.Preferences,
 		Statusline:     c.Statusline,

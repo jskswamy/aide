@@ -14,6 +14,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 // codexEnvNameRE matches the variable names Codex reads; anything else
@@ -63,7 +64,11 @@ func codexHomes(cfg *config.Config, home string, getenv func(string) string) []s
 		}
 	}
 	add(launchConfigDir("codex", config.Context{}, home, func(string) string { return "" }))
-	add(launchConfigDir("codex", config.Context{}, home, getenv))
+	if getenv != nil {
+		if v := getenv("CODEX_HOME"); v != "" {
+			add(homepath.Expand(v, home))
+		}
+	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
 		add(launchConfigDir("codex", cfg.Contexts[name], home, getenv))
 	}

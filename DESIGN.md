@@ -429,19 +429,13 @@ aide works with any coding agent - Claude, Gemini, Codex, or whatever
 comes next. Agents are just binaries. aide resolves which agent,
 credentials, and sandbox policy to use based on where you are.
 
-### Zero-Config Passthrough
+### Built-in Default Profile
 
-When no config file exists, aide does not require setup:
+When no profile match rules apply and `default_profile` is unset, aide falls back to the built-in `default` profile:
 
-1. Scan PATH for known agent binaries (`claude`, `gemini`, `codex`)
-2. If exactly one found and it already has its API key in the environment,
-   just exec it (pure passthrough - aide adds zero overhead)
-3. If multiple found, show a helpful message:
-   `"Multiple agents found: claude, codex. Use --agent to pick one, or run aide setup."`
-4. If none found: `"No known agent binaries found on PATH. Install claude, gemini, or codex."`
-
-aide adds value only when you need multi-context management. For single-agent,
-single-context users with env vars already set, aide is invisible.
+1. If `profiles/default.yaml` is missing, aide synthesizes `default` in memory from the supported agent binaries on `PATH` (preferring `claude`, then alphabetical) and materializes `config.yaml` and `profiles/default.yaml` on launch or when `default` is mutated.
+2. Every launch runs through the full launcher pipeline (OS-native sandbox, credential scrubbing, and `.aide.yaml` trust gate).
+3. The `default` profile is always unisolated and uses the agent's native config directory (`~/.claude`, `~/.codex`, etc.), while custom profiles isolate into `~/.<agent>-<name>`.
 
 ### Context Matching
 
@@ -849,8 +843,7 @@ internal/
     manager.go            # Secrets lifecycle (create, edit, rotate)
     age.go                # Age key discovery
   launcher/
-    launcher.go           # Full launch flow (config-based)
-    passthrough.go        # Zero-config passthrough flow
+    launcher.go           # Full launch flow (sandbox, credential scrub, materialization)
     runtime.go            # Ephemeral runtime dir management
   sandbox/
     sandbox.go            # Sandbox interface and default policy
@@ -1069,13 +1062,9 @@ context makes the data flow explicit.
 **UX issue surfaced:** Work context uses `CLAUDE_CODE_USE_BEDROCK`, not
 `ANTHROPIC_API_KEY`. Agent-level env would force defining keys not all contexts need.
 
-### DD-7: Zero-Config Passthrough
-**Decision:** When no config exists, detect agent on PATH and exec it directly.
-**Why:** aide must not make things worse for simple setups. If a user has one
-agent with env vars already set, `aide` should be a transparent passthrough.
-Value comes from multi-context management, not from existing single-context setups.
-**Behavior:** Single agent on PATH → exec immediately. Multiple agents → helpful
-error with `--agent` hint. No agents → error with install guidance.
+### DD-7: Built-in Default Profile (Supersedes Zero-Config Passthrough)
+**Decision:** Synthesize the built-in `default` profile when `profiles/default.yaml` is absent and run every launch through the full launcher pipeline (sandbox, credential scrub, trust gate). `default` is always unisolated (`~/.claude`, `~/.codex`, etc.).
+**Why:** Zero-config launches now get the same OS-native sandboxing and credential scrubbing as configured launches while still working out of the box with existing native agent logins.
 
 ### DD-12: Minimal Config Format
 **Decision:** Flat config (no `agents`/`contexts` keys) is treated as a single
@@ -1099,9 +1088,9 @@ Falls back to cwd if not a git repo.
 sandbox writable paths, and `{{ .project_root }}` template variable.
 **Behavior:** `git rev-parse --show-toplevel` or manual walk-up.
 
-### DD-24: Default Context Auto-Set
-**Decision:** When `aide use`, `aide setup`, or `aide context add` creates the first explicit context and no `default_context` is configured, it's automatically set to that context.
-**Why:** Users transitioning from a minimal flat config to a multi-context config would otherwise lose the zero-config "works everywhere" behavior. Auto-setting the default preserves that behavior without requiring an extra manual step.
+### DD-24: Default Profile Fallback
+**Decision:** `default_profile` defaults to `"default"` when unset. Creating custom profiles via `aide profile create` or `aide use` leaves `default` as the fallback unless changed with `aide profile set-default`.
+**Why:** Preserves the unisolated `default` profile as the global fallback when no match rules apply, rather than hijacking unmatched directories into a newly created custom profile.
 
 ### DD-32: Trust Gate for .aide.yaml
 **Decision:** `.aide.yaml` project overrides are untrusted by default.

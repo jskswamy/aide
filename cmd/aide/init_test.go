@@ -63,7 +63,7 @@ func TestInitCmd_WritesModularSplitConfig(t *testing.T) {
 	if cfg.LegacyMonolithic {
 		t.Errorf("cfg.LegacyMonolithic = true after aide init, want false")
 	}
-	if got := cfg.Contexts["default"].Profile; got != "default" {
-		t.Errorf("default profile config_dir_name = %q, want %q", got, "default")
+	if got := cfg.Contexts["default"].Profile; got != "" {
+		t.Errorf("default profile config_dir_name = %q, want empty (unisolated)", got)
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/launcher/mocks"
 )
 
@@ -25,7 +26,7 @@ func mockLookPath(available map[string]string) LookPathFunc {
 	}
 }
 
-func TestPassthrough_SingleAgent(t *testing.T) {
+func TestZeroConfigLaunch_SingleAgent(t *testing.T) {
 	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
@@ -38,26 +39,37 @@ func TestPassthrough_SingleAgent(t *testing.T) {
 			capturedArgs = args
 			return nil
 		})
+	cfgDir := t.TempDir()
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+		Execer:    mockExec,
+		ConfigDir: cfgDir,
+		LookPath:  mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
 
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), "", nil)
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	err := l.Launch(t.TempDir(), "", nil, false, false, nil, nil)
 	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
+		t.Fatalf("Launch failed: %v", err)
 	}
 
 	innerBinary, _ := unwrapSandbox(t, capturedBinary, capturedArgs)
-	if innerBinary != "/usr/local/bin/claude" {
-		t.Errorf("expected inner binary /usr/local/bin/claude, got %s", innerBinary)
+	if filepath.Base(innerBinary) != "claude" {
+		t.Errorf("expected inner binary claude, got %s", innerBinary)
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "profiles", "default.yaml")); err != nil {
+		t.Errorf("expected profiles/default.yaml created on launch: %v", err)
 	}
 }
 
-func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
+func TestZeroConfigLaunch_SingleAgentWithArgs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
 	var capturedArgs []string
@@ -69,21 +81,29 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 			capturedArgs = args
 			return nil
 		})
+	binDir := t.TempDir()
+	codexBin := filepath.Join(binDir, "codex")
+	if err := os.WriteFile(codexBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"codex": "/usr/bin/codex"}),
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{"codex": codexBin}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	extraArgs := []string{"--model", "opus", "help me"}
-	err := l.Passthrough(t.TempDir(), "", extraArgs)
+	err := l.Launch(t.TempDir(), "", extraArgs, false, false, nil, nil)
 	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
+		t.Fatalf("Launch failed: %v", err)
 	}
 
 	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
-	expected := []string{"/usr/bin/codex", "--model", "opus", "help me"}
+	expected := []string{codexBin, "--model", "opus", "help me"}
 	if len(innerArgs) != len(expected) {
 		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
 	}
@@ -94,52 +114,115 @@ func TestPassthrough_SingleAgentWithArgs(t *testing.T) {
 	}
 }
 
-func TestPassthrough_NoAgents(t *testing.T) {
+func TestZeroConfigLaunch_NoAgents(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)
-	// No EXPECT set: exec should not be called when no agents found.
+	t.Setenv("PATH", t.TempDir())
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{}),
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{}),
 	}
 
-	err := l.Passthrough(t.TempDir(), "", nil)
+	err := l.Launch(t.TempDir(), "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error when no agents found, got nil")
 	}
-	if !strings.Contains(err.Error(), "no config found") {
-		t.Errorf("expected 'no config found' error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "aide init") {
-		t.Errorf("expected install guidance with 'aide init', got: %v", err)
+	if !strings.Contains(err.Error(), "no known agents found on PATH") {
+		t.Errorf("expected 'no known agents found on PATH' error, got: %v", err)
 	}
 }
 
-func TestPassthrough_MultipleAgents(t *testing.T) {
+func TestZeroConfigLaunch_MultipleAgents_InteractivePromptAndNonTTY(t *testing.T) {
+	requireClaudeHome(t)
+	binDir := t.TempDir()
+	claudeBin := filepath.Join(binDir, "claude")
+	codexBin := filepath.Join(binDir, "codex")
+	for _, b := range []string{claudeBin, codexBin} {
+		if err := os.WriteFile(b, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	// 1. Interactive TTY prompts once and saves user choice ("codex") to profiles/default.yaml.
 	ctrl := gomock.NewController(t)
+	var capturedBin string
+	var capturedArgs []string
 	mockExec := mocks.NewMockExecer(ctrl)
-	// No EXPECT set: exec should not be called when multiple agents found.
+	mockExec.EXPECT().
+		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(binary string, args []string, _ []string) error {
+			capturedBin = binary
+			capturedArgs = args
+			return nil
+		})
+	cfgDir := t.TempDir()
+	var stderr bytes.Buffer
 	l := &Launcher{
-		Execer: mockExec,
+		Execer:      mockExec,
+		ConfigDir:   cfgDir,
+		Interactive: true,
+		Stdin:       strings.NewReader("codex\n"),
+		StdinIsTTY:  func() bool { return true },
+		Stderr:      &stderr,
 		LookPath: mockLookPath(map[string]string{
-			"claude": "/usr/local/bin/claude",
-			"codex":  "/usr/local/bin/codex",
+			"claude": claudeBin,
+			"codex":  codexBin,
 		}),
 	}
+	if err := l.Launch(t.TempDir(), "", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("interactive Launch failed: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "Detected agents on PATH: claude, codex") {
+		t.Errorf("expected multi-agent prompt on stderr, got:\n%s", stderr.String())
+	}
+	innerBin, _ := unwrapSandbox(t, capturedBin, capturedArgs)
+	if innerBin != codexBin {
+		t.Errorf("innerBin = %q, want %q", innerBin, codexBin)
+	}
+	cfg, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if cfg.Contexts["default"].Agent != "codex" || len(cfg.Agents) != 2 {
+		t.Errorf("persisted default profile agent=%q agents=%v", cfg.Contexts["default"].Agent, cfg.Agents)
+	}
 
-	err := l.Passthrough(t.TempDir(), "", nil)
-	if err == nil {
-		t.Fatal("expected error when multiple agents found, got nil")
+	// 2. Non-TTY auto-selects DefaultAgentCandidate ("claude") without prompting.
+	ctrl2 := gomock.NewController(t)
+	mockExec2 := mocks.NewMockExecer(ctrl2)
+	mockExec2.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	cfgDir2 := t.TempDir()
+	var stderr2 bytes.Buffer
+	l2 := &Launcher{
+		Execer:      mockExec2,
+		ConfigDir:   cfgDir2,
+		Interactive: false,
+		Stderr:      &stderr2,
+		LookPath: mockLookPath(map[string]string{
+			"claude": claudeBin,
+			"codex":  codexBin,
+		}),
 	}
-	if !strings.Contains(err.Error(), "multiple agents") {
-		t.Errorf("expected 'multiple agents' error, got: %v", err)
+	if err := l2.Launch(t.TempDir(), "", nil, false, false, nil, nil); err != nil {
+		t.Fatalf("non-TTY Launch failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "--agent") {
-		t.Errorf("expected --agent hint, got: %v", err)
+	if strings.Contains(stderr2.String(), "Default agent for profile") {
+		t.Errorf("unexpected prompt in non-TTY mode:\n%s", stderr2.String())
+	}
+	cfg2, err := config.Load(cfgDir2, "")
+	if err != nil {
+		t.Fatalf("config.Load 2: %v", err)
+	}
+	if cfg2.Contexts["default"].Agent != "claude" {
+		t.Errorf("non-TTY default profile agent = %q, want claude", cfg2.Contexts["default"].Agent)
 	}
 }
 
-func TestPassthrough_AgentOverride(t *testing.T) {
+func TestZeroConfigLaunch_AgentOverride(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
 	var capturedArgs []string
@@ -151,84 +234,98 @@ func TestPassthrough_AgentOverride(t *testing.T) {
 			capturedArgs = args
 			return nil
 		})
+	binDir := t.TempDir()
+	claudeBin := filepath.Join(binDir, "claude")
+	codexBin := filepath.Join(binDir, "codex")
+	for _, b := range []string{claudeBin, codexBin} {
+		if err := os.WriteFile(b, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", binDir)
 	l := &Launcher{
-		Execer: mockExec,
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
 		LookPath: mockLookPath(map[string]string{
-			"claude": "/usr/local/bin/claude",
-			"codex":  "/usr/local/bin/codex",
+			"claude": claudeBin,
+			"codex":  codexBin,
 		}),
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	// With --agent codex, should launch codex directly even though multiple found.
-	err := l.Passthrough(t.TempDir(), "codex", []string{"--help"})
+	err := l.Launch(t.TempDir(), "codex", []string{"--help"}, false, false, nil, nil)
 	if err != nil {
-		t.Fatalf("Passthrough with --agent failed: %v", err)
+		t.Fatalf("Launch with --agent failed: %v", err)
 	}
 
 	innerBinary, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
-	if innerBinary != "/usr/local/bin/codex" {
-		t.Errorf("expected inner binary /usr/local/bin/codex, got %s", innerBinary)
+	if innerBinary != codexBin {
+		t.Errorf("expected inner binary %s, got %s", codexBin, innerBinary)
 	}
-	expected := []string{"/usr/local/bin/codex", "--help"}
+	expected := []string{codexBin, "--help"}
 	if len(innerArgs) != len(expected) {
 		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
 	}
 }
 
-func TestPassthrough_AgentOverrideNotOnPath(t *testing.T) {
+func TestZeroConfigLaunch_AgentOverrideNotOnPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)
-	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
+	t.Setenv("PATH", t.TempDir())
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{}), // nothing on PATH
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{}), // nothing on PATH
 	}
 
-	err := l.Passthrough(t.TempDir(), "nonexistent", nil)
+	err := l.Launch(t.TempDir(), "nonexistent", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for agent not on PATH, got nil")
 	}
-	if !strings.Contains(err.Error(), "not found on PATH") {
-		t.Errorf("expected 'not found on PATH' error, got: %v", err)
+	if !strings.Contains(err.Error(), "unknown agent") {
+		t.Errorf("expected 'unknown agent' error, got: %v", err)
 	}
 }
 
-func TestPassthrough_FirstRunSentinel(t *testing.T) {
-	requireClaudeHome(t)
-	configHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-
-	if !IsFirstRun() {
-		t.Error("expected IsFirstRun=true before passthrough")
+func TestDefaultProfile_LegacyDirAndIgnoredOverrideNotices(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	legacyDir := filepath.Join(home, ".claude-default")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgDir := t.TempDir()
+	profDir := filepath.Join(cfgDir, "profiles")
+	if err := os.MkdirAll(profDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("agents:\n  claude:\n    binary: claude\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profDir, "default.yaml"), []byte("agent: claude\nconfig_dir_name: custom\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	ctrlFR := gomock.NewController(t)
-	mockExecFR := mocks.NewMockExecer(ctrlFR)
-	mockExecFR.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	cfg, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
 	l := &Launcher{
-		Execer:   mockExecFR,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
+		ConfigDir: cfgDir,
+		LookPath:  mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
-
-	err := l.Passthrough(t.TempDir(), "", nil)
+	res, err := l.ResolveSelection(cfg, t.TempDir(), home, SelectionInputs{})
 	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
+		t.Fatalf("ResolveSelection: %v", err)
 	}
-
-	sentinel := filepath.Join(configHome, "aide", ".first-run-done")
-	data, err := os.ReadFile(sentinel)
-	if err != nil {
-		t.Fatalf("expected sentinel file at %s: %v", sentinel, err)
+	joined := strings.Join(res.Notices, "\n")
+	if !strings.Contains(joined, `profile "default" always uses native harness config directories; ignoring config_dir override in profiles/default.yaml`) {
+		t.Errorf("missing ignored config_dir notice in:\n%s", joined)
 	}
-	if !strings.Contains(string(data), "claude") {
-		t.Errorf("expected sentinel to contain agent name, got %q", string(data))
-	}
-
-	if IsFirstRun() {
-		t.Error("expected IsFirstRun=false after passthrough wrote sentinel")
+	if !strings.Contains(joined, `profile "default" now uses ~/.claude; delete legacy directory ~/.claude-default if you no longer need it`) {
+		t.Errorf("missing legacy directory cleanup notice in:\n%s", joined)
 	}
 }
 
@@ -251,7 +348,7 @@ func TestScanAgents(t *testing.T) {
 	}
 }
 
-func TestPassthrough_YoloInjectsFlag(t *testing.T) {
+func TestZeroConfigLaunch_YoloInjectsFlag(t *testing.T) {
 	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
@@ -264,20 +361,27 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 			capturedArgs = args
 			return nil
 		})
+	binDir := t.TempDir()
+	claudeBin := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(claudeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-		Yolo:     true,
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{"claude": claudeBin}),
+		Yolo:      true,
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), "", []string{"--model", "opus"})
+	err := l.Launch(t.TempDir(), "", []string{"--model", "opus"}, false, false, nil, nil)
 	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
+		t.Fatalf("Launch failed: %v", err)
 	}
 
-	expected := []string{"/usr/local/bin/claude", "--dangerously-skip-permissions", "--model", "opus"}
+	expected := []string{claudeBin, "--dangerously-skip-permissions", "--model", "opus"}
 	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if len(innerArgs) != len(expected) {
 		t.Fatalf("expected %d inner args, got %d: %v", len(expected), len(innerArgs), innerArgs)
@@ -289,7 +393,7 @@ func TestPassthrough_YoloInjectsFlag(t *testing.T) {
 	}
 }
 
-func TestPassthrough_YoloOpenCodeSubcommandRun(t *testing.T) {
+func TestZeroConfigLaunch_YoloOpenCodeSubcommandRun(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
 	var capturedArgs []string
@@ -301,29 +405,36 @@ func TestPassthrough_YoloOpenCodeSubcommandRun(t *testing.T) {
 			capturedArgs = args
 			return nil
 		})
+	binDir := t.TempDir()
+	opencodeBin := filepath.Join(binDir, "opencode")
+	if err := os.WriteFile(opencodeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"opencode": "/usr/local/bin/opencode"}),
-		Yolo:     true,
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{"opencode": opencodeBin}),
+		Yolo:      true,
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), "opencode", []string{"run", "-m", "openrouter/openai/gpt-4o-mini", "hello"})
+	err := l.Launch(t.TempDir(), "opencode", []string{"run", "-m", "openrouter/openai/gpt-4o-mini", "hello"}, false, false, nil, nil)
 	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
+		t.Fatalf("Launch failed: %v", err)
 	}
 
-	expected := []string{"/usr/local/bin/opencode", "run", "--auto", "--standalone", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
+	expected := []string{opencodeBin, "run", "--auto", "--standalone", "-m", "openrouter/openai/gpt-4o-mini", "hello"}
 	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	if !slices.Equal(innerArgs, expected) {
 		t.Fatalf("innerArgs = %v, want %v", innerArgs, expected)
 	}
 }
 
-// Passthrough has no profile, so it never invents a database path; the
-// --standalone rule still applies, after the leaf.
-func TestPassthrough_OpenCodeStandaloneWithoutProfileDB(t *testing.T) {
+// Built-in default profile selects no isolated config dir, so it never invents
+// a custom database path; the --standalone rule still applies, after the leaf.
+func TestZeroConfigLaunch_OpenCodeStandaloneWithoutProfileDB(t *testing.T) {
 	for name, tc := range map[string]struct{ args, want []string }{
 		"auth list":   {[]string{"auth", "list"}, []string{"auth", "list", "--standalone"}},
 		"debug paths": {[]string{"debug", "paths"}, []string{"debug", "paths"}},
@@ -340,28 +451,35 @@ func TestPassthrough_OpenCodeStandaloneWithoutProfileDB(t *testing.T) {
 					capturedBinary, capturedArgs, capturedEnv = binary, args, env
 					return nil
 				})
+			binDir := t.TempDir()
+			opencodeBin := filepath.Join(binDir, "opencode")
+			if err := os.WriteFile(opencodeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDir)
 			l := &Launcher{
-				Execer:   mockExec,
-				LookPath: mockLookPath(map[string]string{"opencode": "/usr/local/bin/opencode"}),
+				Execer:    mockExec,
+				ConfigDir: t.TempDir(),
+				LookPath:  mockLookPath(map[string]string{"opencode": opencodeBin}),
 			}
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 			t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-			if err := l.Passthrough(t.TempDir(), "opencode", tc.args); err != nil {
-				t.Fatalf("Passthrough failed: %v", err)
+			if err := l.Launch(t.TempDir(), "opencode", tc.args, false, false, nil, nil); err != nil {
+				t.Fatalf("Launch failed: %v", err)
 			}
 			_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
-			if want := append([]string{"/usr/local/bin/opencode"}, tc.want...); !slices.Equal(innerArgs, want) {
+			if want := append([]string{opencodeBin}, tc.want...); !slices.Equal(innerArgs, want) {
 				t.Errorf("innerArgs = %v, want %v", innerArgs, want)
 			}
-			if v, ok := envValue(capturedEnv, "OPENCODE_DB"); ok {
-				t.Errorf("OPENCODE_DB = %q, want it unset", v)
+			if v, ok := envValue(capturedEnv, "OPENCODE_DB"); ok && runtime.GOOS != "linux" {
+				t.Errorf("OPENCODE_DB = %q, want it unset on non-Linux", v)
 			}
 		})
 	}
 }
 
-func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
+func TestZeroConfigLaunch_NoYoloOverridesYolo(t *testing.T) {
 	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	var capturedBinary string
@@ -374,216 +492,96 @@ func TestPassthrough_NoYoloOverridesYolo(t *testing.T) {
 			capturedArgs = args
 			return nil
 		})
+	binDir := t.TempDir()
+	claudeBin := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(claudeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 	var stderrBuf bytes.Buffer
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-		Yolo:     true,
-		NoYolo:   true,
-		Stderr:   &stderrBuf,
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{"claude": claudeBin}),
+		Yolo:      true,
+		NoYolo:    true,
+		Stderr:    &stderrBuf,
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), "", nil)
+	err := l.Launch(t.TempDir(), "", nil, false, false, nil, nil)
 	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
+		t.Fatalf("Launch failed: %v", err)
 	}
 
 	_, innerArgs := unwrapSandbox(t, capturedBinary, capturedArgs)
 	for _, a := range innerArgs {
 		if a == "--dangerously-skip-permissions" {
-			t.Error("--no-yolo should suppress yolo flag in passthrough")
+			t.Error("--no-yolo should suppress yolo flag")
 		}
 	}
 	if strings.Contains(stderrBuf.String(), "yolo mode enabled") {
-		t.Error("--no-yolo should suppress yolo warning in passthrough")
+		t.Error("--no-yolo should suppress yolo warning")
 	}
 }
 
-func TestPassthrough_YoloWarningShown(t *testing.T) {
+func TestZeroConfigLaunch_YoloWarningShown(t *testing.T) {
 	requireClaudeHome(t)
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	binDir := t.TempDir()
+	claudeBin := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(claudeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 	var stderrBuf bytes.Buffer
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-		Yolo:     true,
-		Stderr:   &stderrBuf,
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{"claude": claudeBin}),
+		Yolo:      true,
+		Stderr:    &stderrBuf,
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), "", nil)
+	err := l.Launch(t.TempDir(), "", nil, false, false, nil, nil)
 	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
+		t.Fatalf("Launch failed: %v", err)
 	}
 
-	if !strings.Contains(stderrBuf.String(), "yolo mode enabled") {
-		t.Error("expected yolo warning in passthrough stderr")
-	}
-	if !strings.Contains(stderrBuf.String(), "--yolo flag") {
-		t.Error("expected source attribution in yolo warning")
+	if !strings.Contains(stderrBuf.String(), "AUTO-APPROVE") {
+		t.Errorf("expected AUTO-APPROVE warning in stderr, got:\n%s", stderrBuf.String())
 	}
 }
 
-func TestPassthrough_YoloUnsupportedAgent(t *testing.T) {
+func TestZeroConfigLaunch_YoloUnsupportedAgent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)
-	// No EXPECT set: gomock will fail the test if Exec is called unexpectedly.
+	binDir := t.TempDir()
+	aiderBin := filepath.Join(binDir, "aider")
+	if err := os.WriteFile(aiderBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"aider": "/usr/local/bin/aider"}),
-		Yolo:     true,
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{"aider": aiderBin}),
+		Yolo:      true,
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	err := l.Passthrough(t.TempDir(), "", nil)
+	err := l.Launch(t.TempDir(), "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported yolo agent")
 	}
 	if !strings.Contains(err.Error(), "--yolo not supported") {
 		t.Errorf("expected '--yolo not supported' error, got: %v", err)
-	}
-}
-
-func TestPassthrough_AppliesSandbox(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("sandbox-exec only available on macOS")
-	}
-
-	ctrlAS := gomock.NewController(t)
-	var capturedBinaryAS string
-	var capturedArgsAS []string
-	mockExecAS := mocks.NewMockExecer(ctrlAS)
-	mockExecAS.EXPECT().
-		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, _ []string) error {
-			capturedBinaryAS = binary
-			capturedArgsAS = args
-			return nil
-		})
-	cwd := t.TempDir()
-	l := &Launcher{
-		Execer:   mockExecAS,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-
-	err := l.Passthrough(cwd, "", nil)
-	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
-	}
-
-	// On darwin, the binary should be rewritten to sandbox-exec
-	if capturedBinaryAS != "/usr/bin/sandbox-exec" {
-		t.Errorf("expected binary /usr/bin/sandbox-exec, got %s", capturedBinaryAS)
-	}
-	// Args should include -f <profile> and the original binary
-	if len(capturedArgsAS) < 4 {
-		t.Fatalf("expected at least 4 args (sandbox-exec -f <profile> <binary>), got %d: %v", len(capturedArgsAS), capturedArgsAS)
-	}
-	if capturedArgsAS[0] != "sandbox-exec" {
-		t.Errorf("args[0] = %q, want %q", capturedArgsAS[0], "sandbox-exec")
-	}
-	if capturedArgsAS[1] != "-f" {
-		t.Errorf("args[1] = %q, want %q", capturedArgsAS[1], "-f")
-	}
-	// args[2] should be the profile path
-	if !strings.Contains(capturedArgsAS[2], "sandbox.sb") {
-		t.Errorf("args[2] = %q, expected sandbox.sb profile path", capturedArgsAS[2])
-	}
-	// args[3] should be the original binary
-	if capturedArgsAS[3] != "/usr/local/bin/claude" {
-		t.Errorf("args[3] = %q, want %q", capturedArgsAS[3], "/usr/local/bin/claude")
-	}
-}
-
-func TestPassthrough_ExecAgent_UsesCwd(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("sandbox-exec only available on macOS")
-	}
-
-	ctrlEC := gomock.NewController(t)
-	var capturedArgsEC []string
-	mockExecEC := mocks.NewMockExecer(ctrlEC)
-	mockExecEC.EXPECT().
-		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ string, args []string, _ []string) error {
-			capturedArgsEC = args
-			return nil
-		})
-	cwd := t.TempDir()
-	l := &Launcher{
-		Execer:   mockExecEC,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-
-	err := l.Passthrough(cwd, "", nil)
-	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
-	}
-
-	// The sandbox profile should be written; read it and verify it contains the cwd
-	// as a writable path (not "." or some other hardcoded value).
-	if len(capturedArgsEC) < 3 {
-		t.Fatalf("expected sandbox args, got: %v", capturedArgsEC)
-	}
-	profilePath := capturedArgsEC[2]
-	profileData, err := os.ReadFile(profilePath)
-	if err != nil {
-		t.Fatalf("failed to read sandbox profile at %s: %v", profilePath, err)
-	}
-	profile := string(profileData)
-
-	// The profile should contain the actual cwd (project root) as a writable subpath
-	if !strings.Contains(profile, cwd) {
-		t.Errorf("sandbox profile does not contain cwd %q;\nprofile:\n%s", cwd, profile)
-	}
-}
-
-func TestPassthrough_NoOptOut_AlwaysSandboxed(t *testing.T) {
-	requireClaudeHome(t)
-	// Verify that execAgent always applies sandbox — there is no parameter or
-	// field on Launcher that can disable sandbox in passthrough mode.
-	ctrlNO := gomock.NewController(t)
-	var capturedBinaryNO string
-	var capturedArgsNO []string
-	mockExecNO := mocks.NewMockExecer(ctrlNO)
-	mockExecNO.EXPECT().
-		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(binary string, args []string, _ []string) error {
-			capturedBinaryNO = binary
-			capturedArgsNO = args
-			return nil
-		})
-	cwd := t.TempDir()
-	l := &Launcher{
-		Execer:   mockExecNO,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-
-	// Even without Yolo, sandbox should be applied
-	err := l.Passthrough(cwd, "claude", nil)
-	if err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
-	}
-
-	// The binary should be a sandbox wrapper, not the agent directly
-	innerBin, _ := unwrapSandbox(t, capturedBinaryNO, capturedArgsNO)
-	if innerBin != "/usr/local/bin/claude" {
-		t.Errorf("expected inner binary /usr/local/bin/claude, got %s", innerBin)
-	}
-	if capturedBinaryNO == "/usr/local/bin/claude" {
-		t.Error("expected sandbox wrapping, but agent was executed directly")
 	}
 }
 
@@ -604,7 +602,7 @@ func TestIsKnownAgent(t *testing.T) {
 
 // Cursor's installer also drops a shorter "agent" symlink; recognising it would
 // shadow other tools, so only the full "cursor-agent" name should match.
-func TestPassthrough_IsKnownAgent_CursorAgent(t *testing.T) {
+func TestIsKnownAgent_CursorAgent(t *testing.T) {
 	if !IsKnownAgent("cursor-agent") {
 		t.Error("expected cursor-agent to be known")
 	}
@@ -623,14 +621,16 @@ func TestScanAgents_FindsCursorAgent(t *testing.T) {
 	}
 }
 
-func TestPassthrough_NoConfigNoAgents_ErrorListsCursorAgent(t *testing.T) {
+func TestZeroConfigLaunch_NoConfigNoAgents_ErrorListsCursorAgent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockExec := mocks.NewMockExecer(ctrl)
+	t.Setenv("PATH", t.TempDir())
 	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{}),
+		Execer:    mockExec,
+		ConfigDir: t.TempDir(),
+		LookPath:  mockLookPath(map[string]string{}),
 	}
-	err := l.Passthrough(t.TempDir(), "", nil)
+	err := l.Launch(t.TempDir(), "", nil, false, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error when no agents on PATH, got nil")
 	}
@@ -639,69 +639,3 @@ func TestPassthrough_NoConfigNoAgents_ErrorListsCursorAgent(t *testing.T) {
 	}
 }
 
-// TestPassthrough_BannerReflectsActiveSandboxTier guards against a regression
-// where execAgent constructs BannerData without populating IsolationTier. The
-// compact-template's isolationTierLabel falls back to "sandbox: disabled"
-// whenever IsolationTier is nil, so the banner would lie even though Landlock
-// (or Seatbelt) is in fact applied via sb.Apply. The fix populates
-// IsolationTier from sandbox.PlatformIsolationTier on the actual policy.
-func TestPassthrough_BannerReflectsActiveSandboxTier(t *testing.T) {
-	requireClaudeHome(t)
-	ctrl := gomock.NewController(t)
-	mockExec := mocks.NewMockExecer(ctrl)
-	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	var stderrBuf bytes.Buffer
-	l := &Launcher{
-		Execer:   mockExec,
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-		Stderr:   &stderrBuf,
-	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-
-	if err := l.Passthrough(t.TempDir(), "", nil); err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
-	}
-
-	banner := stderrBuf.String()
-	if strings.Contains(banner, "sandbox: disabled") {
-		t.Errorf("banner reports sandbox disabled but sb.Apply was invoked; banner:\n%s", banner)
-	}
-	// On any supported platform the active backend produces a recognisable
-	// label fragment. We accept either Landlock (Linux) or Seatbelt (darwin)
-	// so the test stays platform-agnostic.
-	if !strings.Contains(banner, "sandbox: primary") && !strings.Contains(banner, "sandbox: degraded") {
-		t.Errorf("banner is missing the IsolationTier label; expected 'sandbox: primary' or 'sandbox: degraded'; got:\n%s", banner)
-	}
-}
-
-func TestPassthrough_AmbiguousIncludesCursorAgent(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockExec := mocks.NewMockExecer(ctrl)
-	l := &Launcher{
-		Execer: mockExec,
-		LookPath: mockLookPath(map[string]string{
-			"claude":       "/usr/local/bin/claude",
-			"cursor-agent": "/home/user/.local/bin/cursor-agent",
-		}),
-	}
-	err := l.Passthrough(t.TempDir(), "", nil)
-	if err == nil {
-		t.Fatal("expected ambiguity error when multiple agents found, got nil")
-	}
-	if !strings.Contains(err.Error(), "claude") {
-		t.Errorf("error message should mention claude, got: %s", err.Error())
-	}
-	if !strings.Contains(err.Error(), "cursor-agent") {
-		t.Errorf("error message should mention cursor-agent, got: %s", err.Error())
-	}
-}
-
-func TestFirstRunHintDir_IgnoresRelativeXDGConfigHome(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", "rel/config")
-	if got, want := firstRunHintDir(), filepath.Join(home, ".config", "aide"); got != want {
-		t.Errorf("firstRunHintDir() = %q, want %q", got, want)
-	}
-}

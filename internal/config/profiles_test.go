@@ -597,8 +597,8 @@ func TestLaunchConfigDir_AllHarnessesAndSandboxRedirect(t *testing.T) {
 			t.Errorf("%s env LaunchConfigDir = %q, want %q", h, got, want)
 		}
 
-		// 3. Exported shell env beats sandbox redirect.
-		if got, want := (Context{}).LaunchConfigDir(h, home, shellEnv), filepath.Join(home, "shell-"+h); got != want {
+		// 3. Exported shell env is ignored on unisolated Context (scrubbed on launch); falls through to sandbox redirect.
+		if got, want := (Context{}).LaunchConfigDir(h, home, shellEnv), filepath.Join(home, "redirect-"+h); got != want {
 			t.Errorf("%s shell LaunchConfigDir = %q, want %q", h, got, want)
 		}
 
@@ -620,5 +620,55 @@ func TestLaunchConfigDir_AllHarnessesAndSandboxRedirect(t *testing.T) {
 	}
 	if got := (Context{}).LaunchConfigDir("aider", home, nil); got != "" {
 		t.Errorf("aider LaunchConfigDir = %q, want empty", got)
+	}
+}
+
+func TestDefaultProfile_NativeConfigDirLockAndStripping(t *testing.T) {
+	home := t.TempDir()
+	raw := "agent: claude\nconfig_dir_name: custom\nconfig_dir: ~/.claude-custom\nconfig_dirs:\n  claude: ~/.claude-pin\nenv:\n  CLAUDE_CONFIG_DIR: ~/.claude-env\n  OPENCODE_CONFIG: ~/.config/opencode-custom/opencode.jsonc\n  FOO: bar\n"
+	var node yaml.Node
+	if err := yaml.Unmarshal([]byte(raw), &node); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	ctx, err := DecodeProfileYAML(DefaultProfileName, &node)
+	if err != nil {
+		t.Fatalf("DecodeProfileYAML: %v", err)
+	}
+	if ctx.SelectsConfigDir() {
+		t.Errorf("default profile SelectsConfigDir() = true, want false (%+v)", ctx)
+	}
+	if !ctx.IgnoredDefaultConfigDir {
+		t.Error("expected IgnoredDefaultConfigDir = true when config_dir* or ConfigEnvKeys are present on default")
+	}
+	if _, hasClaudeEnv := ctx.Env["CLAUDE_CONFIG_DIR"]; hasClaudeEnv {
+		t.Errorf("expected CLAUDE_CONFIG_DIR stripped from default env, got %v", ctx.Env)
+	}
+	if _, hasOpenCodeEnv := ctx.Env["OPENCODE_CONFIG"]; hasOpenCodeEnv {
+		t.Errorf("expected OPENCODE_CONFIG stripped from default env, got %v", ctx.Env)
+	}
+	if ctx.Env["FOO"] != "bar" {
+		t.Errorf("expected non-redirect env FOO=bar preserved, got %v", ctx.Env)
+	}
+
+	// Repeated ApplyDefaultProfileDir preserves IgnoredDefaultConfigDir == true.
+	var cfg Config
+	cfg.ApplyDefaultProfileDir(DefaultProfileName, &ctx)
+	if !ctx.IgnoredDefaultConfigDir {
+		t.Error("expected IgnoredDefaultConfigDir preserved across repeated ApplyDefaultProfileDir calls")
+	}
+
+	if got, want := ctx.NativeConfigDir("claude", home), filepath.Join(home, ".claude"); got != want {
+		t.Errorf("default NativeConfigDir(claude) = %q, want %q", got, want)
+	}
+
+	encoded, err := EncodeProfileYAML(DefaultProfileName, ctx)
+	if err != nil {
+		t.Fatalf("EncodeProfileYAML: %v", err)
+	}
+	out := string(encoded)
+	for _, forbidden := range []string{"config_dir_name", "config_dir", "config_dirs", "CLAUDE_CONFIG_DIR", "OPENCODE_CONFIG"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("EncodeProfileYAML(default) still contains %q:\n%s", forbidden, out)
+		}
 	}
 }

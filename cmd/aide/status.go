@@ -76,13 +76,7 @@ func initCmd() *cobra.Command {
 				fmt.Fprintf(out, "Detected agents on PATH: %s\n", strings.Join(foundNames, ", "))
 
 				// Pick default: prefer "claude" if found, otherwise first alphabetically
-				defaultAgent := foundNames[0]
-				for _, name := range foundNames {
-					if name == "claude" {
-						defaultAgent = name
-						break
-					}
-				}
+				defaultAgent := config.DefaultAgentCandidate(foundNames)
 
 				fmt.Fprintf(out, "Primary agent (default: %s): ", defaultAgent)
 				input, err := reader.ReadString('\n')
@@ -635,7 +629,7 @@ Examples:
 			}
 
 			if cfg.DefaultContext == "" {
-				cfg.DefaultContext = ctxName
+				cfg.DefaultContext = config.DefaultProfileName
 			}
 
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
@@ -676,8 +670,10 @@ func setupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg := env.Config()
+			hasConfiguredProfiles := len(cfg.Contexts) > 0 && (len(cfg.Contexts) != 1 || !cfg.SynthesizedDefault)
 			var target *cobra.Command
-			if len(env.Config().Contexts) > 0 {
+			if hasConfiguredProfiles {
 				target = contextBindCmd()
 			} else {
 				target = contextCreateCmd()

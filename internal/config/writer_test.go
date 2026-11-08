@@ -60,9 +60,9 @@ func TestWriteConfig_FullFormat(t *testing.T) {
 		t.Errorf("agent claude binary = %q, want %q", loaded.Agents["claude"].Binary, "claude")
 	}
 
-	// Verify contexts
-	if len(loaded.Contexts) != 2 {
-		t.Errorf("expected 2 contexts, got %d", len(loaded.Contexts))
+	// Verify contexts (work, personal, plus synthesized default)
+	if len(loaded.Contexts) != 3 || !loaded.SynthesizedDefault {
+		t.Errorf("expected 3 contexts (with synthesized default), got %d (SynthesizedDefault=%v)", len(loaded.Contexts), loaded.SynthesizedDefault)
 	}
 	if loaded.Contexts["work"].Agent != "claude" {
 		t.Errorf("context work agent = %q, want %q", loaded.Contexts["work"].Agent, "claude")
@@ -592,5 +592,50 @@ func TestFailedLoad_NilErrorAndSameYAMLFallbacks(t *testing.T) {
 		if sameProf([]byte(bad)) {
 			t.Errorf("sameProfileYAML(%q) = true, want false", bad)
 		}
+	}
+}
+
+func TestWriteConfigTo_SynthesizedDefaultSkipVsMaterialize(t *testing.T) {
+	dir := t.TempDir()
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	cfg, err := Load(dir, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.SynthesizedDefault {
+		t.Fatal("expected SynthesizedDefault = true")
+	}
+
+	// 1. Mutating unrelated state (adding custom profile "work") skips writing profiles/default.yaml.
+	cfg.Agents = map[string]AgentDef{"claude": {Binary: "claude"}}
+	cfg.Contexts["work"] = Context{Agent: "claude"}
+	if err := WriteConfigTo(cfg, filepath.Join(dir, "config.yaml")); err != nil {
+		t.Fatalf("WriteConfigTo (untouched default): %v", err)
+	}
+	if _, err := os.Stat(ProfileFilePath(dir, DefaultProfileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected profiles/default.yaml not written when untouched, stat err = %v", err)
+	}
+
+	// 2. Mutating "default" (e.g. adding capability) materializes profiles/default.yaml and populates Agents.
+	cfg2, err := Load(dir, "")
+	if err != nil {
+		t.Fatalf("Load 2: %v", err)
+	}
+	defCtx := cfg2.Contexts[DefaultProfileName]
+	defCtx.Capabilities = []string{"docker"}
+	cfg2.Contexts[DefaultProfileName] = defCtx
+	if err := WriteConfigTo(cfg2, filepath.Join(dir, "config.yaml")); err != nil {
+		t.Fatalf("WriteConfigTo (mutated default): %v", err)
+	}
+	if cfg2.SynthesizedDefault {
+		t.Error("expected SynthesizedDefault cleared after materializing mutated default")
+	}
+	if _, err := os.Stat(ProfileFilePath(dir, DefaultProfileName)); err != nil {
+		t.Errorf("expected profiles/default.yaml written when mutated, stat err = %v", err)
 	}
 }

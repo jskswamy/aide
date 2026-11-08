@@ -181,6 +181,9 @@ func agentsListCmd() *cobra.Command {
 			if len(cfg.Agents) > 0 {
 				agentContexts := make(map[string][]string)
 				for ctxName, ctx := range cfg.Contexts {
+					if ctxName == config.DefaultProfileName && cfg.SynthesizedDefault {
+						continue
+					}
 					agentContexts[ctx.Agent] = append(agentContexts[ctx.Agent], ctxName)
 				}
 

@@ -517,11 +517,6 @@ func (openCodeFile) path(ctx config.Context, dir, home string) string {
 	if v := ctx.Env["OPENCODE_CONFIG"]; v != "" {
 		return homepath.Expand(v, home)
 	}
-	if !ctx.SelectsConfigDir() {
-		if v := os.Getenv("OPENCODE_CONFIG"); v != "" {
-			return homepath.Expand(v, home)
-		}
-	}
 	return filepath.Join(dir, "opencode.jsonc")
 }
 

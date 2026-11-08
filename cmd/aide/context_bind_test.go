@@ -4,7 +4,6 @@ package main
 import (
 	"bytes"
 	"github.com/jskswamy/aide/internal/testutil"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,34 +229,6 @@ func TestContextBind_InteractiveTTY_OrgScopeAndShadowingConflict(t *testing.T) {
 	}
 	if strings.Contains(workStr, "github.com/acme/old-repo") {
 		t.Errorf("expected old-repo pruned by Stage D:\n%s", workStr)
-	}
-}
-
-func TestEmptyStateAdapter_BufferedInputPreservesTTY(t *testing.T) {
-	dir := isolatedConfigDir(t)
-	writeConfig(t, dir, "work")
-	mustRun(t, dir, "git", "init")
-	mustRun(t, dir, "git", "remote", "add", "origin", "git@github.com:acme/service.git")
-
-	origStdinTTY := isStdinTTY
-	isStdinTTY = func() bool { return true }
-	t.Cleanup(func() { isStdinTTY = origStdinTTY })
-
-	parentCmd := &cobra.Command{Use: "aide"}
-	var out bytes.Buffer
-	parentCmd.SetOut(&out)
-	parentCmd.SetErr(&out)
-
-	adapter := newEmptyStateAdapter(parentCmd)
-	// Simulate handleEmptyState wrapping input in a *bufio.Reader and calling SetIn.
-	if setter, ok := adapter.(interface{ SetIn(io.Reader) }); ok {
-		setter.SetIn(strings.NewReader("2\n"))
-	}
-	if err := adapter.Bind("work"); err != nil {
-		t.Fatalf("adapter.Bind failed: %v\n%s", err, out.String())
-	}
-	if !strings.Contains(out.String(), "Select match scope:") || !strings.Contains(out.String(), "github.com/acme/*") {
-		t.Errorf("expected interactive scope menu and org bind via emptyStateAdapter, got:\n%s", out.String())
 	}
 }
 

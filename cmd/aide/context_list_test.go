@@ -89,3 +89,27 @@ func checkListJSON(t *testing.T, stdout string) {
 		t.Errorf("Match = %+v", e.Match)
 	}
 }
+
+func TestProfileList_SynthesizedDefaultMarkedDefault(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	stdout, stderr := runList(t, profileCmd())
+	if stderr != "" {
+		t.Errorf("aide profile printed to stderr: %q", stderr)
+	}
+	var got []contextEntry
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, stdout)
+	}
+	if len(got) != 1 || got[0].Name != "default" || !got[0].Default || got[0].Agent != "claude" {
+		t.Errorf("got %+v, want single default profile marked Default=true", got)
+	}
+}

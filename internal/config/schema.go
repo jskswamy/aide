@@ -58,6 +58,18 @@ type Config struct {
 	// WriteConfig refuses LegacyMonolithic configs until migrated.
 	LegacyMonolithic bool `yaml:"-"`
 
+	// SynthesizedDefault is true when cfg.Contexts["default"] was synthesized
+	// in memory during Load because profiles/default.yaml did not exist on disk.
+	SynthesizedDefault bool `yaml:"-"`
+
+	// SynthesizedDefaultAgent records the fallback agent assigned when
+	// SynthesizedDefault was set during Load.
+	SynthesizedDefaultAgent string `yaml:"-"`
+
+	// SynthesizedDefaultContext is true when cfg.DefaultContext was defaulted to
+	// "default" in memory during Load because default_profile was unset on disk.
+	SynthesizedDefaultContext bool `yaml:"-"`
+
 	// loadErr is set on the FailedLoad placeholder; writers refuse it.
 	loadErr error
 }
@@ -132,6 +144,10 @@ type Context struct {
 	// `hooks:` value is a mapping (v2 delta form). The yaml tag is
 	// "-" because UnmarshalYAML handles it directly.
 	Hooks *HooksOverride `yaml:"-"`
+	// IgnoredDefaultConfigDir is true when config_dir_name, config_dir,
+	// config_dirs, profile, profile_dir, or harness config-dir redirect
+	// env vars were stripped from the built-in "default" profile.
+	IgnoredDefaultConfigDir bool `yaml:"-"`
 }
 
 // MarshalYAML emits the Context with mcp_servers/plugins serialized

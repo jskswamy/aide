@@ -349,8 +349,8 @@ func TestHarnessConfigDir(t *testing.T) {
 		t.Errorf("shared pi dir = %q", got)
 	}
 	t.Setenv("CODEX_HOME", "~/codex-shell")
-	if got, _ := HarnessConfigDir(shared, "codex", home); got != filepath.Join(home, "codex-shell") {
-		t.Errorf("codex dir from the shell = %q", got)
+	if got, _ := HarnessConfigDir(shared, "codex", home); got != filepath.Join(home, ".codex") {
+		t.Errorf("shared codex dir ignores shell CODEX_HOME = %q, want %q", got, filepath.Join(home, ".codex"))
 	}
 	withEnv := config.Context{Env: map[string]string{"CODEX_HOME": "~/codex-env"}}
 	if got, _ := HarnessConfigDir(withEnv, "codex", home); got != filepath.Join(home, "codex-env") {
@@ -771,6 +771,15 @@ func TestMaterializeHarness_OpenCodeHonorsOPENCODE_CONFIG(t *testing.T) {
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "opencode", f.home); got.State != StateSynced || got.FilePath != custom {
 		t.Fatalf("InspectHarness() = %+v, want Synced at %s", got, custom)
+	}
+
+	// Ambient shell OPENCODE_CONFIG is ignored on unisolated ("default") Context.
+	t.Setenv("OPENCODE_CONFIG", filepath.Join(f.home, "ambient-opencode", "opencode.jsonc"))
+	unisolated := config.Context{}
+	st2 := InspectHarness(unisolated, "corp", f.gw, f.cat, "opencode", f.home)
+	wantDefault := filepath.Join(f.home, ".config", "opencode", "opencode.jsonc")
+	if st2.FilePath != wantDefault {
+		t.Errorf("unisolated InspectHarness FilePath = %q, want %q", st2.FilePath, wantDefault)
 	}
 }
 

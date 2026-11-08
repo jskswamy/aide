@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/consent"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
@@ -79,7 +78,6 @@ capture sandbox-deny events from the failed run.`,
 				ConsentStore:        consent.DefaultStore(),
 				Diagnose:            diagnose || diagnoseTrace,
 				DiagnoseTrace:       diagnoseTrace,
-				EmptyStateActions:   newEmptyStateAdapter(cmd),
 				Version:             version,
 				Commit:              commit,
 				BuildDate:           date,
@@ -89,16 +87,6 @@ capture sandbox-deny events from the failed run.`,
 				Auth:                sel.Auth,
 			}
 
-			// Check if any config file exists.
-			configFile := config.FilePath()
-			if !config.HasAnyConfigFile(config.Dir()) {
-				if err := passthroughSelectionError(&sf, sel, configFile); err != nil {
-					return err
-				}
-				return l.Passthrough(cwd, sf.agent, args)
-			}
-
-			// Config exists — use full launcher flow.
 			return l.Launch(cwd, sf.agent, args, cleanEnv, resolve, withCaps, withoutCaps)
 		},
 	}

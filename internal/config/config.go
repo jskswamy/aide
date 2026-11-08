@@ -4,11 +4,44 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/jskswamy/aide/internal/harness"
 )
+
+// DefaultAgentCandidate picks the default harness candidate from names:
+// "claude" when present, else the first lexicographically sorted name, or ""
+// when names is empty.
+func DefaultAgentCandidate(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	if slices.Contains(names, "claude") {
+		return "claude"
+	}
+	sorted := slices.Clone(names)
+	slices.Sort(sorted)
+	return sorted[0]
+}
+
+func discoverPathHarnesses() []string {
+	var found []string
+	for _, d := range harness.All() {
+		if !d.Launchable() {
+			continue
+		}
+		if _, err := exec.LookPath(d.Name); err == nil {
+			found = append(found, d.Name)
+		}
+	}
+	return found
+}
 
 // Load reads the global config from configDir/config.yaml and optionally
 // discovers a project-level .aide.yaml by walking up from projectDir to
@@ -34,10 +67,6 @@ func Load(configDir, projectDir string) (*Config, error) {
 		if !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("loading global config: %w", err)
 		}
-		if !HasAnyConfigFile(configDir) {
-			// No global config file and no split files — return empty config
-			return &Config{}, nil
-		}
 		cfg = &Config{ProfileSchema: true}
 	} else {
 		configExisted = true
@@ -56,6 +85,8 @@ func Load(configDir, projectDir string) (*Config, error) {
 	if err := cfg.loadProjectConfig(projectDir); err != nil {
 		return nil, err
 	}
+
+	cfg.ensureBuiltinDefault()
 
 	if home, ok := userHome(); ok {
 		if err := cfg.validateConfigDirs(home); err != nil {
@@ -145,6 +176,51 @@ func (c *Config) loadProjectConfig(projectDir string) error {
 	}
 	c.ProjectOverride = MergeProjectLayers(c.ProjectLayers)
 	return nil
+}
+
+// ensureBuiltinDefault synthesizes the built-in "default" profile in memory
+// when profiles/default.yaml is missing on disk and at least one fallback
+// harness is available (from DefaultContext, configured Agents, or PATH).
+func (c *Config) ensureBuiltinDefault() {
+	if c.LegacyMonolithic {
+		return
+	}
+	if _, hasDefault := c.Contexts[DefaultProfileName]; !hasDefault {
+		var fallbackAgent string
+		if c.DefaultContext != "" {
+			if defCtx, ok := c.Contexts[c.DefaultContext]; ok && defCtx.Agent != "" {
+				fallbackAgent = defCtx.Agent
+			}
+		}
+		if fallbackAgent == "" && len(c.Agents) > 0 {
+			fallbackAgent = DefaultAgentCandidate(slices.Collect(maps.Keys(c.Agents)))
+		}
+		if fallbackAgent == "" {
+			for _, ctx := range c.Contexts {
+				if ctx.Agent != "" {
+					fallbackAgent = ctx.Agent
+					break
+				}
+			}
+		}
+		if fallbackAgent == "" {
+			fallbackAgent = DefaultAgentCandidate(discoverPathHarnesses())
+		}
+		if fallbackAgent != "" {
+			if c.Contexts == nil {
+				c.Contexts = make(map[string]Context)
+			}
+			c.Contexts[DefaultProfileName] = Context{Agent: fallbackAgent}
+			c.SynthesizedDefault = true
+			c.SynthesizedDefaultAgent = fallbackAgent
+		}
+	}
+	if c.DefaultContext == "" {
+		if _, hasDefault := c.Contexts[DefaultProfileName]; hasDefault {
+			c.DefaultContext = DefaultProfileName
+			c.SynthesizedDefaultContext = true
+		}
+	}
 }
 
 // SandboxPolicyToRef wraps a SandboxPolicy pointer into a SandboxRef.

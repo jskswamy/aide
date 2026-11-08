@@ -72,9 +72,9 @@ func TestSandboxShow_JSONFormat(t *testing.T) {
 
 	cmd := sandboxShowCmd()
 	output.RegisterFlag(cmd)
-	var buf bytes.Buffer
+	var buf, errBuf bytes.Buffer
 	cmd.SetOut(&buf)
-	cmd.SetErr(&buf)
+	cmd.SetErr(&errBuf)
 
 	root := &cobra.Command{}
 	root.AddCommand(cmd)

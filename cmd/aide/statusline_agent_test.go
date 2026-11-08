@@ -62,8 +62,9 @@ func TestContextAgentForCWD_ResolvesFromMatchingContext(t *testing.T) {
 	}
 }
 
-func TestContextAgentForCWD_NoConfigReturnsEmpty(t *testing.T) {
-	isolatedConfigDir(t) // no config.yaml written
+func TestContextAgentForCWD_NoConfigNoHarnessesReturnsEmpty(t *testing.T) {
+	dir := isolatedConfigDir(t) // no config.yaml written
+	t.Setenv("PATH", dir)       // no supported harnesses on PATH
 	got := contextAgentForCWD()
 	if got != "" {
 		t.Errorf("got %q, want empty", got)

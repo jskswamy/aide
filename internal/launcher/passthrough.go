@@ -2,19 +2,11 @@ package launcher
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
-	aidectx "github.com/jskswamy/aide/internal/context"
-	"github.com/jskswamy/aide/internal/display"
-	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/harness"
-	"github.com/jskswamy/aide/internal/homepath"
-	"github.com/jskswamy/aide/internal/sandbox"
-	"github.com/jskswamy/aide/internal/ui"
 )
 
 // KnownAgents is the list of agent binaries aide can detect on PATH:
@@ -34,7 +26,7 @@ func knownAgents() []string {
 // LookPathFunc abstracts exec.LookPath for testability.
 type LookPathFunc func(file string) (string, error)
 
-// PassthroughResult describes what the passthrough scanner found.
+// PassthroughResult describes what the agent PATH scanner found.
 type PassthroughResult struct {
 	// Found agents with their resolved paths.
 	Found map[string]string
@@ -81,204 +73,10 @@ func ScanAgents(lookPath LookPathFunc) *PassthroughResult {
 	return &PassthroughResult{Found: found}
 }
 
-// Passthrough handles the zero-config case: no config.yaml exists.
-// If agentOverride is set, it launches that specific agent (must be known).
-// Otherwise it scans PATH for known agents and auto-selects.
-func (l *Launcher) Passthrough(cwd string, agentOverride string, extraArgs []string) error {
-	lookPath := l.lookPath()
-
-	// If user specified --agent, resolve and launch it directly.
-	// Accept known agents and any binary resolvable on PATH.
-	if agentOverride != "" {
-		binary, err := lookPath(agentOverride)
-		if err != nil {
-			return fmt.Errorf(
-				"agent %q not found on PATH.\n\n"+
-					"Register it first: aide agents add %s --binary /path/to/binary\n"+
-					"Known agents: %s",
-				agentOverride, agentOverride, strings.Join(KnownAgents, ", "),
-			)
-		}
-		return l.execAgent(cwd, agentOverride, binary, extraArgs)
-	}
-
-	// No --agent flag: scan PATH for known agents.
-	result := ScanAgents(lookPath)
-
-	switch len(result.Found) {
-	case 0:
-		return fmt.Errorf(
-			"no config found and no known agents on PATH.\n\n"+
-				"Install an agent or create a config file:\n"+
-				"  aide init            Create ~/.config/aide/config.yaml\n\n"+
-				"Supported agents: %s", strings.Join(KnownAgents, ", "),
-		)
-
-	case 1:
-		var name, binary string
-		for name, binary = range result.Found {
-			break
-		}
-		_ = writeFirstRunHint(name)
-		return l.execAgent(cwd, name, binary, extraArgs)
-
-	default:
-		var agents []string
-		for name := range result.Found {
-			agents = append(agents, name)
-		}
-		return fmt.Errorf(
-			"multiple agents found on PATH: %s\n\n"+
-				"Specify which agent to use:\n"+
-				"  aide --agent %s     Run a specific agent\n"+
-				"  aide init            Create a config to set a default",
-			strings.Join(agents, ", "),
-			agents[0],
-		)
-	}
-}
-
-// execAgent injects yolo flags if needed, applies the OS sandbox, and execs the agent.
-func (l *Launcher) execAgent(cwd, name, binary string, extraArgs []string) error {
-	extraArgs = ApplyLaunchArgs(name, extraArgs)
-	if l.Yolo && !l.NoYolo {
-		var err error
-		extraArgs, err = ApplyYoloArgs(name, extraArgs)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(l.stderr(), "\033[1;33mWARNING:\033[0m yolo mode enabled (source: --yolo flag)\n")
-		fmt.Fprintln(l.stderr(), "  Agent permission checks are disabled.")
-		fmt.Fprintln(l.stderr(), "  OS sandbox is active (use `aide sandbox show` to inspect).")
-		fmt.Fprintln(l.stderr())
-	}
-
-	// Resolve project root from cwd (git root or cwd fallback).
-	projectRoot := aidectx.ProjectRoot(cwd)
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolving home directory: %w", err)
-	}
-
-	// Create runtime directory for sandbox profile files.
-	rtDir, err := NewRuntimeDir()
-	if err != nil {
-		return fmt.Errorf("creating runtime dir: %w", err)
-	}
-	// Best-effort cleanup of stale runtime dirs from previous runs.
-	_ = CleanStale()
-
-	tempDir := os.TempDir()
-
-	// Without a config there is no profile and no credential selection,
-	// so only aide's own secret material is scrubbed: shell API keys
-	// still reach the agent. Passthrough is not an isolation guarantee.
-	env := envscrub.ScrubCredentials(os.Environ(), envscrub.SecretMaterial(), nil)
-	policy := sandbox.DefaultPolicy(sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: rtDir.Path(), HomeDir: homeDir, TempDir: tempDir}, env)
-	policy.AgentModule = ResolveAgentModule(name)
-
-	env = applyAgentEnv(env, &policy)
-	// Sync policy.Env with the post-injection env so the Landlock re-exec
-	// child builds its allow-list from the same env that cmd.Env carries.
-	// Mirrors step 12e in launcher.go; without this the child evaluates
-	// env-var-dependent guards (e.g. CLAUDE_CONFIG_DIR) from the stale
-	// pre-injection snapshot.
-	policy.Env = env
-	if err := PrepareAgentSandbox(&policy, nil, name, binary); err != nil {
-		_ = rtDir.Cleanup()
-		return err
-	}
-
-	cmd := &exec.Cmd{
-		Path: binary,
-		Args: append([]string{binary}, extraArgs...),
-		Env:  env,
-	}
-
-	sb := sandbox.NewSandbox()
-	if err := sb.Apply(cmd, policy, rtDir.Path()); err != nil {
-		return fmt.Errorf("applying sandbox: %w", err)
-	}
-
-	// Compute the active isolation tier from the resolved policy. Mirrors the
-	// non-passthrough path in launcher.go so the banner reflects whether
-	// Landlock / Seatbelt is in force, instead of falling through to
-	// isolationTierLabel's nil-IsolationTier → "sandbox: disabled" default.
-	tier := sandbox.PlatformIsolationTier(policy)
-
-	// Render minimal startup banner
-	guardResults := sandbox.EvaluateGuards(&policy)
-	availableNames := sandbox.AvailableGuardNames(policy.Guards)
-	si := &ui.SandboxInfo{
-		Network: display.NetworkDisplayName(string(policy.Network)),
-	}
-	for _, g := range guardResults {
-		if len(g.Rules) > 0 {
-			display := ui.GuardDisplay{
-				Name:      g.Name,
-				Protected: g.Protected,
-				Allowed:   g.Allowed,
-				Readable:  g.Readable,
-			}
-			for _, o := range g.Overrides {
-				display.Overrides = append(display.Overrides, ui.GuardOverride{
-					EnvVar:      o.EnvVar,
-					Value:       o.Value,
-					DefaultPath: o.DefaultPath,
-				})
-			}
-			si.Active = append(si.Active, display)
-		} else if len(g.Skipped) > 0 {
-			si.Skipped = append(si.Skipped, ui.GuardDisplay{
-				Name:   g.Name,
-				Reason: strings.Join(g.Skipped, "; "),
-			})
-		}
-	}
-	si.Available = availableNames
-	bannerData := &ui.BannerData{
-		AgentName:     name,
-		AgentPath:     binary,
-		Sandbox:       si,
-		IsolationTier: &tier,
-		Yolo:          l.Yolo && !l.NoYolo,
-	}
-	if err := ui.RenderBanner(l.stderr(), "compact", bannerData); err != nil {
-		fmt.Fprintf(l.stderr(), "warning: banner render failed: %v\n", err)
-	}
-	fmt.Fprintln(l.stderr())
-
-	return l.Execer.Exec(cmd.Path, cmd.Args, cmd.Env)
-}
-
 // lookPath returns the LookPathFunc to use (real or injected for testing).
 func (l *Launcher) lookPath() LookPathFunc {
 	if l.LookPath != nil {
 		return l.LookPath
 	}
 	return exec.LookPath
-}
-
-// firstRunHintDir returns the directory for the sentinel file.
-func firstRunHintDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(homepath.XDG(os.Getenv("XDG_CONFIG_HOME"), home, ".config"), "aide")
-}
-
-// writeFirstRunHint writes a sentinel file to suppress future hints.
-func writeFirstRunHint(agentName string) error {
-	dir := firstRunHintDir()
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return err
-	}
-	sentinel := filepath.Join(dir, ".first-run-done")
-	return os.WriteFile(sentinel, []byte(agentName+"\n"), 0o600)
-}
-
-// IsFirstRun returns true if the first-run sentinel file does not exist.
-func IsFirstRun() bool {
-	sentinel := filepath.Join(firstRunHintDir(), ".first-run-done")
-	_, err := os.Stat(sentinel)
-	return os.IsNotExist(err)
 }

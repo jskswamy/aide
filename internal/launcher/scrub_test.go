@@ -129,22 +129,29 @@ scrub_env:
 	}
 }
 
-func TestLauncher_ConfigDirRedirectKeptWithoutProfile(t *testing.T) {
+func TestLauncher_ConfigDirRedirectsScrubbedOnDefaultProfile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "/global/claude")
 	t.Setenv("CODEX_HOME", "/global/codex")
+	t.Setenv("OPENCODE_CONFIG", "/global/opencode.jsonc")
 
 	env, _ := launchCapturingEnvAndStderr(t, `
 agents:
-  aider:
-    binary: aider
-contexts:
-  work:
-    agent: aider
-default_context: work
+  claude:
+    binary: claude
+profiles:
+  default:
+    agent: claude
+default_profile: default
 `, "")
 
-	if v, _ := envValue(env, "CODEX_HOME"); v != "/global/codex" {
-		t.Errorf("CODEX_HOME = %q, want the shell value kept without a profile", v)
+	for _, k := range []string{"CODEX_HOME", "OPENCODE_CONFIG"} {
+		if v, ok := envValue(env, k); ok {
+			t.Errorf("shell %s reached default profile launch: %q", k, v)
+		}
+	}
+	if v, ok := envValue(env, "CLAUDE_CONFIG_DIR"); ok && v == "/global/claude" {
+		t.Errorf("shell CLAUDE_CONFIG_DIR=/global/claude was not scrubbed on default profile")
 	}
 }
 
@@ -197,40 +204,6 @@ default_context: work
 	}
 	if v, ok := envValue(env, "ANTHROPIC_API_KEY"); ok {
 		t.Errorf("ANTHROPIC_API_KEY reached the agent: %q", v)
-	}
-}
-
-func TestPassthrough_ScrubsOnlySecretMaterial(t *testing.T) {
-	requireClaudeHome(t)
-	setShellCredentials(t)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-
-	ctrl := gomock.NewController(t)
-	var env []string
-	mockExec := mocks.NewMockExecer(ctrl)
-	mockExec.EXPECT().
-		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ string, _ []string, e []string) error {
-			env = e
-			return nil
-		})
-	l := &Launcher{
-		Execer:   mockExec,
-		Stderr:   &bytes.Buffer{},
-		LookPath: mockLookPath(map[string]string{"claude": "/usr/local/bin/claude"}),
-	}
-	if err := l.Passthrough(t.TempDir(), "", nil); err != nil {
-		t.Fatalf("Passthrough failed: %v", err)
-	}
-
-	for _, k := range []string{"SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE"} {
-		if v, ok := envValue(env, k); ok {
-			t.Errorf("%s reached the passthrough agent: %q", k, v)
-		}
-	}
-	if v, _ := envValue(env, "ANTHROPIC_API_KEY"); v != "sk-ant-shell" {
-		t.Errorf("ANTHROPIC_API_KEY = %q, want the shell value (passthrough is not isolation)", v)
 	}
 }
 

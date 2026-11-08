@@ -125,16 +125,51 @@ func TestLoad_ProjectOverrideOnlyAgent(t *testing.T) {
 func TestLoad_NoConfigFile(t *testing.T) {
 	configDir := t.TempDir()
 	projectDir := t.TempDir()
+	t.Setenv("PATH", t.TempDir())
 
-	// No config.yaml written
+	// No config.yaml written and no known agent on PATH
 	cfg, err := Load(configDir, projectDir)
 	if err != nil {
 		t.Fatalf("expected no error for missing config, got %v", err)
 	}
 
-	// Should return empty config
+	// Should return empty config when no agent is on PATH
 	if len(cfg.Agents) != 0 || len(cfg.Contexts) != 0 {
 		t.Errorf("expected empty config, got agents=%d contexts=%d", len(cfg.Agents), len(cfg.Contexts))
+	}
+}
+
+func TestLoad_EmptyConfigDirSynthesizesDefaultAndLoadsProjectConfig(t *testing.T) {
+	configDir := t.TempDir()
+	projectDir := t.TempDir()
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	if err := os.WriteFile(filepath.Join(projectDir, ".aide.yaml"), []byte("capabilities:\n  - docker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configDir, projectDir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.SynthesizedDefault || !cfg.SynthesizedDefaultContext {
+		t.Errorf("SynthesizedDefault=%v SynthesizedDefaultContext=%v, want true/true", cfg.SynthesizedDefault, cfg.SynthesizedDefaultContext)
+	}
+	if cfg.DefaultContext != DefaultProfileName {
+		t.Errorf("DefaultContext = %q, want %q", cfg.DefaultContext, DefaultProfileName)
+	}
+	if len(cfg.Agents) != 0 {
+		t.Errorf("expected cfg.Agents not mutated in memory by Load, got %v", cfg.Agents)
+	}
+	defCtx, ok := cfg.Contexts[DefaultProfileName]
+	if !ok || defCtx.Agent != "claude" || defCtx.SelectsConfigDir() {
+		t.Errorf("Contexts[default] = %+v (ok=%v), want agent=claude SelectsConfigDir=false", defCtx, ok)
+	}
+	if cfg.ProjectOverride == nil || len(cfg.ProjectOverride.Capabilities) != 1 || cfg.ProjectOverride.Capabilities[0] != "docker" {
+		t.Errorf("expected .aide.yaml loaded even when configDir is empty, got %+v", cfg.ProjectOverride)
 	}
 }
 

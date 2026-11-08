@@ -1,6 +1,7 @@
 package context
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -20,7 +21,7 @@ type ResolvedContext struct {
 	Context     config.Context     // the resolved context (with project override merged if applicable)
 	Preferences config.Preferences // resolved display/behavior preferences
 	// Source is how the profile was selected: SourceFlag, SourceMatch,
-	// SourceDefault or SourcePrompt.
+	// or SourceDefault.
 	Source string
 }
 
@@ -28,8 +29,7 @@ type ResolvedContext struct {
 const (
 	SourceFlag    = "flag"    // explicit --profile
 	SourceMatch   = "match"   // a path/remote match rule
-	SourceDefault = "default" // default_profile, or a minimal config
-	SourcePrompt  = "prompt"  // picked at the empty-state prompt
+	SourceDefault = "default" // default_profile, or the built-in default profile
 )
 
 // Specificity tiers. Within a tier, longer pattern string = higher specificity.
@@ -154,19 +154,18 @@ func bestMatch(cfg *config.Config, cwd string, remotes RemoteLookup) *ResolvedCo
 	}
 }
 
-// defaultContext returns cfg.DefaultContext when it names an existing
-// context, or nil.
+// defaultContext returns the fallback context named by cfg.DefaultContext (or
+// config.DefaultProfileName when DefaultContext is unset) when it exists in
+// cfg.Contexts, or nil.
 func defaultContext(cfg *config.Config) *ResolvedContext {
-	if cfg.DefaultContext == "" {
-		return nil
-	}
-	ctx, ok := cfg.Contexts[cfg.DefaultContext]
+	target := cmp.Or(cfg.DefaultContext, config.DefaultProfileName)
+	ctx, ok := cfg.Contexts[target]
 	if !ok {
 		return nil
 	}
 	return &ResolvedContext{
-		Name:        cfg.DefaultContext,
-		MatchReason: fmt.Sprintf("default_context (%s)", cfg.DefaultContext),
+		Name:        target,
+		MatchReason: fmt.Sprintf("default_context (%s)", target),
 		Context:     ctx,
 		Source:      SourceDefault,
 	}

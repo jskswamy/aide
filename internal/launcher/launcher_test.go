@@ -194,12 +194,18 @@ func TestLauncher_TildeExpandsEnvValues(t *testing.T) {
 	cwd := t.TempDir()
 
 	writeMinimalConfig(t, configDir, `
-agent: /usr/local/bin/my-agent
-env:
-  CLAUDE_CONFIG_DIR: ~/.claude-work
-  NESTED: ~/sub/dir
-  ABSOLUTE: /already/absolute
-  EMBEDDED: prefix-~/not-expanded
+agents:
+  my-agent:
+    binary: /usr/local/bin/my-agent
+profiles:
+  work:
+    agent: my-agent
+    env:
+      CLAUDE_CONFIG_DIR: ~/.claude-work
+      NESTED: ~/sub/dir
+      ABSOLUTE: /already/absolute
+      EMBEDDED: prefix-~/not-expanded
+default_profile: work
 `)
 
 	ctrl := gomock.NewController(t)
@@ -1843,73 +1849,6 @@ func TestApplyTrustGate_FailClosedOnReadError(t *testing.T) {
 	// trustInfo should be nil (no disclosure of untrusted wants on read error)
 	if trustInfo != nil {
 		t.Errorf("trustInfo should be nil on read error, got %v", trustInfo)
-	}
-}
-
-// createContextAction is an EmptyStateActions whose Create rewrites the
-// config file, forcing Launch down the reload path.
-type createContextAction struct {
-	t         *testing.T
-	configDir string
-	yaml      string
-}
-
-func (a createContextAction) Bind(string) error { return nil }
-func (a createContextAction) Create(string) error {
-	writeMinimalConfig(a.t, a.configDir, a.yaml)
-	return nil
-}
-
-func TestLauncher_AgentOverride_AfterEmptyStateReload(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	configDir := t.TempDir()
-	cwd := t.TempDir()
-
-	// No context matches and there is no default, so Launch prompts.
-	writeMinimalConfig(t, configDir, `
-contexts:
-  other:
-    agent: claude
-    match:
-      - path: /never/matches
-`)
-
-	ctrl := gomock.NewController(t)
-	var capturedEnv []string
-	mockExec := mocks.NewMockExecer(ctrl)
-	mockExec.EXPECT().
-		Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ string, _ []string, env []string) error {
-			capturedEnv = env
-			return nil
-		})
-	l := &Launcher{
-		Execer:     mockExec,
-		ConfigDir:  configDir,
-		Stderr:     &bytes.Buffer{},
-		Stdin:      strings.NewReader("2\n"),
-		StdinIsTTY: func() bool { return true },
-		LookPath: func(file string) (string, error) {
-			return "/usr/local/bin/" + file, nil
-		},
-		EmptyStateActions: createContextAction{t: t, configDir: configDir, yaml: `
-contexts:
-  work:
-    agent: claude
-    profile: work
-default_context: work
-`},
-	}
-	if err := l.Launch(cwd, "pi", nil, false, false, nil, nil); err != nil {
-		t.Fatalf("Launch failed: %v", err)
-	}
-
-	if got, _ := envValue(capturedEnv, "PI_CODING_AGENT_DIR"); got != filepath.Join(home, ".pi-work") {
-		t.Errorf("PI_CODING_AGENT_DIR = %q, want %q", got, filepath.Join(home, ".pi-work"))
-	}
-	if v, ok := envValue(capturedEnv, "CLAUDE_CONFIG_DIR"); ok {
-		t.Errorf("CLAUDE_CONFIG_DIR leaked into pi launch: %q", v)
 	}
 }
 

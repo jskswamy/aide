@@ -97,7 +97,9 @@ func (c Config) MarshalYAML() (interface{}, error) {
 	if len(c.Contexts) > 0 {
 		cloned := make(map[string]Context, len(c.Contexts))
 		for name, ctx := range c.Contexts {
-			if ctx.Profile == configDirName(name) {
+			if IsDefaultProfile(name) {
+				stripDefaultConfigDirOverrides(&ctx)
+			} else if ctx.Profile == configDirName(name) {
 				ctx.Profile = ""
 			}
 			cloned[name] = ctx
@@ -201,7 +203,9 @@ func DecodeProfileYAML(name string, node *yaml.Node) (Context, error) {
 // the profiles: vocabulary (config_dir_name and config_dir), omitting
 // config_dir_name when it matches the default derived from name.
 func EncodeProfileYAML(name string, ctx Context) ([]byte, error) {
-	if name != "" && ctx.Profile == configDirName(name) {
+	if IsDefaultProfile(name) {
+		stripDefaultConfigDirOverrides(&ctx)
+	} else if name != "" && ctx.Profile == configDirName(name) {
 		ctx.Profile = ""
 	}
 	var node yaml.Node

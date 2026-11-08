@@ -51,6 +51,24 @@ func WriteConfigTo(cfg *Config, path string) error {
 	target := cfg
 	configDir := filepath.Dir(path)
 
+	skipSynthesizedDefault := false
+	if target.SynthesizedDefault {
+		if isBareSynthesizedDefault(target) {
+			skipSynthesizedDefault = true
+		} else {
+			for _, h := range discoverPathHarnesses() {
+				if target.Agents == nil {
+					target.Agents = make(map[string]AgentDef)
+				}
+				if _, exists := target.Agents[h]; !exists {
+					target.Agents[h] = AgentDef{Binary: h}
+				}
+			}
+			target.SynthesizedDefault = false
+			target.SynthesizedDefaultContext = false
+		}
+	}
+
 	// 1. Marshal all files in memory first before touching disk.
 	coreData, err := yamlnode.Marshal(target.extractCoreConfig())
 	if err != nil {
@@ -77,6 +95,9 @@ func WriteConfigTo(cfg *Config, path string) error {
 
 	profileBytes := make(map[string][]byte, len(target.Contexts))
 	for _, name := range sortedKeys(target.Contexts) {
+		if skipSynthesizedDefault && IsDefaultProfile(name) {
+			continue
+		}
 		b, err := EncodeProfileYAML(name, target.Contexts[name])
 		if err != nil {
 			return fmt.Errorf("marshaling profiles/%s.yaml: %w", name, err)
@@ -111,8 +132,11 @@ func WriteConfigTo(cfg *Config, path string) error {
 
 	// 5. Write active profiles/<name>.yaml and remove deleted ones.
 	for _, name := range sortedKeys(target.Contexts) {
+		data, ok := profileBytes[name]
+		if !ok {
+			continue
+		}
 		pPath := ProfileFilePath(configDir, name)
-		data := profileBytes[name]
 		if err := writeIfChanged(pPath, data, sameProfileYAML(name, data)); err != nil {
 			return err
 		}
@@ -223,4 +247,34 @@ func removeIfExists(path string) error {
 		return err
 	}
 	return nil
+}
+
+func isBareSynthesizedDefault(cfg *Config) bool {
+	if !cfg.SynthesizedDefault {
+		return false
+	}
+	ctx, ok := cfg.Contexts[DefaultProfileName]
+	if !ok {
+		return true
+	}
+	if cfg.SynthesizedDefaultAgent != "" && ctx.Agent != cfg.SynthesizedDefaultAgent {
+		return false
+	}
+	return len(ctx.Match) == 0 &&
+		ctx.Icon == "" &&
+		ctx.Secret == "" &&
+		len(ctx.Env) == 0 &&
+		ctx.Profile == "" &&
+		ctx.ProfileDir == "" &&
+		len(ctx.ConfigDirs) == 0 &&
+		len(ctx.Credentials) == 0 &&
+		len(ctx.DefaultCredentials) == 0 &&
+		len(ctx.Gateways) == 0 &&
+		len(ctx.MCPServers) == 0 &&
+		ctx.MCPServersOverride == nil &&
+		ctx.Sandbox == nil &&
+		ctx.Yolo == nil &&
+		len(ctx.Capabilities) == 0 &&
+		ctx.Plugins == nil &&
+		ctx.Hooks == nil
 }

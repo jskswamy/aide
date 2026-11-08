@@ -196,12 +196,12 @@ func TestUseAndSetup_ProfilesDefaultToOwnConfigDir(t *testing.T) {
 	}
 	t.Setenv("PATH", binDir)
 
-	// With 2 existing profiles (first, second), setupCmd delegates to contextBindCmd,
-	// which offers [3] Create a new profile -> name "third", secret ""
+	// With 3 existing profiles (default, first, second), setupCmd delegates to contextBindCmd,
+	// which offers [4] Create a new profile -> name "third", secret ""
 	stdout3, stderr3 := runIn("third", func() (string, string, error) {
 		cmd := setupCmd()
 		var outBuf, errBuf bytes.Buffer
-		cmd.SetIn(strings.NewReader("3\nthird\n\n"))
+		cmd.SetIn(strings.NewReader("4\nthird\n\n"))
 		cmd.SetOut(&outBuf)
 		cmd.SetErr(&errBuf)
 		err := cmd.Execute()
@@ -210,8 +210,8 @@ func TestUseAndSetup_ProfilesDefaultToOwnConfigDir(t *testing.T) {
 	if !strings.Contains(stderr3, "aide setup is deprecated; use 'aide profile bind'") {
 		t.Errorf("expected setup deprecation warning on stderr, got: %q", stderr3)
 	}
-	if !strings.Contains(stdout3, "[3] Create a new profile") {
-		t.Errorf("expected [3] Create a new profile in bind picker, got:\n%s", stdout3)
+	if !strings.Contains(stdout3, "[4] Create a new profile") {
+		t.Errorf("expected [4] Create a new profile in bind picker, got:\n%s", stdout3)
 	}
 
 	cfg, err := config.Load(filepath.Join(dir, "xdg", "aide"), dir)
@@ -368,5 +368,104 @@ func TestContextCreate_InteractiveTTY_OrgScope(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "by remote github.com/acme/*") {
 		t.Errorf("expected org remote bound, got:\n%s", buf.String())
+	}
+}
+
+func TestProfileDefault_ProtectedLifecycleAndSetDefault(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	cfgDir := filepath.Join(dir, "xdg", "aide")
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	// 1. Creating "default" fails with the built-in message.
+	_, err := runContextCreate(t, "default", "--agent", "claude", "--no-here")
+	if err == nil || !strings.Contains(err.Error(), `profile "default" is built-in and already exists`) {
+		t.Fatalf("create default: err = %v, want built-in error", err)
+	}
+
+	// 2. Creating first custom profile "work" keeps DefaultContext == "default"
+	// and does not materialize profiles/default.yaml when default was unmutated.
+	if _, err := runContextCreate(t, "work", "--agent", "claude", "--no-here"); err != nil {
+		t.Fatalf("create work: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "profiles", "default.yaml")); !os.IsNotExist(err) {
+		t.Errorf("profiles/default.yaml should not be materialized by creating work, stat err = %v", err)
+	}
+	cfg, err := config.Load(cfgDir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultContext != "default" {
+		t.Errorf("DefaultContext after creating work = %q, want default", cfg.DefaultContext)
+	}
+
+	// 3. Renaming "default" or renaming to "default" fails.
+	renameCmd := contextRenameCmd()
+	renameCmd.SetOut(&bytes.Buffer{})
+	renameCmd.SetErr(&bytes.Buffer{})
+	renameCmd.SetArgs([]string{"default", "other"})
+	if err := renameCmd.Execute(); err == nil || !strings.Contains(err.Error(), `cannot rename built-in profile "default"`) {
+		t.Errorf("rename default -> other: err = %v", err)
+	}
+	renameCmd2 := contextRenameCmd()
+	renameCmd2.SetOut(&bytes.Buffer{})
+	renameCmd2.SetErr(&bytes.Buffer{})
+	renameCmd2.SetArgs([]string{"work", "default"})
+	if err := renameCmd2.Execute(); err == nil || !strings.Contains(err.Error(), `cannot rename profile to reserved built-in name "default"`) {
+		t.Errorf("rename work -> default: err = %v", err)
+	}
+
+	// 4. Removing "default" fails.
+	rmCmd := contextRemoveCmd()
+	rmCmd.SetOut(&bytes.Buffer{})
+	rmCmd.SetErr(&bytes.Buffer{})
+	rmCmd.SetArgs([]string{"default"})
+	if err := rmCmd.Execute(); err == nil || !strings.Contains(err.Error(), `cannot remove built-in profile "default"`) {
+		t.Errorf("remove default: err = %v", err)
+	}
+
+	// 5. set-default work, then set-default default persists default_profile: default and profiles/default.yaml.
+	sdWork := contextSetDefaultCmd()
+	sdWork.SetOut(&bytes.Buffer{})
+	sdWork.SetErr(&bytes.Buffer{})
+	sdWork.SetArgs([]string{"work"})
+	if err := sdWork.Execute(); err != nil {
+		t.Fatalf("set-default work: %v", err)
+	}
+	sdDefault := contextSetDefaultCmd()
+	sdDefault.SetOut(&bytes.Buffer{})
+	sdDefault.SetErr(&bytes.Buffer{})
+	sdDefault.SetArgs([]string{"default"})
+	if err := sdDefault.Execute(); err != nil {
+		t.Fatalf("set-default default: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "profiles", "default.yaml")); err != nil {
+		t.Errorf("expected profiles/default.yaml after set-default default: %v", err)
+	}
+
+	// 6. Removing the active default profile "work" resets DefaultContext to "default".
+	if err := sdWork.Execute(); err != nil {
+		t.Fatalf("set-default work again: %v", err)
+	}
+	rmWork := contextRemoveCmd()
+	rmWork.SetOut(&bytes.Buffer{})
+	rmWork.SetErr(&bytes.Buffer{})
+	rmWork.SetArgs([]string{"work"})
+	if err := rmWork.Execute(); err != nil {
+		t.Fatalf("remove work: %v", err)
+	}
+	cfgAfter, err := config.Load(cfgDir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfgAfter.DefaultContext != "default" {
+		t.Errorf("DefaultContext after removing active default work = %q, want default", cfgAfter.DefaultContext)
 	}
 }

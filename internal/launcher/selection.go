@@ -3,11 +3,14 @@ package launcher
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/harness"
+	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/ui"
@@ -91,20 +94,7 @@ func (l *Launcher) ResolveSelection(cfg *config.Config, cwd, homeDir string, in 
 	}
 	remotes := aidectx.GitRemotes(cwd)
 	if res.RC, err = aidectx.ResolveSelected(cfg, cwd, remotes, l.Profile); err != nil {
-		if l.Profile != "" || cfg.DefaultContext != "" || l.EmptyStateActions == nil {
-			return res, fmt.Errorf("resolving profile: %w", err)
-		}
-		if res.RC, cfg, err = l.handleEmptyStateLaunch(cfg, cwd, remotes); err != nil {
-			return res, err
-		}
-		res.Config = cfg
-		// The reloaded config was gated; refresh what the banner and
-		// AIDE_TRUST report from it (the gate is idempotent).
-		if !l.IgnoreProjectConfig {
-			if res.Gate, err = l.applyTrustGate(cfg); err != nil {
-				return res, err
-			}
-		}
+		return res, fmt.Errorf("resolving profile: %w", err)
 	}
 	rc := res.RC
 	if n := ProjectProfileNotice(cfg, rc); n != "" {
@@ -129,6 +119,24 @@ func (l *Launcher) ResolveSelection(cfg *config.Config, cwd, homeDir string, in 
 	// run against the wrong directory.
 	h := cfg.HarnessOf(rc.Context.Agent)
 	cfg.ApplyDefaultProfileDir(rc.Name, &rc.Context)
+	if rc.Context.IgnoredDefaultConfigDir {
+		res.Notices = append(res.Notices,
+			`profile "default" always uses native harness config directories; ignoring config_dir override in profiles/default.yaml (create a named profile with 'aide profile create <name>' for isolated config directories)`)
+	}
+	if rc.Name == config.DefaultProfileName && homeDir != "" {
+		if d, ok := harness.Lookup(h); ok && d.DefaultConfigDir != "" {
+			if legacyDir := harness.ProfileConfigDir(h, config.DefaultProfileName, "", homeDir); legacyDir != "" {
+				if _, statErr := os.Stat(legacyDir); statErr == nil {
+					res.Notices = append(res.Notices, fmt.Sprintf(
+						"profile %q now uses %s; delete legacy directory %s if you no longer need it",
+						config.DefaultProfileName,
+						homepath.Tilde(d.DefaultDir(homeDir), homeDir),
+						homepath.Tilde(legacyDir, homeDir),
+					))
+				}
+			}
+		}
+	}
 	env, err := provision.InjectProfileEnv(h, rc.Context, rc.Context.Env, homeDir)
 	if err != nil {
 		return res, fmt.Errorf("profile %q: %w", rc.Name, err)

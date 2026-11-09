@@ -517,6 +517,13 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			return err
 		}
 	}
+	var ompConfigRoot string
+	if cfg.HarnessOf(agentName) == "omp" && rc.Context.SelectsConfigDir() {
+		if ompConfigRoot, err = ompProfileConfigRoot(env, homeDir, blockedVars); err != nil {
+			cleanup()
+			return err
+		}
+	}
 
 	var pathWarnings []string
 	var diagSandbox diag.SandboxInfo
@@ -585,6 +592,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 	if openCodeDB != "" {
 		env = mergeEnv(env, map[string]string{"OPENCODE_DB": openCodeDB})
+	}
+	if ompConfigRoot != "" {
+		env = mergeEnv(env, map[string]string{"PI_CONFIG_DIR": ompConfigRoot})
 	}
 	if resolvedCapSet != nil {
 		seen := make(map[string]bool)

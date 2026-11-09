@@ -59,6 +59,7 @@ func TestProfileSupport(t *testing.T) {
 		{"claude", "CLAUDE_CONFIG_DIR"},
 		{"codex", "CODEX_HOME"},
 		{"pi", "PI_CODING_AGENT_DIR"},
+		{"omp", "PI_CODING_AGENT_DIR"},
 		{"copilot", "COPILOT_HOME"},
 		{"gemini", "GEMINI_HOME"},
 		{"opencode", "OPENCODE_CONFIG_DIR"},
@@ -105,6 +106,7 @@ func TestYoloArgs(t *testing.T) {
 		{"claude", []string{"--dangerously-skip-permissions"}, true},
 		{"agy", []string{"--dangerously-skip-permissions"}, true},
 		{"pi", nil, true},
+		{"omp", []string{"--auto-approve"}, true},
 		{"aider", nil, false},
 	}
 	for _, tc := range tests {
@@ -130,6 +132,11 @@ func TestApplyYolo(t *testing.T) {
 		// Pi: yolo needs no flag
 		{"pi", []string{"--model", "opus"}, []string{"--model", "opus"}},
 
+		// OMP: --auto-approve prepended; omitted when --auto-approve or --yolo already present
+		{"omp", nil, []string{"--auto-approve"}},
+		{"omp", []string{"--model", "opus"}, []string{"--auto-approve", "--model", "opus"}},
+		{"omp", []string{"--auto-approve", "--model", "opus"}, []string{"--auto-approve", "--model", "opus"}},
+		{"omp", []string{"--yolo", "--model", "opus"}, []string{"--yolo", "--model", "opus"}},
 		// Aider: yolo unsupported
 		{"aider", []string{"--model", "opus"}, []string{"--model", "opus"}},
 
@@ -269,6 +276,10 @@ func TestDefaultDir(t *testing.T) {
 	if got, want := pi.DefaultDir("/home/u"), filepath.Join("/home/u", ".pi", "agent"); got != want {
 		t.Errorf("pi DefaultDir = %q, want %q", got, want)
 	}
+	omp, _ := harness.Lookup("omp")
+	if got, want := omp.DefaultDir("/home/u"), filepath.Join("/home/u", ".omp", "agent"); got != want {
+		t.Errorf("omp DefaultDir = %q, want %q", got, want)
+	}
 	aider, _ := harness.Lookup("aider")
 	if got := aider.DefaultDir("/home/u"); got != "" {
 		t.Errorf("aider DefaultDir = %q, want empty (no known dir)", got)
@@ -279,7 +290,7 @@ type fakeEnvModule struct {
 	env map[string]string
 }
 
-func (f fakeEnvModule) Name() string                           { return "fake" }
+func (f fakeEnvModule) Name() string                                 { return "fake" }
 func (f fakeEnvModule) Rules(*seatbelt.Context) seatbelt.GuardResult { return seatbelt.GuardResult{} }
 func (f fakeEnvModule) AgentEnv(ctx *seatbelt.Context) map[string]string {
 	if ctx == nil || ctx.HomeDir == "" {

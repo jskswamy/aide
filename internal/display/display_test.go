@@ -213,6 +213,7 @@ func TestDefaultAgentIcons(t *testing.T) {
 		{"copilot", "✈️"},
 		{"cursor", "🖱"},
 		{"opencode", "🔷"},
+		{"omp", "🧭"},
 		{"pi", "🥧"},
 		{"antigravity", "🛸"},
 		{"agy", "🛸"},

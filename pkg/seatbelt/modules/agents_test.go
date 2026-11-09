@@ -269,6 +269,33 @@ func TestAgentModules(t *testing.T) {
 				"/etc/cursor",
 			},
 		},
+		{
+			name:     "OMP defaults",
+			module:   OmpAgent(),
+			wantName: "OMP Agent",
+			wantContain: []string{
+				"/home/user/.omp",
+			},
+			wantAbsent: []string{
+				"/home/user/.omp/natives",
+			},
+		},
+		{
+			name:     "OMP env override",
+			module:   OmpAgent(),
+			wantName: "OMP Agent",
+			env:      []string{"PI_CODING_AGENT_DIR=/custom/omp"},
+			wantContain: []string{
+				"/custom/omp",
+				"/home/user/.omp/natives",
+				"/home/user/.omp/logs",
+				"/home/user/.omp/run",
+			},
+			wantAbsent: []string{
+				`"/home/user/.omp"`,
+				"/home/user/.omp/agent",
+			},
+		},
 	}
 
 	for _, tt := range tests {

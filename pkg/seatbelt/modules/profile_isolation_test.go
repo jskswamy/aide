@@ -21,6 +21,7 @@ func TestProfileDirRulesGrantOnlySelectedDir(t *testing.T) {
 	}{
 		"pi":       {PiAgent, "PI_CODING_AGENT_DIR", ".pi-work", []string{".pi", ".pi/agent", ".pi-personal"}},
 		"codex":    {CodexAgent, "CODEX_HOME", ".codex-work", []string{".codex", ".codex-personal"}},
+		"omp":      {OmpAgent, "PI_CODING_AGENT_DIR", ".omp-work", []string{".omp", ".omp/agent", ".omp-personal"}},
 		"opencode": {OpenCodeAgent, "OPENCODE_CONFIG_DIR", ".opencode-work", []string{".config/opencode", ".opencode-personal"}},
 	} {
 		t.Run(name, func(t *testing.T) {

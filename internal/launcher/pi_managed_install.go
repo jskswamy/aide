@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -15,7 +16,13 @@ import (
 // PrepareAgentSandbox adds managed-Pi grants only after every validation passes.
 // cfg is nil for zero-config passthrough; policy.Env is the effective child env.
 func PrepareAgentSandbox(policy *sandbox.Policy, cfg *config.Config, harnessName, executable string) error {
-	if harnessName != "pi" || policy == nil {
+	if policy == nil {
+		return nil
+	}
+	if harnessName == "omp" {
+		return prepareOMPSandboxDirs(policy, runtime.GOOS)
+	}
+	if harnessName != "pi" {
 		return nil
 	}
 	home := policy.HomeDir

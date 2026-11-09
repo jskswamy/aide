@@ -21,7 +21,7 @@ var ErrProfileDirAlias = errors.New("profiles share a native config dir")
 
 // DefaultProfileName is the reserved name of the built-in profile that always
 // uses each harness's native configuration directory (~/.claude, ~/.codex,
-// ~/.pi/agent, ~/.config/opencode).
+// ~/.pi/agent, ~/.omp/agent, ~/.config/opencode).
 const DefaultProfileName = "default"
 
 // IsDefaultProfile reports whether name is the reserved built-in "default" profile.
@@ -306,7 +306,6 @@ func configDirName(name string) string {
 }
 
 var invalidDirNameChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-
 
 // profileDirAliasError explains why profiles a and b collide on
 // harness h's dir and how to separate them without losing a login.

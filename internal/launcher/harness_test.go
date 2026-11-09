@@ -10,7 +10,7 @@ import (
 // Every harness the launcher recognizes has a descriptor that owns its
 // sandbox module, so no launcher table can drift from the harness table.
 func TestLauncherHarnessesHaveDescriptors(t *testing.T) {
-	want := []string{"agy", "aider", "amp", "claude", "codex", "copilot", "cursor-agent", "gemini", "goose", "opencode", "pi"}
+	want := []string{"agy", "aider", "amp", "claude", "codex", "copilot", "cursor-agent", "gemini", "goose", "omp", "opencode", "pi"}
 	if !slices.Equal(KnownAgents, want) {
 		t.Errorf("KnownAgents = %v, want %v", KnownAgents, want)
 	}

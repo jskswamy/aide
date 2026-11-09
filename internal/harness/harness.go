@@ -122,6 +122,9 @@ func (d Descriptor) ApplyYolo(args []string) []string {
 	if slices.Contains(args, d.YoloFlag) {
 		return args
 	}
+	if d.Name == "omp" && slices.Contains(args, "--yolo") {
+		return args
+	}
 
 	if d.Name == "opencode" {
 		if len(args) == 0 {
@@ -274,6 +277,29 @@ var descriptors = []Descriptor{
 		// it is not launchable and not discovered on PATH.
 		Name:   "hermes",
 		Binary: "hermes",
+	},
+	{
+		// OMP (Oh My Pi) keeps default agent state in ~/.omp/agent,
+		// overridden by PI_CODING_AGENT_DIR. Scrubbing PI_CONFIG_DIR,
+		// OMP_PROFILE, PI_PROFILE, PI_CODING_AGENT_SESSION_DIR and
+		// PI_CONFIG_FILES prevents inherited shell selectors from routing
+		// state or overlays outside the selected profile directory.
+		Name:             "omp",
+		Binary:           "omp",
+		ProfileEnvKey:    "PI_CODING_AGENT_DIR",
+		DefaultConfigDir: ".omp/agent",
+		ConfigEnvKeys: []string{
+			"PI_CODING_AGENT_DIR",
+			"PI_CODING_AGENT_SESSION_DIR",
+			"PI_CONFIG_DIR",
+			"OMP_PROFILE",
+			"PI_PROFILE",
+			"PI_CONFIG_FILES",
+		},
+		Sandbox:       modules.OmpAgent,
+		YoloSupported: true,
+		YoloFlag:      "--auto-approve",
+		Icon:          "🧭",
 	},
 	{
 		Name:             "opencode",

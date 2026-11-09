@@ -307,6 +307,165 @@ func TestGatewayCmd_AddNoAuthProbe(t *testing.T) {
 	}
 }
 
+func addHarnessesAnon(t *testing.T) (*gatewayEnv, *httptest.Server) {
+	t.Helper()
+	e := newGatewayEnv(t)
+	srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+	if err := os.MkdirAll(filepath.Join(e.home, ".pi-work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return e, srv
+}
+
+func stubStdinTTY(t *testing.T) {
+	t.Helper()
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+}
+
+func loadedGateway(t *testing.T, e *gatewayEnv, name string) config.GatewayConfig {
+	t.Helper()
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loaded.Contexts["work"].Gateways[name]
+}
+
+func TestGatewayCmd_AddHarnessesNonTTYPrintsDefault(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	out, err := runGateway(t, "", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	want := "Harnesses: claude, pi, opencode, codex  (pass --harnesses to change)"
+	if !strings.Contains(out, want) {
+		t.Errorf("output missing %q:\n%s", want, out)
+	}
+	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
+		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	}
+}
+
+func TestGatewayCmd_AddHarnessesTTYEnterOmitsYAML(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	stubStdinTTY(t)
+	out, err := runGateway(t, "\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Harnesses [claude,pi,opencode,codex]:") {
+		t.Errorf("output missing TTY prompt:\n%s", out)
+	}
+	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
+		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	}
+	if strings.Contains(e.config(t), "harnesses:") {
+		t.Errorf("config.yaml still has harnesses:\n%s", e.config(t))
+	}
+}
+
+func TestGatewayCmd_AddHarnessesTTYSubset(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	stubStdinTTY(t)
+	out, err := runGateway(t, "pi,opencode\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	gw := loadedGateway(t, e, "ollama")
+	if !slices.Equal(gw.Harnesses, []string{"pi", "opencode"}) {
+		t.Errorf("Harnesses = %v, want [pi opencode]", gw.Harnesses)
+	}
+}
+
+func TestGatewayCmd_AddHarnessesTTYGeminiSavesNothing(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	stubStdinTTY(t)
+	out, err := runGateway(t, "gemini\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err == nil || !strings.Contains(err.Error(), "gemini") {
+		t.Fatalf("err = %v, want one mentioning gemini\n%s", err, out)
+	}
+	if strings.Contains(e.config(t), "gateways") {
+		t.Errorf("saved a gateway:\n%s", e.config(t))
+	}
+}
+
+func TestGatewayCmd_AddHarnessesTTYTypedDefaultOmitsYAML(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	stubStdinTTY(t)
+	out, err := runGateway(t, "claude,pi,opencode,codex\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Harnesses [claude,pi,opencode,codex]:") {
+		t.Errorf("output missing TTY prompt:\n%s", out)
+	}
+	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
+		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	}
+}
+
+func TestGatewayCmd_AddHarnessesTTYSpacesStillSubset(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	stubStdinTTY(t)
+	out, err := runGateway(t, " pi , opencode \n", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	gw := loadedGateway(t, e, "ollama")
+	if !slices.Equal(gw.Harnesses, []string{"pi", "opencode"}) {
+		t.Errorf("Harnesses = %v, want [pi opencode]", gw.Harnesses)
+	}
+}
+
+func TestGatewayCmd_AddHarnessesFlagSkipsPrompt(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	out, err := runGateway(t, "", "add", "ollama", "--url", srv.URL, "--profile", "work", "--harnesses", "pi")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Harnesses: claude, pi") {
+		t.Errorf("printed default list despite --harnesses:\n%s", out)
+	}
+	gw := loadedGateway(t, e, "ollama")
+	if !slices.Equal(gw.Harnesses, []string{"pi"}) {
+		t.Errorf("Harnesses = %v, want [pi]", gw.Harnesses)
+	}
+}
+
+func TestGatewayCmd_AddHarnessesFlagAll(t *testing.T) {
+	e, srv := addHarnessesAnon(t)
+	out, err := runGateway(t, "", "add", "ollama", "--url", srv.URL, "--profile", "work", "--harnesses", "all")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
+		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	}
+}
+
+func TestGatewayCmd_AddHarnessesTokenStdinPrintsNotPrompt(t *testing.T) {
+	e := newGatewayEnv(t)
+	if err := os.MkdirAll(filepath.Join(e.home, ".pi-work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stubStdinTTY(t)
+	out, err := runGateway(t, gwCmdToken+"\n", "add", "corp", "--url", e.srv.URL, "--profile", "work", "--token-stdin")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Harnesses: claude, pi, opencode, codex  (pass --harnesses to change)") {
+		t.Errorf("output missing non-TTY harnesses line:\n%s", out)
+	}
+	if strings.Contains(out, "Harnesses [claude,pi,opencode,codex]:") {
+		t.Errorf("prompted for harnesses with --token-stdin:\n%s", out)
+	}
+	if got := e.store(t, "work"); got["corp_token"] != gwCmdToken {
+		t.Errorf("secret store = %v; token was consumed as harnesses", got)
+	}
+}
+
 func TestGatewayCmd_AddNoAuthEmptyCatalogue(t *testing.T) {
 	e := newGatewayEnv(t)
 	hits := atomic.Int32{}
@@ -366,7 +525,7 @@ func TestGatewayCmd_AddTTY401ThenToken(t *testing.T) {
 	orig := stdinIsTTY
 	stdinIsTTY = func() bool { return true }
 	t.Cleanup(func() { stdinIsTTY = orig })
-	out, err := runGateway(t, gwCmdToken+"\n", "add", "corp", "--url", srv.URL, "--profile", "work")
+	out, err := runGateway(t, "\n"+gwCmdToken+"\n", "add", "corp", "--url", srv.URL, "--profile", "work")
 	if err != nil {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
@@ -387,7 +546,7 @@ func TestGatewayCmd_AddTTY403ThenAbort(t *testing.T) {
 	orig := stdinIsTTY
 	stdinIsTTY = func() bool { return true }
 	t.Cleanup(func() { stdinIsTTY = orig })
-	out, err := runGateway(t, "bad-token\n\n", "add", "corp", "--url", srv.URL, "--profile", "work")
+	out, err := runGateway(t, "\nbad-token\n\n", "add", "corp", "--url", srv.URL, "--profile", "work")
 	if err == nil || !strings.Contains(err.Error(), "aborted") {
 		t.Fatalf("err = %v\n%s", err, out)
 	}
@@ -761,7 +920,7 @@ default_profile: work
 	t.Cleanup(func() { stdinIsTTY = orig })
 
 	url := strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
-	stdin := strings.Join([]string{url, "acme", gwCmdToken, "y"}, "\n") + "\n"
+	stdin := strings.Join([]string{url, "acme", "", gwCmdToken, "y"}, "\n") + "\n"
 	out, err := runGateway(t, stdin, "add", "--profile", "work")
 	if err != nil {
 		t.Fatalf("interactive add: %v\n%s", err, out)
@@ -795,7 +954,7 @@ func TestGatewayCmd_AddPromptsForNameWhenURLFlagPassedOnTTY(t *testing.T) {
 	t.Cleanup(func() { stdinIsTTY = orig })
 
 	url := strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
-	stdin := strings.Join([]string{"acme", gwCmdToken}, "\n") + "\n"
+	stdin := strings.Join([]string{"acme", "", gwCmdToken}, "\n") + "\n"
 	out, err := runGateway(t, stdin, "add", "--url", url, "--profile", "work")
 	if err != nil {
 		t.Fatalf("add with --url on TTY: %v\n%s", err, out)

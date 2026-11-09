@@ -137,12 +137,17 @@ Examples:
 				}
 			}
 
+			resolvedHarnesses, err := resolveGatewayAddHarnesses(cmd, reader, harnesses, cmd.Flags().Changed("harnesses"), tokenStdin)
+			if err != nil {
+				return err
+			}
+
 			gw := config.GatewayConfig{
 				BaseURL:    gateway.NormalizeBaseURL(rawURL),
 				RefreshTTL: ttl,
 				Store:      store,
 				Key:        key,
-				Harnesses:  parseGatewayHarnesses(harnesses),
+				Harnesses:  resolvedHarnesses,
 			}
 			if gw.Key != "" && gw.Store == "" {
 				gw.Store = ctx.Secret
@@ -1378,6 +1383,26 @@ func readGatewayURL(cmd *cobra.Command, reader *bufio.Reader, rawURL string, tok
 		return "", errors.New("the gateway URL is empty")
 	}
 	return rawURL, nil
+}
+
+// resolveGatewayAddHarnesses returns the harness list for `gateway add`.
+// --harnesses wins with no I/O. A TTY (except --token-stdin) prompts with
+// the default set in brackets. Otherwise the default is printed and nil
+// (all harnesses) is returned.
+func resolveGatewayAddHarnesses(cmd *cobra.Command, reader *bufio.Reader, flagValue string, flagSet, tokenStdin bool) ([]string, error) {
+	if flagSet {
+		return parseGatewayHarnesses(flagValue), nil
+	}
+	if !tokenStdin && stdinIsTTY() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses [%s]: ", strings.Join(config.DefaultGatewayHarnesses, ","))
+		line, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("reading the harnesses: %w", err)
+		}
+		return parseGatewayHarnesses(line), nil
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses: %s  (pass --harnesses to change)\n", strings.Join(config.DefaultGatewayHarnesses, ", "))
+	return nil, nil
 }
 
 // readGatewayName prompts for the gateway name on an interactive TTY,

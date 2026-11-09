@@ -243,7 +243,7 @@ func TestGatewayCmd_AddRejectsBadInput(t *testing.T) {
 		"missing url token-stdin": {[]string{"add", "corp", "--token-stdin"}, "--url is required"},
 		"both token sources":      {[]string{"add", "corp", "--url", e.srv.URL, "--token-stdin", "--token-env", "MY_GW_TOKEN"}, "mutually exclusive"},
 		"empty token env":         {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "UNSET_GW_TOKEN"}, "UNSET_GW_TOKEN"},
-		"no token source":         {[]string{"add", "corp", "--url", e.srv.URL}, "--token-stdin"},
+		"no token source":         {[]string{"add", "corp", "--url", e.srv.URL}, "token-env"},
 		"remote http":             {[]string{"add", "corp", "--url", "http://gw.example.com", "--token-env", "MY_GW_TOKEN"}, "https"},
 		"unknown profile":         {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--profile", "nope"}, "nope"},
 		"bad harness":             {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--harnesses", "gemini"}, "gemini"},
@@ -262,6 +262,218 @@ func TestGatewayCmd_AddRejectsBadInput(t *testing.T) {
 				t.Error("a rejected add wrote the secret store")
 			}
 		})
+	}
+}
+
+func openAnonModels(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestGatewayCmd_AddNoAuthProbe(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+	if err := os.MkdirAll(filepath.Join(e.home, ".pi-work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGateway(t, "", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Encrypted token") {
+		t.Errorf("encrypted a token:\n%s", out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw := loaded.Contexts["work"].Gateways["ollama"]
+	if gw.Store != "" || gw.Key != "" || gw.BaseURL != srv.URL {
+		t.Errorf("gateways.ollama = %+v", gw)
+	}
+	if e.store(t, "work") != nil {
+		t.Error("secret store written")
+	}
+	if cat, err := gateway.ReadCache(e.home, "work", "ollama"); err != nil || cat == nil || len(cat.Models) != 1 {
+		t.Errorf("cache = %+v, %v", cat, err)
+	}
+}
+
+func TestGatewayCmd_AddNoAuthEmptyCatalogue(t *testing.T) {
+	e := newGatewayEnv(t)
+	hits := atomic.Int32{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	out, err := runGateway(t, "", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if hits.Load() != 1 {
+		t.Errorf("fetches = %d, want 1", hits.Load())
+	}
+	if e.store(t, "work") != nil {
+		t.Error("secret store written")
+	}
+}
+
+func TestGatewayCmd_AddProbe401NonTTY(t *testing.T) {
+	e := newGatewayEnv(t)
+	out, err := runGateway(t, "", "add", "corp", "--url", e.srv.URL, "--profile", "work")
+	if err == nil || !strings.Contains(err.Error(), "token-env") {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	if strings.Contains(e.config(t), "gateways") {
+		t.Error("wrote config")
+	}
+}
+
+func TestGatewayCmd_AddTokenEnvStillUsedWhenProbeWouldSucceed(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+	t.Setenv("MY_GW_TOKEN", gwCmdToken)
+	out, err := runGateway(t, "", "add", "corp", "--url", srv.URL, "--profile", "work", "--token-env", "MY_GW_TOKEN")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if e.store(t, "work")["corp_token"] != gwCmdToken {
+		t.Errorf("store = %v", e.store(t, "work"))
+	}
+}
+
+func TestGatewayCmd_AddTTY401ThenToken(t *testing.T) {
+	e := newGatewayEnv(t)
+	var auths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auths = append(auths, r.Header.Get("Authorization"))
+		if r.Header.Get("Authorization") != "Bearer "+gwCmdToken {
+			http.Error(w, "nope", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"m1"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+	out, err := runGateway(t, gwCmdToken+"\n", "add", "corp", "--url", srv.URL, "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if len(auths) < 2 || auths[0] != "" || auths[1] != "Bearer "+gwCmdToken {
+		t.Errorf("Authorization log = %v", auths)
+	}
+	if e.store(t, "work")["corp_token"] != gwCmdToken {
+		t.Errorf("store = %v", e.store(t, "work"))
+	}
+}
+
+func TestGatewayCmd_AddTTY403ThenAbort(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+	out, err := runGateway(t, "bad-token\n\n", "add", "corp", "--url", srv.URL, "--profile", "work")
+	if err == nil || !strings.Contains(err.Error(), "aborted") {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	if strings.Contains(e.config(t), "gateways") || e.store(t, "work") != nil {
+		t.Error("wrote config or secrets")
+	}
+}
+
+func TestGatewayCmd_AddUnauthenticated403TTY(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+	out, err := runGateway(t, "\n", "add", "corp", "--url", srv.URL, "--profile", "work")
+	if err == nil || !strings.Contains(err.Error(), "aborted") {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Gateway bearer token") || strings.Contains(err.Error(), "Gateway bearer token") {
+		// prompt is on stderr merged into buf
+	}
+	if strings.Contains(e.config(t), "gateways") {
+		t.Error("wrote config")
+	}
+}
+
+func TestGatewayCmd_AddTokenEnv403WritesNothing(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("MY_GW_TOKEN", gwCmdToken)
+	out, err := runGateway(t, "", "add", "corp", "--url", srv.URL, "--profile", "work", "--token-env", "MY_GW_TOKEN")
+	if err == nil {
+		t.Fatalf("err = nil\n%s", out)
+	}
+	if strings.Contains(e.config(t), "gateways") || e.store(t, "work") != nil {
+		t.Error("wrote config or secrets")
+	}
+}
+
+func TestGatewayCmd_SyncNoAuth(t *testing.T) {
+	e := newGatewayEnv(t)
+	var sawAuth atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			sawAuth.Store(true)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"m2"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	if _, err := runGateway(t, "", "add", "ollama", "--url", srv.URL, "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+	sawAuth.Store(false)
+	out, err := runGateway(t, "", "sync", "ollama", "--profile", "work")
+	if err != nil {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+	if sawAuth.Load() {
+		t.Error("sync sent Authorization")
+	}
+	if e.store(t, "work") != nil {
+		t.Error("sync wrote a secret")
+	}
+}
+
+func TestGatewayCmd_RemoveNoAuthSkipsSecret(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+	if _, err := runGateway(t, "", "add", "ollama", "--url", srv.URL, "--profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGateway(t, "", "remove", "ollama", "--profile", "work")
+	if err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Deleted secret") {
+		t.Errorf("deleted a secret:\n%s", out)
+	}
+	if strings.Contains(e.config(t), "ollama") {
+		t.Error("gateway still in config")
 	}
 }
 

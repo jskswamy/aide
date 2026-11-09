@@ -123,6 +123,7 @@ func TestGateway_ValidateGateways(t *testing.T) {
 		want  string // "" means valid
 	}{
 		"valid":                 {name: "corp", gw: valid},
+		"no-auth":               {name: "ollama", gw: GatewayConfig{BaseURL: "http://127.0.0.1:11434"}},
 		"loopback http":         {name: "corp", gw: with(func(g *GatewayConfig) { g.BaseURL = "http://127.0.0.1:8080" })},
 		"localhost http":        {name: "corp", gw: with(func(g *GatewayConfig) { g.BaseURL = "http://localhost:4000/v1" })},
 		"ipv6 loopback http":    {name: "corp", gw: with(func(g *GatewayConfig) { g.BaseURL = "http://[::1]:4000" })},
@@ -316,6 +317,91 @@ func TestGateway_ExplicitDefaultNamesGatewayLoads(t *testing.T) {
 	}
 	if got := cfg.Contexts["work"].DefaultCredentials; !slices.Equal(got, []string{"gw-beta"}) {
 		t.Errorf("default_credentials = %v, want [gw-beta]", got)
+	}
+}
+
+func TestGatewayConfig_RequiresToken(t *testing.T) {
+	if (GatewayConfig{}).RequiresToken() {
+		t.Fatal("empty key must not require a token")
+	}
+	if !(GatewayConfig{Key: "corp_token"}).RequiresToken() {
+		t.Fatal("set key must require a token")
+	}
+}
+
+func TestGateway_TokenEnvNoAuth(t *testing.T) {
+	gw := GatewayConfig{BaseURL: "http://127.0.0.1:11434"}
+	if gw.TokenEnv("claude") != "" || gw.TokenEnv("pi") != "" {
+		t.Fatalf("TokenEnv = claude %q pi %q", gw.TokenEnv("claude"), gw.TokenEnv("pi"))
+	}
+}
+
+func TestGateway_SynthesizeNoAuth(t *testing.T) {
+	ctx := Context{Gateways: map[string]GatewayConfig{
+		"ollama": {BaseURL: "http://127.0.0.1:11434"},
+	}}
+	got, err := SynthesizeGatewayCredentials(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := got.Credentials["ollama"]
+	if !b.Keyless() {
+		t.Fatalf("binding = %+v, want Keyless", b)
+	}
+	claude, ok := b.Route("ollama", "claude")
+	if !ok || len(claude.Env) != 0 || claude.Set["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:11434" {
+		t.Errorf("claude route = %+v, %v", claude, ok)
+	}
+	pi, ok := b.Route("ollama", "pi")
+	if !ok || len(pi.Env) != 0 {
+		t.Errorf("pi route = %+v, %v", pi, ok)
+	}
+	if !slices.Equal(got.DefaultCredentials, []string{"ollama"}) {
+		t.Errorf("DefaultCredentials = %v", got.DefaultCredentials)
+	}
+}
+
+func TestGateway_SynthesizeNoAuthPiOnly(t *testing.T) {
+	ctx := Context{Gateways: map[string]GatewayConfig{
+		"ollama": {BaseURL: "http://127.0.0.1:11434", Harnesses: []string{"pi"}},
+	}}
+	got, err := SynthesizeGatewayCredentials(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := got.Credentials["ollama"]
+	if !b.Keyless() {
+		t.Fatalf("binding = %+v, want Keyless", b)
+	}
+	pi, ok := b.Route("ollama", "pi")
+	if !ok || len(pi.Env) != 0 {
+		t.Errorf("pi route = %+v, %v", pi, ok)
+	}
+}
+
+func TestGateway_LoadNoAuthYAML(t *testing.T) {
+	body := `profiles:
+  work:
+    agent: pi
+    config_dir_name: work
+    gateways:
+      ollama:
+        base_url: http://127.0.0.1:11434
+      local:
+        base_url: http://127.0.0.1:11434
+        harnesses: [pi]
+default_profile: work
+`
+	cfg, err := loadYAML(t, body)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	ollama := cfg.Contexts["work"].Gateways["ollama"]
+	if ollama.Store != "" || ollama.Key != "" || ollama.BaseURL != "http://127.0.0.1:11434" {
+		t.Errorf("ollama = %+v", ollama)
+	}
+	if h := cfg.Contexts["work"].Gateways["local"].Harnesses; !slices.Equal(h, []string{"pi"}) {
+		t.Errorf("local harnesses = %v", h)
 	}
 }
 

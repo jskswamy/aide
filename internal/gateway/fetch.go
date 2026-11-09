@@ -36,6 +36,12 @@ const (
 	maxProviderBytes = 128
 )
 
+// Fetch auth classification. Other non-200 statuses are not these sentinels.
+var (
+	ErrUnauthorized = errors.New("gateway: unauthorized")
+	ErrForbidden    = errors.New("gateway: forbidden")
+)
+
 // NormalizeBaseURL trims trailing slashes and one trailing /v1 so
 // endpoints are built the same way whatever the user typed.
 func NormalizeBaseURL(raw string) string {
@@ -59,7 +65,9 @@ func FetchModels(ctx context.Context, client *http.Client, baseURL, token string
 	if err != nil {
 		return nil, fmt.Errorf("building request for %s: %w", endpoint, err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("Accept", "application/json")
 
@@ -69,7 +77,15 @@ func FetchModels(ctx context.Context, client *http.Client, baseURL, token string
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s returned HTTP %d", endpoint, resp.StatusCode)
+		err := fmt.Errorf("%s returned HTTP %d", endpoint, resp.StatusCode)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return nil, fmt.Errorf("%w: %w", err, ErrUnauthorized)
+		case http.StatusForbidden:
+			return nil, fmt.Errorf("%w: %w", err, ErrForbidden)
+		default:
+			return nil, err
+		}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxModelsResponseBytes+1))
 	if err != nil {

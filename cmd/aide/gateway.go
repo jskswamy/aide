@@ -144,19 +144,21 @@ Examples:
 				Key:        key,
 				Harnesses:  parseGatewayHarnesses(harnesses),
 			}
-			if gw.Store == "" {
+			if gw.Key != "" && gw.Store == "" {
 				gw.Store = ctx.Secret
+				if gw.Store == "" {
+					gw.Store = profileName
+				}
 			}
-			if gw.Store == "" {
-				gw.Store = profileName
-			}
-			if gw.Key == "" {
+			if gw.Store != "" && gw.Key == "" {
 				gw.Key = defaultGatewayKey(name)
 			}
-			if old, ok := ctx.Gateways[name]; ok && !force && gateway.NormalizeBaseURL(old.BaseURL) != gw.BaseURL {
+			old, hadOld := ctx.Gateways[name]
+			if hadOld && !force && gateway.NormalizeBaseURL(old.BaseURL) != gw.BaseURL {
 				return fmt.Errorf("profile %q already has gateway %q for %s; pass --force to replace it (and its token), or give this one another name",
 					profileName, name, old.BaseURL)
 			}
+
 			ctx.Gateways = maps.Clone(ctx.Gateways)
 			if ctx.Gateways == nil {
 				ctx.Gateways = map[string]config.GatewayConfig{}
@@ -166,15 +168,31 @@ Examples:
 				return err
 			}
 
-			if !force {
-				if err := checkKeyUnclaimed(cfg, gw.Store, gw.Key); err != nil {
+			fctx, cancel := context.WithTimeout(context.Background(), gateway.DefaultFetchTimeout)
+			token, models, err := resolveGatewayAddAuth(cmd, reader, fctx, gw, tokenStdin, tokenEnv)
+			cancel()
+			if err != nil {
+				return err
+			}
+			if token != "" {
+				if gw.Store == "" {
+					gw.Store = ctx.Secret
+				}
+				if gw.Store == "" {
+					gw.Store = profileName
+				}
+				if gw.Key == "" {
+					gw.Key = defaultGatewayKey(name)
+				}
+				ctx.Gateways[name] = gw
+				if err := config.ValidateGateways("profiles."+profileName, ctx, cfg.NeverAllowEnv); err != nil {
 					return err
 				}
 			}
-
-			token, err := readGatewayToken(cmd, reader, tokenStdin, tokenEnv)
-			if err != nil {
-				return err
+			if token != "" && !force {
+				if err := checkKeyUnclaimed(cfg, gw.Store, gw.Key); err != nil {
+					return err
+				}
 			}
 
 			if cmd.Flags().Changed("default") {
@@ -187,26 +205,34 @@ Examples:
 				}
 			}
 
-			secretsDir := config.SecretsDir()
-			if err := secrets.NewManager(secretsDir, "").SetKey(gw.Store, secretsDir, gw.Key, token, ageKey); err != nil {
-				return fmt.Errorf("storing the gateway token: %w", err)
-			}
 			home := userHomeDir()
-			fmt.Fprintf(out, "✓ Encrypted token into %s (key: %s)\n",
-				homepath.Tilde(config.ResolveSecretPath(gw.Store), home), gw.Key)
+			secretsDir := config.SecretsDir()
+			if token != "" {
+				if err := secrets.NewManager(secretsDir, "").SetKey(gw.Store, secretsDir, gw.Key, token, ageKey); err != nil {
+					return fmt.Errorf("storing the gateway token: %w", err)
+				}
+				fmt.Fprintf(out, "✓ Encrypted token into %s (key: %s)\n",
+					homepath.Tilde(config.ResolveSecretPath(gw.Store), home), gw.Key)
+			}
 
 			cfg.Contexts[profileName] = ctx
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
+				if token != "" {
+					_ = secrets.NewManager(secretsDir, "").DeleteKey(gw.Store, secretsDir, gw.Key)
+				}
 				return fmt.Errorf("writing config: %w", err)
+			}
+			if force && hadOld && old.RequiresToken() && !gw.RequiresToken() && secretUser(cfg, old.Store, old.Key) == "" {
+				_ = secrets.NewManager(secretsDir, "").DeleteKey(old.Store, secretsDir, old.Key)
 			}
 			fmt.Fprintf(out, "✓ Saved gateway %q under profile %q in %s\n", name, profileName, homepath.Tilde(config.FilePath(), home))
 
 			res, err := gateway.Sync(context.Background(), gateway.SyncOptions{
 				ProfileName: profileName, Profile: ctx, GatewayName: name, Gateway: gw,
-				Token: token, HomeDir: home, Progress: out,
+				Token: token, HomeDir: home, Progress: out, Prefetch: true, Models: models,
 			})
 			if err != nil {
-				return fmt.Errorf("gateway %q is saved, but the first model sync failed (retry with: aide gateway sync %s --profile %s): %w",
+				return fmt.Errorf("gateway %q is saved, but writing harness files failed (retry with: aide gateway sync %s --profile %s): %w",
 					name, name, profileName, err)
 			}
 			printHarnessStatuses(out, res.HarnessStatuses, gw, home)
@@ -560,9 +586,20 @@ value as the default.`,
 
 			var newToken string
 			if wantTokenRotate {
-				newToken, err = readGatewayToken(cmd, reader, tokenStdin, tokenEnv)
+				newToken, err = readGatewayToken(cmd, reader, tokenStdin, tokenEnv, false)
 				if err != nil {
 					return err
+				}
+				if !oldGW.RequiresToken() {
+					if newGW.Store == "" {
+						newGW.Store = ctx.Secret
+					}
+					if newGW.Store == "" {
+						newGW.Store = profileName
+					}
+					if newGW.Key == "" {
+						newGW.Key = defaultGatewayKey(newName)
+					}
 				}
 			}
 
@@ -679,7 +716,11 @@ cached catalogue, and write it into every provisioned harness config.`,
 			for _, name := range names {
 				gw := ctx.Gateways[name]
 				fmt.Fprintf(out, "→ Syncing gateway %q (profile %q)\n", name, profileName)
-				token, err := launcher.ResolveStoreKey(load, fmt.Sprintf("gateway %q", name), gw.Store, gw.Key)
+				token := ""
+				var err error
+				if gw.RequiresToken() {
+					token, err = launcher.ResolveStoreKey(load, fmt.Sprintf("gateway %q", name), gw.Store, gw.Key)
+				}
 				if err == nil {
 					var res *gateway.SyncResult
 					res, err = gateway.Sync(context.Background(), gateway.SyncOptions{
@@ -741,18 +782,20 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 			}
 			fmt.Fprintf(out, "✓ Removed gateway %q from profile %q in %s\n", name, profileName, homepath.Tilde(config.FilePath(), home))
 
-			storePath := homepath.Tilde(config.ResolveSecretPath(gw.Store), home)
-			switch user := secretUser(cfg, gw.Store, gw.Key); {
-			case keepSecret:
-				fmt.Fprintf(out, "- Kept secret key %q in %s (--keep-secret)\n", gw.Key, storePath)
-			case user != "":
-				fmt.Fprintf(out, "- Kept secret key %q in %s (still used by %s)\n", gw.Key, storePath, user)
-			default:
-				secretsDir := config.SecretsDir()
-				if err := secrets.NewManager(secretsDir, "").DeleteKey(gw.Store, secretsDir, gw.Key); err != nil {
-					return fmt.Errorf("deleting secret key %q: %w", gw.Key, err)
+			if gw.RequiresToken() {
+				storePath := homepath.Tilde(config.ResolveSecretPath(gw.Store), home)
+				switch user := secretUser(cfg, gw.Store, gw.Key); {
+				case keepSecret:
+					fmt.Fprintf(out, "- Kept secret key %q in %s (--keep-secret)\n", gw.Key, storePath)
+				case user != "":
+					fmt.Fprintf(out, "- Kept secret key %q in %s (still used by %s)\n", gw.Key, storePath, user)
+				default:
+					secretsDir := config.SecretsDir()
+					if err := secrets.NewManager(secretsDir, "").DeleteKey(gw.Store, secretsDir, gw.Key); err != nil {
+						return fmt.Errorf("deleting secret key %q: %w", gw.Key, err)
+					}
+					fmt.Fprintf(out, "✓ Deleted secret key %q from %s\n", gw.Key, storePath)
 				}
-				fmt.Fprintf(out, "✓ Deleted secret key %q from %s\n", gw.Key, storePath)
 			}
 
 			if err := gateway.RemoveCache(home, profileName, name); err != nil {
@@ -1075,14 +1118,14 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 	urlChanged := gateway.NormalizeBaseURL(newGW.BaseURL) != gateway.NormalizeBaseURL(oldGW.BaseURL)
 	needsLiveSync := tokenChanged || urlChanged
 
-	if keyOrStoreChanged && !force {
+	if keyOrStoreChanged && newGW.RequiresToken() && !force {
 		if err := checkKeyUnclaimed(cfg, newGW.Store, newGW.Key); err != nil {
 			return err
 		}
 	}
 
 	activeToken := newToken
-	if !tokenChanged && (keyOrStoreChanged || needsLiveSync) {
+	if !tokenChanged && (keyOrStoreChanged || needsLiveSync) && oldGW.RequiresToken() {
 		load := launcher.CachingStoreLoader(secrets.LoadSecretsMap)
 		var err error
 		activeToken, err = launcher.ResolveStoreKey(load, fmt.Sprintf("gateway %q", oldName), oldGW.Store, oldGW.Key)
@@ -1115,7 +1158,7 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 	}
 
 	secretsDir := config.SecretsDir()
-	if tokenChanged || keyOrStoreChanged {
+	if (tokenChanged || keyOrStoreChanged) && newGW.RequiresToken() {
 		if err := secrets.NewManager(secretsDir, "").SetKey(newGW.Store, secretsDir, newGW.Key, activeToken, ageKey); err != nil {
 			return fmt.Errorf("storing the gateway token: %w", err)
 		}
@@ -1371,9 +1414,56 @@ func gatewayNameFromURL(rawURL string) (string, error) {
 	return label, nil
 }
 
+var errGatewayAddAborted = errors.New("aborted")
+
+func resolveGatewayAddAuth(cmd *cobra.Command, reader *bufio.Reader, ctx context.Context, gw config.GatewayConfig, tokenStdin bool, tokenEnv string) (token string, models []gateway.Model, err error) {
+	if tokenStdin || tokenEnv != "" {
+		token, err = readGatewayToken(cmd, reader, tokenStdin, tokenEnv, false)
+		if err != nil {
+			return "", nil, err
+		}
+		models, err = gateway.FetchModels(ctx, nil, gw.BaseURL, token)
+		return token, models, err
+	}
+	models, err = gateway.FetchModels(ctx, nil, gw.BaseURL, "")
+	switch {
+	case err == nil && gw.IsLoopback():
+		return "", models, nil
+	case err == nil && !gw.IsLoopback(), errors.Is(err, gateway.ErrUnauthorized), errors.Is(err, gateway.ErrForbidden):
+		if !stdinIsTTY() {
+			if err == nil {
+				return "", nil, errors.New("this gateway needs a bearer token; pass --token-stdin or --token-env")
+			}
+			return "", nil, fmt.Errorf("%w (pass --token-stdin or --token-env)", err)
+		}
+		return promptGatewayTokenUntilOK(cmd, reader, ctx, gw.BaseURL)
+	default:
+		return "", nil, err
+	}
+}
+
+func promptGatewayTokenUntilOK(cmd *cobra.Command, reader *bufio.Reader, ctx context.Context, baseURL string) (string, []gateway.Model, error) {
+	for {
+		token, err := readGatewayToken(cmd, reader, false, "", true)
+		if err != nil {
+			return "", nil, err
+		}
+		models, err := gateway.FetchModels(ctx, nil, baseURL, token)
+		if err == nil {
+			return token, models, nil
+		}
+		if errors.Is(err, gateway.ErrUnauthorized) || errors.Is(err, gateway.ErrForbidden) {
+			fmt.Fprintln(cmd.ErrOrStderr(), "✗ HTTP error — that token was rejected.")
+			continue
+		}
+		return "", nil, err
+	}
+}
+
 // readGatewayToken reads the token from --token-env, --token-stdin or
-// a hidden prompt, in that order.
-func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, envVar string) (string, error) {
+// a hidden prompt, in that order. allowEmpty treats a blank TTY/stdin
+// token as abort.
+func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, envVar string, allowEmpty bool) (string, error) {
 	var token string
 	switch {
 	case envVar != "":
@@ -1412,6 +1502,9 @@ func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, 
 		return "", errors.New("no token: stdin is not a terminal; pass --token-stdin or --token-env <VAR>")
 	}
 	if token == "" {
+		if allowEmpty {
+			return "", errGatewayAddAborted
+		}
 		return "", errors.New("the gateway token is empty")
 	}
 	return token, nil

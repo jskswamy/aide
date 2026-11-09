@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -164,6 +165,52 @@ func TestFetchModels_HTTPErrorHidesToken(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), testToken) {
 		t.Errorf("error leaks the token: %v", err)
+	}
+}
+
+func TestFetchModels_OmitsAuthorizationWhenTokenEmpty(t *testing.T) {
+	srv, req := modelsServer(t, `{"data":[{"id":"m1"}]}`)
+	if _, err := FetchModels(context.Background(), nil, srv.URL, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("Authorization"); got != "" {
+		t.Errorf("Authorization = %q, want omitted", got)
+	}
+}
+
+func TestFetchModels_UnauthorizedIsTyped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	if !errors.Is(err, ErrUnauthorized) || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("err = %v, want ErrUnauthorized mentioning 401", err)
+	}
+	if strings.Contains(err.Error(), testToken) {
+		t.Errorf("error leaks the token: %v", err)
+	}
+}
+
+func TestFetchModels_ForbiddenIsTyped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusForbidden)
+	}))
+	defer srv.Close()
+	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	if !errors.Is(err, ErrForbidden) || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("err = %v, want ErrForbidden mentioning 403", err)
+	}
+}
+
+func TestFetchModels_OtherHTTPErrorUnchanged(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	if err == nil || errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("err = %v, want untyped HTTP 502", err)
 	}
 }
 
@@ -499,6 +546,60 @@ func TestMaterialize_Pi(t *testing.T) {
 	}
 }
 
+func TestMaterialize_NoAuthPiOpenCodeCodex(t *testing.T) {
+	f := newFixture(t)
+	f.gw.Store, f.gw.Key = "", ""
+	f.mkdirs(t, "pi", "opencode", "codex")
+	writeFile(t, filepath.Join(f.dir("pi"), "models.json"), `{}`)
+	writeFile(t, filepath.Join(f.dir("opencode"), "opencode.jsonc"), `{}`)
+	writeFile(t, filepath.Join(f.dir("codex"), "config.toml"), ``)
+
+	for _, h := range []string{"pi", "opencode", "codex"} {
+		st, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, h, f.home, false)
+		if err != nil || st.State != StateSynced || st.EnvVar != "" {
+			t.Fatalf("%s MaterializeHarness() = %+v, %v", h, st, err)
+		}
+		if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, h, f.home); got.State != StateSynced {
+			t.Errorf("%s InspectHarness() = %+v, want synced", h, got)
+		}
+	}
+
+	var piDoc struct {
+		Providers map[string]map[string]any `json:"providers"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(f.dir("pi"), "models.json"))), &piDoc); err != nil {
+		t.Fatal(err)
+	}
+	corp := piDoc.Providers["corp"]
+	if _, ok := corp["apiKey"]; ok || corp["authHeader"] != false {
+		t.Errorf("pi provider = %v", corp)
+	}
+
+	std, err := hujson.Standardize([]byte(readFile(t, filepath.Join(f.dir("opencode"), "opencode.jsonc"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var oc map[string]any
+	if err := json.Unmarshal(std, &oc); err != nil {
+		t.Fatal(err)
+	}
+	p := obj(t, obj(t, oc["providers"])["corp"])
+	settings := obj(t, p["settings"])
+	headers, _ := p["headers"].(map[string]any)
+	if p["env"] != nil || settings["apiKey"] != nil || (headers != nil && headers["Authorization"] != nil) {
+		t.Errorf("opencode provider = %v", p)
+	}
+
+	var tomlDoc map[string]any
+	if err := toml.Unmarshal([]byte(readFile(t, filepath.Join(f.dir("codex"), "config.toml"))), &tomlDoc); err != nil {
+		t.Fatal(err)
+	}
+	cp := obj(t, obj(t, tomlDoc["model_providers"])["corp"])
+	if _, ok := cp["env_key"]; ok {
+		t.Errorf("codex env_key present: %v", cp)
+	}
+}
+
 func TestMaterialize_OpenCode(t *testing.T) {
 	f := newFixture(t)
 	path := filepath.Join(f.dir("opencode"), "opencode.jsonc")
@@ -688,6 +789,60 @@ func TestSync(t *testing.T) {
 	}
 	if strings.Contains(progress.String(), testToken) {
 		t.Error("progress leaks the token")
+	}
+}
+
+func TestSync_PrefetchSkipsFetch(t *testing.T) {
+	f := newFixture(t)
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	f.gw.BaseURL = srv.URL
+	var progress bytes.Buffer
+	res, err := Sync(context.Background(), SyncOptions{
+		ProfileName: "work", Profile: f.ctx, GatewayName: "corp", Gateway: f.gw,
+		HomeDir: f.home, Prefetch: true, Models: []Model{{ID: "m1"}}, Progress: &progress,
+	})
+	if err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if hits != 0 {
+		t.Errorf("FetchModels was called %d times", hits)
+	}
+	if len(res.Catalogue.Models) != 1 || res.Catalogue.Models[0].ID != "m1" {
+		t.Errorf("catalogue = %+v", res.Catalogue)
+	}
+	if cat, err := ReadCache(f.home, "work", "corp"); err != nil || cat == nil || len(cat.Models) != 1 {
+		t.Errorf("cache = %+v, %v", cat, err)
+	}
+	if strings.Contains(progress.String(), "Fetching models") {
+		t.Errorf("prefetch printed a fetch line: %q", progress.String())
+	}
+	if !strings.Contains(progress.String(), "Cached 1 LLM models") {
+		t.Errorf("progress = %q", progress.String())
+	}
+}
+
+func TestSync_PrefetchNilModels(t *testing.T) {
+	f := newFixture(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("FetchModels must not run when Prefetch is set")
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	f.gw.BaseURL = srv.URL
+	res, err := Sync(context.Background(), SyncOptions{
+		ProfileName: "work", Profile: f.ctx, GatewayName: "corp", Gateway: f.gw,
+		HomeDir: f.home, Prefetch: true, Models: nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Catalogue.Models) != 0 {
+		t.Errorf("models = %+v", res.Catalogue.Models)
 	}
 }
 

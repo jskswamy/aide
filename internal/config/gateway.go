@@ -21,8 +21,8 @@ import (
 type GatewayConfig struct {
 	BaseURL    string   `yaml:"base_url" json:"base_url"`
 	RefreshTTL string   `yaml:"refresh_ttl,omitempty" json:"refresh_ttl,omitempty"`
-	Store      string   `yaml:"store" json:"store"`
-	Key        string   `yaml:"key" json:"key"`
+	Store      string   `yaml:"store,omitempty" json:"store,omitempty"`
+	Key        string   `yaml:"key,omitempty" json:"key,omitempty"`
 	Harnesses  []string `yaml:"harnesses,omitempty" json:"harnesses,omitempty"`
 }
 
@@ -99,9 +99,25 @@ func (gw GatewayConfig) TTL() time.Duration {
 	return ttl
 }
 
+// RequiresToken reports whether gw stores a bearer secret.
+func (gw GatewayConfig) RequiresToken() bool { return gw.Key != "" }
+
+// IsLoopback reports whether gw.BaseURL is localhost, 127.0.0.1, or ::1.
+func (gw GatewayConfig) IsLoopback() bool {
+	u, err := url.Parse(gw.BaseURL)
+	if err != nil {
+		return false
+	}
+	return isLoopbackHost(u.Hostname())
+}
+
 // TokenEnv is the variable harness h reads gw's token from: Claude
-// Code's fixed ANTHROPIC_AUTH_TOKEN, else EnvVarName.
+// Code's fixed ANTHROPIC_AUTH_TOKEN, else EnvVarName. Empty when gw
+// has no token.
 func (gw GatewayConfig) TokenEnv(h string) string {
+	if !gw.RequiresToken() {
+		return ""
+	}
 	if h == "claude" {
 		return claudeGatewayTokenEnv
 	}
@@ -157,14 +173,23 @@ func validateGateway(name string, gw GatewayConfig, ctx Context, neverAllowEnv [
 	if err := checkGatewayURL(gw.BaseURL); err != nil {
 		return err
 	}
-	if !gatewayIdentRE.MatchString(gw.Store) {
-		return fmt.Errorf("store: %q must be a secret store name (letters, digits, '-' or '_')", gw.Store)
+	switch {
+	case gw.Store == "" && gw.Key == "":
+		// no-auth
+	case gw.Store == "":
+		return errors.New("store: is required when key is set")
+	case gw.Key == "":
+		return errors.New("key: is required when store is set")
+	default:
+		if !gatewayIdentRE.MatchString(gw.Store) {
+			return fmt.Errorf("store: %q must be a secret store name (letters, digits, '-' or '_')", gw.Store)
+		}
+		if err := checkGatewayKey(gw, neverAllowEnv); err != nil {
+			return err
+		}
 	}
 	if _, err := gw.EffectiveTTL(); err != nil {
 		return fmt.Errorf("refresh_ttl: %v (use a Go duration such as 12h or 24h)", err)
-	}
-	if err := checkGatewayKey(gw, neverAllowEnv); err != nil {
-		return err
 	}
 	seen := map[string]bool{}
 	for _, h := range gw.Harnesses {
@@ -249,8 +274,12 @@ func gatewayBinding(gw GatewayConfig) CredentialBinding {
 	routes := map[string]CredentialRoute{}
 	for _, h := range gw.EffectiveHarnesses() {
 		if h == "claude" {
+			env := []string{}
+			if e := gw.TokenEnv(h); e != "" {
+				env = []string{e}
+			}
 			routes[h] = CredentialRoute{
-				Env: []string{gw.TokenEnv(h)},
+				Env: env,
 				Set: map[string]string{
 					claudeGatewayBaseURLEnv:   NormalizeGatewayBaseURL(gw.BaseURL),
 					claudeGatewayDiscoveryEnv: "1",
@@ -259,9 +288,17 @@ func gatewayBinding(gw GatewayConfig) CredentialBinding {
 			}
 			continue
 		}
-		routes[h] = CredentialRoute{Env: []string{gw.TokenEnv(h)}}
+		if e := gw.TokenEnv(h); e != "" {
+			routes[h] = CredentialRoute{Env: []string{e}}
+		} else {
+			routes[h] = CredentialRoute{}
+		}
 	}
-	return CredentialBinding{Backend: CredentialBackendAge, Store: gw.Store, Key: gw.Key, For: routes}
+	b := CredentialBinding{Store: gw.Store, Key: gw.Key, For: routes}
+	if gw.RequiresToken() {
+		b.Backend = CredentialBackendAge
+	}
+	return b
 }
 
 // SynthesizeGatewayCredentials returns ctx with a credential binding

@@ -21,6 +21,9 @@ type SyncOptions struct {
 	Token       string
 	HomeDir     string
 	HTTPClient  *http.Client
+	// Prefetch skips FetchModels and uses Models (nil is an empty catalogue).
+	Prefetch bool
+	Models   []Model
 	// Progress receives one line per step; nil is silent.
 	Progress io.Writer
 }
@@ -50,10 +53,14 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 		progress = io.Discard
 	}
 	base := NormalizeBaseURL(opts.Gateway.BaseURL)
-	fmt.Fprintf(progress, "→ Fetching models from %s/v1/models...\n", base)
-	models, err := FetchModels(ctx, opts.HTTPClient, base, opts.Token)
-	if err != nil {
-		return nil, fmt.Errorf("gateway %q: %w", opts.GatewayName, err)
+	models := opts.Models
+	if !opts.Prefetch {
+		fmt.Fprintf(progress, "→ Fetching models from %s/v1/models...\n", base)
+		var err error
+		models, err = FetchModels(ctx, opts.HTTPClient, base, opts.Token)
+		if err != nil {
+			return nil, fmt.Errorf("gateway %q: %w", opts.GatewayName, err)
+		}
 	}
 	cat := &CachedCatalogue{
 		Profile:   opts.ProfileName,
@@ -69,6 +76,7 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	fmt.Fprintf(progress, "✓ Cached %d LLM models in %s\n", len(models), homepath.Tilde(cachePath, opts.HomeDir))
 
 	res := &SyncResult{Catalogue: cat}
+	var err error
 	for _, h := range opts.Gateway.EffectiveHarnesses() {
 		var st HarnessFileStatus
 		if !CanSyncHarness(opts.Profile, opts.GatewayName, h) {

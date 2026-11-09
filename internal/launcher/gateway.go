@@ -34,10 +34,14 @@ func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName,
 	}
 	for _, b := range credPlan.Bindings {
 		gw, ok := rc.Context.Gateways[b.Name]
-		if !ok || len(b.Env) == 0 {
+		if !ok {
 			continue
 		}
 		name := b.Name
+		token := ""
+		if len(b.Env) > 0 {
+			token = credEnv[b.Env[0]]
+		}
 		ttl := gw.TTL()
 		base := gateway.NormalizeBaseURL(gw.BaseURL)
 		cat, err := gateway.ReadCache(homeDir, rc.Name, name)
@@ -58,7 +62,7 @@ func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName,
 			fctx, cancel := context.WithTimeout(context.Background(), timeout)
 			res, err := gateway.Sync(fctx, gateway.SyncOptions{
 				ProfileName: rc.Name, Profile: ctx, GatewayName: name, Gateway: gw,
-				Token: credEnv[b.Env[0]], HomeDir: homeDir,
+				Token: token, HomeDir: homeDir,
 			})
 			cancel()
 			switch {

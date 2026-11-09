@@ -404,7 +404,7 @@ type piFile struct{}
 
 type piProvider struct {
 	BaseURL    string    `json:"baseUrl"`
-	APIKey     string    `json:"apiKey"`
+	APIKey     string    `json:"apiKey,omitempty"`
 	AuthHeader bool      `json:"authHeader"`
 	API        string    `json:"api"`
 	Models     []piModel `json:"models"`
@@ -424,10 +424,12 @@ func (piFile) singleGatewayPerDir() bool { return false }
 func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
 	p := piProvider{
 		BaseURL:    NormalizeBaseURL(gw.BaseURL),
-		APIKey:     "$" + gw.EnvVarName(),
-		AuthHeader: true,
+		AuthHeader: gw.RequiresToken(),
 		API:        "anthropic-messages",
 		Models:     []piModel{},
+	}
+	if gw.RequiresToken() {
+		p.APIKey = "$" + gw.EnvVarName()
 	}
 	for _, m := range cat.Models {
 		p.Models = append(p.Models, piModel{ID: m.ID, Name: m.DisplayName, ContextWindow: m.ContextWindow, MaxTokens: m.MaxOutputTokens})
@@ -450,7 +452,9 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 		return fmt.Sprintf("provider %q missing", gwName), nil
 	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
 		return "baseUrl differs", nil
-	case p.APIKey != "$"+gw.EnvVarName():
+	case gw.RequiresToken() && (p.APIKey != "$"+gw.EnvVarName() || !p.AuthHeader):
+		return "apiKey differs", nil
+	case !gw.RequiresToken() && (p.APIKey != "" || p.AuthHeader):
 		return "apiKey differs", nil
 	}
 	ids := make([]string, len(p.Models))
@@ -486,15 +490,15 @@ type openCodeFile struct{}
 type openCodeProvider struct {
 	Package  string                   `json:"package"`
 	Name     string                   `json:"name"`
-	Env      []string                 `json:"env"`
+	Env      []string                 `json:"env,omitempty"`
 	Settings openCodeSettings         `json:"settings"`
-	Headers  map[string]string        `json:"headers"`
+	Headers  map[string]string        `json:"headers,omitempty"`
 	Models   map[string]openCodeModel `json:"models"`
 }
 
 type openCodeSettings struct {
 	BaseURL string `json:"baseURL"`
-	APIKey  string `json:"apiKey"`
+	APIKey  string `json:"apiKey,omitempty"`
 }
 
 type openCodeModel struct {
@@ -549,10 +553,13 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 	p := openCodeProvider{
 		Package:  "@ai-sdk/anthropic",
 		Name:     gwName,
-		Env:      []string{gw.EnvVarName()},
-		Settings: openCodeSettings{BaseURL: NormalizeBaseURL(gw.BaseURL) + "/v1", APIKey: openCodeAPIKey(gw)},
-		Headers:  map[string]string{"Authorization": openCodeAuthHeader(gw)},
+		Settings: openCodeSettings{BaseURL: NormalizeBaseURL(gw.BaseURL) + "/v1"},
 		Models:   map[string]openCodeModel{},
+	}
+	if gw.RequiresToken() {
+		p.Env = []string{gw.EnvVarName()}
+		p.Settings.APIKey = openCodeAPIKey(gw)
+		p.Headers = map[string]string{"Authorization": openCodeAuthHeader(gw)}
 	}
 	for _, m := range cat.Models {
 		om := openCodeModel{
@@ -611,13 +618,19 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 		return fmt.Sprintf("provider %q missing", gwName), nil
 	case p.Package != "@ai-sdk/anthropic":
 		return "package differs", nil
-	case !slices.Equal(p.Env, []string{gw.EnvVarName()}):
+	case gw.RequiresToken() && !slices.Equal(p.Env, []string{gw.EnvVarName()}):
+		return "env differs", nil
+	case !gw.RequiresToken() && len(p.Env) != 0:
 		return "env differs", nil
 	case p.Settings.BaseURL != NormalizeBaseURL(gw.BaseURL)+"/v1":
 		return "baseURL differs", nil
-	case p.Settings.APIKey != openCodeAPIKey(gw):
+	case gw.RequiresToken() && p.Settings.APIKey != openCodeAPIKey(gw):
 		return "apiKey differs", nil
-	case p.Headers["Authorization"] != openCodeAuthHeader(gw):
+	case !gw.RequiresToken() && p.Settings.APIKey != "":
+		return "apiKey differs", nil
+	case gw.RequiresToken() && p.Headers["Authorization"] != openCodeAuthHeader(gw):
+		return "authorization header differs", nil
+	case !gw.RequiresToken() && p.Headers["Authorization"] != "":
 		return "authorization header differs", nil
 	}
 	ids := make([]string, 0, len(p.Models))
@@ -700,12 +713,15 @@ func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *Cached
 	if providers == nil {
 		providers = map[string]any{}
 	}
-	providers[gwName] = map[string]any{
+	entry := map[string]any{
 		"name":     gwName,
 		"base_url": NormalizeBaseURL(gw.BaseURL) + "/v1",
-		"env_key":  gw.EnvVarName(),
 		"wire_api": "chat",
 	}
+	if gw.RequiresToken() {
+		entry["env_key"] = gw.EnvVarName()
+	}
+	providers[gwName] = entry
 	doc["model_providers"] = providers
 	if isDefault {
 		cur, _ := doc["model_provider"].(string)
@@ -729,8 +745,12 @@ func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *Cac
 		return fmt.Sprintf("model provider %q missing", gwName), nil
 	case p["base_url"] != NormalizeBaseURL(gw.BaseURL)+"/v1":
 		return "base_url differs", nil
-	case p["env_key"] != gw.EnvVarName():
+	case gw.RequiresToken() && p["env_key"] != gw.EnvVarName():
 		return "env_key differs", nil
+	case !gw.RequiresToken():
+		if _, ok := p["env_key"]; ok {
+			return "env_key differs", nil
+		}
 	}
 	return "", nil
 }

@@ -142,6 +142,37 @@ func piModelIDs(t *testing.T, home string) []string {
 	return ids
 }
 
+func TestLauncher_GatewayNoAuthRefreshesWithoutToken(t *testing.T) {
+	gs := &gatewayServer{}
+	gs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gs.hits.Add(1)
+		if r.Header.Get("Authorization") != "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"local"}]}`))
+	}))
+	t.Cleanup(gs.Close)
+	home := t.TempDir()
+	cfg := fmt.Sprintf(`
+profiles:
+  work:
+    agent: pi
+    config_dir_name: work
+    gateways:
+      corp:
+        base_url: %s
+default_profile: work
+`, gs.URL)
+	_, stderr := launchGateway(t, home, cfg, "pi", AuthAPI)
+	if gs.hits.Load() == 0 {
+		t.Fatalf("expected a models fetch; stderr:\n%s", stderr)
+	}
+	if ids := piModelIDs(t, home); len(ids) != 1 || ids[0] != "local" {
+		t.Errorf("models = %v", ids)
+	}
+}
+
 func TestLauncher_GatewayWarmLaunchMakesNoRequest(t *testing.T) {
 	fakeGatewayStore(t)
 	gs := newGatewayServer(t, `{"data":[{"id":"fresh"}]}`)

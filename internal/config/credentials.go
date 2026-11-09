@@ -256,11 +256,15 @@ func (c *Config) validateCredentials() error {
 		if err := ValidateGateways(at, c.Contexts[name], c.NeverAllowEnv); err != nil {
 			return err
 		}
-		ctx, err := SynthesizeGatewayCredentials(c.Contexts[name])
+		orig := c.Contexts[name]
+		ctx, err := SynthesizeGatewayCredentials(orig)
 		if err != nil {
 			return err
 		}
 		for _, cred := range slices.Sorted(maps.Keys(ctx.Credentials)) {
+			if _, synthesized := orig.Gateways[cred]; synthesized {
+				continue
+			}
 			if err := validateBinding(cred, ctx.Credentials[cred]); err != nil {
 				return fmt.Errorf("%w: %s: credentials.%s: %s", ErrInvalidCredentials, at, cred, err)
 			}

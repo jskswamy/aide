@@ -103,11 +103,11 @@ var builtinCredentialURLs = map[string]string{
 // harnesses that natively read their default environment variable when
 // neither harnesses: nor for: is set on the binding.
 var builtinCredentialHarnesses = map[string][]string{
-	"anthropic":  {"claude", "pi", "opencode"},
+	"anthropic":  {"claude", "pi", "omp", "opencode"},
 	"codex":      {"codex"},
-	"gemini":     {"gemini", "pi", "opencode"},
-	"openai":     {"pi", "opencode", "codex"},
-	"openrouter": {"pi", "opencode", "codex"},
+	"gemini":     {"gemini", "pi", "omp", "opencode"},
+	"openai":     {"pi", "omp", "opencode", "codex"},
+	"openrouter": {"pi", "omp", "opencode", "codex"},
 }
 
 // IsBuiltinCredential reports whether name has built-in env names.

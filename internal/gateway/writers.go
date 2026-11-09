@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/homepath"
+	"github.com/jskswamy/aide/internal/yamlnode"
+	"gopkg.in/yaml.v3"
 )
 
 // harnessFile is how one harness stores a gateway's provider and
@@ -36,6 +39,7 @@ type harnessFile interface {
 var harnessFiles = map[string]harnessFile{
 	"claude":   claudeFile{},
 	"pi":       piFile{},
+	"omp":      ompFile{},
 	"opencode": openCodeFile{},
 	"codex":    codexFile{},
 }
@@ -210,9 +214,9 @@ func IsDefaultGateway(ctx config.Context, gwName, harnessName string) bool {
 
 // CanSyncHarness reports whether background sync or gateway add may
 // write gwName's catalogue to harnessName's config file. For harnesses
-// with named provider entries (pi, opencode, codex), it is always true.
-// For single-gateway-per-dir harnesses (claude), it is true when gwName
-// is Claude's default gateway, or when no custom gateway in
+// with named provider entries (pi, omp, opencode, codex), it is always
+// true. For single-gateway-per-dir harnesses (claude), it is true when
+// gwName is Claude's default gateway, or when no custom gateway in
 // ctx.Gateways is Claude's default and gwName is the first custom
 // gateway in sorted order that serves claude.
 func CanSyncHarness(ctx config.Context, gwName, harnessName string) bool {
@@ -479,6 +483,187 @@ func (piFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error)
 		return false, err
 	}
 	return updateJSONEntry(path, "providers", gwName, nil)
+}
+
+// ompFile is Oh My Pi's <omp-dir>/models.yml (or existing models.yaml);
+// a gateway is providers.<name>.
+type ompFile struct{}
+
+type ompProvider struct {
+	BaseURL    string     `yaml:"baseUrl"`
+	API        string     `yaml:"api"`
+	Auth       string     `yaml:"auth,omitempty"`
+	AuthHeader bool       `yaml:"authHeader,omitempty"`
+	APIKey     string     `yaml:"apiKey,omitempty"`
+	Models     []ompModel `yaml:"models"`
+}
+
+type ompModel struct {
+	ID            string `yaml:"id"`
+	Name          string `yaml:"name"`
+	ContextWindow int    `yaml:"contextWindow,omitempty"`
+	MaxTokens     int    `yaml:"maxTokens,omitempty"`
+}
+
+func (ompFile) path(_ config.Context, dir, _ string) string {
+	yml := filepath.Join(dir, "models.yml")
+	if _, err := os.Stat(yml); errors.Is(err, os.ErrNotExist) {
+		yamlAlt := filepath.Join(dir, "models.yaml")
+		if _, err := os.Stat(yamlAlt); err == nil {
+			return yamlAlt
+		}
+	}
+	return yml
+}
+
+func (ompFile) singleGatewayPerDir() bool { return false }
+
+func readOMPModelsDoc(path string) ([]byte, map[string]yaml.Node, error) {
+	doc := map[string]yaml.Node{}
+	data, err := os.ReadFile(path) // #nosec G304 -- caller supplies a config path
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, doc, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return data, doc, nil
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if len(root.Content) == 0 || root.Content[0].Tag == "!!null" {
+		return data, doc, nil
+	}
+	if err := root.Decode(&doc); err != nil {
+		return nil, nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return data, doc, nil
+}
+
+func ompProviderEntry(doc map[string]yaml.Node, name string, v any) (bool, error) {
+	entries := map[string]yaml.Node{}
+	if raw, ok := doc["providers"]; ok && raw.Tag != "!!null" {
+		if err := raw.Decode(&entries); err != nil {
+			return false, fmt.Errorf("providers: %w", err)
+		}
+	}
+	entry, ok := entries[name]
+	if !ok {
+		return false, nil
+	}
+	return true, entry.Decode(v)
+}
+
+func updateOMPProviderEntry(path, name string, v any) (bool, error) {
+	existing, doc, err := readOMPModelsDoc(path)
+	if err != nil {
+		return false, err
+	}
+	entries := map[string]yaml.Node{}
+	if raw, ok := doc["providers"]; ok && raw.Tag != "!!null" {
+		if err := raw.Decode(&entries); err != nil {
+			return false, fmt.Errorf("%s: providers: %w", path, err)
+		}
+	}
+	_, existed := entries[name]
+	if v == nil {
+		if !existed {
+			return false, nil
+		}
+		delete(entries, name)
+	} else {
+		var n yaml.Node
+		if err := n.Encode(v); err != nil {
+			return existed, err
+		}
+		entries[name] = n
+	}
+	if len(entries) == 0 {
+		delete(doc, "providers")
+	} else {
+		var pNode yaml.Node
+		if err := pNode.Encode(entries); err != nil {
+			return existed, err
+		}
+		doc["providers"] = pNode
+	}
+	out, err := yamlnode.Marshal(doc)
+	if err != nil {
+		return existed, fmt.Errorf("encoding %s: %w", path, err)
+	}
+	return existed, fsutil.AtomicWrite(path, yamlnode.Merge(existing, out))
+}
+
+func (ompFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
+	p := ompProvider{
+		BaseURL: NormalizeBaseURL(gw.BaseURL),
+		API:     "anthropic-messages",
+		Models:  []ompModel{},
+	}
+	if gw.RequiresToken() {
+		p.AuthHeader = true
+		p.APIKey = gw.EnvVarName()
+	} else {
+		p.Auth = "none"
+	}
+	for _, m := range cat.Models {
+		p.Models = append(p.Models, ompModel{
+			ID:            m.ID,
+			Name:          m.DisplayName,
+			ContextWindow: m.ContextWindow,
+			MaxTokens:     m.MaxOutputTokens,
+		})
+	}
+	_, err := updateOMPProviderEntry(path, gwName, p)
+	return err
+}
+
+func (ompFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) (string, error) {
+	_, doc, err := readOMPModelsDoc(path)
+	if err != nil {
+		return "", err
+	}
+	var p ompProvider
+	ok, err := ompProviderEntry(doc, gwName, &p)
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("%s: %w", path, err)
+	case !ok:
+		return fmt.Sprintf("provider %q missing", gwName), nil
+	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
+		return "baseUrl differs", nil
+	case p.API != "anthropic-messages":
+		return "api differs", nil
+	case gw.RequiresToken() && (p.APIKey != gw.EnvVarName() || !p.AuthHeader || (p.Auth != "" && p.Auth != "apiKey")):
+		return "apiKey differs", nil
+	case !gw.RequiresToken() && (p.APIKey != "" || p.AuthHeader || p.Auth != "none"):
+		return "apiKey differs", nil
+	}
+	ids := make([]string, len(p.Models))
+	for i, m := range p.Models {
+		ids[i] = m.ID
+	}
+	if !slices.Equal(ids, modelIDs(cat.Models)) {
+		return "model list differs", nil
+	}
+	return "", nil
+}
+
+// remove leaves an entry pointing at another URL: it belongs to
+// another profile's gateway or to the user.
+func (ompFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error) {
+	_, doc, err := readOMPModelsDoc(path)
+	if err != nil {
+		return false, err
+	}
+	var p ompProvider
+	if ok, err := ompProviderEntry(doc, gwName, &p); err != nil || !ok || p.BaseURL != NormalizeBaseURL(gw.BaseURL) {
+		return false, err
+	}
+	return updateOMPProviderEntry(path, gwName, nil)
 }
 
 // openCodeFile is OpenCode's <opencode-dir>/opencode.jsonc (or

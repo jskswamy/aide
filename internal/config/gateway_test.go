@@ -69,8 +69,8 @@ func TestGateway_LoadAndRoundTrip(t *testing.T) {
 
 func TestGateway_EffectiveHarnessesAndTTL(t *testing.T) {
 	gw := GatewayConfig{}
-	if got := gw.EffectiveHarnesses(); !slices.Equal(got, []string{"claude", "pi", "opencode", "codex"}) {
-		t.Errorf("EffectiveHarnesses() = %v, want all four", got)
+	if got := gw.EffectiveHarnesses(); !slices.Equal(got, []string{"claude", "pi", "omp", "opencode", "codex"}) {
+		t.Errorf("EffectiveHarnesses() = %v, want all five", got)
 	}
 	gw.Harnesses = []string{"pi"}
 	if got := gw.EffectiveHarnesses(); !slices.Equal(got, []string{"pi"}) {

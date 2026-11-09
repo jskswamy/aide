@@ -338,6 +338,8 @@ type selectableGateway struct {
 	defaultFor []string
 }
 
+var gatewayCredentialHarnesses = []string{"claude", "pi", "omp", "opencode", "codex", "gemini"}
+
 func selectableGateways(ctx config.Context) []selectableGateway {
 	var list []selectableGateway
 	for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
@@ -350,7 +352,7 @@ func selectableGateways(ctx config.Context) []selectableGateway {
 			u += " (built-in)"
 		}
 		var defs []string
-		for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+		for _, h := range gatewayCredentialHarnesses {
 			if gateway.IsDefaultGateway(ctx, name, h) {
 				defs = append(defs, h)
 			}
@@ -451,7 +453,7 @@ built-in provider credentials and prompts for a selection.`,
 			}
 
 			var activeOn []string
-			for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+			for _, h := range gatewayCredentialHarnesses {
 				if gateway.IsDefaultGateway(ctx, name, h) {
 					activeOn = append(activeOn, h)
 				}
@@ -1602,7 +1604,7 @@ func setProfileDefaultCredential(ctx config.Context, name string) []string {
 }
 
 func bindingsOverlapHarnesses(nameA string, a config.CredentialBinding, nameB string, b config.CredentialBinding) bool {
-	for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+	for _, h := range gatewayCredentialHarnesses {
 		if a.DefaultAllowsHarness(nameA, h) && b.DefaultAllowsHarness(nameB, h) {
 			return true
 		}
@@ -1716,7 +1718,7 @@ func credentialListEntry(profile string, ctx config.Context, name string, b conf
 		Key:        b.Key,
 		DefaultFor: []string{},
 	}
-	for _, h := range []string{"claude", "pi", "opencode", "codex", "gemini"} {
+	for _, h := range gatewayCredentialHarnesses {
 		if !b.DefaultAllowsHarness(name, h) {
 			continue
 		}

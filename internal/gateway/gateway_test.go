@@ -20,6 +20,7 @@ import (
 	"github.com/tailscale/hujson"
 
 	"github.com/jskswamy/aide/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 const testToken = "s3cr3t-gateway-token"
@@ -543,6 +544,82 @@ func TestMaterialize_Pi(t *testing.T) {
 	body := readFile(t, path)
 	if strings.Contains(body, "corp") || !strings.Contains(body, "ollama") || !strings.Contains(body, "dark") {
 		t.Errorf("after remove: %s", body)
+	}
+}
+
+func TestMaterialize_OMP(t *testing.T) {
+	f := newFixture(t)
+	path := filepath.Join(f.dir("omp"), "models.yml")
+	writeFile(t, path, "# keep user comment\nproviders:\n  ollama:\n    baseUrl: http://localhost:11434\n    api: openai-completions\n    auth: none\n")
+
+	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "omp", f.home); got.State != StateStale {
+		t.Errorf("InspectHarness() before sync = %+v, want stale", got)
+	}
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "omp", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	raw := readFile(t, path)
+	if !strings.Contains(raw, "# keep user comment") {
+		t.Errorf("lost user comment:\n%s", raw)
+	}
+	var doc struct {
+		Providers map[string]ompProvider `yaml:"providers"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Providers["ollama"].BaseURL != "http://localhost:11434" {
+		t.Errorf("sibling provider lost: %+v", doc.Providers)
+	}
+	corp := doc.Providers["corp"]
+	if corp.BaseURL != "https://gw.example.com" || corp.APIKey != "CORP_TOKEN" ||
+		!corp.AuthHeader || corp.API != "anthropic-messages" || corp.Auth != "" {
+		t.Errorf("providers.corp = %+v", corp)
+	}
+	if len(corp.Models) != 2 || corp.Models[0].ID != "claude-sonnet-4-5" || corp.Models[0].ContextWindow != 200000 {
+		t.Errorf("corp.Models = %+v", corp.Models)
+	}
+	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "omp", f.home); got.State != StateSynced {
+		t.Errorf("InspectHarness() = %+v, want synced", got)
+	}
+
+	// Removing with a different URL leaves the entry untouched.
+	otherGW := f.gw
+	otherGW.BaseURL = "https://other.example.com"
+	if removed, err := RemoveFromHarness(f.ctx, "corp", otherGW, "omp", f.home); err != nil || removed {
+		t.Fatalf("RemoveFromHarness(mismatched URL) = %v, %v", removed, err)
+	}
+	if removed, err := RemoveFromHarness(f.ctx, "corp", f.gw, "omp", f.home); err != nil || !removed {
+		t.Fatalf("RemoveFromHarness() = %v, %v", removed, err)
+	}
+	body := readFile(t, path)
+	if strings.Contains(body, "corp") || !strings.Contains(body, "ollama") {
+		t.Errorf("after remove:\n%s", body)
+	}
+}
+
+func TestMaterialize_OMPNoAuthAndExistingModelsYAML(t *testing.T) {
+	f := newFixture(t)
+	f.gw.Store, f.gw.Key = "", ""
+	altPath := filepath.Join(f.dir("omp"), "models.yaml")
+	writeFile(t, altPath, "")
+
+	st, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "omp", f.home, false)
+	if err != nil || st.State != StateSynced || st.FilePath != altPath || st.EnvVar != "" {
+		t.Fatalf("MaterializeHarness() = %+v, %v", st, err)
+	}
+	var doc struct {
+		Providers map[string]ompProvider `yaml:"providers"`
+	}
+	if err := yaml.Unmarshal([]byte(readFile(t, altPath)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	corp := doc.Providers["corp"]
+	if corp.Auth != "none" || corp.APIKey != "" || corp.AuthHeader {
+		t.Errorf("no-auth providers.corp = %+v, want auth=none without apiKey/authHeader", corp)
+	}
+	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "omp", f.home); got.State != StateSynced {
+		t.Errorf("InspectHarness() = %+v, want synced", got)
 	}
 }
 

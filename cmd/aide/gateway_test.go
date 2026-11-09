@@ -339,7 +339,7 @@ func TestGatewayCmd_AddHarnessesNonTTYPrintsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
-	want := "Harnesses: claude, pi, opencode, codex  (pass --harnesses to change)"
+	want := "Harnesses: claude, pi, omp, opencode, codex  (pass --harnesses to change)"
 	if !strings.Contains(out, want) {
 		t.Errorf("output missing %q:\n%s", want, out)
 	}
@@ -355,7 +355,7 @@ func TestGatewayCmd_AddHarnessesTTYEnterOmitsYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Harnesses [claude,pi,opencode,codex]:") {
+	if !strings.Contains(out, "Harnesses [claude,pi,omp,opencode,codex]:") {
 		t.Errorf("output missing TTY prompt:\n%s", out)
 	}
 	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
@@ -394,11 +394,11 @@ func TestGatewayCmd_AddHarnessesTTYGeminiSavesNothing(t *testing.T) {
 func TestGatewayCmd_AddHarnessesTTYTypedDefaultOmitsYAML(t *testing.T) {
 	e, srv := addHarnessesAnon(t)
 	stubStdinTTY(t)
-	out, err := runGateway(t, "claude,pi,opencode,codex\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
+	out, err := runGateway(t, "claude,pi,omp,opencode,codex\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
 	if err != nil {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Harnesses [claude,pi,opencode,codex]:") {
+	if !strings.Contains(out, "Harnesses [claude,pi,omp,opencode,codex]:") {
 		t.Errorf("output missing TTY prompt:\n%s", out)
 	}
 	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
@@ -455,10 +455,10 @@ func TestGatewayCmd_AddHarnessesTokenStdinPrintsNotPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Harnesses: claude, pi, opencode, codex  (pass --harnesses to change)") {
+	if !strings.Contains(out, "Harnesses: claude, pi, omp, opencode, codex  (pass --harnesses to change)") {
 		t.Errorf("output missing non-TTY harnesses line:\n%s", out)
 	}
-	if strings.Contains(out, "Harnesses [claude,pi,opencode,codex]:") {
+	if strings.Contains(out, "Harnesses [claude,pi,omp,opencode,codex]:") {
 		t.Errorf("prompted for harnesses with --token-stdin:\n%s", out)
 	}
 	if got := e.store(t, "work"); got["corp_token"] != gwCmdToken {
@@ -666,7 +666,7 @@ func TestGatewayCmd_List(t *testing.T) {
 		t.Fatalf("list json: %v\n%s", err, out)
 	}
 	if len(entries) != 1 || entries[0].Profile != "work" || entries[0].Gateway != "corp" ||
-		entries[0].ModelCount != 2 || len(entries[0].Models) != 2 || len(entries[0].Harnesses) != 4 || entries[0].Expired {
+		entries[0].ModelCount != 2 || len(entries[0].Models) != 2 || len(entries[0].Harnesses) != 5 || entries[0].Expired {
 		t.Errorf("entries = %+v", entries)
 	}
 }
@@ -839,13 +839,13 @@ default_profile: work
 		t.Fatal(err)
 	}
 
-	// List shows both built-in anthropic (default for claude, pi, opencode) and api (default for codex).
+	// List shows both built-in anthropic (default for claude, pi, omp, opencode) and api (default for codex).
 	out, err := runGateway(t, "", "list", "--profile", "work")
 	if err != nil {
 		t.Fatalf("list: %v\n%s", err, out)
 	}
 	for _, want := range []string{
-		"● GATEWAY: anthropic  [ACTIVE — default for: claude, pi, opencode]",
+		"● GATEWAY: anthropic  [ACTIVE — default for: claude, pi, omp, opencode]",
 		"https://api.anthropic.com (built-in)",
 		"● GATEWAY: api  [ACTIVE — default for: codex; switch all: aide gateway use api --profile work]",
 	} {
@@ -859,7 +859,7 @@ default_profile: work
 	if err != nil {
 		t.Fatalf("use api: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `Set default gateway for profile "work" to "api" (claude, pi, opencode, codex)`) {
+	if !strings.Contains(out, `Set default gateway for profile "work" to "api" (claude, pi, omp, opencode, codex)`) {
 		t.Errorf("unexpected use output:\n%s", out)
 	}
 	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
@@ -876,7 +876,7 @@ default_profile: work
 	if err != nil {
 		t.Fatalf("list default profile: %v\n%s", err, out)
 	}
-	apiIdx := strings.Index(out, "● GATEWAY: api  [ACTIVE — default for: claude, pi, opencode, codex]")
+	apiIdx := strings.Index(out, "● GATEWAY: api  [ACTIVE — default for: claude, pi, omp, opencode, codex]")
 	anthIdx := strings.Index(out, "○ GATEWAY: anthropic  [standby — switch: aide gateway use anthropic --profile work, or launch: aide --gateway anthropic]")
 	if apiIdx < 0 || anthIdx < 0 || apiIdx > anthIdx {
 		t.Errorf("expected active api before standby anthropic (apiIdx=%d, anthIdx=%d):\n%s", apiIdx, anthIdx, out)

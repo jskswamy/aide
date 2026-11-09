@@ -29,7 +29,7 @@ type GatewayConfig struct {
 // DefaultGatewayHarnesses are the harnesses a gateway serves when its
 // harnesses: list is omitted: the profile-capable harnesses that accept
 // a custom endpoint and model catalogue.
-var DefaultGatewayHarnesses = []string{"claude", "pi", "opencode", "codex"}
+var DefaultGatewayHarnesses = []string{"claude", "pi", "omp", "opencode", "codex"}
 
 // DefaultGatewayRefreshTTL is how long a cached model catalogue stays
 // fresh when refresh_ttl is omitted.
@@ -128,7 +128,7 @@ func (gw GatewayConfig) TokenEnv(h string) string {
 // use as a path segment.
 func IsGatewayName(name string) bool { return gatewayIdentRE.MatchString(name) }
 
-// EnvVarName is the variable pi, opencode and codex read the token
+// EnvVarName is the variable pi, omp, opencode and codex read the token
 // from: Key uppercased.
 func (gw GatewayConfig) EnvVarName() string {
 	return strings.ToUpper(gw.Key)

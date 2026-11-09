@@ -3,5 +3,5 @@
 ### ✨ New
 
 - Allow adding a loopback gateway without a bearer token when `/v1/models` returns 200 with no `Authorization` header. Persist an empty store/key only for localhost; remote hosts still need a token. Launch, sync, and harness writers omit bearer wiring when no key is stored.
-- Show the default harness list (`claude`, `pi`, `opencode`, `codex`) on `aide gateway add`: prompt on a TTY with all four selected, print the same list on non-TTY and `--token-stdin`, and omit `harnesses:` from `config.yaml` when the full set is kept. `--harnesses` still overrides.
-
+- Show the default harness list (`claude`, `pi`, `omp`, `opencode`, `codex`) on `aide gateway add`: prompt on a TTY with all five selected, print the same list on non-TTY and `--token-stdin`, and omit `harnesses:` from `config.yaml` when the full set is kept. `--harnesses` still overrides.
+- Add `omp` (Oh My Pi) harness support across launcher discovery, OS sandboxing (`~/.omp` default, isolated per-profile `PI_CODING_AGENT_DIR` and `PI_CONFIG_DIR`), `--yolo` (`--auto-approve`), built-in credentials and custom gateways (`models.yml`), MCP/plugin/hook provisioning, and `aide skillshare targets`.

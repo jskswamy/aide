@@ -49,7 +49,7 @@ func TestPlanTargets_ConfigDirsMatchLaunchDirs(t *testing.T) {
 
 	plan := PlanTargets(cfg, home)
 
-	want := "aide-oss-claude,aide-oss-codex,aide-oss-pi,aide-work-claude,aide-work-codex,aide-work-pi"
+	want := "aide-oss-claude,aide-oss-codex,aide-oss-omp,aide-oss-pi,aide-work-claude,aide-work-codex,aide-work-omp,aide-work-pi"
 	if got := targetNames(plan.Targets); got != want {
 		t.Fatalf("targets = %s, want %s", got, want)
 	}
@@ -76,12 +76,12 @@ func TestPlanTargets_DefaultDirsAreSkipped(t *testing.T) {
 
 	plan := PlanTargets(cfg, home)
 
-	if got := targetNames(plan.Targets); got != "aide-adopted-codex" {
-		t.Errorf("targets = %s, want aide-adopted-codex", got)
+	if got := targetNames(plan.Targets); got != "aide-adopted-codex,aide-adopted-omp" {
+		t.Errorf("targets = %s, want aide-adopted-codex,aide-adopted-omp", got)
 	}
 	reasons := skipText(plan.Skipped)
 	for _, want := range []string{
-		"personal: no config_dir_name, config_dir or config_dirs; claude, codex, pi run from their default dirs",
+		"personal: no config_dir_name, config_dir or config_dirs; claude, codex, omp, pi run from their default dirs",
 		"adopted/claude: ~/.claude is claude's default dir",
 		"adopted/pi: ~/.pi/agent is pi's default dir",
 	} {
@@ -118,13 +118,13 @@ func TestPlanTargets_UnsupportedHarnessReportedSeparately(t *testing.T) {
 
 	plan := PlanTargets(cfg, home)
 
-	if got := targetNames(plan.Targets); got != "aide-cp-claude,aide-cp-codex,aide-cp-pi" {
+	if got := targetNames(plan.Targets); got != "aide-cp-claude,aide-cp-codex,aide-cp-omp,aide-cp-pi" {
 		t.Errorf("targets = %s", got)
 	}
 	if len(plan.Skipped) != 0 {
 		t.Errorf("unsupported harness reported as a directory skip: %+v", plan.Skipped)
 	}
-	if got := skipText(plan.Unsupported); !strings.Contains(got, "cp/copilot: aide writes Skillshare account targets for claude, codex and pi only") {
+	if got := skipText(plan.Unsupported); !strings.Contains(got, "cp/copilot: aide writes Skillshare account targets for claude, codex, omp and pi only") {
 		t.Errorf("unsupported = %s", got)
 	}
 }
@@ -138,15 +138,18 @@ func skipText(skips []Skip) string {
 	return b.String()
 }
 
-func TestPlanTargets_OmpReportedUnsupported(t *testing.T) {
+func TestPlanTargets_OmpSupported(t *testing.T) {
 	cfg := &config.Config{ProfileSchema: true, Contexts: map[string]config.Context{
 		"o": {Agent: "omp", Profile: "o"},
 	}}
 
 	plan := PlanTargets(cfg, testHome(t))
 
-	if got := skipText(plan.Unsupported); !strings.Contains(got, "o/omp: aide writes Skillshare account targets for claude, codex and pi only") {
-		t.Errorf("unsupported = %q", got)
+	if got := targetNames(plan.Targets); got != "aide-o-claude,aide-o-codex,aide-o-omp,aide-o-pi" {
+		t.Errorf("targets = %s", got)
+	}
+	if len(plan.Unsupported) != 0 {
+		t.Errorf("unexpected unsupported = %+v", plan.Unsupported)
 	}
 }
 
@@ -160,7 +163,7 @@ func TestPlanTargets_EnvPinnedDirIsNotCalledDefault(t *testing.T) {
 	got := skipText(plan.Skipped)
 	for _, want := range []string{
 		"legacy/claude: its dir is set through env.CLAUDE_CONFIG_DIR",
-		"legacy: no config_dir_name, config_dir or config_dirs; codex, pi run from their default dirs",
+		"legacy: no config_dir_name, config_dir or config_dirs; codex, omp, pi run from their default dirs",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("skips lack %q:\n%s", want, got)

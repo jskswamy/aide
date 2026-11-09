@@ -23,7 +23,7 @@ import (
 // Agents are the harnesses aide writes account targets for: those
 // with aide profile support that Skillshare also has account targets
 // for (it supports claude, codex, pi and omp).
-var Agents = []string{"claude", "codex", "pi"}
+var Agents = []string{"claude", "codex", "omp", "pi"}
 
 // accountAgents is Skillshare's whole agent: enum.
 var accountAgents = []string{"claude", "codex", "pi", "omp"}
@@ -81,7 +81,7 @@ func PlanTargets(cfg *config.Config, home string) Plan {
 		ctx := cfg.Contexts[name]
 		if h := cfg.HarnessOf(ctx.Agent); h != "" && !slices.Contains(Agents, h) {
 			p.Unsupported = append(p.Unsupported, Skip{Profile: name, Agent: h,
-				Reason: "aide writes Skillshare account targets for claude, codex and pi only; this profile's claude, codex and pi dirs are still listed"})
+				Reason: "aide writes Skillshare account targets for claude, codex, omp and pi only; this profile's claude, codex, omp and pi dirs are still listed"})
 		}
 		if !ctx.SelectsConfigDir() {
 			p.Skipped = append(p.Skipped, noConfigDirSkips(name, ctx)...)

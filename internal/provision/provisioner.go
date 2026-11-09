@@ -509,4 +509,9 @@ var (
 	// extension files, dropped in ~/.pi/agent/extensions/ (or under
 	// PI_CODING_AGENT_DIR) where Pi auto-discovers them for all projects.
 	PiHookArtifact = HookArtifact{Prefix: "aide-", Ext: ".ts"}
+
+	// OMPHookArtifact defines Oh My Pi's hook artifact shape: aide-<hash>.ts
+	// extension files, dropped in ~/.omp/agent/extensions/ (or under
+	// PI_CODING_AGENT_DIR) where OMP auto-discovers them for all projects.
+	OMPHookArtifact = HookArtifact{Prefix: "aide-", Ext: ".ts"}
 )

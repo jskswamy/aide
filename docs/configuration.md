@@ -247,7 +247,8 @@ not `--clean-env` is set:
 - aide's own secret material: `SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`;
 - names you list in `scrub_env:`;
 - every agent config-dir redirect (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
-  `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `COPILOT_HOME`,
+  `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `PI_CONFIG_DIR`,
+  `OMP_PROFILE`, `PI_PROFILE`, `PI_CONFIG_FILES`, `COPILOT_HOME`,
   `OPENCODE_CONFIG`, ...). Unisolated profiles (such as the built-in
   `default` profile) always use the agent's native default directory
   (`~/.claude`, `~/.codex`, etc.); custom profiles isolate into
@@ -867,10 +868,10 @@ also fire when you switch to a new or resumed session.
 |---------|--------|--------|----------|----|
 | `shell` | `Bash` | `Shell` | `bash` | `bash` |
 
-Matchers not supported by an agent are ignored. Claude, OpenCode and Pi
-pass any other matcher through as a native tool name. OpenCode and Pi
-have no matcher field, so their generated hook scripts check the tool
-name themselves and return early for other tools.
+Matchers not supported by an agent are ignored. Claude, OpenCode, OMP
+and Pi pass any other matcher through as a native tool name. OpenCode,
+OMP and Pi have no matcher field, so their generated hook scripts check
+the tool name themselves and return early for other tools.
 
 ### Storage formats per agent
 
@@ -880,6 +881,7 @@ name themselves and return early for other tools.
 - **Copilot** - individual `aide-<hash>.json` files written to `~/.config/copilot/hooks/`. Only `pre_tool` is supported.
 - **Hermes** - Python plugin directories written to `~/.hermes/plugins/aide_<hash>/` (an `__init__.py` + `plugin.yaml` per hook). Only `pre_tool` is supported.
 - **OpenCode** - individual `aide-<hash>.js` plugin files written to `~/.config/opencode/plugin/`.
+- **OMP** - individual `aide-<hash>.ts` extension files written to `~/.omp/agent/extensions/` (or under `$PI_CODING_AGENT_DIR`).
 - **Pi** - individual `aide-<hash>.ts` extension files written to `~/.pi/agent/extensions/` (or under `$PI_CODING_AGENT_DIR`).
 - **Codex** - no hook support.
 

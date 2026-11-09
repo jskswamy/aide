@@ -54,6 +54,7 @@ aide auto-detects known agent config directories and adds them to the writable l
 | Cursor       | `CURSOR_CONFIG_DIR` | `~/.cursor` (also `$XDG_CONFIG_HOME/cursor` on Linux when set) |
 | Gemini       | `GEMINI_HOME`       | `~/.gemini`                           |
 | Goose        | `GOOSE_PATH_ROOT`   | `~/.config/goose`, `~/.local/share/goose`, `~/.local/state/goose` |
+| OMP          | `PI_CODING_AGENT_DIR` | `~/.omp` (`~/.omp/natives`, `~/.omp/logs`, `~/.omp/run` stay writable on profile launches; on Linux, aide creates the granted directories before Landlock or bubblewrap applies) |
 | Pi           | `PI_CODING_AGENT_DIR` | `~/.pi`                             |
 
 With the env override set (every profile launch sets it to the

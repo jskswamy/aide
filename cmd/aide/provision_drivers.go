@@ -11,6 +11,7 @@ import (
 	_ "github.com/jskswamy/aide/internal/provision/agents/cursor"
 	_ "github.com/jskswamy/aide/internal/provision/agents/gemini"
 	_ "github.com/jskswamy/aide/internal/provision/agents/hermes"
+	_ "github.com/jskswamy/aide/internal/provision/agents/omp"
 	_ "github.com/jskswamy/aide/internal/provision/agents/opencode"
 	_ "github.com/jskswamy/aide/internal/provision/agents/pi"
 )

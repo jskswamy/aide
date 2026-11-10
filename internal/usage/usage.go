@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -115,6 +116,73 @@ func ProfileEnv(b Backend, ctx config.Context, home string) []string {
 	out := make([]string, len(vars))
 	for i, v := range vars {
 		out[i] = v + "=" + values[v]
+	}
+	return out
+}
+
+// ResolveProfile looks up a named profile without CWD matching.
+func ResolveProfile(cfg *config.Config, name string) (config.Context, error) {
+	ctx, ok := cfg.Contexts[name]
+	if !ok {
+		return config.Context{}, fmt.Errorf("unknown profile %q", name)
+	}
+	return ctx, nil
+}
+
+// AllEnv merges existing profile directories into sorted backend assignments.
+// Single-root vars use the first distinct dir in profile-name order.
+func AllEnv(b Backend, cfg *config.Config, home string, warn io.Writer) []string {
+	profiles := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		profiles = append(profiles, name)
+	}
+	sort.Strings(profiles)
+
+	excluded := make(map[string]bool, len(b.AllExclude))
+	for _, v := range b.AllExclude {
+		excluded[v] = true
+	}
+	single := make(map[string]bool, len(b.SingleRoot))
+	for _, v := range b.SingleRoot {
+		single[v] = true
+	}
+	values := make(map[string][]string)
+	seen := make(map[string]map[string]bool)
+	skipped := make(map[string][]string)
+	for _, name := range profiles {
+		for _, assignment := range ProfileEnv(b, cfg.Contexts[name], home) {
+			v, dir, _ := strings.Cut(assignment, "=")
+			if excluded[v] {
+				continue
+			}
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+				continue
+			}
+			if seen[v] == nil {
+				seen[v] = make(map[string]bool)
+			}
+			if seen[v][dir] {
+				continue
+			}
+			seen[v][dir] = true
+			if single[v] && len(values[v]) > 0 {
+				skipped[v] = append(skipped[v], name)
+				continue
+			}
+			values[v] = append(values[v], dir)
+		}
+	}
+	vars := make([]string, 0, len(values))
+	for v := range values {
+		vars = append(vars, v)
+	}
+	sort.Strings(vars)
+	out := make([]string, 0, len(vars))
+	for _, v := range vars {
+		out = append(out, v+"="+strings.Join(values[v], ","))
+		if warn != nil && len(skipped[v]) > 0 {
+			fmt.Fprintf(warn, "warning: %s supports one directory; skipping profiles: %s\n", v, strings.Join(skipped[v], ", "))
+		}
 	}
 	return out
 }

@@ -103,6 +103,124 @@ func TestProfileEnv_SkipsHarnessesWithoutProfileSupport(t *testing.T) {
 	}
 }
 
+func TestResolveProfile(t *testing.T) {
+	cfg := &config.Config{Contexts: map[string]config.Context{
+		"default": {},
+		"work":    {Profile: "work"},
+	}}
+	for _, tc := range []struct {
+		name string
+		want config.Context
+	}{
+		{"default", config.Context{}},
+		{"work", config.Context{Profile: "work"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := usage.ResolveProfile(cfg, tc.name)
+			if err != nil || got.Profile != tc.want.Profile {
+				t.Fatalf("ResolveProfile(%q) = %+v, %v; want %+v", tc.name, got, err, tc.want)
+			}
+		})
+	}
+	if _, err := usage.ResolveProfile(cfg, "unknown"); err == nil || !strings.Contains(err.Error(), "unknown") {
+		t.Errorf("ResolveProfile(unknown) error = %v; want named unknown-profile error", err)
+	}
+}
+
+func TestAllEnv_MergesExistingDirsInProfileNameOrder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	cfg := &config.Config{Contexts: map[string]config.Context{
+		"zeta":    {Profile: "zeta"},
+		"default": {},
+		"alpha":   {Profile: "alpha"},
+	}}
+	for _, dir := range []string{".claude", ".claude-alpha", ".claude-zeta", ".codex-zeta", ".pi-alpha", ".copilot-alpha", ".copilot-zeta", ".local/share/opencode", ".opencode-alpha"} {
+		if err := os.MkdirAll(filepath.Join(home, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var warn bytes.Buffer
+	got := usage.AllEnv(usage.DefaultBackend(), cfg, home, &warn)
+	want := []string{
+		"CLAUDE_CONFIG_DIR=" + filepath.Join(home, ".claude-alpha") + "," + filepath.Join(home, ".claude") + "," + filepath.Join(home, ".claude-zeta"),
+		"CODEX_HOME=" + filepath.Join(home, ".codex-zeta"),
+		"COPILOT_HOME=" + filepath.Join(home, ".copilot-alpha"),
+		"OPENCODE_DATA_DIR=" + filepath.Join(home, ".opencode-alpha") + "," + filepath.Join(home, ".local/share/opencode"),
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("AllEnv = %q, want %q", got, want)
+	}
+	if !strings.Contains(warn.String(), "zeta") || strings.Contains(warn.String(), "alpha") {
+		t.Errorf("single-root warning = %q; want skipped profile zeta only", warn.String())
+	}
+}
+
+func TestAllEnv_DedupesAndOmitsUnavailableDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	shared := filepath.Join(home, "shared")
+	if err := os.MkdirAll(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A regular file is not an existing directory.
+	if err := os.WriteFile(filepath.Join(home, ".codex-work"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Contexts: map[string]config.Context{
+		"alpha": {Profile: "alpha", ConfigDirs: map[string]string{"claude": shared}},
+		"work":  {Profile: "work", ConfigDirs: map[string]string{"claude": shared}},
+	}}
+	var warn bytes.Buffer
+	got := usage.AllEnv(usage.DefaultBackend(), cfg, home, &warn)
+	want := []string{"CLAUDE_CONFIG_DIR=" + shared}
+	if !slices.Equal(got, want) || warn.Len() != 0 {
+		t.Errorf("AllEnv = %q, warning %q; want %q and no warning", got, warn.String(), want)
+	}
+	// Profile scope must still set paths that do not exist.
+	profile, err := usage.ResolveProfile(cfg, "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileEnv := assignments(t, usage.ProfileEnv(usage.DefaultBackend(), profile, home))
+	if profileEnv["CODEX_HOME"] != filepath.Join(home, ".codex-work") {
+		t.Errorf("profile CODEX_HOME = %q; want missing profile path", profileEnv["CODEX_HOME"])
+	}
+}
+
+func TestAllEnv_UsesBackendPolicyRatherThanCcusageNames(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	for _, dir := range []string{".claude-a", ".claude-b", ".codex-a", ".codex-b", ".copilot-a", ".copilot-b"} {
+		if err := os.MkdirAll(filepath.Join(home, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := &config.Config{Contexts: map[string]config.Context{"b": {Profile: "b"}, "a": {Profile: "a"}}}
+	b := usage.Backend{
+		Name: "other",
+		HarnessEnv: map[string]usage.EnvMapping{
+			"claude":  {Var: "OTHER_ONE"},
+			"codex":   {Var: "OTHER_SKIP"},
+			"copilot": {Var: "OTHER_LIST"},
+		},
+		SingleRoot: []string{"OTHER_ONE"},
+		AllExclude: []string{"OTHER_SKIP"},
+	}
+	var warn bytes.Buffer
+	got := usage.AllEnv(b, cfg, home, &warn)
+	want := []string{
+		"OTHER_LIST=" + filepath.Join(home, ".copilot-a") + "," + filepath.Join(home, ".copilot-b"),
+		"OTHER_ONE=" + filepath.Join(home, ".claude-a"),
+	}
+	if !slices.Equal(got, want) || !strings.Contains(warn.String(), "b") {
+		t.Errorf("AllEnv(other) = %q, warning %q; want %q and skipped b", got, warn.String(), want)
+	}
+}
+
 func TestScrubEnv(t *testing.T) {
 	in := []string{"PATH=/p", "CLAUDE_CONFIG_DIR=/leak", "PI_CODING_AGENT_DIR=/leak",
 		"OPENCODE_CONFIG_DIR=/leak", "GEMINI_HOME=/leak", "XDG_DATA_HOME=/leak",

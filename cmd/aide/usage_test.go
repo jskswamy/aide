@@ -65,6 +65,7 @@ func fakeCcusage(t *testing.T) (binDir, capture string) {
   env
 } > "$CAPTURE"
 printf 'child-err\n' >&2
+if [ -n "$FAKE_STDOUT" ]; then printf '%s\n' "$FAKE_STDOUT"; fi
 exit "${FAKE_EXIT:-0}"
 `
 	if err := os.WriteFile(filepath.Join(binDir, "ccusage"), []byte(script), 0o755); err != nil {
@@ -281,5 +282,127 @@ func TestUsageCmd_ExitCodePassthrough(t *testing.T) {
 	}
 	if got := outBuf.String(); got != "" {
 		t.Errorf("stdout = %q, want empty", got)
+	}
+}
+
+func TestUsageCmd_ScopeFlags(t *testing.T) {
+	_, home := setupUsageFixture(t)
+	_, capture := fakeCcusage(t)
+	t.Setenv("FAKE_STDOUT", `{"report":"ok"}`)
+	for _, dir := range []string{".claude", ".claude-forge", ".codex", ".codex-forge", ".copilot", ".copilot-forge"} {
+		if err := os.MkdirAll(filepath.Join(home, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "/leak")
+	cases := []struct {
+		name, arg, claude, codex string
+		args                     []string
+		warning                  bool
+	}{
+		{name: "explicit profile overrides cwd", args: []string{"--profile", "default", "blocks", "--json"}, arg: "blocks --json", claude: filepath.Join(home, ".claude")},
+		{name: "equals profile overrides cwd", args: []string{"--profile=default"}, arg: "daily", claude: filepath.Join(home, ".claude")},
+		{name: "all before report", args: []string{"--all", "daily", "--json"}, arg: "daily --json", claude: filepath.Join(home, ".claude") + "," + filepath.Join(home, ".claude-forge"), codex: filepath.Join(home, ".codex") + "," + filepath.Join(home, ".codex-forge"), warning: true},
+		{name: "all after separator belongs to ccusage", args: []string{"--", "--all"}, arg: "--all", claude: filepath.Join(home, ".claude-forge")},
+		{name: "separator after scope stripped once", args: []string{"--profile=default", "--", "--", "daily"}, arg: "-- daily", claude: filepath.Join(home, ".claude")},
+		{name: "unknown flag stops scope parsing", args: []string{"--json", "--profile", "default"}, arg: "--json --profile default", claude: filepath.Join(home, ".claude-forge")},
+		{name: "report stops scope parsing", args: []string{"daily", "--all"}, arg: "daily --all", claude: filepath.Join(home, ".claude-forge")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := buildTestRoot()
+			root.SetArgs(append([]string{"usage"}, tc.args...))
+			var out, stderr bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&stderr)
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute: %v (stderr=%q)", err, stderr.String())
+			}
+			data, err := os.ReadFile(capture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := captureEnv(t, string(data))
+			if got["argv"] != tc.arg || got["CLAUDE_CONFIG_DIR"] != tc.claude {
+				t.Errorf("argv=%q CLAUDE_CONFIG_DIR=%q, want %q %q", got["argv"], got["CLAUDE_CONFIG_DIR"], tc.arg, tc.claude)
+			}
+			if tc.codex != "" && got["CODEX_HOME"] != tc.codex {
+				t.Errorf("CODEX_HOME = %q, want %q", got["CODEX_HOME"], tc.codex)
+			}
+			if tc.warning {
+				if _, ok := got["PI_AGENT_DIR"]; ok {
+					t.Error("--all must exclude PI_AGENT_DIR")
+				}
+				if got["COPILOT_HOME"] != filepath.Join(home, ".copilot") {
+					t.Errorf("COPILOT_HOME = %q, want first profile's directory", got["COPILOT_HOME"])
+				}
+			}
+			if strings.Contains(string(data), "/leak") {
+				t.Errorf("outer env leaked: %s", data)
+			}
+			if has := strings.Contains(stderr.String(), "warning: COPILOT_HOME"); has != tc.warning {
+				t.Errorf("stderr = %q, want warning=%t", stderr.String(), tc.warning)
+			}
+			if got := out.String(); got != "{\"report\":\"ok\"}\n" {
+				t.Errorf("stdout = %q, want only child JSON", got)
+			}
+		})
+	}
+}
+
+func TestUsageCmd_InvalidScopeFlags(t *testing.T) {
+	setupUsageFixture(t)
+	_, capture := fakeCcusage(t)
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"unknown profile", []string{"--profile", "missing"}, "unknown profile"},
+		{"empty profile", []string{"--profile="}, "profile"},
+		{"missing profile", []string{"--profile"}, "profile"},
+		{"missing profile before separator", []string{"--profile", "--"}, "profile"},
+		{"mutually exclusive all then profile", []string{"--all", "--profile=default"}, "--all"},
+		{"mutually exclusive profile then all", []string{"--profile=default", "--all"}, "--all"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_ = os.Remove(capture)
+			root := buildTestRoot()
+			root.SilenceUsage = true // production's root setting
+			root.SetArgs(append([]string{"usage"}, tc.args...))
+			var out, stderr bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&stderr)
+			if err := root.Execute(); err == nil {
+				t.Fatal("Execute succeeded, want scope error")
+			}
+			if !strings.Contains(stderr.String(), "aide usage: ") || !strings.Contains(stderr.String(), tc.want) {
+				t.Errorf("stderr = %q, want scope error containing %q", stderr.String(), tc.want)
+			}
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", out.String())
+			}
+			if _, err := os.Stat(capture); !os.IsNotExist(err) {
+				t.Errorf("ccusage ran on invalid scope: stat error %v", err)
+			}
+		})
+	}
+}
+
+func TestUsageCmd_AllPreservesChildExitCode(t *testing.T) {
+	setupUsageFixture(t)
+	fakeCcusage(t)
+	t.Setenv("FAKE_EXIT", "7")
+	cmd := usageCmd()
+	var out, stderr bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	err := cmd.RunE(cmd, []string{"--all", "blocks", "--json"})
+	var exitErr *usage.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 7 {
+		t.Errorf("RunE error = %v, want child exit code 7", err)
+	}
+	if got := stderr.String(); got != "child-err\n" {
+		t.Errorf("stderr = %q, want only child stderr", got)
 	}
 }

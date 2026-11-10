@@ -43,6 +43,7 @@ func registerCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(explainCmd())
 	rootCmd.AddCommand(statuslineCmd())
 	rootCmd.AddCommand(sandboxApplyCmd())
+	rootCmd.AddCommand(usageCmd())
 }
 
 // resolveContextForMutation loads config via cmdEnv, resolves the context name,

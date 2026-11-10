@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -404,5 +405,241 @@ func TestUsageCmd_AllPreservesChildExitCode(t *testing.T) {
 	}
 	if got := stderr.String(); got != "child-err\n" {
 		t.Errorf("stderr = %q, want only child stderr", got)
+	}
+}
+
+func TestUsageCmd_SetupWithoutCcusage(t *testing.T) {
+	_, home := setupUsageFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	root := buildTestRoot()
+	root.SetArgs([]string{"usage", "--setup", "--force"})
+	var out, stderr bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&stderr)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v (stderr=%q)", err, stderr.String())
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "ccusage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"name": "pi-forge"`) || !strings.Contains(string(data), filepath.Join(home, ".pi-forge", "sessions")) {
+		t.Errorf("unexpected stores: %s", data)
+	}
+}
+
+func TestUsageCmd_ProfileConfigDoesNotLoadNamedPiStores(t *testing.T) {
+	_, home := setupUsageFixture(t)
+	_, capture := fakeCcusage(t)
+	path := filepath.Join(home, ".claude", "ccusage.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte(`{"claude":{"timezone":"UTC"},"pi":{"custom":true,"stores":[{"name":"pi-forge","path":"/other/sessions"}]},"future":[3]}`)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The fake reads ccusage's effective config while the child runs.
+	bin := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))[0]
+	script := `#!/bin/sh
+printf 'argv=%s\n' "$*" > "$CAPTURE"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --config) shift; cat "$1" > "$CAPTURE.config"; printf '%s' "$1" > "$CAPTURE.path"; break ;;
+    --config=*) cat "${1#--config=}" > "$CAPTURE.config"; printf '%s' "${1#--config=}" > "$CAPTURE.path"; break ;;
+  esac
+  shift
+done
+`
+	if err := os.WriteFile(filepath.Join(bin, "ccusage"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		args   []string
+		source string
+	}{
+		{"default", []string{"--profile", "default", "daily"}, path},
+		{"cwd forge", []string{"daily"}, filepath.Join(home, ".claude-forge", "ccusage.json")},
+		{"explicit config", []string{"--profile", "default", "daily", "--config", path}, path},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_ = os.Remove(capture + ".config")
+			if tc.name == "cwd forge" {
+				if err := os.MkdirAll(filepath.Dir(tc.source), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(tc.source, original, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := usageCmd()
+			if err := cmd.RunE(cmd, tc.args); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(capture + ".config")
+			if err != nil {
+				t.Fatalf("child did not receive config: %v", err)
+			}
+			var root map[string]json.RawMessage
+			if err := json.Unmarshal(data, &root); err != nil {
+				t.Fatal(err)
+			}
+			var pi map[string]json.RawMessage
+			if err := json.Unmarshal(root["pi"], &pi); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := pi["stores"]; ok {
+				t.Errorf("named stores leaked: %s", data)
+			}
+			if string(root["claude"]) != `{"timezone":"UTC"}` || string(pi["custom"]) != "true" || string(root["future"]) != "[3]" {
+				t.Errorf("unrelated settings changed: %s", data)
+			}
+			originalAfter, err := os.ReadFile(tc.source)
+			if err != nil || !bytes.Equal(originalAfter, original) {
+				t.Errorf("source config changed: %s (%v)", originalAfter, err)
+			}
+			tempPath, err := os.ReadFile(capture + ".path")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(string(tempPath)); !os.IsNotExist(err) {
+				t.Errorf("temporary config not removed: %v", err)
+			}
+		})
+	}
+	// Merged scope must still load the generated stores.
+	_ = os.Remove(capture + ".config")
+	cmd := usageCmd()
+	if err := cmd.RunE(cmd, []string{"--all", "daily"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(capture + ".config"); !os.IsNotExist(err) {
+		t.Errorf("--all unexpectedly received a temporary config: %v", err)
+	}
+}
+
+func TestUsageCmd_SetupRejectsInvalidArguments(t *testing.T) {
+	_, home := setupUsageFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--force"}, "--force"},
+		{[]string{"--setup", "daily"}, "--setup"},
+		{[]string{"--setup", "--", "daily"}, "--setup"},
+		{[]string{"--setup", "--all"}, "--setup"},
+		{[]string{"--setup", "--profile=forge"}, "--setup"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			root := buildTestRoot()
+			root.SilenceUsage = true
+			root.SetArgs(append([]string{"usage"}, tc.args...))
+			var out, stderr bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&stderr)
+			if err := root.Execute(); err == nil || !strings.Contains(stderr.String(), tc.want) {
+				t.Errorf("Execute error = %v, stderr=%q; want %q", err, stderr.String(), tc.want)
+			}
+			if _, err := os.Stat(filepath.Join(home, ".claude", "ccusage.json")); !os.IsNotExist(err) {
+				t.Errorf("invalid setup wrote config: %v", err)
+			}
+		})
+	}
+}
+
+func TestUsageCmd_SetupConfirmation(t *testing.T) {
+	_, home := setupUsageFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	oldTTY := isStdinTTY
+	t.Cleanup(func() { isStdinTTY = oldTTY })
+	path := filepath.Join(home, ".claude", "ccusage.json")
+	for _, tc := range []struct {
+		name, input          string
+		interactive, written bool
+	}{
+		{"nonTTY refuses", "y\n", false, false},
+		{"decline leaves file alone", "n\n", true, false},
+		{"accept writes", "y\n", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isStdinTTY = func() bool { return tc.interactive }
+			root := buildTestRoot()
+			root.SilenceUsage = true
+			root.SetArgs([]string{"usage", "--setup"})
+			root.SetIn(strings.NewReader(tc.input))
+			var out, stderr bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&stderr)
+			err := root.Execute()
+			if tc.interactive && err != nil || !tc.interactive && (err == nil || !strings.Contains(stderr.String(), "--force")) {
+				t.Errorf("Execute = %v (stderr=%q)", err, stderr.String())
+			}
+			_, statErr := os.Stat(path)
+			if tc.written && statErr != nil || !tc.written && !os.IsNotExist(statErr) {
+				t.Errorf("config stat = %v, want written=%t", statErr, tc.written)
+			}
+		})
+	}
+}
+
+func TestUsageCmd_HelpAndPassthrough(t *testing.T) {
+	setupUsageFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	root := buildTestRoot()
+	root.SetArgs([]string{"usage", "--help"})
+	var out, stderr bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&stderr)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("help: %v (stderr=%q)", err, stderr.String())
+	}
+	for _, fragment := range []string{"--all", "--profile", "--setup", "--force", "--", "ccusage"} {
+		if !strings.Contains(out.String(), fragment) {
+			t.Errorf("help missing %q: %s", fragment, out.String())
+		}
+	}
+	_, capture := fakeCcusage(t)
+	root = buildTestRoot()
+	root.SetArgs([]string{"usage", "--", "--help"})
+	root.SetOut(&out)
+	root.SetErr(&stderr)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("ccusage help: %v (stderr=%q)", err, stderr.String())
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil || !strings.Contains(string(data), "argv=--help\n") {
+		t.Errorf("ccusage argv: %q, error %v", data, err)
+	}
+}
+
+func TestUsageCmd_ProfileCompletion(t *testing.T) {
+	setupUsageFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	for _, args := range [][]string{{"__complete", "usage", "--profile", "f"}, {"__complete", "usage", "--profile=f"}} {
+		root := buildTestRoot()
+		root.SetArgs(args)
+		var out, stderr bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&stderr)
+		if err := root.Execute(); err != nil {
+			t.Fatalf("completion %v: %v (stderr=%q)", args, err, stderr.String())
+		}
+		if !strings.Contains(out.String(), "forge\n") {
+			t.Errorf("completion %v = %q; want forge", args, out.String())
+		}
+	}
+	for _, args := range [][]string{{"__complete", "usage", "--", "--profile", "f"}, {"__complete", "usage", "daily", "--profile", "f"}} {
+		root := buildTestRoot()
+		root.SetArgs(args)
+		var out bytes.Buffer
+		root.SetOut(&out)
+		if err := root.Execute(); err != nil {
+			t.Fatalf("completion %v: %v", args, err)
+		}
+		if strings.Contains(out.String(), "forge") {
+			t.Errorf("completion after report/separator %v unexpectedly suggested profile: %q", args, out.String())
+		}
 	}
 }

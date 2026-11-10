@@ -15,12 +15,21 @@ import (
 // usageCmd returns the `aide usage` command: a thin passthrough to
 // the ccusage binary, scoped to the profile aide would launch under
 // for the current directory. It is always registered, regardless of
-// PATH — the binary lookup happens only on the exec path, so a later
-// setup story works without ccusage installed.
+// PATH — the binary lookup happens only on the report path, so setup
+// and help work without ccusage installed.
 func usageCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:                "usage [ccusage-args...]",
-		Short:              "Run ccusage scoped to this profile's data",
+		Use:   "usage [aide-flags] [--] [ccusage-args...]",
+		Short: "Run ccusage scoped to this profile's data",
+		Long: "Run ccusage with data directories selected by aide's current profile.\n" +
+			"Use --profile for a named profile or --all for existing data across profiles.\n" +
+			"Run --setup to label isolated pi stores before using --all for pi reports.\n" +
+			"Flags after -- belong to ccusage, including --help and --all.",
+		Example: "  aide usage daily --json\n" +
+			"  aide usage --profile work blocks --active\n" +
+			"  aide usage --all daily\n" +
+			"  aide usage --setup --force\n" +
+			"  aide usage -- --help",
 		DisableFlagParsing: true, // ccusage flags pass through
 		SilenceErrors:      true, // RunE owns all error output
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -49,12 +58,41 @@ func usageCmd() *cobra.Command {
 	}
 	cmd.Flags().Bool("all", false, "Report across all existing profile data")
 	cmd.Flags().String("profile", "", "Report for a named profile")
+	cmd.Flags().Bool("setup", false, "Write or refresh ccusage pi stores and exit")
+	cmd.Flags().Bool("force", false, "With --setup, write without interactive confirmation")
+	cmd.Flags().BoolP("help", "h", false, "Help for usage (use -- --help for ccusage help)")
+	// Cobra skips flag-value completion when flag parsing is disabled.
+	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		completingProfile := len(args) > 0 && args[len(args)-1] == "--profile"
+		prefix := args
+		if completingProfile {
+			prefix = args[:len(args)-1]
+		}
+		_, reportArgs, err := parseUsageArgs(prefix)
+		if err != nil || len(reportArgs) != 0 {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		if completingProfile {
+			return profileNamesForCompletion(), cobra.ShellCompDirectiveNoFileComp
+		}
+		if strings.HasPrefix(toComplete, "--profile=") {
+			names := profileNamesForCompletion()
+			for i := range names {
+				names[i] = "--profile=" + names[i]
+			}
+			return names, cobra.ShellCompDirectiveNoFileComp
+		}
+		return nil, cobra.ShellCompDirectiveDefault
+	}
 	return cmd
 }
 
 type usageOptions struct {
 	all     bool
 	profile string
+	setup   bool
+	force   bool
+	help    bool
 }
 
 // parseUsageArgs consumes aide scope flags only before the first ccusage
@@ -66,6 +104,12 @@ func parseUsageArgs(args []string) (usageOptions, []string, error) {
 		switch {
 		case arg == "--all":
 			opts.all = true
+		case arg == "--setup":
+			opts.setup = true
+		case arg == "--force":
+			opts.force = true
+		case arg == "--help" || arg == "-h":
+			opts.help = true
 		case arg == "--profile" || strings.HasPrefix(arg, "--profile="):
 			if arg == "--profile" {
 				i++
@@ -95,6 +139,15 @@ func runUsage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if opts.help {
+		return cmd.Help()
+	}
+	if opts.force && !opts.setup {
+		return fmt.Errorf("--force requires --setup")
+	}
+	if opts.setup && (opts.all || opts.profile != "" || len(reportArgs) != 0) {
+		return fmt.Errorf("--setup does not accept scope flags or report arguments")
+	}
 	env, err := cmdEnv(cmd)
 	if err != nil {
 		return err
@@ -104,6 +157,12 @@ func runUsage(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	b := usage.DefaultBackend()
+	if opts.setup {
+		if b.Setup == nil {
+			return fmt.Errorf("backend %s has no setup step", b.Name)
+		}
+		return b.Setup(env.Config(), home, cmd.InOrStdin(), cmd.OutOrStdout(), opts.force, isStdinTTY())
+	}
 	var scopeEnv []string
 	switch {
 	case opts.all:
@@ -122,7 +181,18 @@ func runUsage(cmd *cobra.Command, args []string) error {
 		scopeEnv = usage.ProfileEnv(b, ctx, home)
 	}
 	childEnv := append(usage.ScrubEnv(os.Environ(), b), scopeEnv...)
-	return usage.Run(b, passthroughArgs(reportArgs), childEnv,
+	childArgs := passthroughArgs(reportArgs)
+	if !opts.all && b.ProfileConfig != nil {
+		var cleanup func()
+		childArgs, cleanup, err = b.ProfileConfig(childArgs, scopeEnv)
+		if err != nil {
+			return err
+		}
+		if cleanup != nil {
+			defer cleanup()
+		}
+	}
+	return usage.Run(b, childArgs, childEnv,
 		cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 

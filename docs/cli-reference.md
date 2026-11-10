@@ -105,6 +105,71 @@ and `--auth`, and report where each choice came from
 
 ---
 
+## aide usage
+
+```
+aide usage [--all | --profile NAME] [--] [ccusage-args...]
+aide usage --setup [--force]
+aide usage --help
+```
+
+Runs the external `ccusage` binary against aide profile data. With no report
+arguments, runs `ccusage daily`. Install ccusage first for reports:
+`brew install ccusage` or `nixpkgs: pkgs.ccusage`. Help and setup work without
+the binary; a missing binary on the report path prints an install hint.
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Merge existing profile data directories; mutually exclusive with `--profile` |
+| `--profile NAME` | Report a named profile regardless of the current directory (shell completion lists configured names) |
+| `--setup` | Write or refresh named pi stores in `~/.claude/ccusage.json`, then exit |
+| `--force` | With `--setup`, write without a TTY confirmation prompt |
+| `--help`, `-h` | Show aide usage help; `-- --help` shows ccusage help instead |
+
+```bash
+aide usage                           # CWD-matched profile's daily report
+aide usage blocks --active           # ccusage report flags pass through
+aide usage --profile work daily      # work profile, from any directory
+aide usage --all daily --json        # merged data, JSON report on stdout
+aide usage --setup                   # preview config diff, confirm on a TTY
+aide usage --setup --force           # non-interactive setup
+aide usage -- --help                 # ccusage help, not aide help
+aide usage -- --all                  # ccusage's --all, not aide's scope flag
+```
+
+Aide consumes its own flags only *before* the first report argument or `--`.
+After that, arguments belong to ccusage: `aide usage daily --json` passes
+`--json` through; use `--` to disambiguate colliding flags such as `--all`
+and `--help`. `--setup` accepts no scope or report arguments; `--force` alone
+is an error.
+
+In profile scope, aide resolves the CWD match (or the explicit name), removes
+inherited ccusage data-directory variables, and sets each source's computed
+profile directory even if it does not exist. Missing data may give an empty
+unified report or a visible source error, **not another profile's data**.
+`--all` merges only existing directories. It combines Claude, Codex, OpenCode,
+and Gemini roots where supported, but ccusage's `COPILOT_HOME` accepts a
+single directory: aide takes the first in profile-name order and warns on
+stderr naming skipped profiles. Warnings do not contaminate JSON stdout.
+
+For pi, `--all` deliberately leaves `PI_AGENT_DIR` unset. Run `--setup` first
+to add isolated profiles' named pi stores (and an existing omp sessions store)
+to `~/.claude/ccusage.json`; otherwise the merged view may omit isolated pi
+sessions. The default pi store is never added as a named store: ccusage rejects
+paths overlapping its default store. A profile-scoped report instead sets its
+own `PI_AGENT_DIR` and does not use the merged store labels. Setup validates
+paths and existing JSON before writing, preserves unrelated settings, shows a
+diff and requires TTY confirmation unless `--force` is given. Check the diff
+before accepting; `--force` bypasses that protection.
+
+Version 1 supports ccusage only. To add another reporting tool, add one
+`Backend` entry with its environment mappings and optional `Setup` hook in
+`internal/usage/usage.go`, with tests; there is no plugin or backend-selection
+flag yet. ccusage estimates usage from local logs; server-side quota and
+authoritative 5-hour/weekly percentages remain in the agent's own `/usage`.
+
+---
+
 ## aide project
 
 User-local preferences for the current repository, keyed by profile

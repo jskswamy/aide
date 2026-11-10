@@ -39,20 +39,24 @@ type EnvMapping struct {
 }
 
 // SetupFunc writes the backend's own config (e.g. ccusage's pi named
-// stores); out receives progress output and force permits overwrites.
-type SetupFunc func(cfg *config.Config, home string, out io.Writer, force bool) error
+// stores); in/out carry confirmation and progress; force bypasses the prompt.
+type SetupFunc func(cfg *config.Config, home string, in io.Reader, out io.Writer, force, interactive bool) error
+
+// ProfileConfigFunc isolates backend config for one profile and returns a cleanup function.
+type ProfileConfigFunc func(args, scopeEnv []string) ([]string, func(), error)
 
 // Backend is one usage-report tool's seam entry: its identity, its
 // harness env mapping, and the rules --all and scrubbing follow.
 type Backend struct {
-	Name        string
-	Binary      string
-	InstallHint string
-	HarnessEnv  map[string]EnvMapping // aide harness name -> mapping
-	SingleRoot  []string              // env vars accepting one dir only
-	AllExclude  []string              // env vars --all must never set
-	ScrubExtra  []string              // extra vars to scrub for this backend
-	Setup       SetupFunc             // nil until the setup story lands
+	Name          string
+	Binary        string
+	InstallHint   string
+	HarnessEnv    map[string]EnvMapping // aide harness name -> mapping
+	SingleRoot    []string              // env vars accepting one dir only
+	AllExclude    []string              // env vars --all must never set
+	ScrubExtra    []string              // extra vars to scrub for this backend
+	Setup         SetupFunc
+	ProfileConfig ProfileConfigFunc
 }
 
 // ccusageBackend is the v1 (and only) Backend entry. The pi suffix
@@ -78,7 +82,8 @@ var ccusageBackend = Backend{
 		"OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG",
 		"GEMINI_HOME", "XDG_DATA_HOME",
 	},
-	Setup: nil,
+	Setup:         SetupPiStores,
+	ProfileConfig: IsolatePiStores,
 }
 
 // Backends returns every known backend. v1: exactly one entry.

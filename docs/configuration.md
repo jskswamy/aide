@@ -523,7 +523,7 @@ This prompts for the token (input hidden), then:
        refresh_ttl: 24h
        store: work
        key: corp_token
-       # harnesses: [claude, pi]   # optional; default is all four
+       # harnesses: [claude, pi]   # optional; default is all five
    ```
 
 3. Fetches `<base_url>/v1/models`, caches the result in
@@ -544,7 +544,7 @@ lands in shell history.
 | `--profile` | profile matched from the current directory | Target profile |
 | `--token-stdin` / `--token-env <VAR>` | hidden prompt | Where the token comes from |
 | `--ttl` | `24h` | How long cached models stay fresh |
-| `--harnesses` | `claude,pi,opencode,codex` | Agents to configure |
+| `--harnesses` | `claude,pi,omp,opencode,codex` | Agents to configure |
 | `--store` | the profile's `secret:` store, else the profile name | Secret store for the token |
 | `--key` | `<name>_token` | Key inside the store; its uppercase form is the variable name |
 | `--age-key` | the discovered age identity | Recipient for a store that does not exist yet (needed with a YubiKey identity) |
@@ -563,6 +563,7 @@ derives from the `gateways:` entry in memory; nothing is added under
 | :--- | :--- | :--- |
 | `claude` | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_API_KEY=""` | `<dir>/cache/gateway-models.json` |
 | `pi` | `CORP_TOKEN` (the key uppercased) | `<dir>/models.json`, `providers.corp` (`"apiKey": "$CORP_TOKEN"`) |
+| `omp` | `CORP_TOKEN` | `<dir>/models.yml`, `providers.corp` (`apiKey: CORP_TOKEN`) |
 | `opencode` | `CORP_TOKEN` | `<dir>/opencode.jsonc`, `providers.corp` (`"{env:CORP_TOKEN}"`) |
 | `codex` | `CORP_TOKEN` | `<dir>/config.toml`, `[model_providers.corp]` (`env_key = "CORP_TOKEN"`) |
 
@@ -585,12 +586,13 @@ with at most one active LLM provider or gateway default per agent:
 
 - Built-in provider credentials without `harnesses:` or `for:` default
   to the harnesses that natively read their variable (`anthropic` →
-  `claude`, `pi`, `opencode`; `openai` and `openrouter` → `pi`,
-  `opencode`, `codex`; `codex` → `codex`; `gemini` → `gemini`, `pi`,
-  `opencode`).
+  `claude`, `pi`, `omp`, `opencode`; `openai` and `openrouter` → `pi`,
+  `omp`, `opencode`, `codex`; `codex` → `codex`; `gemini` → `gemini`,
+  `pi`, `omp`, `opencode`).
 - If a profile has `default_credentials: [anthropic]` and a custom
-  gateway `api`, `anthropic` stays the default for `claude`, `pi`, and
-  `opencode`, while `api` automatically becomes the default for `codex`.
+  gateway `api`, `anthropic` stays the default for `claude`, `pi`,
+  `omp`, and `opencode`, while `api` automatically becomes the default
+  for `codex`.
 - Switch a profile's default gateway or built-in provider credential at
   any time with `aide gateway use [<name>] [--profile <name>]` (or pass
   `aide --gateway <name>` for a single launch).
@@ -846,27 +848,27 @@ agent's config file during `aide sync`; the agent runs them, not aide.
 
 ### Supported events
 
-| Event | Claude | Gemini | Cursor | Copilot | Hermes | OpenCode | Pi |
-|-------|--------|--------|--------|---------|--------|----------|----|
-| `pre_tool` | `PreToolUse` | `BeforeTool` (script) | `preToolUse` | `PreToolUse` (file) | `pre_tool_call` (plugin) | `tool.execute.before` | `tool_call` |
-| `post_tool` | `PostToolUse` | - | - | - | - | `tool.execute.after` | `tool_result` |
-| `session_start` | `SessionStart` | - | - | - | - | `session.created` (event) | `session_start` |
-| `session_end` | `SessionEnd` | - | - | - | - | `dispose` | `session_shutdown` |
-| `notification` | `Notification` | - | - | - | - | - | - |
-| `stop` | `Stop` | - | - | - | - | - | - |
+| Event | Claude | Gemini | Cursor | Copilot | Hermes | OpenCode | OMP | Pi |
+|-------|--------|--------|--------|---------|--------|----------|-----|----|
+| `pre_tool` | `PreToolUse` | `BeforeTool` (script) | `preToolUse` | `PreToolUse` (file) | `pre_tool_call` (plugin) | `tool.execute.before` | `tool_call` | `tool_call` |
+| `post_tool` | `PostToolUse` | - | - | - | - | `tool.execute.after` | `tool_result` | `tool_result` |
+| `session_start` | `SessionStart` | - | - | - | - | `session.created` (event) | `session_start` | `session_start` |
+| `session_end` | `SessionEnd` | - | - | - | - | `dispose` | `session_shutdown` | `session_shutdown` |
+| `notification` | `Notification` | - | - | - | - | - | - | - |
+| `stop` | `Stop` | - | - | - | - | - | - | - |
 
 Events not supported by an agent are silently skipped during sync.
 
 OpenCode's `session_start` hook skips subagent sessions, and its
 `session_end` hook runs when OpenCode exits normally, not when it is
-killed. Pi's session hooks skip extension reloads. As with Claude, both
+killed. OMP's and Pi's session hooks skip extension reloads. As with Claude, all three
 also fire when you switch to a new or resumed session.
 
 ### Supported matchers
 
-| Matcher | Claude | Cursor | OpenCode | Pi |
-|---------|--------|--------|----------|----|
-| `shell` | `Bash` | `Shell` | `bash` | `bash` |
+| Matcher | Claude | Cursor | OpenCode | OMP | Pi |
+|---------|--------|--------|----------|-----|----|
+| `shell` | `Bash` | `Shell` | `bash` | `bash` | `bash` |
 
 Matchers not supported by an agent are ignored. Claude, OpenCode, OMP
 and Pi pass any other matcher through as a native tool name. OpenCode,

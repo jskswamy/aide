@@ -2,7 +2,7 @@ module github.com/jskswamy/aide
 
 go 1.26.0
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	filippo.io/age v1.3.1

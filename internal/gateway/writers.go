@@ -245,14 +245,6 @@ func dirExists(dir string) bool {
 	return err == nil && info.IsDir()
 }
 
-func modelIDs(models []Model) []string {
-	ids := make([]string, len(models))
-	for i, m := range models {
-		ids[i] = m.ID
-	}
-	return ids
-}
-
 // jsonEntry reads doc[section][name] into v, reporting whether the
 // entry exists.
 func jsonEntry(doc map[string]json.RawMessage, section, name string, v any) (bool, error) {
@@ -340,10 +332,19 @@ func (claudeFile) path(_ config.Context, dir, _ string) string {
 
 func (claudeFile) singleGatewayPerDir() bool { return true }
 
-func (claudeFile) write(path, _ string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
-	doc := claudeDoc{BaseURL: NormalizeBaseURL(gw.BaseURL), FetchedAt: cat.FetchedAt.UnixMilli(), Models: []claudeModel{}}
-	for _, m := range cat.Models {
-		doc.Models = append(doc.Models, claudeModel{ID: m.ID, DisplayName: m.DisplayName, Description: formatClaudeDesc(m)})
+func claudeModels(gwName string, models []Model) []claudeModel {
+	out := make([]claudeModel, len(models))
+	for i, m := range models {
+		out[i] = claudeModel{ID: m.ID, DisplayName: m.DisplayName, Description: formatClaudeDesc(gwName, m)}
+	}
+	return out
+}
+
+func (claudeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
+	doc := claudeDoc{
+		BaseURL:   NormalizeBaseURL(gw.BaseURL),
+		FetchedAt: cat.FetchedAt.UnixMilli(),
+		Models:    claudeModels(gwName, cat.Models),
 	}
 	return fsutil.WriteJSON(path, doc)
 }
@@ -360,7 +361,7 @@ func (claudeFile) read(path string) (claudeDoc, error) {
 	return doc, nil
 }
 
-func (c claudeFile) mismatch(path, _ string, gw config.GatewayConfig, cat *CachedCatalogue) (string, error) {
+func (c claudeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) (string, error) {
 	doc, err := c.read(path)
 	if err != nil {
 		return "", err
@@ -368,11 +369,7 @@ func (c claudeFile) mismatch(path, _ string, gw config.GatewayConfig, cat *Cache
 	if NormalizeBaseURL(doc.BaseURL) != NormalizeBaseURL(gw.BaseURL) {
 		return "points at another gateway", nil
 	}
-	ids := make([]string, len(doc.Models))
-	for i, m := range doc.Models {
-		ids[i] = m.ID
-	}
-	if !slices.Equal(ids, modelIDs(cat.Models)) {
+	if !slices.Equal(doc.Models, claudeModels(gwName, cat.Models)) {
 		return "model list differs", nil
 	}
 	return "", nil
@@ -389,15 +386,26 @@ func (c claudeFile) remove(path, _ string, gw config.GatewayConfig) (bool, error
 	return true, os.Remove(path)
 }
 
+func formatContextTokens(n int) string {
+	if n >= 1_000_000 {
+		s := fmt.Sprintf("%.1f", float64(n)/1_000_000)
+		return strings.TrimSuffix(s, ".0") + "M"
+	}
+	if n >= 1_000 {
+		return fmt.Sprintf("%dK", n/1_000)
+	}
+	return fmt.Sprintf("%d", n)
+}
+
 // formatClaudeDesc is the /model picker's description line.
-func formatClaudeDesc(m Model) string {
+func formatClaudeDesc(gwName string, m Model) string {
 	switch {
-	case m.Provider != "" && m.ContextWindow > 0:
-		return fmt.Sprintf("%s · %dK context", m.Provider, m.ContextWindow/1000)
-	case m.Provider != "":
-		return m.Provider
+	case gwName != "" && m.ContextWindow > 0:
+		return fmt.Sprintf("%s · %s context", gwName, formatContextTokens(m.ContextWindow))
+	case gwName != "":
+		return gwName
 	case m.ContextWindow > 0:
-		return fmt.Sprintf("%dK context", m.ContextWindow/1000)
+		return fmt.Sprintf("%s context", formatContextTokens(m.ContextWindow))
 	default:
 		return "Custom gateway model"
 	}
@@ -425,18 +433,23 @@ func (piFile) path(_ config.Context, dir, _ string) string { return filepath.Joi
 
 func (piFile) singleGatewayPerDir() bool { return false }
 
+func piModels(models []Model) []piModel {
+	out := make([]piModel, len(models))
+	for i, m := range models {
+		out[i] = piModel{ID: m.ID, Name: m.DisplayName, ContextWindow: m.ContextWindow, MaxTokens: m.MaxOutputTokens}
+	}
+	return out
+}
+
 func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
 	p := piProvider{
 		BaseURL:    NormalizeBaseURL(gw.BaseURL),
 		AuthHeader: gw.RequiresToken(),
 		API:        "anthropic-messages",
-		Models:     []piModel{},
+		Models:     piModels(cat.Models),
 	}
 	if gw.RequiresToken() {
 		p.APIKey = "$" + gw.EnvVarName()
-	}
-	for _, m := range cat.Models {
-		p.Models = append(p.Models, piModel{ID: m.ID, Name: m.DisplayName, ContextWindow: m.ContextWindow, MaxTokens: m.MaxOutputTokens})
 	}
 	_, err := updateJSONEntry(path, "providers", gwName, p)
 	return err
@@ -461,11 +474,7 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 	case !gw.RequiresToken() && (p.APIKey != "" || p.AuthHeader):
 		return "apiKey differs", nil
 	}
-	ids := make([]string, len(p.Models))
-	for i, m := range p.Models {
-		ids[i] = m.ID
-	}
-	if !slices.Equal(ids, modelIDs(cat.Models)) {
+	if !slices.Equal(p.Models, piModels(cat.Models)) {
 		return "model list differs", nil
 	}
 	return "", nil
@@ -597,25 +606,30 @@ func updateOMPProviderEntry(path, name string, v any) (bool, error) {
 	return existed, fsutil.AtomicWrite(path, yamlnode.Merge(existing, out))
 }
 
+func ompModels(models []Model) []ompModel {
+	out := make([]ompModel, len(models))
+	for i, m := range models {
+		out[i] = ompModel{
+			ID:            m.ID,
+			Name:          m.DisplayName,
+			ContextWindow: m.ContextWindow,
+			MaxTokens:     m.MaxOutputTokens,
+		}
+	}
+	return out
+}
+
 func (ompFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
 	p := ompProvider{
 		BaseURL: NormalizeBaseURL(gw.BaseURL),
 		API:     "anthropic-messages",
-		Models:  []ompModel{},
+		Models:  ompModels(cat.Models),
 	}
 	if gw.RequiresToken() {
 		p.AuthHeader = true
 		p.APIKey = gw.EnvVarName()
 	} else {
 		p.Auth = "none"
-	}
-	for _, m := range cat.Models {
-		p.Models = append(p.Models, ompModel{
-			ID:            m.ID,
-			Name:          m.DisplayName,
-			ContextWindow: m.ContextWindow,
-			MaxTokens:     m.MaxOutputTokens,
-		})
 	}
 	_, err := updateOMPProviderEntry(path, gwName, p)
 	return err
@@ -642,11 +656,7 @@ func (ompFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cache
 	case !gw.RequiresToken() && (p.APIKey != "" || p.AuthHeader || p.Auth != "none"):
 		return "apiKey differs", nil
 	}
-	ids := make([]string, len(p.Models))
-	for i, m := range p.Models {
-		ids[i] = m.ID
-	}
-	if !slices.Equal(ids, modelIDs(cat.Models)) {
+	if !slices.Equal(p.Models, ompModels(cat.Models)) {
 		return "model list differs", nil
 	}
 	return "", nil
@@ -730,6 +740,28 @@ func defaultOpenCodeModelID(models []Model) string {
 	return models[0].ID
 }
 
+func openCodeModels(models []Model) map[string]openCodeModel {
+	out := make(map[string]openCodeModel, len(models))
+	for _, m := range models {
+		om := openCodeModel{
+			Name:          m.DisplayName,
+			Compatibility: &openCodeCompat{},
+		}
+		if m.ContextWindow > 0 || m.MaxOutputTokens > 0 {
+			om.Limit = &openCodeLimit{Context: m.ContextWindow, Output: m.MaxOutputTokens}
+		}
+		out[m.ID] = om
+	}
+	return out
+}
+
+func openCodeModelEqual(a, b openCodeModel) bool {
+	if a.Name != b.Name || (a.Limit == nil) != (b.Limit == nil) {
+		return false
+	}
+	return a.Limit == nil || *a.Limit == *b.Limit
+}
+
 func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, isDefault bool) error {
 	doc, err := fsutil.ReadJSONCRawMap(path)
 	if err != nil {
@@ -739,22 +771,12 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 		Package:  "@ai-sdk/anthropic",
 		Name:     gwName,
 		Settings: openCodeSettings{BaseURL: NormalizeBaseURL(gw.BaseURL) + "/v1"},
-		Models:   map[string]openCodeModel{},
+		Models:   openCodeModels(cat.Models),
 	}
 	if gw.RequiresToken() {
 		p.Env = []string{gw.EnvVarName()}
 		p.Settings.APIKey = openCodeAPIKey(gw)
 		p.Headers = map[string]string{"Authorization": openCodeAuthHeader(gw)}
-	}
-	for _, m := range cat.Models {
-		om := openCodeModel{
-			Name:          m.DisplayName,
-			Compatibility: &openCodeCompat{},
-		}
-		if m.ContextWindow > 0 || m.MaxOutputTokens > 0 {
-			om.Limit = &openCodeLimit{Context: m.ContextWindow, Output: m.MaxOutputTokens}
-		}
-		p.Models[m.ID] = om
 	}
 	if _, err := setJSONEntry(doc, "providers", gwName, p); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -818,15 +840,12 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 	case !gw.RequiresToken() && p.Headers["Authorization"] != "":
 		return "authorization header differs", nil
 	}
-	ids := make([]string, 0, len(p.Models))
-	for id, m := range p.Models {
+	for _, m := range p.Models {
 		if m.Compatibility == nil || m.Compatibility.SupportsThinkingBlockBinding {
 			return "model compatibility differs", nil
 		}
-		ids = append(ids, id)
 	}
-	slices.Sort(ids)
-	if !slices.Equal(ids, modelIDs(cat.Models)) {
+	if !maps.EqualFunc(p.Models, openCodeModels(cat.Models), openCodeModelEqual) {
 		return "model list differs", nil
 	}
 	return "", nil

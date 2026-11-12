@@ -453,7 +453,7 @@ func TestMaterialize_Claude(t *testing.T) {
 	if doc.BaseURL != "https://gw.example.com" || doc.FetchedAt != f.cat.FetchedAt.UnixMilli() || len(doc.Models) != 2 {
 		t.Errorf("doc = %+v", doc)
 	}
-	if doc.Models[0].Description != "anthropic · 200K context" || doc.Models[1].Description != "Custom gateway model" {
+	if doc.Models[0].Description != "corp · 200K context" || doc.Models[1].Description != "corp" {
 		t.Errorf("descriptions = %q, %q", doc.Models[0].Description, doc.Models[1].Description)
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "claude", f.home); got.State != StateSynced {
@@ -479,17 +479,23 @@ func TestMaterialize_Claude(t *testing.T) {
 
 func TestFormatClaudeDesc(t *testing.T) {
 	cases := []struct {
+		gw   string
 		m    Model
 		want string
 	}{
-		{Model{Provider: "anthropic", ContextWindow: 200000}, "anthropic · 200K context"},
-		{Model{Provider: "anthropic"}, "anthropic"},
-		{Model{ContextWindow: 128000}, "128K context"},
-		{Model{}, "Custom gateway model"},
+		{"corp", Model{Provider: "anthropic", ContextWindow: 200_000}, "corp · 200K context"},
+		{"corp", Model{Provider: "custom", ContextWindow: 262_144}, "corp · 262K context"},
+		{"corp", Model{Provider: "custom", ContextWindow: 1_048_576}, "corp · 1M context"},
+		{"corp", Model{ContextWindow: 1_000_000}, "corp · 1M context"},
+		{"corp", Model{ContextWindow: 1_500_000}, "corp · 1.5M context"},
+		{"corp", Model{ContextWindow: 512}, "corp · 512 context"},
+		{"corp", Model{Provider: "anthropic"}, "corp"},
+		{"", Model{ContextWindow: 128_000}, "128K context"},
+		{"", Model{}, "Custom gateway model"},
 	}
 	for _, tc := range cases {
-		if got := formatClaudeDesc(tc.m); got != tc.want {
-			t.Errorf("formatClaudeDesc(%+v) = %q, want %q", tc.m, got, tc.want)
+		if got := formatClaudeDesc(tc.gw, tc.m); got != tc.want {
+			t.Errorf("formatClaudeDesc(%q, %+v) = %q, want %q", tc.gw, tc.m, got, tc.want)
 		}
 	}
 }
@@ -816,6 +822,61 @@ func TestInspect_StaleWhenCacheExpired(t *testing.T) {
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home); got.State != StatePending {
 		t.Errorf("InspectHarness() without a dir = %+v, want pending", got)
+	}
+}
+
+func TestInspect_StaleWhenModelMetadataChanges(t *testing.T) {
+	f := newFixture(t)
+	f.cat.Models = []Model{
+		{ID: "custom-pro", DisplayName: "Custom Pro", Provider: "custom", ContextWindow: 262144, MaxOutputTokens: 16384},
+	}
+	harnesses := []string{"claude", "pi", "omp", "opencode"}
+	f.mkdirs(t, harnesses...)
+	for _, h := range harnesses {
+		if st, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, h, f.home, false); err != nil || st.State != StateSynced {
+			t.Fatalf("%s MaterializeHarness() = %+v, %v", h, st, err)
+		}
+	}
+
+	updated := *f.cat
+	updated.Models = []Model{
+		{ID: "custom-pro", DisplayName: "Custom Pro", Provider: "custom", ContextWindow: 1048576, MaxOutputTokens: 16384},
+	}
+	for _, h := range harnesses {
+		if got := InspectHarness(f.ctx, "corp", f.gw, &updated, h, f.home); got.State != StateStale {
+			t.Errorf("%s InspectHarness(updated contextWindow) = %+v, want stale", h, got)
+		}
+		if st, err := MaterializeHarness(f.ctx, "corp", f.gw, &updated, h, f.home, false); err != nil || st.State != StateSynced {
+			t.Fatalf("%s re-MaterializeHarness() = %+v, %v", h, st, err)
+		}
+		if got := InspectHarness(f.ctx, "corp", f.gw, &updated, h, f.home); got.State != StateSynced {
+			t.Errorf("%s InspectHarness(after re-materialize) = %+v, want synced", h, got)
+		}
+	}
+
+	claudeBody := readFile(t, filepath.Join(f.dir("claude"), "cache", "gateway-models.json"))
+	if !strings.Contains(claudeBody, `"corp · 1M context"`) {
+		t.Errorf("claude gateway-models.json missing 1M description:\n%s", claudeBody)
+	}
+
+	renamed := updated
+	renamed.Models = []Model{
+		{ID: "custom-pro", DisplayName: "Custom Pro v2", Provider: "custom", ContextWindow: 1048576, MaxOutputTokens: 16384},
+	}
+	for _, h := range harnesses {
+		if got := InspectHarness(f.ctx, "corp", f.gw, &renamed, h, f.home); got.State != StateStale {
+			t.Errorf("%s InspectHarness(updated displayName) = %+v, want stale", h, got)
+		}
+	}
+
+	moreOutput := updated
+	moreOutput.Models = []Model{
+		{ID: "custom-pro", DisplayName: "Custom Pro", Provider: "custom", ContextWindow: 1048576, MaxOutputTokens: 32768},
+	}
+	for _, h := range []string{"pi", "omp", "opencode"} {
+		if got := InspectHarness(f.ctx, "corp", f.gw, &moreOutput, h, f.home); got.State != StateStale {
+			t.Errorf("%s InspectHarness(updated maxOutputTokens) = %+v, want stale", h, got)
+		}
 	}
 }
 

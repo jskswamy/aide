@@ -469,7 +469,7 @@ func TestGatewayCmd_AddHarnessesTokenStdinPrintsNotPrompt(t *testing.T) {
 func TestGatewayCmd_AddNoAuthEmptyCatalogue(t *testing.T) {
 	e := newGatewayEnv(t)
 	hits := atomic.Int32{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
@@ -539,7 +539,7 @@ func TestGatewayCmd_AddTTY401ThenToken(t *testing.T) {
 
 func TestGatewayCmd_AddTTY403ThenAbort(t *testing.T) {
 	e := newGatewayEnv(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusForbidden)
 	}))
 	t.Cleanup(srv.Close)
@@ -557,7 +557,7 @@ func TestGatewayCmd_AddTTY403ThenAbort(t *testing.T) {
 
 func TestGatewayCmd_AddUnauthenticated403TTY(t *testing.T) {
 	e := newGatewayEnv(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusForbidden)
 	}))
 	t.Cleanup(srv.Close)
@@ -568,8 +568,8 @@ func TestGatewayCmd_AddUnauthenticated403TTY(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "aborted") {
 		t.Fatalf("err = %v\n%s", err, out)
 	}
-	if strings.Contains(out, "Gateway bearer token") || strings.Contains(err.Error(), "Gateway bearer token") {
-		// prompt is on stderr merged into buf
+	if !strings.Contains(out, "Gateway bearer token") {
+		t.Errorf("expected token prompt in output, got:\n%s", out)
 	}
 	if strings.Contains(e.config(t), "gateways") {
 		t.Error("wrote config")
@@ -578,7 +578,7 @@ func TestGatewayCmd_AddUnauthenticated403TTY(t *testing.T) {
 
 func TestGatewayCmd_AddTokenEnv403WritesNothing(t *testing.T) {
 	e := newGatewayEnv(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusForbidden)
 	}))
 	t.Cleanup(srv.Close)

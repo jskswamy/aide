@@ -174,7 +174,7 @@ Examples:
 			}
 
 			fctx, cancel := context.WithTimeout(context.Background(), gateway.DefaultFetchTimeout)
-			token, models, err := resolveGatewayAddAuth(cmd, reader, fctx, gw, tokenStdin, tokenEnv)
+			token, models, err := resolveGatewayAddAuth(fctx, cmd, reader, gw, tokenStdin, tokenEnv)
 			cancel()
 			if err != nil {
 				return err
@@ -1443,7 +1443,7 @@ func gatewayNameFromURL(rawURL string) (string, error) {
 
 var errGatewayAddAborted = errors.New("aborted")
 
-func resolveGatewayAddAuth(cmd *cobra.Command, reader *bufio.Reader, ctx context.Context, gw config.GatewayConfig, tokenStdin bool, tokenEnv string) (token string, models []gateway.Model, err error) {
+func resolveGatewayAddAuth(ctx context.Context, cmd *cobra.Command, reader *bufio.Reader, gw config.GatewayConfig, tokenStdin bool, tokenEnv string) (token string, models []gateway.Model, err error) {
 	if tokenStdin || tokenEnv != "" {
 		token, err = readGatewayToken(cmd, reader, tokenStdin, tokenEnv, false)
 		if err != nil {
@@ -1463,13 +1463,13 @@ func resolveGatewayAddAuth(cmd *cobra.Command, reader *bufio.Reader, ctx context
 			}
 			return "", nil, fmt.Errorf("%w (pass --token-stdin or --token-env)", err)
 		}
-		return promptGatewayTokenUntilOK(cmd, reader, ctx, gw.BaseURL)
+		return promptGatewayTokenUntilOK(ctx, cmd, reader, gw.BaseURL)
 	default:
 		return "", nil, err
 	}
 }
 
-func promptGatewayTokenUntilOK(cmd *cobra.Command, reader *bufio.Reader, ctx context.Context, baseURL string) (string, []gateway.Model, error) {
+func promptGatewayTokenUntilOK(ctx context.Context, cmd *cobra.Command, reader *bufio.Reader, baseURL string) (string, []gateway.Model, error) {
 	for {
 		token, err := readGatewayToken(cmd, reader, false, "", true)
 		if err != nil {

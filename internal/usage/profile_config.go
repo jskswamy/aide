@@ -94,11 +94,12 @@ func IsolatePiStores(args, scopeEnv []string) ([]string, func(), error) {
 		return nil, nil, err
 	}
 	args = append([]string(nil), args...)
-	if index < 0 {
+	switch {
+	case index < 0:
 		args = append(args, "--config", f.Name())
-	} else if inline {
+	case inline:
 		args[index] = "--config=" + f.Name()
-	} else {
+	default:
 		args[index] = f.Name()
 	}
 	return args, cleanup, nil

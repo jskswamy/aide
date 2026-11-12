@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -441,6 +442,14 @@ func piModels(models []Model) []piModel {
 	return out
 }
 
+// isLiteralPiPlaceholder reports whether s is a non-empty literal value
+// in Pi's models.json (neither a "!cmd" shell reference nor a "$ENV"
+// template). Pi hides custom providers unless apiKey resolves to a
+// non-empty string, even when authHeader is false.
+func isLiteralPiPlaceholder(s string) bool {
+	return s != "" && !strings.HasPrefix(s, "!") && !strings.Contains(s, "$")
+}
+
 func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
 	p := piProvider{
 		BaseURL:    NormalizeBaseURL(gw.BaseURL),
@@ -450,6 +459,8 @@ func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCat
 	}
 	if gw.RequiresToken() {
 		p.APIKey = "$" + gw.EnvVarName()
+	} else {
+		p.APIKey = cmp.Or(gwName, "none")
 	}
 	_, err := updateJSONEntry(path, "providers", gwName, p)
 	return err
@@ -471,7 +482,7 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 		return "baseUrl differs", nil
 	case gw.RequiresToken() && (p.APIKey != "$"+gw.EnvVarName() || !p.AuthHeader):
 		return "apiKey differs", nil
-	case !gw.RequiresToken() && (p.APIKey != "" || p.AuthHeader):
+	case !gw.RequiresToken() && (!isLiteralPiPlaceholder(p.APIKey) || p.AuthHeader):
 		return "apiKey differs", nil
 	}
 	if !slices.Equal(p.Models, piModels(cat.Models)) {

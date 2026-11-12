@@ -647,15 +647,34 @@ func TestMaterialize_NoAuthPiOpenCodeCodex(t *testing.T) {
 		}
 	}
 
+	piPath := filepath.Join(f.dir("pi"), "models.json")
 	var piDoc struct {
 		Providers map[string]map[string]any `json:"providers"`
 	}
-	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(f.dir("pi"), "models.json"))), &piDoc); err != nil {
+	if err := json.Unmarshal([]byte(readFile(t, piPath)), &piDoc); err != nil {
 		t.Fatal(err)
 	}
 	corp := piDoc.Providers["corp"]
-	if _, ok := corp["apiKey"]; ok || corp["authHeader"] != false {
-		t.Errorf("pi provider = %v", corp)
+	if corp["apiKey"] != "corp" || corp["authHeader"] != false {
+		t.Errorf("pi provider = %v, want apiKey=corp authHeader=false", corp)
+	}
+	// Hand-edited literal placeholder keys remain synced; env/command refs or missing keys become stale.
+	rawPi := readFile(t, piPath)
+	writeFile(t, piPath, strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "ollama"`, 1))
+	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home); got.State != StateSynced {
+		t.Errorf("InspectHarness(pi literal placeholder) = %+v, want synced", got)
+	}
+	for _, bad := range []string{
+		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": ""`, 1),
+		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "$CORP_TOKEN"`, 1),
+		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "Bearer $CORP_TOKEN"`, 1),
+		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "!echo x"`, 1),
+		strings.Replace(rawPi, `"authHeader": false`, `"authHeader": true`, 1),
+	} {
+		writeFile(t, piPath, bad)
+		if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home); got.State != StateStale {
+			t.Errorf("InspectHarness(pi invalid no-auth config) = %+v, want stale", got)
+		}
 	}
 
 	std, err := hujson.Standardize([]byte(readFile(t, filepath.Join(f.dir("opencode"), "opencode.jsonc"))))

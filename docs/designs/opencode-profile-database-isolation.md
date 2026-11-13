@@ -45,7 +45,7 @@ Leaving the shared file in place for a profile that has not selected a config di
 
 ## Open Questions
 
-*   None. Decisions that were open in the concepts brief are closed in the Key Decisions section of `concepts_brief.md`.
+*   None. The decisions considered while drafting are recorded under [Alternatives Considered](#alternatives-considered).
 
 ## Technical Plan (Architecture)
 

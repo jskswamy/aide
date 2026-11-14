@@ -1,9 +1,7 @@
-## v3.6.2 (2026-11-14)
+## v3.6.3 (2026-11-14)
 
 ### 🐛 Bug Fixes
 
-- Write `wire_api = "responses"` for gateways in Codex's `config.toml`. Codex 0.167 refuses to load a file containing `wire_api = "chat"`, so Codex did not start at all for profiles with a gateway marked for Codex. Entries written by older aide versions are reported as drift (`wire_api differs`) and rewritten by `aide gateway sync` or the next launch. A gateway used with Codex must now serve the OpenAI Responses API (`/v1/responses`).
-
-### 🔧 Internal
-
-- Update `go.opentelemetry.io/otel/sdk` (and the rest of the indirect `go.opentelemetry.io/otel` modules) from 1.45.0 to 1.47.0, and `go.yaml.in/yaml/v3` to 3.0.5.
+- Restore the previous gateway token when `aide gateway add --force` or `aide gateway edit` fails to write the config. Before, `add --force` deleted the key it had just overwritten (and the whole store file when it was the last key), and `edit` left the new token in place while the config still described the old gateway.
+- Refuse a credential selection that would send one credential's key to another credential's endpoint, such as the built-in `anthropic` key next to a custom route that sets `ANTHROPIC_BASE_URL`. Claude used to start with the custom URL and the direct Anthropic key. This applies to `--credential`, saved repository selections and `default_credentials`; the error names both credentials. Gateways were not affected.
+- List `omp` in the default harnesses named by the `--harnesses` help of `aide gateway add` and `aide gateway edit`.

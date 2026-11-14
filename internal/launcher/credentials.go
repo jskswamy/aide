@@ -102,7 +102,43 @@ func PlanCredentials(profile string, ctx config.Context, harnessName string, sel
 			Name: name, Env: route.Env, Set: route.Set, Store: b.Store, Key: b.Key, Capabilities: slices.Clone(b.Capabilities),
 		})
 	}
+	if err := checkKeyStaysWithEndpoint(profile, plan.Bindings); err != nil {
+		return CredentialPlan{}, err
+	}
 	return plan, nil
+}
+
+// checkKeyStaysWithEndpoint refuses a plan where one binding points a
+// vendor's endpoint (ANTHROPIC_BASE_URL) somewhere and another injects
+// that vendor's key (ANTHROPIC_API_KEY): the harness would send the
+// second binding's key to the first binding's server.
+func checkKeyStaysWithEndpoint(profile string, bindings []PlannedCredential) error {
+	for _, a := range bindings {
+		for _, endpoint := range slices.Sorted(maps.Keys(a.Set)) {
+			if a.Set[endpoint] == "" || !envscrub.IsProviderEndpointName(endpoint) {
+				continue
+			}
+			vendor, _, _ := strings.Cut(endpoint, "_")
+			for _, b := range bindings {
+				if b.Name == a.Name {
+					continue
+				}
+				injected := slices.Clone(b.Env)
+				for k, v := range b.Set {
+					if v != "" {
+						injected = append(injected, k)
+					}
+				}
+				for _, k := range slices.Sorted(slices.Values(injected)) {
+					if strings.HasPrefix(k, vendor+"_") && envscrub.IsProviderSecretName(k) {
+						return fmt.Errorf("profile %q credentials %q and %q cannot be used together: %q sets %s, so %q's %s would be sent to %s; select only one",
+							profile, a.Name, b.Name, a.Name, endpoint, b.Name, k, a.Set[endpoint])
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // servedHarnesses names the harnesses b has a route for.

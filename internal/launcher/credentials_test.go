@@ -734,3 +734,53 @@ default_profile: work
 		t.Errorf("stderr should note claude uses its own login:\n%s", stderr)
 	}
 }
+
+// A custom route that points Claude at another base URL without
+// blanking ANTHROPIC_API_KEY, selected next to the anthropic key.
+func baseURLRouteProfile() config.Context {
+	ctx := credentialProfile()
+	ctx.Credentials["proxy"] = config.CredentialBinding{Backend: "age", Store: "/stores/work", Key: "corp", For: map[string]config.CredentialRoute{
+		"claude": {Env: []string{"ANTHROPIC_AUTH_TOKEN"}, Set: map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.example.com"}},
+	}}
+	return ctx
+}
+
+func TestPlanCredentials_APIKeyToAnotherRouteBaseURLFails(t *testing.T) {
+	_, err := PlanCredentials("work", baseURLRouteProfile(), "claude", []string{"anthropic", "proxy"}, AuthAPI)
+	if err == nil {
+		t.Fatal("anthropic's ANTHROPIC_API_KEY with proxy's ANTHROPIC_BASE_URL should fail")
+	}
+	for _, want := range []string{"anthropic", "proxy", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should name %s", err, want)
+		}
+	}
+}
+
+func TestSelection_DefaultsSendingAPIKeyToAnotherBaseURLFail(t *testing.T) {
+	ctx := baseURLRouteProfile()
+	ctx.DefaultCredentials = []string{"anthropic", "proxy"}
+	var s Selection
+	s.SelectCredentials(SelectionInputs{}, ctx.DefaultCredentials)
+	plan, err := s.PlanCredentials("work", ctx, "claude", AuthAPI)
+	if err == nil {
+		var names []string
+		for _, b := range plan.Bindings {
+			names = append(names, b.Name)
+		}
+		if slices.Contains(names, "anthropic") && slices.Contains(names, "proxy") {
+			t.Fatalf("default selection planned both %v; want a refusal or one of them", names)
+		}
+	}
+}
+
+func TestPlanCredentials_OtherVendorEndpointAllowed(t *testing.T) {
+	// OPENAI_BASE_URL governs OpenAI keys, not ANTHROPIC_API_KEY.
+	ctx := credentialProfile()
+	ctx.Credentials["oai"] = config.CredentialBinding{Backend: "age", Store: "/stores/work", Key: "corp", For: map[string]config.CredentialRoute{
+		"claude": {Env: []string{"OPENAI_API_KEY"}, Set: map[string]string{"OPENAI_BASE_URL": "https://oai.example.com/v1"}},
+	}}
+	if _, err := PlanCredentials("work", ctx, "claude", []string{"anthropic", "oai"}, AuthAPI); err != nil {
+		t.Fatalf("anthropic with another vendor's endpoint: %v", err)
+	}
+}

@@ -21,6 +21,7 @@ func init() {
 				"AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION",
 				"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
 				"AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE",
+				"AWS_WEB_IDENTITY_TOKEN_FILE",
 			},
 		},
 		"gcp": {
@@ -32,7 +33,7 @@ func init() {
 				{Contains: ContainsSpec{File: "package.json", Pattern: "@google-cloud"}},
 			},
 			Writable: []string{"~/.config/gcloud"},
-			EnvAllow: []string{"CLOUDSDK_CONFIG", "GOOGLE_APPLICATION_CREDENTIALS", "GCLOUD_PROJECT"},
+			EnvAllow: []string{"CLOUDSDK_CONFIG", "GOOGLE_APPLICATION_CREDENTIALS", "GCLOUD_PROJECT", "GOOGLE_CLOUD_PROJECT"},
 		},
 		"azure": {
 			Name:        "azure",

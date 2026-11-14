@@ -336,3 +336,15 @@ func TestCodexNamesClassified(t *testing.T) {
 		t.Error("OPENAI_BASE_URL should be a pinned provider selector")
 	}
 }
+
+func TestCredentialsScrubsInheritedGatewayKeysAndVertexRegion(t *testing.T) {
+	env := []string{"PATH=/usr/bin", "AIDE_GW_CORP_KEY=tok", "AIDE_GW_X=y", "CLOUD_ML_REGION=us-east5", "AIDE_GATEWAY=keep"}
+	reg := envscrub.Credentials().Permit("AIDE_GW_CORP_KEY", "CLOUD_ML_REGION")
+	got := names(envscrub.ScrubCredentials(env, reg, nil))
+	if want := []string{"PATH", "AIDE_GATEWAY"}; !slices.Equal(got, want) {
+		t.Errorf("scrubbed env = %v, want %v (gateway keys and selectors are pinned)", got, want)
+	}
+	if !envscrub.IsProviderSelectorName("CLOUD_ML_REGION") {
+		t.Error("CLOUD_ML_REGION is not a provider selector")
+	}
+}

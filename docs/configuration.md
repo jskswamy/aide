@@ -499,7 +499,7 @@ to declare instead. It sets selectors and endpoints only with
 
 A gateway is a self-hosted or organization-run LLM endpoint (LiteLLM or
 an internal proxy) that serves the Anthropic API (`/v1/messages`) and
-the OpenAI API (`/v1/chat/completions`, `/v1/models`) behind one base
+the OpenAI API (`/v1/responses` for Codex, `/v1/models`) behind one base
 URL and bearer token. `aide gateway` registers one on a profile, keeps
 its token in an age secret store, and writes its model list into each
 agent's own config so the agent's model picker shows the gateway's
@@ -575,8 +575,12 @@ replaces an existing entry of the same name, while `remove` deletes it
 only when it still points at the gateway's URL. Comments in `opencode.jsonc` and
 `config.toml` are not preserved when aide rewrites them.
 
-Codex speaks the OpenAI protocol, so its route needs the gateway's
-`/v1/chat/completions`. aide sets Codex's `model_provider` to the
+Codex speaks only the OpenAI Responses API, so its route needs the
+gateway's `/v1/responses` (aide writes `wire_api = "responses"`; Codex
+0.167 and later refuse to load `wire_api = "chat"`, and `aide gateway
+sync` rewrites entries an older aide wrote that way). A gateway that
+serves only `/v1/chat/completions` cannot serve Codex. aide sets
+Codex's `model_provider` to the
 gateway only when `config.toml` does not already choose one.
 
 ### Defaults and several gateways

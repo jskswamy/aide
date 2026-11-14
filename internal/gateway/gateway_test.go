@@ -783,7 +783,7 @@ func TestMaterialize_Codex(t *testing.T) {
 		t.Errorf("sibling tables lost: %v", doc)
 	}
 	corp := obj(t, obj(t, doc["model_providers"])["corp"])
-	if corp["name"] != "corp" || corp["base_url"] != "https://gw.example.com/v1" || corp["env_key"] != "CORP_TOKEN" || corp["wire_api"] != "chat" {
+	if corp["name"] != "corp" || corp["base_url"] != "https://gw.example.com/v1" || corp["env_key"] != "CORP_TOKEN" || corp["wire_api"] != "responses" {
 		t.Errorf("model_providers.corp = %v", corp)
 	}
 	if doc["model_provider"] != "corp" {
@@ -791,6 +791,19 @@ func TestMaterialize_Codex(t *testing.T) {
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home); got.State != StateSynced {
 		t.Errorf("InspectHarness() = %+v, want synced", got)
+	}
+	// Codex 0.167 refuses to load wire_api = "chat"; an entry written by an
+	// older aide must show as drift so sync rewrites it.
+	stale := strings.NewReplacer(`'responses'`, `'chat'`, `"responses"`, `"chat"`).Replace(readFile(t, path))
+	writeFile(t, path, stale)
+	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home); got.State != StateStale || got.Detail != "wire_api differs" {
+		t.Errorf("InspectHarness() with wire_api chat = %+v, want stale: wire_api differs", got)
+	}
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home); got.State != StateSynced {
+		t.Errorf("InspectHarness() after resync = %+v, want synced", got)
 	}
 	if removed, err := RemoveFromHarness(f.ctx, "corp", f.gw, "codex", f.home); err != nil || !removed {
 		t.Fatalf("RemoveFromHarness() = %v, %v", removed, err)

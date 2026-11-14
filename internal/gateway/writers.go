@@ -902,8 +902,9 @@ func (openCodeFile) remove(path, gwName string, gw config.GatewayConfig) (bool, 
 }
 
 // codexFile is Codex's <codex-dir>/config.toml; a gateway is
-// [model_providers.<name>]. Codex speaks the OpenAI wire protocol, so
-// the gateway must also serve /v1/chat/completions. Comments are not
+// [model_providers.<name>]. Codex speaks only the OpenAI Responses API
+// (0.167 refuses to load wire_api = "chat"), so the gateway must also
+// serve /v1/responses. Comments are not
 // preserved on write, as with aide's MCP provisioning of the same
 // file.
 type codexFile struct{}
@@ -913,6 +914,9 @@ func (codexFile) path(_ config.Context, dir, _ string) string {
 }
 
 func (codexFile) singleGatewayPerDir() bool { return false }
+
+// codexWireAPI is the only wire_api Codex 0.167+ loads.
+const codexWireAPI = "responses"
 
 func codexProviders(doc map[string]any) map[string]any {
 	providers, _ := doc["model_providers"].(map[string]any)
@@ -931,7 +935,7 @@ func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *Cached
 	entry := map[string]any{
 		"name":     gwName,
 		"base_url": NormalizeBaseURL(gw.BaseURL) + "/v1",
-		"wire_api": "chat",
+		"wire_api": codexWireAPI,
 	}
 	if gw.RequiresToken() {
 		entry["env_key"] = gw.EnvVarName()
@@ -960,6 +964,8 @@ func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *Cac
 		return fmt.Sprintf("model provider %q missing", gwName), nil
 	case p["base_url"] != NormalizeBaseURL(gw.BaseURL)+"/v1":
 		return "base_url differs", nil
+	case p["wire_api"] != codexWireAPI:
+		return "wire_api differs", nil
 	case gw.RequiresToken() && p["env_key"] != gw.EnvVarName():
 		return "env_key differs", nil
 	case !gw.RequiresToken():

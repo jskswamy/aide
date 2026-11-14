@@ -53,7 +53,7 @@ func TestFetchModels_OpenAIFormat(t *testing.T) {
 		{"id":"gpt-5","object":"model","owned_by":"openai","context_window":400000,"max_tokens":32768},
 		{"id":"claude-sonnet-4-5","display_name":"Claude Sonnet 4.5","owned_by":"anthropic","context_length":200000,"max_output_tokens":16384,"api_key":"upstream-secret"}
 	]}`)
-	models, err := FetchModels(context.Background(), nil, srv.URL+"/v1/", testToken)
+	models, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL + "/v1/"}), testToken)
 	if err != nil {
 		t.Fatalf("FetchModels() error = %v", err)
 	}
@@ -84,7 +84,7 @@ func TestFetchModels_LiteLLMFormat(t *testing.T) {
 		{"id":"opus","name":"duplicate"},
 		{"name":"no id"}
 	]`)
-	models, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	models, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestFetchModels_Sanitizes(t *testing.T) {
 		{"id":"evil\u001b]52;c;Zm9v\u0007-model","display_name":"\u001b[31mRed\u009b","owned_by":"%s"},
 		{"id":"%s"}
 	]}`, long, long))
-	models, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	models, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestFetchModels_CapsModelCount(t *testing.T) {
 	}
 	b.WriteString(`]}`)
 	srv, _ := modelsServer(t, b.String())
-	models, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	models, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestFetchModels_CapsModelCount(t *testing.T) {
 func TestFetchModels_RejectsOversizedResponse(t *testing.T) {
 	big := `{"data":[{"id":"a","pad":"` + strings.Repeat("x", MaxModelsResponseBytes) + `"}]}`
 	srv, _ := modelsServer(t, big)
-	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	_, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if err == nil || !strings.Contains(err.Error(), "MiB") {
 		t.Fatalf("err = %v, want a size-limit error", err)
 	}
@@ -160,7 +160,7 @@ func TestFetchModels_HTTPErrorHidesToken(t *testing.T) {
 		http.Error(w, "nope", http.StatusUnauthorized)
 	}))
 	defer srv.Close()
-	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	_, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("err = %v, want HTTP 401", err)
 	}
@@ -171,7 +171,7 @@ func TestFetchModels_HTTPErrorHidesToken(t *testing.T) {
 
 func TestFetchModels_OmitsAuthorizationWhenTokenEmpty(t *testing.T) {
 	srv, req := modelsServer(t, `{"data":[{"id":"m1"}]}`)
-	if _, err := FetchModels(context.Background(), nil, srv.URL, ""); err != nil {
+	if _, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := req.Header.Get("Authorization"); got != "" {
@@ -184,7 +184,7 @@ func TestFetchModels_UnauthorizedIsTyped(t *testing.T) {
 		http.Error(w, "nope", http.StatusUnauthorized)
 	}))
 	defer srv.Close()
-	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	_, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if !errors.Is(err, ErrUnauthorized) || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("err = %v, want ErrUnauthorized mentioning 401", err)
 	}
@@ -198,7 +198,7 @@ func TestFetchModels_ForbiddenIsTyped(t *testing.T) {
 		http.Error(w, "nope", http.StatusForbidden)
 	}))
 	defer srv.Close()
-	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	_, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if !errors.Is(err, ErrForbidden) || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("err = %v, want ErrForbidden mentioning 403", err)
 	}
@@ -209,7 +209,7 @@ func TestFetchModels_OtherHTTPErrorUnchanged(t *testing.T) {
 		http.Error(w, "down", http.StatusBadGateway)
 	}))
 	defer srv.Close()
-	_, err := FetchModels(context.Background(), nil, srv.URL, testToken)
+	_, err := FetchModels(context.Background(), nil, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if err == nil || errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) || !strings.Contains(err.Error(), "502") {
 		t.Fatalf("err = %v, want untyped HTTP 502", err)
 	}
@@ -229,7 +229,7 @@ func TestFetchModels_RejectsCrossOriginRedirect(t *testing.T) {
 	}))
 	defer srv.Close()
 	// A caller-supplied client without redirect checks is hardened too.
-	_, err := FetchModels(context.Background(), &http.Client{}, srv.URL, testToken)
+	_, err := FetchModels(context.Background(), &http.Client{}, Endpoint(config.GatewayConfig{BaseURL: srv.URL}), testToken)
 	if err == nil || !strings.Contains(err.Error(), "redirect") {
 		t.Fatalf("err = %v, want a redirect error", err)
 	}

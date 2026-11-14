@@ -193,6 +193,8 @@ var providerSelectorNames = []string{
 	"AZURE_OPENAI_DEPLOYMENT_NAME_MAP",
 	"AZURE_OPENAI_API_VERSION",
 	"GOOGLE_CLOUD_LOCATION",
+	// Claude Code's Vertex region.
+	"CLOUD_ML_REGION",
 	// Oh My Pi (omp) auth broker and provider selectors
 	"OMP_AUTH_BROKER_ACCOUNT_POOL_FILE",
 	"OMP_AUTH_BROKER_SNAPSHOT_CACHE",
@@ -252,6 +254,10 @@ var cloudNames = []string{
 	"AZURE_USERNAME",
 	"AZURE_PASSWORD",
 }
+
+// gatewayKeyNames are the per-gateway key variables aide injects. An
+// inherited value is never passed through.
+var gatewayKeyNames = []string{"AIDE_GW_*"}
 
 // secretMaterialNames are aide's own secret-decryption inputs. They are
 // scrubbed on every route, including the no-config passthrough.
@@ -353,7 +359,7 @@ func SecretMaterial() Registry { return Registry{}.Pin(secretMaterialNames...) }
 // keys and tokens, federation and cloud selectors, and secret material.
 // Only the cloud names can be exempted with Permit.
 func Credentials() Registry {
-	return Registry{}.Pin(secretMaterialNames...).Pin(providerSecretNames...).Pin(providerSelectorNames...).Pin(providerEndpointNames...).With(cloudNames...)
+	return Registry{}.Pin(secretMaterialNames...).Pin(gatewayKeyNames...).Pin(providerSecretNames...).Pin(providerSelectorNames...).Pin(providerEndpointNames...).With(cloudNames...)
 }
 
 // ConfigDirRedirects returns, sorted, every harness config-dir redirect

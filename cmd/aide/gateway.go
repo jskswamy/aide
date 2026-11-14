@@ -1157,9 +1157,10 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 			syncCtx = context.Background()
 		}
 		base := gateway.NormalizeBaseURL(newGW.BaseURL)
-		fmt.Fprintf(out, "→ Fetching models from %s/v1/models...\n", base)
+		ep := gateway.Endpoint(newGW)
+		fmt.Fprintf(out, "→ Fetching models from %s...\n", ep.ModelsURL())
 		fctx, cancel := context.WithTimeout(syncCtx, gateway.DefaultFetchTimeout)
-		models, err := gateway.FetchModels(fctx, nil, base, activeToken)
+		models, err := gateway.FetchModels(fctx, nil, ep, activeToken)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("verifying gateway %q at %s: %w", newName, base, err)
@@ -1461,10 +1462,10 @@ func resolveGatewayAddAuth(ctx context.Context, cmd *cobra.Command, reader *bufi
 		if err != nil {
 			return "", nil, err
 		}
-		models, err = gateway.FetchModels(ctx, nil, gw.BaseURL, token)
+		models, err = gateway.FetchModels(ctx, nil, gateway.Endpoint(gw), token)
 		return token, models, err
 	}
-	models, err = gateway.FetchModels(ctx, nil, gw.BaseURL, "")
+	models, err = gateway.FetchModels(ctx, nil, gateway.Endpoint(gw), "")
 	switch {
 	case err == nil && gw.IsLoopback():
 		return "", models, nil
@@ -1475,19 +1476,19 @@ func resolveGatewayAddAuth(ctx context.Context, cmd *cobra.Command, reader *bufi
 			}
 			return "", nil, fmt.Errorf("%w (pass --token-stdin or --token-env)", err)
 		}
-		return promptGatewayTokenUntilOK(ctx, cmd, reader, gw.BaseURL)
+		return promptGatewayTokenUntilOK(ctx, cmd, reader, gateway.Endpoint(gw))
 	default:
 		return "", nil, err
 	}
 }
 
-func promptGatewayTokenUntilOK(ctx context.Context, cmd *cobra.Command, reader *bufio.Reader, baseURL string) (string, []gateway.Model, error) {
+func promptGatewayTokenUntilOK(ctx context.Context, cmd *cobra.Command, reader *bufio.Reader, ep gateway.EndpointSpec) (string, []gateway.Model, error) {
 	for {
 		token, err := readGatewayToken(cmd, reader, false, "", true)
 		if err != nil {
 			return "", nil, err
 		}
-		models, err := gateway.FetchModels(ctx, nil, baseURL, token)
+		models, err := gateway.FetchModels(ctx, nil, ep, token)
 		if err == nil {
 			return token, models, nil
 		}

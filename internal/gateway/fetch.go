@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/gatewaypreset"
 )
 
 // Discovery limits.
@@ -48,27 +49,34 @@ func NormalizeBaseURL(raw string) string {
 	return config.NormalizeGatewayBaseURL(raw)
 }
 
-// FetchModels lists the gateway's LLM models: GET
-// <base>/v1/models?limit=1000 with the token as a Bearer credential.
+// FetchModels lists the gateway's LLM models: GET ep.ModelsURL()
+// ?limit=1000, sending token as ep.Header says (no auth header when
+// token is empty).
 // Redirects to another host or from https to http are refused, so the
 // token only ever goes where base_url says, even with a caller-supplied
 // client. The result is deduplicated, sanitized and sorted by ID.
-func FetchModels(ctx context.Context, client *http.Client, baseURL, token string) ([]Model, error) {
+func FetchModels(ctx context.Context, client *http.Client, ep EndpointSpec, token string) ([]Model, error) {
 	c := http.Client{}
 	if client != nil {
 		c = *client
 	}
 	c.CheckRedirect = checkRedirect
 
-	endpoint := NormalizeBaseURL(baseURL) + "/v1/models?limit=1000"
+	endpoint := ep.ModelsURL() + "?limit=1000"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("building request for %s: %w", endpoint, err)
 	}
-	if token != "" {
+	switch {
+	case token == "":
+	case ep.Header == gatewaypreset.HeaderXAPIKey:
+		req.Header.Set("x-api-key", token)
+	default:
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.Header.Set("anthropic-version", "2023-06-01")
+	if ep.API == gatewaypreset.APIAnthropicMessages {
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.Do(req)

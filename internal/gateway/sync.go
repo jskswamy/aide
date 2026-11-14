@@ -55,9 +55,10 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	base := NormalizeBaseURL(opts.Gateway.BaseURL)
 	models := opts.Models
 	if !opts.Prefetch {
-		fmt.Fprintf(progress, "→ Fetching models from %s/v1/models...\n", base)
+		ep := Endpoint(opts.Gateway)
+		fmt.Fprintf(progress, "→ Fetching models from %s...\n", ep.ModelsURL())
 		var err error
-		models, err = FetchModels(ctx, opts.HTTPClient, base, opts.Token)
+		models, err = FetchModels(ctx, opts.HTTPClient, ep, opts.Token)
 		if err != nil {
 			return nil, fmt.Errorf("gateway %q: %w", opts.GatewayName, err)
 		}

@@ -1526,3 +1526,78 @@ default_profile: work
 		t.Errorf("metadata edit materialized pi models.json from mismatched cache BaseURL")
 	}
 }
+
+// readOnlyConfig makes the next config write fail while the secrets dir
+// stays writable, so a command fails after it has stored the token.
+func (e *gatewayEnv) readOnlyConfig(t *testing.T) {
+	t.Helper()
+	cfgDir := filepath.Join(e.xdg, "aide")
+	dirs := []string{cfgDir, filepath.Join(cfgDir, "profiles")}
+	for _, d := range dirs {
+		if err := os.Chmod(d, 0o500); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		for _, d := range dirs {
+			_ = os.Chmod(d, 0o700)
+		}
+	})
+}
+
+func TestGatewayCmd_FailedConfigWriteRestoresSecret(t *testing.T) {
+	const previous = "previous-token"
+	secretsDirOf := func(e *gatewayEnv) string { return filepath.Join(e.xdg, "aide", "secrets") }
+
+	t.Run("add --force keeps the overwritten token", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--token-stdin"); err != nil {
+			t.Fatal(err)
+		}
+		dir := secretsDirOf(e)
+		if err := secrets.NewManager(dir, "").SetKey("work", dir, "corp_token", previous, ""); err != nil {
+			t.Fatal(err)
+		}
+		e.readOnlyConfig(t)
+		other := strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
+		if out, err := runGateway(t, gwCmdToken, "add", "corp", "--url", other, "--token-stdin", "--force"); err == nil {
+			t.Fatalf("add --force succeeded with a read-only config:\n%s", out)
+		}
+		if got := e.store(t, "work"); got["corp_token"] != previous {
+			t.Errorf("store after failed add --force = %v, want corp_token=%s", got, previous)
+		}
+	})
+
+	t.Run("add of a new key leaves no store behind", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		if err := os.MkdirAll(filepath.Join(e.xdg, "aide", "profiles"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		e.readOnlyConfig(t)
+		if out, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--token-stdin"); err == nil {
+			t.Fatalf("add succeeded with a read-only config:\n%s", out)
+		}
+		if got := e.store(t, "work"); got != nil {
+			t.Errorf("store after failed add = %v, want none", got)
+		}
+	})
+
+	t.Run("edit keeps the rotated-out token", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--token-stdin"); err != nil {
+			t.Fatal(err)
+		}
+		dir := secretsDirOf(e)
+		if err := secrets.NewManager(dir, "").SetKey("work", dir, "corp_token", previous, ""); err != nil {
+			t.Fatal(err)
+		}
+		e.readOnlyConfig(t)
+		t.Setenv("NEW_CORP_TOKEN", gwCmdToken)
+		if out, err := runGateway(t, "", "edit", "corp", "--token-env", "NEW_CORP_TOKEN", "--ttl", "6h", "--profile", "work"); err == nil {
+			t.Fatalf("edit succeeded with a read-only config:\n%s", out)
+		}
+		if got := e.store(t, "work"); got["corp_token"] != previous {
+			t.Errorf("store after failed edit = %v, want corp_token=%s", got, previous)
+		}
+	})
+}

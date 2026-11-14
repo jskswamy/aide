@@ -503,6 +503,34 @@ func (m *Manager) SetKey(storeName, secretsDir, key, value, explicitAgePubKey st
 	return m.SetKeys(storeName, secretsDir, map[string]string{key: value}, explicitAgePubKey)
 }
 
+// ReplaceKey is SetKey that can be undone: restore puts the store file
+// back exactly as it was (the previous encrypted bytes, so the old value
+// returns without decrypting), or removes it when ReplaceKey created it.
+// Callers run restore when a later step, such as the config write, fails.
+func (m *Manager) ReplaceKey(storeName, secretsDir, key, value, explicitAgePubKey string) (restore func() error, err error) {
+	if err := validateName(storeName); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(secretsDir, storeName+".enc.yaml")
+	prev, err := os.ReadFile(path) // #nosec G304 -- the store being updated
+	existed := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err := m.SetKey(storeName, secretsDir, key, value, explicitAgePubKey); err != nil {
+		return nil, err
+	}
+	return func() error {
+		if existed {
+			return fsutil.AtomicWrite(path, prev)
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}, nil
+}
+
 // DeleteKey removes key from the store storeName under secretsDir. A
 // missing store or key is not an error. Deleting the last key removes
 // the store file, since sops cannot encrypt an empty map.

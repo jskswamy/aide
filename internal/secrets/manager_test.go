@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1150,5 +1151,53 @@ func TestManager_SetKeys_BatchNewStore(t *testing.T) {
 	gotWork := decryptStore(t, filepath.Join(secretsDir, "work.enc.yaml"))
 	if gotWork["k1"] != "v1" || gotWork["k2"] != "v2-updated" || gotWork["k3"] != "v3" {
 		t.Errorf("updated work store = %v, want k1=v1, k2=v2-updated, k3=v3", gotWork)
+	}
+}
+
+func TestManager_ReplaceKey_Restore(t *testing.T) {
+	mgr, tmpDir := testCreateManager(t)
+	secretsDir := filepath.Join(tmpDir, "secrets")
+	path := filepath.Join(secretsDir, "work.enc.yaml")
+	if err := mgr.CreateFromContent("work", secretsDir, testAgePublicKey(t), []byte("corp_token: old\nother: keep\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Overwrite an existing key, then restore: the old value comes back.
+	restore, err := mgr.ReplaceKey("work", secretsDir, "corp_token", "new", "")
+	if err != nil {
+		t.Fatalf("ReplaceKey(): %v", err)
+	}
+	if got := decryptStore(t, path); got["corp_token"] != "new" {
+		t.Fatalf("after ReplaceKey store = %v, want corp_token=new", got)
+	}
+	if err := restore(); err != nil {
+		t.Fatalf("restore(): %v", err)
+	}
+	if got := decryptStore(t, path); got["corp_token"] != "old" || got["other"] != "keep" {
+		t.Errorf("after restore store = %v, want corp_token=old other=keep", got)
+	}
+
+	// A key that did not exist is absent again after restore.
+	restore, err = mgr.ReplaceKey("work", secretsDir, "added", "v", "")
+	if err != nil {
+		t.Fatalf("ReplaceKey() new key: %v", err)
+	}
+	if err := restore(); err != nil {
+		t.Fatalf("restore() new key: %v", err)
+	}
+	if got := decryptStore(t, path); len(got) != 2 || got["added"] != "" {
+		t.Errorf("after restore store = %v, want added key gone", got)
+	}
+
+	// A store created by ReplaceKey is removed again by restore.
+	restore, err = mgr.ReplaceKey("fresh", secretsDir, "k", "v", "")
+	if err != nil {
+		t.Fatalf("ReplaceKey() new store: %v", err)
+	}
+	if err := restore(); err != nil {
+		t.Fatalf("restore() new store: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(secretsDir, "fresh.enc.yaml")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("new store still exists after restore: %v", err)
 	}
 }

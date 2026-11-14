@@ -212,20 +212,20 @@ Examples:
 
 			home := userHomeDir()
 			secretsDir := config.SecretsDir()
+			restoreSecret := func() error { return nil }
 			if token != "" {
-				if err := secrets.NewManager(secretsDir, "").SetKey(gw.Store, secretsDir, gw.Key, token, ageKey); err != nil {
+				restore, err := secrets.NewManager(secretsDir, "").ReplaceKey(gw.Store, secretsDir, gw.Key, token, ageKey)
+				if err != nil {
 					return fmt.Errorf("storing the gateway token: %w", err)
 				}
+				restoreSecret = restore
 				fmt.Fprintf(out, "✓ Encrypted token into %s (key: %s)\n",
 					homepath.Tilde(config.ResolveSecretPath(gw.Store), home), gw.Key)
 			}
 
 			cfg.Contexts[profileName] = ctx
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
-				if token != "" {
-					_ = secrets.NewManager(secretsDir, "").DeleteKey(gw.Store, secretsDir, gw.Key)
-				}
-				return fmt.Errorf("writing config: %w", err)
+				return errors.Join(fmt.Errorf("writing config: %w", err), restoreErr(restoreSecret()))
 			}
 			if force && hadOld && old.RequiresToken() && !gw.RequiresToken() && secretUser(cfg, old.Store, old.Key) == "" {
 				_ = secrets.NewManager(secretsDir, "").DeleteKey(old.Store, secretsDir, old.Key)
@@ -248,7 +248,7 @@ Examples:
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "Read the bearer token from stdin")
 	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "Read the bearer token from this environment variable")
 	cmd.Flags().StringVar(&ttl, "ttl", "24h", "Launch-time model refresh interval (e.g. 12h, 24h, 168h)")
-	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure (default: claude,pi,opencode,codex)")
+	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure (default: claude,pi,omp,opencode,codex)")
 	cmd.Flags().StringVar(&store, "store", "", "Secret store for the token (default: the profile's secret store, else the profile name)")
 	cmd.Flags().StringVar(&key, "key", "", "Key for the token inside the store (default: <name>_token)")
 	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient for a new secret store (default: the discovered age identity)")
@@ -616,7 +616,7 @@ value as the default.`,
 	cmd.Flags().StringVar(&flagName, "name", "", "Rename the gateway to this name")
 	cmd.Flags().StringVar(&rawURL, "url", "", "Updated gateway base URL (https://, or http:// for localhost only)")
 	cmd.Flags().StringVar(&ttl, "ttl", "", "Updated launch-time model refresh interval (e.g. 12h, 24h, 168h)")
-	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure, or 'all' (default: claude,pi,opencode,codex)")
+	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure, or 'all' (default: claude,pi,omp,opencode,codex)")
 	cmd.Flags().BoolVar(&rotateToken, "rotate-token", false, "Prompt for a new bearer token and re-sync models")
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "Read a new bearer token from stdin")
 	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "Read a new bearer token from this environment variable")
@@ -1090,6 +1090,15 @@ func promptRotateToken(cmd *cobra.Command, reader *bufio.Reader) bool {
 	return ans == "y" || ans == "yes"
 }
 
+// restoreErr labels a failed secret rollback so the user knows the store
+// may hold the new token; nil stays nil for errors.Join.
+func restoreErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("restoring the previous gateway token: %w", err)
+}
+
 func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *config.Config, profileName, oldName, newName string, oldGW, newGW config.GatewayConfig, newToken, ageKey string, tokenChanged, force bool) error {
 	ctx := cfg.Contexts[profileName]
 	if newName != oldName {
@@ -1165,10 +1174,13 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 	}
 
 	secretsDir := config.SecretsDir()
+	restoreSecret := func() error { return nil }
 	if (tokenChanged || keyOrStoreChanged) && newGW.RequiresToken() {
-		if err := secrets.NewManager(secretsDir, "").SetKey(newGW.Store, secretsDir, newGW.Key, activeToken, ageKey); err != nil {
+		restore, err := secrets.NewManager(secretsDir, "").ReplaceKey(newGW.Store, secretsDir, newGW.Key, activeToken, ageKey)
+		if err != nil {
 			return fmt.Errorf("storing the gateway token: %w", err)
 		}
+		restoreSecret = restore
 		if keyOrStoreChanged && !tokenChanged {
 			fmt.Fprintf(out, "✓ Migrated secret key %q → %q in %s\n",
 				oldGW.Key, newGW.Key, homepath.Tilde(config.ResolveSecretPath(newGW.Store), home))
@@ -1180,7 +1192,7 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 
 	cfg.Contexts[profileName] = updatedCtx
 	if err := saveConfigWithMigrationPrompt(nil, cfg); err != nil {
-		return fmt.Errorf("writing config: %w", err)
+		return errors.Join(fmt.Errorf("writing config: %w", err), restoreErr(restoreSecret()))
 	}
 	if newName != oldName {
 		fmt.Fprintf(out, "✓ Renamed gateway %q → %q under profile %q in %s\n",

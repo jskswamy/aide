@@ -169,33 +169,51 @@ Four structural defects underlie these workflows:
 
 ## Open Questions
 
-All architectural questions required for v1 implementation are resolved, with
-deterministic v1 fallbacks recorded in [Risks & Mitigations](#risks--mitigations) for upstream
-harness CLI behaviors that require live binary verification during testing:
+None open. The upstream harness behaviour this design depends on was verified
+on 2026-11-14 (story S1) against the installed binaries and a local mock
+gateway that logged each request's path, auth headers and model:
 
-*   **Codex (`codex`):** Verify `wire_api = "chat"` vs `"responses"` in current
-    Codex releases, whether unselected `[model_providers.aide-*]` entries with
-    unset `env_key` variables are ignored cleanly at startup, and how prepended
-    `-c model_provider=...` interacts with user `-c` or `--profile` flags.
-*   **Pi (`pi`) and Oh My Pi (`omp`):** Verify `--model aide-<gw>/<model>` on
-    `omp` and `--provider aide-<gw> --model <model>` precedence on `pi` when a
-    built-in provider shares the same model ID.
-*   **OpenCode (`opencode`):** Verify that an empty `settings.apiKey` on a
-    keyless entry under `@ai-sdk/anthropic` and `@ai-sdk/openai-compatible`
-    never falls back to saved `/connect` credentials, and that a per-launch
-    `OPENCODE_CONFIG_CONTENT={"model":"aide-<gw>/<m>"}` selects the startup
-    model on OpenCode v2.2.6 with precedence over `model` in `opencode.jsonc`.
-    aide already launches OpenCode with `--standalone`
-    ([`harness.go:161-191`](../../internal/harness/harness.go#L161-L191)), so
-    the private server inherits the launch's environment; only subcommands
-    other than `run`, a user `--server`, or `attach` bypass it (see
-    [Risks & Mitigations](#risks--mitigations)).
-
-These checks run as one verification story ahead of the stories they gate (the
-Codex writer, `pi`/`omp` startup flags, the OpenCode keyless writer, and
-OpenCode `ChoiceEnv`); each fallback becomes that story's alternative acceptance
-condition. An empty OpenCode keyless key that falls back to `/connect` fails
-that story, because a saved credential would reach the loopback server.
+*   **Codex (`codex-cli` 0.167.0):**
+    *   `wire_api = "chat"` is no longer supported: Codex refuses to load the
+        whole `config.toml` ("`wire_api = "chat"` is no longer supported ...
+        set `wire_api = "responses"`"), so Codex does not start at all, with or
+        without a gateway. Only `wire_api = "responses"` loads; requests go to
+        `<base_url>/responses` with `Authorization: Bearer <env_key value>`.
+        Codex therefore accepts only `openai-responses` gateways (see
+        [Gateway Kinds](#gateway-kinds--wire-protocol-compatibility)). Today's
+        writer still emits `"chat"`; `AIDE-mhn9` fixes that in Slice 0.
+    *   Unselected `[model_providers.aide-*]` entries whose `env_key` variable is
+        unset are ignored at startup. A selected entry with its variable unset
+        fails with `Missing environment variable: AIDE_GW_<NAME>_KEY` and sends
+        no request (fails closed).
+    *   `-c model_provider=...` beats `--profile` in either order; repeated
+        `-c` flags resolve last-wins, so a user `-c model_provider=...` after
+        aide's prepended one wins, as intended.
+    *   Codex profiles now live in `<codex-dir>/<name>.config.toml`; a
+        `[profiles.<name>]` table in `config.toml` makes `--profile` fail. aide
+        writes neither.
+*   **Pi (`pi` 1.5.0):** `--provider aide-<gw> --model <id>` and
+    `--model aide-<gw>/<id>` both reach the gateway even when the built-in
+    `anthropic` provider has the same model ID and `ANTHROPIC_API_KEY` is set.
+    A bare `--model <id>` fails as ambiguous. A keyless entry sends only its
+    literal placeholder (`x-api-key: <placeholder>`), never a real key.
+*   **Oh My Pi (`omp` 18.18.6):** `--model aide-<gw>/<id>` reaches the gateway;
+    keyless (`auth: none`) sends no credential. A bare `--model <id>` silently
+    used the built-in Anthropic provider with `ANTHROPIC_API_KEY`, so aide must
+    always pass the `aide-<gw>/` prefix (it does).
+*   **OpenCode (`opencode` v2.2.6):**
+    *   A keyless entry with `settings.apiKey` omitted sends no credential under
+        both `@ai-sdk/anthropic` and `@ai-sdk/openai-compatible`, even with saved
+        `/connect` keys for the same provider ID in `auth.json` and
+        `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` exported. No placeholder is needed.
+    *   `OPENCODE_CONFIG_CONTENT={"model":"aide-<gw>/<m>"}` appears as the last
+        config source in `opencode debug config` and overrides `model` in
+        `opencode.jsonc` for `opencode run`. The TUI loads config through the
+        same server and was not driven separately.
+    *   Without `--standalone`, the CLI connects to the machine's shared managed
+        service (`opencode serve --service`) instead of starting its own server,
+        confirming why aide keeps `--standalone`
+        ([`harness.go:161-191`](../../internal/harness/harness.go#L161-L191)).
 
 ## Critical User Journeys (CUJs)
 
@@ -328,6 +346,10 @@ Upgrading is automatic (CUJ 6), but these behaviours change:
     the gateways and the exact command to choose one.
 *   **`aide status`** no longer needs your `age` key to show the secret count;
     it reads key names from the store without decrypting.
+*   **Codex gateways:** a gateway used with Codex must serve the OpenAI
+    Responses API, because Codex 0.167 no longer loads `wire_api = "chat"`.
+    Migration splits a legacy gateway marked for Codex into `<gw>` (Claude, Pi,
+    omp, OpenCode) and `<gw>-codex` (Codex), sharing one key.
 *   **Remote keyless gateways** are rejected; keyless URLs must be loopback.
 *   **Downgrade:** older `aide` binaries cannot read migrated YAML or v2
     `preferences.json`; restore both from `~/.local/state/aide/migrations/`.
@@ -427,7 +449,7 @@ flowchart TD
 
 | Kind | Required / Optional Fields | Launch & Sync Behaviour | Allowed Harnesses (v1) |
 | --- | --- | --- | --- |
-| `static-key` | `preset` or (`url` + `api`); `key` (optional `store`); `harnesses`; optional `model` | Decrypts secret into `AIDE_GW_<NAME>_KEY` (or Claude's auth env var); syncs `aide-<gw>` into marked harness files | `claude` (`anthropic-messages` only), `codex` (`openai-chat` / `openai-responses` only), `pi`, `omp`, `opencode` |
+| `static-key` | `preset` or (`url` + `api`); `key` (optional `store`); `harnesses`; optional `model` | Decrypts secret into `AIDE_GW_<NAME>_KEY` (or Claude's auth env var); syncs `aide-<gw>` into marked harness files | `claude` (`anthropic-messages` only), `codex` (`openai-responses` only; Codex 0.167 rejects `wire_api = "chat"`), `pi`, `omp`, `opencode` |
 | `keyless-loopback` | `url` on `127.0.0.1`, `localhost`, or `::1` (or `ollama` preset); `api`; `no_auth: true` (when no preset); `harnesses`; optional `model` | Never decrypts a store; sets per-harness non-login placeholder (`ANTHROPIC_AUTH_TOKEN="aide-keyless"` + `ANTHROPIC_API_KEY=""` on Claude); syncs `aide-<gw>` | Same wire-protocol matrix as `static-key` |
 | `provider-switch` | `preset: bedrock` (`region`) or `preset: vertex` (`region` + `project`); `harnesses: [claude]` | Skips `/v1/models` fetch, cache, and file writers; injects switch + region/project env vars after scrubbing and opens `aws` or `gcp` capability when chosen | `claude` only |
 
@@ -525,13 +547,18 @@ explicit `url` already ends in its canonical path):
 | `anthropic` | `static-key` | `https://api.anthropic.com` | `anthropic-messages` | `x-api-key` | `claude`, `pi`, `omp`, `opencode` | `ANTHROPIC_API_KEY` |
 | `openai` | `static-key` | `https://api.openai.com/v1` | `openai-responses` | `bearer` | `pi`, `omp`, `opencode`, `codex` | `OPENAI_API_KEY` |
 | `codex` | `static-key` | `https://api.openai.com/v1` | `openai-responses` | `bearer` | `codex` | `CODEX_API_KEY` |
-| `openrouter` | `static-key` | `https://openrouter.ai/api/v1` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode`, `codex` | `OPENROUTER_API_KEY` |
+| `openrouter` | `static-key` | `https://openrouter.ai/api/v1` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode` | `OPENROUTER_API_KEY` |
 | `openrouter-anthropic` | `static-key` | `https://openrouter.ai/api` | `anthropic-messages` | `bearer` | `claude`, `pi`, `omp`, `opencode` | `OPENROUTER_API_KEY` |
-| `opencode-go` | `static-key` | `https://opencode.ai/zen/v1` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode`, `codex` | `OPENCODE_API_KEY` |
-| `zai` | `static-key` | `https://api.z.ai/api/paas/v4` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode`, `codex` | `ZAI_API_KEY` |
-| `ollama` | `keyless-loopback` | `http://127.0.0.1:11434/v1` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode`, `codex` | — |
+| `opencode-go` | `static-key` | `https://opencode.ai/zen/v1` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode` | `OPENCODE_API_KEY` |
+| `zai` | `static-key` | `https://api.z.ai/api/paas/v4` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode` | `ZAI_API_KEY` |
+| `ollama` | `keyless-loopback` | `http://127.0.0.1:11434/v1` | `openai-chat` | `bearer` | `pi`, `omp`, `opencode` | — |
 | `bedrock` | `provider-switch` | — | — | — | `claude` | — (`CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, cap `aws`) |
 | `vertex` | `provider-switch` | — | — | — | `claude` | — (`CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION`, `ANTHROPIC_VERTEX_PROJECT_ID`, cap `gcp`) |
+
+Codex is listed only on `openai-responses` presets because current Codex
+accepts no other wire protocol. A gateway that also serves the Responses API
+(for example a self-hosted proxy) reaches Codex as a separate custom gateway
+with `--api openai-responses`.
 
 [`internal/envscrub/envscrub.go`](../../internal/envscrub/envscrub.go) retains
 its master lists of 119 `providerSecretNames` and 29 `providerSelectorNames`,
@@ -551,7 +578,7 @@ harness string) EndpointSpec`:
 | `pi` (`models.json`) | `anthropic-messages` → `"anthropic-messages"`; `openai-chat` → `"openai-completions"`; `openai-responses` → `"openai-responses"` | `apiKey: "$AIDE_GW_<NAME>_KEY"`, `authHeader: true` (`headers: {"x-api-key": "$AIDE_GW_<NAME>_KEY"}` when `x-api-key`) | `apiKey: "aide-no-auth"` (literal passing `isLiteralPiPlaceholder`), `authHeader: false` |
 | `omp` (`models.yml`) | Same `api` strings as `pi` | `apiKey: "AIDE_GW_<NAME>_KEY"`, `authHeader: true` | `auth: "none"`, `apiKey: ""`, `authHeader: false` |
 | `opencode` (`opencode.jsonc`, `providers.aide-<gw>`; the legacy `provider.<n>.options` shape is deleted as today) | `anthropic-messages` → `package: "@ai-sdk/anthropic"` (today's only package); `openai-*` → `package: "@ai-sdk/openai-compatible"` (new) | `env: ["AIDE_GW_<NAME>_KEY"]`, `settings.apiKey: "{env:AIDE_GW_<NAME>_KEY}"`, `settings.baseURL` from `Endpoint` (replacing today's unconditional `/v1` append), entry-level `headers` (`x-api-key` vs `Authorization: Bearer`) | `settings.apiKey` omitted, no `env`, no `Authorization` header, as today ([`writers.go:847`](../../internal/gateway/writers.go#L847)); a literal placeholder only if verification shows an empty key falls back to `/connect` |
-| `codex` (`config.toml`) | `openai-chat` → `wire_api = "chat"`; `openai-responses` → `wire_api = "responses"` | `env_key = "AIDE_GW_<NAME>_KEY"`; `aide` never writes top-level `model_provider` | Omit `env_key` |
+| `codex` (`config.toml`) | `openai-responses` → `wire_api = "responses"` (the only value Codex 0.167 loads; `openai-chat` gateways are never written for `codex`) | `env_key = "AIDE_GW_<NAME>_KEY"`; `aide` never writes top-level `model_provider` | Omit `env_key` |
 
 ### Launch Selection & Delivery
 
@@ -594,8 +621,8 @@ harness string) EndpointSpec`:
         `"Just this once"` and concurrent sessions are safe.
     *   `codex`: unchosen `[model_providers.aide-*]` entries stay in
         `config.toml` but are inert because Codex uses only the selected
-        `model_provider` (expected; verified by story S1, fallback in
-        [Risks & Mitigations](#risks--mitigations)).
+        `model_provider` (verified on Codex 0.167; see
+        [Open Questions](#open-questions)).
     *   A new `harness.ApplyChoice(args, entry, model) (args, env, notice)`
         delivers the choice. It runs before the existing
         [`Descriptor.ApplyLaunchArgs`](../../internal/harness/harness.go#L161-L191),
@@ -805,7 +832,14 @@ files into a fragile multi-directory lock/rollback transaction inside
         `GITHUB_TOKEN` and `gemini`, renaming reserved `none`/`aide-*` gateway
         names, backfill-populating `model` from OpenCode `model` or cached
         catalogues when available, and isolating shared named-profile dirs while
-        preserving custom `env:` dirs in `config_dirs`).
+        preserving custom `env:` dirs in `config_dirs`). A legacy
+        `gateways.<gw>` entry (one URL that served Anthropic Messages and, for
+        Codex, the OpenAI API) becomes `api: anthropic-messages`; when it was
+        marked for `codex`, migration moves that mark to a sibling gateway
+        `<gw>-codex` with `api: openai-responses`, URL `<base_url>/v1`, and the
+        same `store`/`key`, carries any Codex choice over to it, and lists it in
+        the migration summary. Name collisions follow the reserved-name rename
+        rule.
     *   Every modified YAML file (including monolithic `config.yaml` split into
         `profiles/*.yaml`) is backed up to
         `~/.local/state/aide/migrations/<UTC-ts>/<relpath>.bak` before atomic
@@ -842,7 +876,7 @@ files into a fragile multi-directory lock/rollback transaction inside
 | **Built-in `default` profile writes to native harness files** | Running Pi, omp, OpenCode, or Codex *outside* `aide` shows `aide-<gw>` entries whose `$AIDE_GW_<NAME>_KEY` env vars are unset. | Warn during `aide gateway add` on `default`; unset env vars fail closed on auth without leaking native logins. |
 | **Linux Landlock explicit `sandbox.network.allow_ports` policies** | Default Linux sandbox policy (`Mode: "unrestricted"`) allows loopback ports (`:11434`), whereas an explicit user `allow_ports` allowlist blocks unlisted TCP ports (and `landlock.ConnectTCP` is IP-agnostic, so auto-opening `:11434` would open `*:11434` publicly). | Do not auto-mutate `AllowPorts`; document that users who set an explicit `sandbox.network.allow_ports` list on Linux must include their local model server port. |
 | **Concurrent Claude launches with `--gateway` override** | Rewriting `<claude-dir>/cache/gateway-models.json` on one-shot `--gateway` flags would overwrite another running Claude terminal's `/model` list in the same profile. | Deliver Claude's endpoint and key purely via per-process env vars, and update `cache/gateway-models.json` only for the profile's saved `gateway_choice.claude`. |
-| **Unverified upstream harness edge cases (`codex`, `pi`, `omp`, `opencode`)** | Codex could reject unset `env_key` on unselected `config.toml` entries or changed `wire_api` names; `omp` `--model` flag syntax or OpenCode keyless `@ai-sdk/*` fallback could differ. | Verify during implementation against installed binaries: if Codex rejects unset `env_key`, write a dummy literal or materialize only selected/keyless providers; if `omp` lacks `--model`, omit `ChoiceArgs` on `omp`; if OpenCode ignores `OPENCODE_CONFIG_CONTENT` for `model`, drop preselection on `opencode` and show `startup: opencode default` in the banner; if an empty OpenCode keyless `settings.apiKey` falls back to `/connect`, write a literal placeholder instead. |
+| **Upstream harness changes (`codex`, `pi`, `omp`, `opencode`)** | Harness releases change config schemas without notice: Codex 0.167 dropped `wire_api = "chat"` and refuses to load a file containing it, which stops Codex starting at all. | Behaviour was verified on 2026-11-14 (see [Open Questions](#open-questions)). Writers emit only values the verified versions load (`wire_api = "responses"`), `mismatch` flags stale values so `gateway sync` and launch-time drift repair rewrite them. |
 | **OpenCode `--server` or `attach`** | The launch joins a server aide did not start, so this launch's `OPENCODE_CONFIG_CONTENT` and `AIDE_GW_<NAME>_KEY` may not apply, and that server may hold another launch's keys. | aide's existing `--standalone` placement ([`harness.go:161-191`](../../internal/harness/harness.go#L161-L191), with `OPENCODE_DB` from [`opencode_db.go`](../../internal/launcher/opencode_db.go)) avoids this by default. With a user `--server` or `attach`, aide sets no choice variable and the banner warns `server-controlled: gateway choice not applied`; a regression test asserts `--standalone` survives alongside `ChoiceEnv`. |
 
 ## Alternatives Considered
@@ -1034,7 +1068,7 @@ S1–S11 below (story labels; "step N" refers to the numbered file headings).
 Each story compiles (`go build ./...`), passes `go test -race ./...`, and is
 releasable alone, except S8, whose parts must land together.
 
-### Slice 0: Immediate Safety & Rollback Fixes (`AIDE-yqk7`, `AIDE-whjv`)
+### Slice 0: Immediate Safety & Rollback Fixes (`AIDE-yqk7`, `AIDE-whjv`, `AIDE-mhn9`)
 
 #### 1. [`internal/secrets/manager.go`](../../internal/secrets/manager.go) (Modify)
 
@@ -1085,6 +1119,18 @@ releasable alone, except S8, whose parts must land together.
         after merging `cfg.NeverAllowEnv` and `resolvedCapSet.NeverAllowEnv` into
         `blockedVars`, fail launch with an explicit error if `blockedVars` strips
         a keyless Claude gateway's `ANTHROPIC_AUTH_TOKEN` placeholder.
+
+#### 3a. [`internal/gateway/writers.go`](../../internal/gateway/writers.go), [`docs/configuration.md`](../configuration.md) (Modify)
+
+*   **Type / Scope**: Codex writer compatibility with Codex 0.167 (`AIDE-mhn9`).
+*   **Proposed Changes**: `codexFile.write`
+    ([`:934`](../../internal/gateway/writers.go#L934)) writes
+    `wire_api = "responses"`; `codexFile.mismatch` reports `wire_api differs`
+    for an entry still holding `"chat"`, so `aide gateway sync` and
+    launch-time drift repair rewrite files that already stop Codex starting.
+    Today's `GatewayConfig` has no wire-protocol field, so the docs state that a
+    gateway used with Codex must serve `<base_url>/v1/responses`. Tests cover
+    the written value and the mismatch.
 
 #### 4. [`internal/secrets/manager_test.go`](../../internal/secrets/manager_test.go), [`cmd/aide/gateway_test.go`](../../cmd/aide/gateway_test.go), [`internal/config/gateway_test.go`](../../internal/config/gateway_test.go), [`internal/launcher/credentials_test.go`](../../internal/launcher/credentials_test.go), [`internal/launcher/launcher_test.go`](../../internal/launcher/launcher_test.go) (Modify)
 
@@ -1264,7 +1310,9 @@ migration guard and backups.
         preserving plain non-gateway `credentials:`, backfilling `Model` from
         cached catalogues when available, renaming reserved `none`/`aide-*`
         gateways, and isolating named profiles while preserving custom non-global
-        `env:` dirs in `config_dirs`). Writes backups to
+        `env:` dirs in `config_dirs`; splitting a legacy gateway marked for
+        `codex` into `<gw>` with `api: anthropic-messages` and `<gw>-codex`
+        with `api: openai-responses` sharing its key). Writes backups to
         `~/.local/state/aide/migrations/<UTC-ts>/` before atomic YAML writes, and
         returns a clean read-only notice on `EROFS`/`EACCES`.
 
@@ -1722,3 +1770,12 @@ migration guard and backups.
         Accepted residual Nits: Launch Selection cites S1 before the story list
         defines it; upstream harness behaviour remains unverified until S1.
 *   **Final User Approval**: Approved by the user on 2026-11-13 (Full mode), for slicing into Beads stories S1–S11.
+*   **Post-approval material change (2026-11-14, S1 verification):** Codex
+    0.167 rejects `wire_api = "chat"`. Codex is now `openai-responses` only:
+    removed from the `openrouter`, `opencode-go`, `zai` and `ollama` presets,
+    the writer maps only `openai-responses`, legacy gateways marked for Codex
+    migrate to a sibling `<gw>-codex` gateway, and today's writer is fixed in
+    Slice 0 (`AIDE-mhn9`). Open Questions now records the verified behaviour of
+    all four harnesses; the residual Nit "upstream harness behaviour remains
+    unverified until S1" is closed. Approved by the user on 2026-11-14 ("file
+    it as a bug and update the spec and we need to handle it").

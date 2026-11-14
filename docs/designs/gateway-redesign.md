@@ -180,8 +180,9 @@ gateway that logged each request's path, auth headers and model:
         without a gateway. Only `wire_api = "responses"` loads; requests go to
         `<base_url>/responses` with `Authorization: Bearer <env_key value>`.
         Codex therefore accepts only `openai-responses` gateways (see
-        [Gateway Kinds](#gateway-kinds--wire-protocol-compatibility)). Today's
-        writer still emits `"chat"`; `AIDE-mhn9` fixes that in Slice 0.
+        [Gateway Kinds](#gateway-kinds--wire-protocol-compatibility)). The
+        current writer already emits `"responses"` and repairs `"chat"` entries
+        (shipped in v3.6.2, `AIDE-mhn9`).
     *   Unselected `[model_providers.aide-*]` entries whose `env_key` variable is
         unset are ignored at startup. A selected entry with its variable unset
         fails with `Missing environment variable: AIDE_GW_<NAME>_KEY` and sends
@@ -309,9 +310,8 @@ gateway that logged each request's path, auth headers and model:
     decrypting anything; the OpenCode launch banner shows `corp` as the
     startup entry with source `--gateway`, `work/corp → AIDE_GW_CORP_KEY`, and
     the other `aide-*` entries available in `/model`; OpenCode starts on
-    `aide-corp/claude-sonnet-4-5` (subject to the OpenCode check in
-    [Open Questions](#open-questions); fallback: OpenCode's own default, shown
-    as such in the banner), and aide writes no top-level `model` into
+    `aide-corp/claude-sonnet-4-5` (verified on OpenCode v2.2.6, see
+    [Open Questions](#open-questions)), and aide writes no top-level `model` into
     `opencode.jsonc`.
 
 ## Changes for Existing Users
@@ -333,10 +333,12 @@ Upgrading is automatic (CUJ 6), but these behaviours change:
     carry over (next bullet).
 *   **Startup pins:** aide stops writing OpenCode's top-level `model` and
     Codex's `model_provider`. A value equal to `<gw>/<model>` (OpenCode) or
-    `<gw>` (Codex) for a gateway in the profile is treated as aide-written:
+    `<gw>` or `aide-<gw>` (Codex) for a gateway in the profile is treated as aide-written:
     migration turns it into that harness's `gateway_choice` (and backfills the
     gateway's `model`) before removing it, so the startup endpoint does not
-    change. Any other value is user-set and kept.
+    change; a Codex pin becomes the choice of the gateway that now serves Codex
+    for that legacy gateway, or is dropped with the `aide gateway add` notice
+    when Codex no longer has one. Any other value is user-set and kept.
 *   **Exit code 78** (`EX_CONFIG`, "configuration error") appears when a
     Claude or Codex choice is unset while gateways are still marked for it, in a
     script. Migration and `gateway add` always record a choice; it becomes unset
@@ -348,8 +350,13 @@ Upgrading is automatic (CUJ 6), but these behaviours change:
     it reads key names from the store without decrypting.
 *   **Codex gateways:** a gateway used with Codex must serve the OpenAI
     Responses API, because Codex 0.167 no longer loads `wire_api = "chat"`.
-    Migration splits a legacy gateway marked for Codex into `<gw>` (Claude, Pi,
-    omp, OpenCode) and `<gw>-codex` (Codex), sharing one key.
+    Migration keeps Codex on a legacy gateway only where Codex used it (listed
+    in `harnesses:` or chosen for Codex); see
+    [Legacy gateways and Codex](#self-healing-migration-architecture). A
+    gateway that reached Codex only through the omitted-`harnesses:` default
+    loses that mark, and the migration summary prints the `aide gateway add`
+    command to add a Codex gateway. A split-off `<gw>-codex` is an ordinary
+    gateway: `gateway remove <gw>` leaves it in place.
 *   **Remote keyless gateways** are rejected; keyless URLs must be loopback.
 *   **Downgrade:** older `aide` binaries cannot read migrated YAML or v2
     `preferences.json`; restore both from `~/.local/state/aide/migrations/`.
@@ -492,7 +499,7 @@ gateways:
     model: claude-sonnet-4-5
   local-ollama:
     preset: ollama
-    harnesses: [pi, codex]
+    harnesses: [pi, omp]
   bedrock:
     preset: bedrock
     region: us-east-1
@@ -577,7 +584,7 @@ harness string) EndpointSpec`:
 | `claude` | `anthropic-messages` only | Env: `ANTHROPIC_BASE_URL=<BaseURL>`, plus `ANTHROPIC_API_KEY=<tok>` (`x-api-key`) or `ANTHROPIC_AUTH_TOKEN=<tok>` (`bearer`); `<claude-dir>/cache/gateway-models.json` updated **only** when `<gw>` equals saved `gateway_choice.claude` | Env: `ANTHROPIC_BASE_URL=<BaseURL>`, `ANTHROPIC_AUTH_TOKEN="aide-keyless"`, `ANTHROPIC_API_KEY=""` |
 | `pi` (`models.json`) | `anthropic-messages` → `"anthropic-messages"`; `openai-chat` → `"openai-completions"`; `openai-responses` → `"openai-responses"` | `apiKey: "$AIDE_GW_<NAME>_KEY"`, `authHeader: true` (`headers: {"x-api-key": "$AIDE_GW_<NAME>_KEY"}` when `x-api-key`) | `apiKey: "aide-no-auth"` (literal passing `isLiteralPiPlaceholder`), `authHeader: false` |
 | `omp` (`models.yml`) | Same `api` strings as `pi` | `apiKey: "AIDE_GW_<NAME>_KEY"`, `authHeader: true` | `auth: "none"`, `apiKey: ""`, `authHeader: false` |
-| `opencode` (`opencode.jsonc`, `providers.aide-<gw>`; the legacy `provider.<n>.options` shape is deleted as today) | `anthropic-messages` → `package: "@ai-sdk/anthropic"` (today's only package); `openai-*` → `package: "@ai-sdk/openai-compatible"` (new) | `env: ["AIDE_GW_<NAME>_KEY"]`, `settings.apiKey: "{env:AIDE_GW_<NAME>_KEY}"`, `settings.baseURL` from `Endpoint` (replacing today's unconditional `/v1` append), entry-level `headers` (`x-api-key` vs `Authorization: Bearer`) | `settings.apiKey` omitted, no `env`, no `Authorization` header, as today ([`writers.go:847`](../../internal/gateway/writers.go#L847)); a literal placeholder only if verification shows an empty key falls back to `/connect` |
+| `opencode` (`opencode.jsonc`, `providers.aide-<gw>`; the legacy `provider.<n>.options` shape is deleted as today) | `anthropic-messages` → `package: "@ai-sdk/anthropic"` (today's only package); `openai-*` → `package: "@ai-sdk/openai-compatible"` (new) | `env: ["AIDE_GW_<NAME>_KEY"]`, `settings.apiKey: "{env:AIDE_GW_<NAME>_KEY}"`, `settings.baseURL` from `Endpoint` (replacing today's unconditional `/v1` append), entry-level `headers` (`x-api-key` vs `Authorization: Bearer`) | `settings.apiKey` omitted, no `env`, no `Authorization` header, as today ([`writers.go:847`](../../internal/gateway/writers.go#L847)); verified to send no credential and never fall back to `/connect` |
 | `codex` (`config.toml`) | `openai-responses` → `wire_api = "responses"` (the only value Codex 0.167 loads; `openai-chat` gateways are never written for `codex`) | `env_key = "AIDE_GW_<NAME>_KEY"`; `aide` never writes top-level `model_provider` | Omit `env_key` |
 
 ### Launch Selection & Delivery
@@ -801,22 +808,65 @@ files into a fragile multi-directory lock/rollback transaction inside
     Passive callers (`aide prompt`, `aide statusline`, shell completion,
     `aide which`, `aide status`, `aide config migrate` preview) stay fast and
     read-only.
+    *   **Legacy gateways and Codex.** `config.ConvertLegacyGateways(ctx
+        Context) (gateways map[string]GatewayConfig, renames
+        map[string]map[string]string)`, used by this translation and by
+        `PlanGatewayMigration` so both give the same result, converts each
+        legacy `gateways.<gw>` entry (one URL that served Anthropic Messages
+        and, for Codex, the OpenAI API). `renames` is keyed by harness and old
+        name. Codex *used* `<gw>` when `codex` is listed in its `harnesses:` or
+        the profile's legacy `default_credentials:` selects it for Codex
+        (`DefaultCredentialsForHarness(ctx, "codex")` on the context after
+        today's `SynthesizeGatewayCredentials` rule, so the gateway Codex
+        launches with today counts). Only the profile YAML
+        counts, so the result never depends on the directory a command runs in:
+        the Codex pin aide wrote already follows `default_credentials:`, and a
+        repo preference is translated afterwards (step 2). Reserved-name
+        renames run first. `config.Load` keeps `renames` on
+        `Config.LegacyRenames` (never serialized) for `ResolveChoice`.
+        *   Codex did not use it: `<gw>` becomes `api: anthropic-messages`
+            without `codex`; the summary prints `aide gateway add <gw>-codex
+            --url <url> --api openai-responses --secret-store <store> --key
+            <key> --harnesses codex` (`--no-auth` instead of the store and key
+            for a keyless gateway) for users whose gateway serves
+            `/v1/responses`.
+        *   Codex was its only harness: `<gw>` is converted in place to
+            `api: openai-responses` with URL
+            `config.NormalizeGatewayBaseURL(base_url) + "/v1"`.
+        *   Otherwise: `<gw>` becomes `api: anthropic-messages` without
+            `codex`, plus a sibling with `api: openai-responses`, that URL, the
+            same `store`/`key` (or `no_auth`), the same `refresh_ttl`,
+            `harnesses: [codex]` and no `model`. Its name is the first of
+            `<gw>-codex`, `<gw>-codex-2`, … that matches no gateway name, no
+            reserved name, and no other gateway's `AIDE_GW_<NAME>_KEY`.
+        *   Every Codex choice for `<gw>` (pin, default) moves to the gateway
+            that now serves Codex, through `renames`. A v1 repo preference that
+            names `<gw>` for Codex follows `renames` too; when Codex no longer
+            has a gateway for it, `TranslatePreference` drops it with the same
+            `aide gateway add` notice.
+        *   Keyless legacy gateways follow the same remote-keyless rule as any
+            other gateway.
 2.  **`preferences.json` v1 → v2:**
     [`prefs.Load`](../../internal/prefs/prefs.go#L116-L137) parses v1 and v2
     and needs no config; a v1 `credentials` list is kept in a
     `LegacyCredentials *[]string` field (JSON `credentials`) so nothing is lost.
     `gatewaymigrate.TranslatePreference(rec, cfg, renames)` maps it: an empty,
     non-nil list → `"none"` for `claude` and `codex`; a named credential that
-    became gateway `<gw>` → `<gw>` for the record's harness; anything else is
-    dropped with a notice. `ResolveChoice` calls it in memory (no renames exist
-    before migration); `gatewaymigrate.Apply` calls it with the rename map and
-    persists the result. `prefs.Save` writes version 2, keeps any
+    became gateway `<gw>` → the gateway that now serves the record's harness
+    (for Codex, `<gw>-codex` after a split); anything else is
+    dropped with a notice. `ResolveChoice` calls it in memory with the
+    `Config.LegacyRenames`; `gatewaymigrate.Apply` calls it
+    with the same map and persists the result. `prefs.Save` writes version 2, keeps any
     untranslated `LegacyCredentials`, and backs up a version 1 file with
     `fsutil.BackupToDir` the first time it replaces one.
 3.  **Idempotent harness-file reconciliation:** During normal `gateway.Sync` and
     launch-time sync, harness writers write `aide-<gw>`, prune unconfigured
     `aide-*` entries, delete URL-matched legacy bare `<gw>` entries via
-    `RemoveFromHarness`'s URL check, and strip `aide`-written top-level `model`
+    `RemoveFromHarness`'s URL check (in Codex's `config.toml`, any bare
+    `[model_providers.<gw>]` whose `base_url` is the legacy gateway's
+    `config.NormalizeGatewayBaseURL(base_url) + "/v1"`, whatever the gateway is now marked
+    for, so a leftover `wire_api = "chat"` entry cannot stop Codex starting),
+    and strip `aide`-written top-level `model`
     (OpenCode) and `model_provider` (Codex) references while keeping user-set
     models (see [Changes for Existing Users](#changes-for-existing-users) for
     the rule; migration records the matching `gateway_choice` first).
@@ -832,14 +882,10 @@ files into a fragile multi-directory lock/rollback transaction inside
         `GITHUB_TOKEN` and `gemini`, renaming reserved `none`/`aide-*` gateway
         names, backfill-populating `model` from OpenCode `model` or cached
         catalogues when available, and isolating shared named-profile dirs while
-        preserving custom `env:` dirs in `config_dirs`). A legacy
-        `gateways.<gw>` entry (one URL that served Anthropic Messages and, for
-        Codex, the OpenAI API) becomes `api: anthropic-messages`; when it was
-        marked for `codex`, migration moves that mark to a sibling gateway
-        `<gw>-codex` with `api: openai-responses`, URL `<base_url>/v1`, and the
-        same `store`/`key`, carries any Codex choice over to it, and lists it in
-        the migration summary. Name collisions follow the reserved-name rename
-        rule.
+        preserving custom `env:` dirs in `config_dirs`). Legacy gateways follow
+        the [Legacy gateways and Codex](#self-healing-migration-architecture)
+        rule in step 1; the summary lists every converted, split or dropped
+        Codex mark.
     *   Every modified YAML file (including monolithic `config.yaml` split into
         `profiles/*.yaml`) is backed up to
         `~/.local/state/aide/migrations/<UTC-ts>/<relpath>.bak` before atomic
@@ -1070,15 +1116,21 @@ releasable alone, except S8, whose parts must land together.
 
 ### Slice 0: Immediate Safety & Rollback Fixes (`AIDE-yqk7`, `AIDE-whjv`, `AIDE-mhn9`)
 
+Status: `AIDE-mhn9` (item 3a) shipped in v3.6.2; `AIDE-yqk7` (items 1–2,
+without the `saveConfigWithMigrationPromptIO` switch) and the part of
+`AIDE-whjv` that refuses a key sent to another binding's endpoint shipped in
+v3.6.3. `ReplaceKey` snapshots the store file's encrypted bytes rather than
+re-reading the value. The rest of item 3 (non-loopback keyless rejection,
+Claude keyless placeholder, `never_allow_env` abort) is not done yet.
+
 #### 1. [`internal/secrets/manager.go`](../../internal/secrets/manager.go) (Modify)
 
 *   **Type / Scope**: Secret store rollback primitive (`AIDE-yqk7`).
-* **Proposed Changes**: Add `Manager.ReplaceKey(storeName, secretsDir, key,
-    value, explicitAgePubKey string) (restore func() error, err error)` (the
-    same arguments as `SetKey`)
-    that reads any existing value before writing `value`, returning a closure
-    that restores the previous value (or deletes `key` / removes a newly created
-    single-key store file when `key` did not exist prior to `ReplaceKey`).
+*   **Changes** (shipped in v3.6.3): `Manager.ReplaceKey(storeName,
+    secretsDir, key, value, explicitAgePubKey string) (restore func() error,
+    err error)` (the same arguments as `SetKey`) snapshots the store file's
+    encrypted bytes before writing `value`; `restore` writes them back, or
+    removes the file when `ReplaceKey` created it.
 
 #### 2. [`cmd/aide/gateway.go`](../../cmd/aide/gateway.go) (Modify)
 
@@ -1122,9 +1174,10 @@ releasable alone, except S8, whose parts must land together.
 
 #### 3a. [`internal/gateway/writers.go`](../../internal/gateway/writers.go), [`docs/configuration.md`](../configuration.md) (Modify)
 
-*   **Type / Scope**: Codex writer compatibility with Codex 0.167 (`AIDE-mhn9`).
-*   **Proposed Changes**: `codexFile.write`
-    ([`:934`](../../internal/gateway/writers.go#L934)) writes
+*   **Type / Scope**: Codex writer compatibility with Codex 0.167 (`AIDE-mhn9`,
+    shipped in v3.6.2).
+*   **Changes**: `codexFile.write`
+    ([`:926`](../../internal/gateway/writers.go#L926)) writes
     `wire_api = "responses"`; `codexFile.mismatch` reports `wire_api differs`
     for an entry still holding `"chat"`, so `aide gateway sync` and
     launch-time drift repair rewrite files that already stop Codex starting.
@@ -1162,12 +1215,16 @@ migration guard and backups.
 3.  **S3** `gateway.Endpoint` + `FetchModels` header dispatch (step 8, first two
     bullets). No behaviour change.
 4.  **S4** `GatewayChoice` schema and in-memory legacy translation of config
-    into derived, non-serialized fields; the writer round-trips legacy fields
-    unchanged (step 7 without the deletions and the writer changes).
+    into derived, non-serialized fields, including the "Legacy gateways and
+    Codex" conversion; the writer round-trips legacy fields unchanged (step 7
+    without the deletions and the writer changes).
 5.  **S5** Writers emit `aide-<gw>` entries, remove URL-matched bare `<gw>`
     entries, and rewrite aide-written pins to `aide-<gw>`; they still pin until
     S8, and keep today's key variable (`gw.EnvVarName()`) so a release that
-    stops after S5 still authenticates (step 8 writer naming). Needs S1, S3.
+    stops after S5 still authenticates (step 8 writer naming). A Codex entry
+    for a split-off `<gw>-codex` uses the legacy `<gw>`'s key variable until
+    S6, and an aide-written Codex pin `<gw>` is rewritten to the entry that
+    now serves Codex. Needs S1, S3, S4.
 6.  **S6** `ResolveChoice` with sources, picker, exit 78 via the existing
     `usage.ExitError`, passive preview; `ApplyChoice` for `codex`, `pi`,
     `omp`; prefs v2 schema with `LegacyCredentials`; create
@@ -1234,8 +1291,9 @@ migration guard and backups.
         compatibility, `Preset.Harnesses` bounds, `SwitchSpec` required
         `region`/`project`, reserved names (`none`, `aide-*`), and
         per-profile `AIDE_GW_<NAME>_KEY` / case-insensitive `aide-<name>`
-        collisions. Delete `SynthesizeGatewayCredentials` and
-        `DefaultCredentialsForHarness`; update `CredentialScrubNames` to include
+        collisions. Delete `SynthesizeGatewayCredentials`, and keep
+        `DefaultCredentialsForHarness` only as an unexported helper of
+        `ConvertLegacyGateways`; update `CredentialScrubNames` to include
         `AIDE_GW_*` + retained `credentials:` env names.
     *   Remove `default_credentials:` from runtime and writer; restrict
         `credentials:` validation to plain non-gateway env-var bindings (rejecting
@@ -1278,7 +1336,7 @@ migration guard and backups.
         `ctx.GatewayChoice["claude"] == gwName` instead), OpenCode's `model`
         write branch ([`:798-821`](../../internal/gateway/writers.go#L798-L821)),
         and Codex's `model_provider` write branch
-        ([`:941-948`](../../internal/gateway/writers.go#L941-L948)); skip
+        ([`:945-951`](../../internal/gateway/writers.go#L945-L951)); skip
         `KindProviderSwitch`; add `Prune(profileName, ctx, harnessName, home, configured)`
         for stale `aide-*` entries and idempotent cleanup of URL-matched legacy
         bare `<gw>` entries and `aide`-written `model`/`model_provider` fields.
@@ -1310,9 +1368,9 @@ migration guard and backups.
         preserving plain non-gateway `credentials:`, backfilling `Model` from
         cached catalogues when available, renaming reserved `none`/`aide-*`
         gateways, and isolating named profiles while preserving custom non-global
-        `env:` dirs in `config_dirs`; splitting a legacy gateway marked for
-        `codex` into `<gw>` with `api: anthropic-messages` and `<gw>-codex`
-        with `api: openai-responses` sharing its key). Writes backups to
+        `env:` dirs in `config_dirs`; legacy gateways through the shared
+        "Legacy gateways and Codex" function, which S4's in-memory translation
+        also calls). Writes backups to
         `~/.local/state/aide/migrations/<UTC-ts>/` before atomic YAML writes, and
         returns a clean read-only notice on `EROFS`/`EACCES`.
 
@@ -1481,7 +1539,13 @@ migration guard and backups.
         `internal/gatewaymigrate/migrate_test.go` (every legacy `credentials:`,
         `default_credentials:`, `LegacyMonolithic` `config.yaml`, `config_dir` /
         custom `env:` dir override, reserved-name rename, idempotency, and
-        read-only `EROFS` fallback), and `internal/ui/picker_test.go` (no
+        read-only `EROFS` fallback; legacy gateways and Codex: listed codex
+        split, default-only codex dropped with the printed command, codex-only
+        converted in place, `<gw>-codex` name collision, base URL already ending
+        in `/v1`, Codex pins `<gw>` / `aide-<gw>` / user-set, a v1 Codex
+        preference, keyless, `Load` and `Plan` agreeing, and no second sibling
+        on re-run; a leftover `wire_api = "chat"` bare entry removed), and
+        `internal/ui/picker_test.go` (no
         preselection, remember scopes, read-only fallback).
     *   **Modify**: [`internal/config/gateway_test.go`](../../internal/config/gateway_test.go),
         [`internal/config/credentials_test.go`](../../internal/config/credentials_test.go),
@@ -1573,11 +1637,15 @@ migration guard and backups.
         `ApplyChoice` prepending, subcommand skip, and user-flag yield
         (`ApplyLaunchArgs` still places `--standalone`), and `never_allow_env`
         blocking Claude's keyless placeholder.
-    *   `internal/gatewaymigrate`: split and monolithic `config.yaml`, built-in
+    *   `internal/gatewaymigrate`: the legacy gateways and Codex cases listed in
+        step 16; split and monolithic `config.yaml`, built-in
         and custom `credentials:`, preserved non-LLM/Gemini `credentials:`,
         `config_dir` / custom `env:` dir preservation, idempotency, and `EROFS`
         read-only fallback.
 *   **Manual E2E Checks** (verifying upstream items in [Open Questions](#open-questions)):
+    *   Codex: a legacy gateway listed for `codex` migrates to
+        `<gw>-codex`; `codex` starts and sends `POST <url>/responses` with the
+        shared key.
     *   CUJ 1: `aide gateway add opencode-go` on a fresh profile → Pi `/model`
         lists `aide-opencode-go` with unchanged startup default.
     *   CUJ 2/4: `aide gateway add corp` answering `No` on Claude default →
@@ -1779,3 +1847,32 @@ migration guard and backups.
     all four harnesses; the residual Nit "upstream harness behaviour remains
     unverified until S1" is closed. Approved by the user on 2026-11-14 ("file
     it as a bug and update the spec and we need to handle it").
+*   **Re-review of the post-approval change (2026-11-14, `Full` mode,
+    targeted):** design, implementation readiness, codebase details and
+    Ponytail on commit `28bc29c`. Fixed: the split fired for every legacy
+    gateway through the omitted-`harnesses:` default (design, Ponytail) — it
+    now fires only where Codex used the gateway, otherwise the mark is dropped
+    with the `gateway add` command; codex-only gateways convert in place;
+    one shared function for `Load` and `Plan`; Codex pins, v1 preferences and
+    defaults follow the gateway that serves Codex (harness-keyed rename map);
+    S4 translates and S5 writes the split with the legacy key variable until
+    S6 (readiness Blocker); leftover bare `wire_api = "chat"` entries are
+    removed regardless of marks (Ponytail); URL is
+    `NormalizeGatewayBaseURL + "/v1"`; deterministic `-codex-N` names; sibling
+    copies `refresh_ttl`, not `model`; stale "writer still emits chat" text
+    and Slice 0 status corrected (codebase Blockers); `ollama` example, OpenCode
+    hedges and the `:934` link fixed; migration tests and a Codex E2E added.
+    Verification pass: codebase all fixed; Ponytail "ship". Design and
+    readiness Major (the "Codex used" test needed pins and repo preferences
+    that `config.Load` cannot see, and "no renames before migration" was no
+    longer true) fixed by `config.ConvertLegacyGateways` deciding from the
+    profile YAML only and returning a harness-keyed `renames` that
+    `ResolveChoice` uses before migration; Nits fixed: `--no-auth` in the
+    printed command, reserved renames first, one URL helper name, item 1
+    wording, `:945-951` link, Verification Plan pointer. Final check:
+    design and readiness confirm no open Blocker or Major; readiness "ready to
+    build S2/S5/S8: yes". Remaining Nits (`DefaultCredentialsForHarness` kept
+    as a converter helper, `Config.LegacyRenames`, the dropped-pin outcome,
+    the synthesized default context) fixed.
+*   **User approval of the re-reviewed change:** approved by the user on
+    2026-11-14.

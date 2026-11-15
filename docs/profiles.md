@@ -204,8 +204,8 @@ primitives to make this clean:
    (`CLAUDE_CONFIG_DIR=~/.claude-work`, `CODEX_HOME=~/.codex-work`,
    ...) at launch, sync, adopt and list, so each profile keeps its own
    login, settings, MCP servers and history.
-2. **One secret store per account** when you use API keys, selected
-   with a `credentials:` binding. Without one, the agent uses the
+2. **One secret store per account** when you use API keys, chosen
+   with a [gateway](configuration.md#gateways) (`gateway_choice:`). Without one, the agent uses the
    native login stored in that profile's config dir.
 
 **Walkthrough - personal + work.**
@@ -290,7 +290,8 @@ Upgrading also migrates legacy gateways (`base_url:`) and the gateway names in `
   `profile_dir:` becomes `config_dir:`, so every login dir stays where
   it is.
 - Provider keys templated into `env:` from the profile's `secret:`
-  store become `credentials:` bindings.
+  store become gateways (for the providers a gateway preset serves)
+  or `credentials:` bindings.
 - Profiles with no config dir of their own run the agent from its
   global dir (such as `~/.claude`) and share that one login. They are
   listed and left alone; `--adopt <profile>` keeps the global login

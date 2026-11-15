@@ -1121,7 +1121,8 @@ without the `saveConfigWithMigrationPromptIO` switch) and the part of
 `AIDE-whjv` that refuses a key sent to another binding's endpoint shipped in
 v3.6.3. `ReplaceKey` snapshots the store file's encrypted bytes rather than
 re-reading the value. The rest of item 3 (non-loopback keyless rejection,
-Claude keyless placeholder, `never_allow_env` abort) is not done yet.
+Claude keyless placeholder, `never_allow_env` abort) is implemented on
+the `gateway-redesign` branch.
 
 #### 1. [`internal/secrets/manager.go`](../../internal/secrets/manager.go) (Modify)
 

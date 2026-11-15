@@ -70,10 +70,15 @@ func TestWhichAndStatus_JSONNameCredentialBindings(t *testing.T) {
 				t.Errorf("auth_mode = %v, want api", got["auth_mode"])
 			}
 			creds, _ := json.Marshal(got["credentials"])
-			for _, w := range []string{`"anthropic"`, `"ANTHROPIC_API_KEY"`, `"openrouter"`, `"OPENROUTER_API_KEY"`} {
+			// The provider credentials are gateways now: the launched harness's
+			// choice is listed, and Pi's choice is the translated env: key.
+			for _, w := range []string{`"anthropic"`, `"ANTHROPIC_API_KEY"`} {
 				if !strings.Contains(string(creds), w) {
 					t.Errorf("credentials %s lacks %s", creds, w)
 				}
+			}
+			if views, _ := json.Marshal(got["gateway_choices"]); !strings.Contains(string(views), `"others":1`) {
+				t.Errorf("gateway_choices %s lack the translated env: key's gateway among the others", views)
 			}
 			if env, _ := json.Marshal(got["env_items"]); strings.Contains(string(env), "OPENROUTER_API_KEY") {
 				t.Errorf("translated legacy credential still listed as env: %s", env)

@@ -73,8 +73,9 @@ func configMigrateCmd() *cobra.Command {
   profiles/<name>.yaml One flat YAML file per profile
 
 If config.yaml still uses the legacy contexts: schema, it is upgraded to profiles:
-at the same time. Legacy gateways (base_url:) are converted to gateways: plus an
-explicit gateway_choice:, with backups under ~/.local/state/aide/migrations/. Without --write, prints the generated files and what changes;
+at the same time. Legacy gateways (base_url:), LLM provider credentials and env: provider
+switches and endpoints are converted to gateways: plus an explicit
+gateway_choice:, with backups under ~/.local/state/aide/migrations/. Without --write, prints the generated files and what changes;
 nothing is written. With --write, the original is kept as config.yaml.bak and the
 modular files are written atomically.`,
 		Example: `  aide config migrate                      # preview split files
@@ -102,7 +103,17 @@ func runConfigMigrate(out io.Writer, cfgPath, statePath, home string, write bool
 	if err := runMigrate(out, cfgPath, statePath, home, write, true); err != nil {
 		return err
 	}
-	return runGatewayMigrate(out, cfgPath, home, write)
+	oldHash, hashErr := provision.ConfigHash(cfgPath)
+	if err := runGatewayMigrate(out, cfgPath, home, write); err != nil {
+		return err
+	}
+	// The gateway migration rewrites the profile files too: keep that from showing as drift.
+	if newHash, err := provision.ConfigHash(cfgPath); write && hashErr == nil && err == nil && newHash != oldHash {
+		if _, err := provision.RehashConfig(statePath, oldHash, newHash); err != nil {
+			return fmt.Errorf("gateways migrated, but updating provisioning state failed, so aide may report drift until `aide sync` runs: %w", err)
+		}
+	}
+	return nil
 }
 
 // runGatewayMigrate previews (or with write applies, with backups) the
@@ -121,9 +132,9 @@ func runGatewayMigrate(out io.Writer, cfgPath, home string, write bool) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(out, "Gateways still use the legacy form; --write converts them to gateways: with gateway_choice: (backups kept):")
+		fmt.Fprintln(out, "Gateways, provider credentials and env: endpoints still use the legacy form; --write converts them to gateways: with gateway_choice: (backups kept):")
 		for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
-			if !slices.ContainsFunc(slices.Collect(maps.Values(cfg.Contexts[name].Gateways)), config.GatewayConfig.IsLegacy) {
+			if !config.ConvertLegacy(cfg.Contexts[name]).NeedsMigration() {
 				continue
 			}
 			body, err := config.EncodeProfileYAML(name, plan.Config.Contexts[name])

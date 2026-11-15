@@ -353,9 +353,12 @@ in your shell cannot reach an agent that did not select it.
 LLM endpoints (hosted providers, company gateways, cloud switches) are
 [gateways](#gateways); `credentials:` is for plain environment-variable
 secrets such as `GITHUB_TOKEN`, and for env-only harnesses (`gemini`,
-`aider`, `goose`, `amp`). Provider credentials written the old way
-keep working until migrated. A profile names its provider API keys under `credentials:` and picks
-the ones a launch injects with `default_credentials:`. Each binding
+`aider`, `goose`, `amp`). Provider credentials written the old way are
+migrated to gateways (see [Upgrading from earlier
+gateways](#upgrading-from-earlier-gateways)); the rest of this section
+describes the bindings that stay. A profile names its keys under
+`credentials:` and picks the ones a launch injects with
+`default_credentials:`. Each binding
 refers to one key in an age-encrypted secret store (the same stores
 `secret:` names; see `aide secrets`).
 
@@ -684,9 +687,16 @@ value you set yourself unless `--gateway` is passed). Comments in
 ### Upgrading from earlier gateways
 
 On the first launch or config-writing command after upgrading, aide
-migrates a legacy profile: `base_url:` gateways and the gateway names in
-`default_credentials:` become `gateways:` entries plus an explicit
-`gateway_choice:`, so the launch uses the same endpoint as before. It
+migrates a legacy profile: `base_url:` gateways, LLM provider
+`credentials:` (`anthropic`, `openai`, `codex`, `openrouter`, and custom
+ones that set `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL`), keyless
+`bedrock`/`vertex` bindings, `env:` provider switches, an `env:`
+`ANTHROPIC_BASE_URL` with its key, and `default_credentials:` become
+`gateways:` entries plus an explicit `gateway_choice:`, so the launch
+uses the same endpoint and key as before. `gemini` and credentials for
+other tools (`GITHUB_TOKEN`) stay under `credentials:`, as does a
+provider credential whose route a gateway cannot express exactly (another
+variable set, a harness that is no gateway harness). It
 backs up the YAML and `preferences.json` under
 `~/.local/state/aide/migrations/<UTC-timestamp>/` first and prints a
 one-time summary, highlighting any choice inherited from the old
@@ -713,11 +723,14 @@ Things that change:
   it no longer needs your age key.
 - `aide gateway rename` is not a command; use
   `aide gateway edit <name> --name <new>`.
-- LLM provider `credentials:` and `default_credentials:` that are not
-  gateways keep working through the credential path (above) until they
-  are migrated; `aide gateway use` does not select them. Use
-  `--gateway <credential>` on a launch or
-  `aide project set --gateway <credential> --harness <h>`.
+- A migrated credential keeps its name as the gateway name, so
+  `aide gateway use <name> --harness <h>` and `--gateway <name>` select
+  it. `openrouter` no longer serves Codex (the preset speaks Chat
+  Completions); the summary prints the `aide gateway add` command for
+  Codex. A custom credential that set `OPENAI_BASE_URL` for Codex becomes
+  a `<name>` Chat gateway plus a `<name>-codex`
+  Responses gateway. A key sent to a custom endpoint is delivered as a
+  bearer token.
 
 ### Refresh at launch
 

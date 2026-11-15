@@ -871,14 +871,14 @@ default_profile: work
 		t.Fatal(err)
 	}
 
-	// List shows the built-in anthropic as the default, and api-codex as a standby (codex keeps its own login).
+	// List shows the migrated anthropic credential as the default gateway, and api-codex as a standby (codex keeps its own login).
 	out, err := runGateway(t, "", "list", "--profile", "work")
 	if err != nil {
 		t.Fatalf("list: %v\n%s", err, out)
 	}
 	for _, want := range []string{
 		"● GATEWAY: anthropic  [ACTIVE — default for: claude, pi, omp, opencode]",
-		"https://api.anthropic.com (built-in)",
+		"URL:          https://api.anthropic.com",
 		"○ GATEWAY: api-codex  [standby — switch: aide gateway use api-codex --harness <h> --profile work, or launch: aide --gateway api-codex]",
 		"○ GATEWAY: api  [standby — switch: aide gateway use api --harness <h> --profile work, or launch: aide --gateway api]",
 	} {
@@ -927,18 +927,15 @@ default_profile: work
 	}
 
 	// Verify `aide gateway list` (with no --profile flag) defaults to the active profile ("work"),
-	// sorts active "api" ahead of standby "anthropic", and marks "anthropic" as standby with --gateway hint.
+	// and sorts active "api" ahead of standby "anthropic".
 	out, err = runGateway(t, "", "list")
 	if err != nil {
 		t.Fatalf("list default profile: %v\n%s", err, out)
 	}
 	apiIdx := strings.Index(out, "● GATEWAY: api  [ACTIVE — default for: claude, pi, omp, opencode]")
-	anthIdx := strings.Index(out, "○ GATEWAY: anthropic  [standby — launch: aide --gateway anthropic]")
+	anthIdx := strings.Index(out, "○ GATEWAY: anthropic  [standby — switch: aide gateway use anthropic --harness <h> --profile work, or launch: aide --gateway anthropic]")
 	if apiIdx < 0 || anthIdx < 0 || apiIdx > anthIdx {
 		t.Errorf("expected active api before standby anthropic (apiIdx=%d, anthIdx=%d):\n%s", apiIdx, anthIdx, out)
-	}
-	if !strings.Contains(out, "available (select with --gateway anthropic)") {
-		t.Errorf("expected standby anthropic harness row to suggest --gateway anthropic:\n%s", out)
 	}
 	if _, err := runGateway(t, "", "list", "--profile", "work", "--all"); err == nil {
 		t.Error("expected --profile and --all to be mutually exclusive")
@@ -951,7 +948,7 @@ default_profile: work
 	if _, err := runGateway(t, "\n", "use", "--harness", "claude", "--profile", "work"); err == nil {
 		t.Error("an empty answer selected a gateway")
 	}
-	out, err = runGateway(t, "2\n", "use", "--harness", "claude", "--profile", "work")
+	out, err = runGateway(t, "3\n", "use", "--harness", "claude", "--profile", "work")
 	if err != nil {
 		t.Fatalf("interactive use: %v\n%s", err, out)
 	}
@@ -1002,8 +999,8 @@ default_profile: work
 	if _, ok := loaded.Contexts["work"].Gateways["acme"]; !ok {
 		t.Errorf("gateways = %+v, want acme", loaded.Contexts["work"].Gateways)
 	}
-	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "acme" || got["codex"] != "acme-codex" || got["pi"] != "" {
-		t.Errorf("GatewayChoice = %v, want claude=acme, codex=acme-codex, pi unset", got)
+	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "acme" || got["codex"] != "acme-codex" || got["pi"] != "anthropic" {
+		t.Errorf("GatewayChoice = %v, want claude=acme, codex=acme-codex, pi=anthropic (migrated default)", got)
 	}
 }
 

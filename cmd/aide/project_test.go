@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -44,7 +43,7 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, ok := savedFor(t, path, "work")
-	if !ok || p.Harness != "pi" || p.LegacyCredentials == nil || !slices.Equal(*p.LegacyCredentials, []string{"openai"}) {
+	if !ok || p.Harness != "pi" || p.LegacyCredentials != nil || p.Gateway["pi"] != "openai" {
 		t.Errorf("saved = %+v, %v", p, ok)
 	}
 	if !strings.Contains(out, "github.com/org/repo") || !strings.Contains(out, `"work"`) {
@@ -64,11 +63,11 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 	}
 
 	// A second set changes only what it names.
-	if out, err := runProject(t, "set", "--gateway", "anthropic"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "anthropic", "--harness", "pi"); err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, _ = savedFor(t, path, "work")
-	if p.Harness != "pi" || !slices.Equal(*p.LegacyCredentials, []string{"anthropic"}) {
+	if p.Harness != "pi" || p.Gateway["pi"] != "anthropic" {
 		t.Errorf("after second set = %+v", p)
 	}
 }

@@ -153,14 +153,9 @@ func projectSetCmd() *cobra.Command {
 }
 
 // setGateway saves gw as the repository's choice for harness h: a
-// gateway marked for h, or none. A name that is not a gateway but is a
-// credential of the profile keeps its legacy selection.
+// gateway marked for h, or none.
 func (t *projectTarget) setGateway(p *prefs.Preference, gw, h string) error {
 	ctx := t.rc.Context
-	if _, isCredential := ctx.Credentials[gw]; isCredential && gw != "none" && !slices.Contains(ctx.GatewayCandidates(h), gw) {
-		p.LegacyCredentials = prefs.Selection(gw)
-		return nil
-	}
 	if h == "" {
 		return errors.New("--harness is required with --gateway (or pass --agent)")
 	}

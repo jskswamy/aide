@@ -626,12 +626,8 @@ and prompts, with nothing preselected.`,
 				}
 			}
 			if name != "" && name != "none" && !slices.Contains(candidates, name) {
-				hint := ""
-				if _, isGW := ctx.Gateways[name]; !isGW {
-					hint = "; provider credentials cannot be chosen here until they migrate: launch with --gateway " + name + " or run aide project set --gateway " + name + " --harness " + harnessName
-				}
-				return fmt.Errorf("profile %q has no gateway %q marked for %s (marked: %s)%s",
-					profileName, name, harnessName, strings.Join(append(candidates, "none"), ", "), hint)
+				return fmt.Errorf("profile %q has no gateway %q marked for %s (marked: %s)",
+					profileName, name, harnessName, strings.Join(append(candidates, "none"), ", "))
 			}
 
 			if repo {

@@ -1121,7 +1121,8 @@ without the `saveConfigWithMigrationPromptIO` switch) and the part of
 `AIDE-whjv` that refuses a key sent to another binding's endpoint shipped in
 v3.6.3. `ReplaceKey` snapshots the store file's encrypted bytes rather than
 re-reading the value. The rest of item 3 (non-loopback keyless rejection,
-Claude keyless placeholder, `never_allow_env` abort) is not done yet.
+Claude keyless placeholder, `never_allow_env` abort) is implemented on
+the `gateway-redesign` branch.
 
 #### 1. [`internal/secrets/manager.go`](../../internal/secrets/manager.go) (Modify)
 
@@ -1876,3 +1877,7 @@ migration guard and backups.
     the synthesized default context) fixed.
 *   **User approval of the re-reviewed change:** approved by the user on
     2026-11-14.
+
+### Implementation decisions
+
+*   Keyless safety: `config.Load` prints the non-loopback keyless warning to stderr (package-level writer); the Claude placeholder lives in the route's `Set` (so the banner skips any `Set` value equal to `config.KeylessPlaceholder`); `Launcher.Launch` validates only gateways in the launch's credential plan.

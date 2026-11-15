@@ -194,6 +194,9 @@ Examples:
 					return err
 				}
 			}
+			if err := config.ValidateGatewayTarget(name, gw); err != nil {
+				return err
+			}
 			if token != "" && !force {
 				if err := checkKeyUnclaimed(cfg, gw.Store, gw.Key); err != nil {
 					return err
@@ -722,6 +725,11 @@ cached catalogue, and write it into every provisioned harness config.`,
 			var failed []string
 			for _, name := range names {
 				gw := ctx.Gateways[name]
+				if err := config.ValidateGatewayTarget(name, gw); err != nil {
+					fmt.Fprintf(out, "✗ %v\n", err)
+					failed = append(failed, name)
+					continue
+				}
 				fmt.Fprintf(out, "→ Syncing gateway %q (profile %q)\n", name, profileName)
 				token := ""
 				var err error
@@ -1127,6 +1135,10 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 		updatedCtx.DefaultCredentials = defs
 	}
 	if err := config.ValidateGateways("profiles."+profileName, updatedCtx, cfg.NeverAllowEnv); err != nil {
+		return err
+	}
+
+	if err := config.ValidateGatewayTarget(newName, newGW); err != nil {
 		return err
 	}
 

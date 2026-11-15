@@ -450,3 +450,41 @@ func TestGateway_ValidateRejectsProviderVariableKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestGateway_ValidateGatewayTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		gw   GatewayConfig
+		ok   bool
+	}{
+		{"keyed remote", GatewayConfig{BaseURL: "https://gw.example.com", Store: "s", Key: "k"}, true},
+		{"keyless loopback", GatewayConfig{BaseURL: "http://127.0.0.1:11434"}, true},
+		{"keyless remote", GatewayConfig{BaseURL: "https://gw.example.com"}, false},
+	} {
+		if err := ValidateGatewayTarget("gw", tc.gw); (err == nil) != tc.ok {
+			t.Errorf("%s: error = %v, want ok=%v", tc.name, err, tc.ok)
+		}
+	}
+}
+
+func TestGateway_KeylessRemoteWarnsOnLoad(t *testing.T) {
+	var buf strings.Builder
+	old := loadWarnings
+	loadWarnings = &buf
+	t.Cleanup(func() { loadWarnings = old })
+	body := strings.Replace(gatewayProfiles, "        store: work\n        key: corp_token\n", "", 1)
+	if _, err := loadYAML(t, body); err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+	if !strings.Contains(buf.String(), `gateway "corp"`) {
+		t.Errorf("warning = %q", buf.String())
+	}
+}
+
+func TestGateway_KeylessClaudeRouteSetsPlaceholder(t *testing.T) {
+	b := gatewayBinding(GatewayConfig{BaseURL: "http://127.0.0.1:11434", Harnesses: []string{"claude"}})
+	r := b.For["claude"]
+	if len(r.Env) != 0 || r.Set["ANTHROPIC_AUTH_TOKEN"] != KeylessPlaceholder || r.Set["ANTHROPIC_API_KEY"] != "" {
+		t.Errorf("route = %+v", r)
+	}
+}

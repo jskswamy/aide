@@ -784,3 +784,43 @@ func TestPlanCredentials_OtherVendorEndpointAllowed(t *testing.T) {
 		t.Fatalf("anthropic with another vendor's endpoint: %v", err)
 	}
 }
+
+const keylessClaudeConfig = `
+profiles:
+  work:
+    agent: claude
+    gateways:
+      local:
+        base_url: %s
+        harnesses: [claude]
+default_profile: work
+%s`
+
+func TestLauncher_KeylessGateway(t *testing.T) {
+	t.Run("loopback sets placeholder and hides it from the banner", func(t *testing.T) {
+		env, stderr, err := launchCredentialsIn(t, t.TempDir(),
+			fmt.Sprintf(keylessClaudeConfig, "http://127.0.0.1:11434", "preferences:\n  show_info: true\n"), "", "", true)
+		if err != nil {
+			t.Fatalf("Launch() error = %v", err)
+		}
+		if v, _ := envValue(env, "ANTHROPIC_AUTH_TOKEN"); v != config.KeylessPlaceholder {
+			t.Errorf("ANTHROPIC_AUTH_TOKEN = %q", v)
+		}
+		if strings.Contains(stderr, "ANTHROPIC_AUTH_TOKEN") {
+			t.Errorf("banner shows the placeholder:\n%s", stderr)
+		}
+	})
+	t.Run("remote is rejected", func(t *testing.T) {
+		_, _, err := launchCredentialsIn(t, t.TempDir(), fmt.Sprintf(keylessClaudeConfig, "https://gw.example.com", ""), "", "", false)
+		if err == nil || !strings.Contains(err.Error(), "keyless") {
+			t.Fatalf("Launch() error = %v, want keyless rejection", err)
+		}
+	})
+	t.Run("never_allow_env aborts", func(t *testing.T) {
+		_, _, err := launchCredentialsIn(t, t.TempDir(),
+			fmt.Sprintf(keylessClaudeConfig, "http://127.0.0.1:11434", "never_allow_env: [ANTHROPIC_AUTH_TOKEN]\n"), "", "", false)
+		if err == nil || !strings.Contains(err.Error(), "never_allow_env") {
+			t.Fatalf("Launch() error = %v, want never_allow_env abort", err)
+		}
+	})
+}

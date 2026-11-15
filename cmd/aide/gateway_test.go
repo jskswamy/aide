@@ -1601,3 +1601,75 @@ func TestGatewayCmd_FailedConfigWriteRestoresSecret(t *testing.T) {
 		}
 	})
 }
+
+const remoteKeylessConfig = `profiles:
+  work:
+    agent: claude
+    config_dir_name: work
+    gateways:
+      corp:
+        base_url: https://gw.example.com
+        harnesses: [claude]
+default_profile: work
+`
+
+func TestGatewayCmd_KeylessRemoteRejected(t *testing.T) {
+	t.Run("add", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		before := e.config(t)
+		out, err := runGateway(t, "", "add", "corp", "--url", "https://gw.example.com", "--profile", "work")
+		// The probe or token requirement stops a keyless remote add first;
+		// ValidateGatewayTarget is the backstop behind them.
+		if err == nil {
+			t.Fatalf("add succeeded\n%s", out)
+		}
+		if e.config(t) != before {
+			t.Error("config changed")
+		}
+	})
+	t.Run("edit moving off loopback", func(t *testing.T) {
+		newGatewayEnv(t)
+		srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+		if out, err := runGateway(t, "", "add", "local", "--url", srv.URL, "--profile", "work"); err != nil {
+			t.Fatalf("add: %v\n%s", err, out)
+		}
+		_, err := runGateway(t, "", "edit", "local", "--url", "https://gw.example.com", "--profile", "work")
+		if err == nil || !strings.Contains(err.Error(), "keyless") {
+			t.Fatalf("edit error = %v", err)
+		}
+	})
+	t.Run("sync", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		e.writeConfig(t, remoteKeylessConfig)
+		out, err := runGateway(t, "", "sync", "--profile", "work")
+		if err == nil || !strings.Contains(err.Error(), "could not sync gateway(s): corp") || !strings.Contains(out, "✗") {
+			t.Fatalf("sync = %v\n%s", err, out)
+		}
+	})
+	t.Run("remove still works", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		e.writeConfig(t, remoteKeylessConfig)
+		if out, err := runGateway(t, "", "remove", "corp", "--profile", "work"); err != nil {
+			t.Fatalf("remove: %v\n%s", err, out)
+		}
+		if strings.Contains(e.config(t), "gw.example.com") {
+			t.Error("gateway still in config")
+		}
+	})
+	t.Run("edit to loopback succeeds", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		e.writeConfig(t, remoteKeylessConfig)
+		srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+		if out, err := runGateway(t, "", "edit", "corp", "--url", srv.URL, "--profile", "work"); err != nil {
+			t.Fatalf("edit: %v\n%s", err, out)
+		}
+	})
+	t.Run("edit to keyed succeeds", func(t *testing.T) {
+		e := newGatewayEnv(t)
+		e.writeConfig(t, remoteKeylessConfig)
+		out, err := runGateway(t, gwCmdToken+"\n", "edit", "corp", "--url", e.srv.URL, "--token-stdin", "--profile", "work")
+		if err != nil {
+			t.Fatalf("edit: %v\n%s", err, out)
+		}
+	})
+}

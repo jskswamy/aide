@@ -303,6 +303,13 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 	rc.Context = profileCtx
+	for _, b := range credPlan.Bindings {
+		if gw, ok := profileCtx.Gateways[b.Name]; ok {
+			if err := config.ValidateGatewayTarget(b.Name, gw); err != nil {
+				return err
+			}
+		}
+	}
 	l.printLegacyCredentialHints(profileLabel(cfg, rc.Name), legacyCreds)
 	if notice := selectedKeyNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, os.Getenv, credPlan); notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
@@ -502,6 +509,17 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 	if resolvedCapSet != nil && len(resolvedCapSet.NeverAllowEnv) > 0 {
 		blockedVars = append(blockedVars, resolvedCapSet.NeverAllowEnv...)
+	}
+	// A stripped keyless placeholder would let Claude Code send its
+	// saved login to the gateway.
+	for _, b := range credPlan.Bindings {
+		for k, v := range b.Set {
+			if v == config.KeylessPlaceholder && slices.Contains(blockedVars, k) {
+				cleanup()
+				return fmt.Errorf("never_allow_env strips %s, which keyless gateway %q needs so %s does not send its login; "+
+					"remove it from never_allow_env or use a gateway with a token", k, b.Name, cfg.HarnessOf(agentName))
+			}
+		}
 	}
 	if len(blockedVars) > 0 {
 		env = filterNeverAllowEnv(env, blockedVars)

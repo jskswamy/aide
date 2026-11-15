@@ -47,6 +47,10 @@ const (
 	claudeGatewayAPIKeyEnv    = "ANTHROPIC_API_KEY"
 )
 
+// KeylessPlaceholder is the ANTHROPIC_AUTH_TOKEN a keyless Claude
+// gateway route sets so Claude Code does not send its saved login.
+const KeylessPlaceholder = "aide-keyless"
+
 var (
 	// gatewayIdentRE guards names that become file path segments.
 	gatewayIdentRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -122,6 +126,19 @@ func (gw GatewayConfig) TokenEnv(h string) string {
 		return claudeGatewayTokenEnv
 	}
 	return gw.EnvVarName()
+}
+
+// ValidateGatewayTarget rejects a keyless gateway that is not on
+// loopback: with no token to send, it would receive the harness's
+// request unauthenticated over the network. Load only warns about it so
+// the gateway stays removable and editable; add, edit, sync and launch
+// call this.
+func ValidateGatewayTarget(name string, gw GatewayConfig) error {
+	if gw.RequiresToken() || gw.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("gateway %q: %s is keyless but not on localhost, 127.0.0.1 or ::1; give it a token, "+
+		"point it at loopback, or remove it with: aide gateway remove %s", name, gw.BaseURL, name)
 }
 
 // IsGatewayName reports whether name is a valid gateway name, safe to
@@ -275,17 +292,17 @@ func gatewayBinding(gw GatewayConfig) CredentialBinding {
 	for _, h := range gw.EffectiveHarnesses() {
 		if h == "claude" {
 			env := []string{}
+			set := map[string]string{
+				claudeGatewayBaseURLEnv:   NormalizeGatewayBaseURL(gw.BaseURL),
+				claudeGatewayDiscoveryEnv: "1",
+				claudeGatewayAPIKeyEnv:    "",
+			}
 			if e := gw.TokenEnv(h); e != "" {
 				env = []string{e}
+			} else {
+				set[claudeGatewayTokenEnv] = KeylessPlaceholder
 			}
-			routes[h] = CredentialRoute{
-				Env: env,
-				Set: map[string]string{
-					claudeGatewayBaseURLEnv:   NormalizeGatewayBaseURL(gw.BaseURL),
-					claudeGatewayDiscoveryEnv: "1",
-					claudeGatewayAPIKeyEnv:    "",
-				},
-			}
+			routes[h] = CredentialRoute{Env: env, Set: set}
 			continue
 		}
 		if e := gw.TokenEnv(h); e != "" {

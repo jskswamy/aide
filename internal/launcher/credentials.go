@@ -358,7 +358,7 @@ func SetBannerCredentials(data *ui.BannerData, plan CredentialPlan) {
 	for _, b := range plan.Bindings {
 		names := slices.Clone(b.Env)
 		for _, k := range slices.Sorted(maps.Keys(b.Set)) {
-			if b.Set[k] != "" {
+			if b.Set[k] != "" && b.Set[k] != config.KeylessPlaceholder {
 				names = append(names, k)
 			}
 		}

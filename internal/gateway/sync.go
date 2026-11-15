@@ -55,7 +55,7 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	if progress == nil {
 		progress = io.Discard
 	}
-	base := NormalizeBaseURL(opts.Gateway.BaseURL)
+	base := NormalizeBaseURL(ep.BaseURL)
 	models := opts.Models
 	if !opts.Prefetch {
 		fmt.Fprintf(progress, "→ Fetching models from %s...\n", ep.ModelsURL())

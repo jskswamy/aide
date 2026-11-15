@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/gatewaypreset"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/yamlnode"
@@ -100,6 +100,30 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 	return hf, dir, path, nil
 }
 
+// unwritable says why harnessName gets no entry for gw, or "": a
+// provider switch has no URL, and Codex loads only the Responses API.
+func unwritable(harnessName string, gw config.GatewayConfig) string {
+	switch ep := Endpoint(gw); {
+	case ep.Switch != nil:
+		return "provider switch: nothing to write"
+	case harnessName == "codex" && ep.API != gatewaypreset.APIOpenAIResponses:
+		return "codex loads only openai-responses gateways"
+	}
+	return ""
+}
+
+// withoutSwitches is gws minus the provider-switch gateways, which no
+// harness file carries.
+func withoutSwitches(gws map[string]config.GatewayConfig) map[string]config.GatewayConfig {
+	out := make(map[string]config.GatewayConfig, len(gws))
+	for n, gw := range gws {
+		if Endpoint(gw).Switch == nil {
+			out[n] = gw
+		}
+	}
+	return out
+}
+
 // harnessWrites serializes writes to harness files: gateways synced in
 // parallel share one file per harness, and each write reads the file
 // first.
@@ -115,6 +139,10 @@ func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConf
 		return HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(gwName, harnessName)}, err
 	}
 	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(gwName, harnessName), FilePath: path}
+	if why := unwritable(harnessName, gw); why != "" {
+		st.State, st.Detail = StatePending, why
+		return st, nil
+	}
 	if cat == nil {
 		return st, errors.New("gateway: no cached catalogue to write")
 	}
@@ -146,12 +174,16 @@ func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, 
 		st.State, st.Detail = StateStale, err.Error()
 		return st
 	}
+	if why := unwritable(harnessName, gw); why != "" {
+		st.State, st.Detail = StatePending, why
+		return st
+	}
 	if !dirExists(dir) {
 		st.State, st.Detail = StatePending, "dir not provisioned"
 		return st
 	}
 	if SingleGatewayPerDir(harnessName) && !CanSyncHarness(ctx, gwName, harnessName) {
-		if MatchesBaseURL(cat, gw.BaseURL) && !IsExpired(cat, gw.TTL(), time.Now()) {
+		if MatchesBaseURL(cat, Endpoint(gw).BaseURL) && !IsExpired(cat, gw.TTL(), time.Now()) {
 			if _, err := os.Stat(path); err == nil {
 				if diff, err := hf.mismatch(path, gwName, gw, cat); err == nil && diff == "" {
 					st.State, st.Detail = StateSynced, fmt.Sprintf("%d models", len(cat.Models))
@@ -166,7 +198,7 @@ func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, 
 	case cat == nil:
 		st.State, st.Detail = StateStale, "no cached catalogue"
 		return st
-	case !MatchesBaseURL(cat, gw.BaseURL):
+	case !MatchesBaseURL(cat, Endpoint(gw).BaseURL):
 		st.State, st.Detail = StateStale, "base URL changed — run: aide gateway sync"
 		return st
 	case IsExpired(cat, gw.TTL(), time.Now()):
@@ -192,6 +224,9 @@ func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, 
 // RemoveFromHarness strips gwName's entry from harnessName's config
 // file and reports whether there was one.
 func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfig, harnessName, home string) (bool, error) {
+	if Endpoint(gw).Switch != nil {
+		return false, nil
+	}
 	hf, _, path, err := harnessTarget(ctx, harnessName, home)
 	if err != nil {
 		return false, err
@@ -224,7 +259,7 @@ func Prune(ctx config.Context, harnessName, home string, configured []string) (b
 	}
 	harnessWrites.Lock()
 	defer harnessWrites.Unlock()
-	return hf.prune(path, ctx.Gateways, keep)
+	return hf.prune(path, withoutSwitches(ctx.Gateways), keep)
 }
 
 func setOf(names []string) map[string]bool {
@@ -380,7 +415,7 @@ func claudeModels(gwName string, models []Model) []claudeModel {
 
 func (claudeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
 	doc := claudeDoc{
-		BaseURL:   NormalizeBaseURL(gw.BaseURL),
+		BaseURL:   Endpoint(gw).BaseURL,
 		FetchedAt: cat.FetchedAt.UnixMilli(),
 		Models:    claudeModels(gwName, cat.Models),
 	}
@@ -404,7 +439,7 @@ func (c claudeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 	if err != nil {
 		return "", err
 	}
-	if NormalizeBaseURL(doc.BaseURL) != NormalizeBaseURL(gw.BaseURL) {
+	if NormalizeBaseURL(doc.BaseURL) != Endpoint(gw).BaseURL {
 		return "points at another gateway", nil
 	}
 	if !slices.Equal(doc.Models, claudeModels(gwName, cat.Models)) {
@@ -418,7 +453,7 @@ func (c claudeFile) remove(path, _ string, gw config.GatewayConfig) (bool, error
 	if err != nil {
 		return false, err
 	}
-	if NormalizeBaseURL(doc.BaseURL) != NormalizeBaseURL(gw.BaseURL) {
+	if NormalizeBaseURL(doc.BaseURL) != Endpoint(gw).BaseURL {
 		return false, nil
 	}
 	return true, os.Remove(path)
@@ -453,11 +488,12 @@ func formatClaudeDesc(gwName string, m Model) string {
 type piFile struct{}
 
 type piProvider struct {
-	BaseURL    string    `json:"baseUrl"`
-	APIKey     string    `json:"apiKey,omitempty"`
-	AuthHeader bool      `json:"authHeader"`
-	API        string    `json:"api"`
-	Models     []piModel `json:"models"`
+	BaseURL    string            `json:"baseUrl"`
+	APIKey     string            `json:"apiKey,omitempty"`
+	AuthHeader bool              `json:"authHeader"`
+	API        string            `json:"api"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Models     []piModel         `json:"models"`
 }
 
 type piModel struct {
@@ -487,18 +523,38 @@ func isLiteralPiPlaceholder(s string) bool {
 	return s != "" && !strings.HasPrefix(s, "!") && !strings.Contains(s, "$")
 }
 
-func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
-	p := piProvider{
-		BaseURL:    NormalizeBaseURL(gw.BaseURL),
-		AuthHeader: gw.RequiresToken(),
-		API:        "anthropic-messages",
-		Models:     piModels(cat.Models),
-	}
-	if gw.RequiresToken() {
+// piNoAuth is the literal apiKey of a keyless Pi entry; Pi hides the
+// provider without one.
+const piNoAuth = "aide-no-auth"
+
+// harnessAPI is the api string Pi and Oh My Pi use for each wire protocol.
+var harnessAPI = map[gatewaypreset.API]string{
+	gatewaypreset.APIAnthropicMessages: "anthropic-messages",
+	gatewaypreset.APIOpenAIChat:        "openai-completions",
+	gatewaypreset.APIOpenAIResponses:   "openai-responses",
+}
+
+// keyed reports whether a key is sent to the gateway.
+func keyed(gw config.GatewayConfig, ep EndpointSpec) bool { return gw.RequiresToken() && !ep.Keyless }
+
+// piEntry is gw's Pi provider without its models.
+func piEntry(gwName string, gw config.GatewayConfig) piProvider {
+	ep := Endpoint(gw)
+	p := piProvider{BaseURL: ep.BaseURL, API: harnessAPI[ep.API], APIKey: piNoAuth}
+	if keyed(gw, ep) {
 		p.APIKey = "$" + config.GatewayKeyVar(gwName)
-	} else {
-		p.APIKey = cmp.Or(gwName, "none")
+		if ep.Header == gatewaypreset.HeaderXAPIKey {
+			p.Headers = map[string]string{"x-api-key": p.APIKey}
+		} else {
+			p.AuthHeader = true
+		}
 	}
+	return p
+}
+
+func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
+	p := piEntry(gwName, gw)
+	p.Models = piModels(cat.Models)
 	if _, err := updateJSONEntry(path, "providers", ProviderID(gwName), p); err != nil {
 		return err
 	}
@@ -512,17 +568,20 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 		return "", err
 	}
 	var p piProvider
+	want := piEntry(gwName, gw)
 	ok, err := jsonEntry(doc, "providers", ProviderID(gwName), &p)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s: %w", path, err)
 	case !ok:
 		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
-	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
+	case p.BaseURL != want.BaseURL:
 		return "baseUrl differs", nil
-	case gw.RequiresToken() && (p.APIKey != "$"+config.GatewayKeyVar(gwName) || !p.AuthHeader):
+	case p.API != want.API:
+		return "api differs", nil
+	case p.AuthHeader != want.AuthHeader || !maps.Equal(p.Headers, want.Headers):
 		return "apiKey differs", nil
-	case !gw.RequiresToken() && (!isLiteralPiPlaceholder(p.APIKey) || p.AuthHeader):
+	case keyed(gw, Endpoint(gw)) && p.APIKey != want.APIKey, !keyed(gw, Endpoint(gw)) && !isLiteralPiPlaceholder(p.APIKey):
 		return "apiKey differs", nil
 	}
 	if !slices.Equal(p.Models, piModels(cat.Models)) {
@@ -545,7 +604,7 @@ func (piFile) removeEntry(path, name string, gw config.GatewayConfig) (bool, err
 		return false, err
 	}
 	var p piProvider
-	if ok, err := jsonEntry(doc, "providers", name, &p); err != nil || !ok || p.BaseURL != NormalizeBaseURL(gw.BaseURL) {
+	if ok, err := jsonEntry(doc, "providers", name, &p); err != nil || !ok || p.BaseURL != Endpoint(gw).BaseURL {
 		return false, err
 	}
 	return updateJSONEntry(path, "providers", name, nil)
@@ -705,18 +764,20 @@ func ompModels(models []Model) []ompModel {
 	return out
 }
 
+// ompEntry is gw's Oh My Pi provider without its models.
+func ompEntry(gwName string, gw config.GatewayConfig) ompProvider {
+	ep := Endpoint(gw)
+	p := ompProvider{BaseURL: ep.BaseURL, API: harnessAPI[ep.API], Auth: "none"}
+	if keyed(gw, ep) {
+		p.Auth, p.APIKey = "", config.GatewayKeyVar(gwName)
+		p.AuthHeader = ep.Header != gatewaypreset.HeaderXAPIKey
+	}
+	return p
+}
+
 func (ompFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
-	p := ompProvider{
-		BaseURL: NormalizeBaseURL(gw.BaseURL),
-		API:     "anthropic-messages",
-		Models:  ompModels(cat.Models),
-	}
-	if gw.RequiresToken() {
-		p.AuthHeader = true
-		p.APIKey = config.GatewayKeyVar(gwName)
-	} else {
-		p.Auth = "none"
-	}
+	p := ompEntry(gwName, gw)
+	p.Models = ompModels(cat.Models)
 	if _, err := updateOMPProviderEntry(path, ProviderID(gwName), p); err != nil {
 		return err
 	}
@@ -730,19 +791,20 @@ func (ompFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cache
 		return "", err
 	}
 	var p ompProvider
+	want := ompEntry(gwName, gw)
 	ok, err := ompProviderEntry(doc, ProviderID(gwName), &p)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s: %w", path, err)
 	case !ok:
 		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
-	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
+	case p.BaseURL != want.BaseURL:
 		return "baseUrl differs", nil
-	case p.API != "anthropic-messages":
+	case p.API != want.API:
 		return "api differs", nil
-	case gw.RequiresToken() && (p.APIKey != config.GatewayKeyVar(gwName) || !p.AuthHeader || (p.Auth != "" && p.Auth != "apiKey")):
+	case p.APIKey != want.APIKey || p.AuthHeader != want.AuthHeader:
 		return "apiKey differs", nil
-	case !gw.RequiresToken() && (p.APIKey != "" || p.AuthHeader || p.Auth != "none"):
+	case want.Auth == "none" && p.Auth != "none", want.Auth == "" && p.Auth != "" && p.Auth != "apiKey":
 		return "apiKey differs", nil
 	}
 	if !slices.Equal(p.Models, ompModels(cat.Models)) {
@@ -765,7 +827,7 @@ func (ompFile) removeEntry(path, name string, gw config.GatewayConfig) (bool, er
 		return false, err
 	}
 	var p ompProvider
-	if ok, err := ompProviderEntry(doc, name, &p); err != nil || !ok || p.BaseURL != NormalizeBaseURL(gw.BaseURL) {
+	if ok, err := ompProviderEntry(doc, name, &p); err != nil || !ok || p.BaseURL != Endpoint(gw).BaseURL {
 		return false, err
 	}
 	return updateOMPProviderEntry(path, name, nil)
@@ -849,8 +911,31 @@ func (openCodeFile) singleGatewayPerDir() bool { return false }
 
 func openCodeAPIKey(gwName string) string { return "{env:" + config.GatewayKeyVar(gwName) + "}" }
 
-func openCodeAuthHeader(gwName string) string {
-	return "Bearer " + openCodeAPIKey(gwName)
+// openCodeBaseURL is settings.baseURL: @ai-sdk/anthropic appends
+// /messages to it, so it carries /v1; the openai-* URL is exact.
+func openCodeBaseURL(ep EndpointSpec) string {
+	if ep.API == gatewaypreset.APIAnthropicMessages {
+		return ep.BaseURL + "/v1"
+	}
+	return ep.BaseURL
+}
+
+// openCodeHeaders is the entry-level key header, nil when keyless.
+func openCodeHeaders(gwName string, gw config.GatewayConfig, ep EndpointSpec) map[string]string {
+	switch {
+	case !keyed(gw, ep):
+		return nil
+	case ep.Header == gatewaypreset.HeaderXAPIKey:
+		return map[string]string{"x-api-key": openCodeAPIKey(gwName)}
+	}
+	return map[string]string{"Authorization": "Bearer " + openCodeAPIKey(gwName)}
+}
+
+func openCodePackage(ep EndpointSpec) string {
+	if ep.API == gatewaypreset.APIAnthropicMessages {
+		return "@ai-sdk/anthropic"
+	}
+	return "@ai-sdk/openai-compatible"
 }
 
 // DefaultModelID is the model a harness starts on when a gateway names
@@ -868,12 +953,12 @@ func DefaultModelID(models []Model) string {
 	return best
 }
 
-func openCodeModels(models []Model) map[string]openCodeModel {
+func openCodeModels(models []Model, ep EndpointSpec) map[string]openCodeModel {
 	out := make(map[string]openCodeModel, len(models))
 	for _, m := range models {
-		om := openCodeModel{
-			Name:          m.DisplayName,
-			Compatibility: &openCodeCompat{},
+		om := openCodeModel{Name: m.DisplayName}
+		if ep.API == gatewaypreset.APIAnthropicMessages {
+			om.Compatibility = &openCodeCompat{}
 		}
 		if m.ContextWindow > 0 || m.MaxOutputTokens > 0 {
 			om.Limit = &openCodeLimit{Context: m.ContextWindow, Output: m.MaxOutputTokens}
@@ -896,16 +981,17 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 		return err
 	}
 	id := ProviderID(gwName)
+	ep := Endpoint(gw)
 	p := openCodeProvider{
-		Package:  "@ai-sdk/anthropic",
+		Package:  openCodePackage(ep),
 		Name:     id,
-		Settings: openCodeSettings{BaseURL: NormalizeBaseURL(gw.BaseURL) + "/v1"},
-		Models:   openCodeModels(cat.Models),
+		Settings: openCodeSettings{BaseURL: openCodeBaseURL(ep)},
+		Headers:  openCodeHeaders(gwName, gw, ep),
+		Models:   openCodeModels(cat.Models, ep),
 	}
-	if gw.RequiresToken() {
+	if keyed(gw, ep) {
 		p.Env = []string{config.GatewayKeyVar(gwName)}
 		p.Settings.APIKey = openCodeAPIKey(gwName)
-		p.Headers = map[string]string{"Authorization": openCodeAuthHeader(gwName)}
 	}
 	if _, err := setJSONEntry(doc, "providers", id, p); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -924,35 +1010,34 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 		return "", err
 	}
 	var p openCodeProvider
+	ep := Endpoint(gw)
 	ok, err := jsonEntry(doc, "providers", ProviderID(gwName), &p)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s: %w", path, err)
 	case !ok:
 		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
-	case p.Package != "@ai-sdk/anthropic":
+	case p.Package != openCodePackage(ep):
 		return "package differs", nil
-	case gw.RequiresToken() && !slices.Equal(p.Env, []string{config.GatewayKeyVar(gwName)}):
+	case keyed(gw, ep) && !slices.Equal(p.Env, []string{config.GatewayKeyVar(gwName)}):
 		return "env differs", nil
-	case !gw.RequiresToken() && len(p.Env) != 0:
+	case !keyed(gw, ep) && len(p.Env) != 0:
 		return "env differs", nil
-	case p.Settings.BaseURL != NormalizeBaseURL(gw.BaseURL)+"/v1":
+	case p.Settings.BaseURL != openCodeBaseURL(ep):
 		return "baseURL differs", nil
-	case gw.RequiresToken() && p.Settings.APIKey != openCodeAPIKey(gwName):
+	case keyed(gw, ep) && p.Settings.APIKey != openCodeAPIKey(gwName):
 		return "apiKey differs", nil
-	case !gw.RequiresToken() && p.Settings.APIKey != "":
+	case !keyed(gw, ep) && p.Settings.APIKey != "":
 		return "apiKey differs", nil
-	case gw.RequiresToken() && p.Headers["Authorization"] != openCodeAuthHeader(gwName):
-		return "authorization header differs", nil
-	case !gw.RequiresToken() && p.Headers["Authorization"] != "":
+	case !maps.Equal(p.Headers, openCodeHeaders(gwName, gw, ep)):
 		return "authorization header differs", nil
 	}
 	for _, m := range p.Models {
-		if m.Compatibility == nil || m.Compatibility.SupportsThinkingBlockBinding {
+		if (m.Compatibility == nil) != (ep.API != gatewaypreset.APIAnthropicMessages) || m.Compatibility != nil && m.Compatibility.SupportsThinkingBlockBinding {
 			return "model compatibility differs", nil
 		}
 	}
-	if !maps.EqualFunc(p.Models, openCodeModels(cat.Models), openCodeModelEqual) {
+	if !maps.EqualFunc(p.Models, openCodeModels(cat.Models, ep), openCodeModelEqual) {
 		return "model list differs", nil
 	}
 	return "", nil
@@ -965,7 +1050,7 @@ func (openCodeFile) prune(path string, gws map[string]config.GatewayConfig, keep
 	}
 	changed := false
 	for _, name := range slices.Sorted(maps.Keys(gws)) {
-		wantURL := NormalizeBaseURL(gws[name].BaseURL) + "/v1"
+		wantURL := openCodeBaseURL(Endpoint(gws[name]))
 		for _, section := range []string{"providers", "provider"} {
 			ok, err := dropOpenCodeEntry(doc, section, name, wantURL)
 			if err != nil {
@@ -1028,7 +1113,7 @@ func (openCodeFile) remove(path, gwName string, gw config.GatewayConfig) (bool, 
 	if err != nil {
 		return false, err
 	}
-	wantURL := NormalizeBaseURL(gw.BaseURL) + "/v1"
+	wantURL := openCodeBaseURL(Endpoint(gw))
 	var removed bool
 	for _, e := range []struct{ section, name string }{
 		{"providers", ProviderID(gwName)}, {"providers", gwName}, {"provider", gwName},
@@ -1073,6 +1158,17 @@ func codexProviders(doc map[string]any) map[string]any {
 	return providers
 }
 
+// codexBaseURL is where an entry for gw points: the exact URL of an
+// openai-responses gateway, or the /v1 URL an earlier aide wrote for an
+// Anthropic one (which Codex never gets now, so only cleanup matches it).
+func codexBaseURL(gw config.GatewayConfig) string {
+	ep := Endpoint(gw)
+	if ep.API != gatewaypreset.APIAnthropicMessages {
+		return ep.BaseURL
+	}
+	return ep.BaseURL + "/v1"
+}
+
 func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *CachedCatalogue) error {
 	doc, err := fsutil.ReadTOML(path)
 	if err != nil {
@@ -1085,10 +1181,10 @@ func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *Cached
 	id := ProviderID(gwName)
 	entry := map[string]any{
 		"name":     id,
-		"base_url": NormalizeBaseURL(gw.BaseURL) + "/v1",
+		"base_url": codexBaseURL(gw),
 		"wire_api": codexWireAPI,
 	}
-	if gw.RequiresToken() {
+	if keyed(gw, Endpoint(gw)) {
 		entry["env_key"] = config.GatewayKeyVar(gwName)
 	}
 	providers[id] = entry
@@ -1128,7 +1224,7 @@ func (codexFile) prune(path string, gws map[string]config.GatewayConfig, keep ma
 	providers := codexProviders(doc)
 	changed := false
 	for _, name := range slices.Sorted(maps.Keys(gws)) {
-		baseURL := NormalizeBaseURL(gws[name].BaseURL) + "/v1"
+		baseURL := codexBaseURL(gws[name])
 		for _, old := range codexLegacyNames(name) {
 			changed = dropCodexEntry(providers, old, baseURL) || changed
 		}
@@ -1163,13 +1259,13 @@ func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *Cac
 	switch {
 	case !ok:
 		return fmt.Sprintf("model provider %q missing", ProviderID(gwName)), nil
-	case p["base_url"] != NormalizeBaseURL(gw.BaseURL)+"/v1":
+	case p["base_url"] != codexBaseURL(gw):
 		return "base_url differs", nil
 	case p["wire_api"] != codexWireAPI:
 		return "wire_api differs", nil
-	case gw.RequiresToken() && p["env_key"] != config.GatewayKeyVar(gwName):
+	case keyed(gw, Endpoint(gw)) && p["env_key"] != config.GatewayKeyVar(gwName):
 		return "env_key differs", nil
-	case !gw.RequiresToken():
+	case !keyed(gw, Endpoint(gw)):
 		if _, ok := p["env_key"]; ok {
 			return "env_key differs", nil
 		}
@@ -1186,7 +1282,7 @@ func (c codexFile) remove(path, gwName string, gw config.GatewayConfig) (bool, e
 		return false, err
 	}
 	providers := codexProviders(doc)
-	baseURL := NormalizeBaseURL(gw.BaseURL) + "/v1"
+	baseURL := codexBaseURL(gw)
 	var removed bool
 	for _, name := range append([]string{ProviderID(gwName)}, codexLegacyNames(gwName)...) {
 		if dropCodexEntry(providers, name, baseURL) {

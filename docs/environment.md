@@ -113,6 +113,16 @@ aide env remove ANTHROPIC_API_KEY
 aide env remove AWS_REGION --profile work
 ```
 
+## Gateway Keys and Inherited Provider Keys
+
+aide removes provider keys (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`,
+and every key a gateway preset knows) and any inherited `AIDE_GW_*`
+variable from the environment the agent inherits. A key exported in your
+shell therefore reaches a harness only through a gateway you chose, which
+injects it as `AIDE_GW_<NAME>_KEY`. Provider endpoints and cloud
+switches (`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`) belong in a
+[gateway](configuration.md#gateways), not in `env:`.
+
 ## Clean Env Mode
 
 Enable with `--clean-env` at launch or `clean_env: true` in the sandbox config.

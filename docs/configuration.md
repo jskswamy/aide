@@ -350,7 +350,11 @@ in your shell cannot reach an agent that did not select it.
 
 ## Credential bindings
 
-A profile names its provider API keys under `credentials:` and picks
+LLM endpoints (hosted providers, company gateways, cloud switches) are
+[gateways](#gateways); `credentials:` is for plain environment-variable
+secrets such as `GITHUB_TOKEN`, and for env-only harnesses (`gemini`,
+`aider`, `goose`, `amp`). Provider credentials written the old way
+keep working until migrated. A profile names its provider API keys under `credentials:` and picks
 the ones a launch injects with `default_credentials:`. Each binding
 refers to one key in an age-encrypted secret store (the same stores
 `secret:` names; see `aide secrets`).
@@ -495,174 +499,268 @@ to declare instead. It sets selectors and endpoints only with
 
 ---
 
-## Custom gateways
+## Gateways
 
-A gateway is a self-hosted or organization-run LLM endpoint (LiteLLM or
-an internal proxy) that serves the Anthropic API (`/v1/messages`) and
-the OpenAI API (`/v1/responses` for Codex, `/v1/models`) behind one base
-URL and bearer token. `aide gateway` registers one on a profile, keeps
-its token in an age secret store, and writes its model list into each
-agent's own config so the agent's model picker shows the gateway's
-models.
+A gateway is a named LLM endpoint a harness can use instead of its own
+login: a hosted service (OpenRouter), a company proxy (LiteLLM), a
+local model server, or a cloud switch (Bedrock, Vertex). It lives under
+`gateways:` in the profile, lists the harnesses it serves, and keeps its
+key in an age secret store. aide writes each marked harness's own
+config with an `aide-<name>` provider entry that names a variable,
+never the key, and a launch injects the key as `AIDE_GW_<NAME>_KEY`
+(the name uppercased, `-` becoming `_`).
 
 ```bash
 aide gateway add corp --url https://gateway.example.com --profile work
 ```
 
-This prompts for the token (input hidden), then:
+This prompts for the key (input hidden), then:
 
-1. Encrypts it into `~/.config/aide/secrets/work.enc.yaml` under key
-   `corp_token`, without opening an editor.
-2. Saves the gateway on the profile (`~/.config/aide/profiles/work.yaml`):
+1. Creates a default age identity when none exists and you are on a
+   terminal (anywhere else, pass `--generate-age-key`), and encrypts the
+   key into `~/.config/aide/secrets/work.enc.yaml` under `corp_token`.
+2. Saves the gateway and the choice on the profile
+   (`~/.config/aide/profiles/work.yaml`):
 
    ```yaml
-   config_dir_name: work
    gateways:
      corp:
-       base_url: https://gateway.example.com
-       refresh_ttl: 24h
+       url: https://gateway.example.com
+       api: anthropic-messages
        store: work
        key: corp_token
-       # harnesses: [claude, pi]   # optional; default is all five
+       harnesses: [claude, pi]   # which harnesses may use it
+       model: claude-sonnet-4-5  # optional startup model
+   gateway_choice:
+     claude: none                # recorded by `add`; see below
    ```
 
-3. Fetches `<base_url>/v1/models`, caches the result in
+3. Fetches `<url>/v1/models`, caches the result in
    `~/.local/state/aide/gateways/work/corp.json`, and writes it into the
-   config of every agent whose profile dir already exists. Agents
-   without a dir yet show `pending` and get the file on first launch.
+   config of every harness whose profile dir exists. Harnesses without a
+   dir yet show `pending` and get the file on first launch.
 
-Read the token from a password manager instead of the prompt with
-`--token-stdin` (one line from stdin) or `--token-env <VAR>` (the named
-variable). There is no flag that takes the token itself, so it never
-lands in shell history.
+Read the key from a password manager with `--key-stdin` or from an
+environment variable with `--from-env=VAR` (a bare `--from-env` on a
+preset reads the first of the preset's usual variables that is set).
+No flag takes the key itself, so it never lands in shell history.
 
-| Flag | Default | Meaning |
+### Choosing a gateway: no silent billing changes
+
+aide never selects a gateway by itself, even when only one exists. Each
+launch uses a gateway only when you chose it:
+
+| Order | Source | Set with |
 | :--- | :--- | :--- |
-| `<name>` | first DNS label of the URL's host (prompted on TTY when `<name>` is omitted) | Gateway name under `gateways:` |
-| `--url` | required (or prompted on TTY) | Base URL; a trailing `/v1` or `/` is dropped |
-| `--default` | prompted on TTY when an existing default collides | Make this gateway the profile default across its harnesses |
-| `--profile` | profile matched from the current directory | Target profile |
-| `--token-stdin` / `--token-env <VAR>` | hidden prompt | Where the token comes from |
-| `--ttl` | `24h` | How long cached models stay fresh |
-| `--harnesses` | `claude,pi,omp,opencode,codex` | Agents to configure |
-| `--store` | the profile's `secret:` store, else the profile name | Secret store for the token |
-| `--key` | `<name>_token` | Key inside the store; its uppercase form is the variable name |
-| `--age-key` | the discovered age identity | Recipient for a store that does not exist yet (needed with a YubiKey identity) |
-| `--force` | off | Replace a gateway of the same name that has another URL, or overwrite a store key no gateway owns |
+| 1 | `--gateway <name\|none>` for this run (`--auth login` means `none`) | the flag |
+| 2 | Repository preference | `aide gateway use <name\|none> --harness <h> --repo`, or `aide project set --gateway <name\|none> --harness <h>` |
+| 3 | The profile's `gateway_choice:` | `aide gateway use <name\|none> --harness <h>` |
+| 4 | No gateway marked for the harness | the harness's own login |
+| 5 | Gateways marked, choice unset | the picker on a terminal; exit `78` in a script |
 
-Running `add` again with the same name and URL replaces the token,
-which is how you rotate it.
+`none` means the harness's own login. `claude` and `codex` take exactly
+one endpoint, so they need a choice. `pi`, `omp` and `opencode` list
+every marked `aide-<name>` entry in `/model`; a choice only decides
+which one they start on. Unset gateways for them start on the
+harness's default.
 
-### What each agent gets
+`aide gateway add` never changes how existing launches authenticate:
+for each marked `claude` or `codex` whose choice was unset it records
+`none`, unless you pass `--default-for <harness>` (repeatable) or
+`--default` to make the new gateway the choice. A stored choice that
+names a gateway no longer marked for the harness is reported on stderr
+and treated as unset. `aide gateway use --harness <h> --unset` clears one.
 
-The token is injected at launch through a credential binding that aide
-derives from the `gateways:` entry in memory; nothing is added under
-`credentials:`. Agent config files name the variable, never the token.
+#### The picker
 
-| Agent | Variables injected | File written |
+With an unset `claude` or `codex` choice on a terminal, the launch
+lists the marked gateways (URL, store and key name, never a value) and
+`none (use <harness>'s own login)`, with nothing preselected and no
+secret decrypted. Then it asks whether to apply the choice "Just this
+once", "Always in this repo" (when the repository has an `origin`), or
+"Always in profile <name>". A read-only config directory falls back to
+"Just this once" with a notice.
+
+#### Exit code 78
+
+When the choice is unset and stdin is not a terminal, aide stops
+before starting the harness with exit code `78` (`EX_CONFIG`) and
+prints the candidate gateways and the commands to resolve it:
+
+```
+claude has gateways marked in profile "work" (corp, openrouter) but none chosen;
+choose one with: aide gateway use <name|none> --harness claude, or pass --gateway <name|none>
+```
+
+Scripts and CI can test for `78` and fix the configuration; the same
+launch never falls back to metered billing. The choice is unset after
+`aide gateway use --unset`, after `gateway remove` or unmarking the
+chosen gateway, when a stored choice goes stale, after a hand edit, or
+when a synced config arrives without `gateway_choice:`. `aide which`,
+`aide status`, `aide prompt` and `aide statusline` never ask and never
+exit `78`; `which` and `status` print `unset (would prompt on a
+terminal, exit 78 in scripts)` for `claude` and `codex`.
+
+### Kinds and presets
+
+| Kind | Needs | Example |
 | :--- | :--- | :--- |
-| `claude` | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_API_KEY=""` | `<dir>/cache/gateway-models.json` |
-| `pi` | `CORP_TOKEN` (the key uppercased) | `<dir>/models.json`, `providers.corp` (`"apiKey": "$CORP_TOKEN"`) |
-| `omp` | `CORP_TOKEN` | `<dir>/models.yml`, `providers.corp` (`apiKey: CORP_TOKEN`) |
-| `opencode` | `CORP_TOKEN` | `<dir>/opencode.jsonc`, `providers.corp` (`"{env:CORP_TOKEN}"`) |
-| `codex` | `CORP_TOKEN` | `<dir>/config.toml`, `[model_providers.corp]` (`env_key = "CORP_TOKEN"`) |
+| Static key | URL, wire protocol (`api`), stored key | `corp`, `openrouter-anthropic` |
+| Keyless loopback | a `127.0.0.1`, `localhost` or `::1` URL, `no_auth: true` | `ollama` |
+| Provider switch | `region` (and `project` for Vertex); no URL, no key | `bedrock`, `vertex` |
 
-`<dir>` is the profile's config dir for that agent (`~/.pi-work` with
-`config_dir_name: work`, or the agent's default dir when the profile
-sets none). aide edits only the gateway's own entry, keyed by the
-gateway name; other providers, MCP servers and plugins stay. `add`
-replaces an existing entry of the same name, while `remove` deletes it
-only when it still points at the gateway's URL. Comments in `opencode.jsonc` and
-`config.toml` are not preserved when aide rewrites them.
+Built-in presets (`anthropic`, `openai`, `codex`, `openrouter`,
+`openrouter-anthropic`, `opencode-go`, `zai`, `ollama`, `bedrock`,
+`vertex`) supply URL, wire protocol and compatible harnesses, so
+`aide gateway add openrouter-anthropic --from-env` needs only a key.
+Codex accepts only gateways that serve the OpenAI Responses API
+(`/v1/responses`); Codex 0.167 and later refuse `wire_api = "chat"`.
 
-Codex speaks only the OpenAI Responses API, so its route needs the
-gateway's `/v1/responses` (aide writes `wire_api = "responses"`; Codex
-0.167 and later refuse to load `wire_api = "chat"`, and `aide gateway
-sync` rewrites entries an older aide wrote that way). A gateway that
-serves only `/v1/chat/completions` cannot serve Codex. aide sets
-Codex's `model_provider` to the
-gateway only when `config.toml` does not already choose one.
+A provider switch (`bedrock`, `vertex`) serves `claude` only. Launching
+with it sets `CLAUDE_CODE_USE_BEDROCK=1` and `AWS_REGION` (Vertex:
+`CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION`,
+`ANTHROPIC_VERTEX_PROJECT_ID`) and opens the `aws` (or `gcp`)
+capability for that launch only, which grants the full capability
+(`~/.aws` and `AWS_*` variables, or the gcloud equivalent). Two regions
+are two named gateways.
 
-### Defaults and several gateways
+`aide gateway add` currently writes only gateways that serve the
+Anthropic Messages API with a bearer key (custom `--url` gateways and
+`openrouter-anthropic`); other presets are in the catalog and in the
+schema above but `add` refuses them until aide can write them.
 
-Default credentials resolve per agent (`DefaultCredentialsForHarness`),
-with at most one active LLM provider or gateway default per agent:
+| Flag of `gateway add` | Default | Meaning |
+| :--- | :--- | :--- |
+| `<preset>\|<name>` | first DNS label of the URL's host (prompted on a terminal) | Preset or gateway name |
+| `--url` | the preset's (prompted on a terminal) | Base URL; `https://`, or `http://` for loopback only |
+| `--api` | the preset's | Wire protocol (`anthropic-messages`) |
+| `--no-auth` | off | Keyless loopback gateway |
+| `--key-stdin`, `--from-env[=VAR]` | hidden prompt | Where the key comes from |
+| `--harnesses` | the preset's, else `claude,pi,omp,opencode,codex` | Harnesses that may use it |
+| `--model` | none | Model the harnesses start on |
+| `--default`, `--default-for <h>` | off | Make it the choice for `claude`/`codex` |
+| `--refresh-ttl` | `24h` | Launch-time model refresh interval |
+| `--secret-store` | the profile's `secret:` store, else the profile name | Store for the key |
+| `--key` | `<name>_token` | Key inside the store |
+| `--age-key`, `--generate-age-key` | the discovered identity | Recipient for a new store; create an identity without a terminal |
+| `--force` | off | Replace a same-name gateway with another URL, or overwrite a store key no gateway owns |
 
-- Built-in provider credentials without `harnesses:` or `for:` default
-  to the harnesses that natively read their variable (`anthropic` →
-  `claude`, `pi`, `omp`, `opencode`; `openai` and `openrouter` → `pi`,
-  `omp`, `opencode`, `codex`; `codex` → `codex`; `gemini` → `gemini`,
-  `pi`, `omp`, `opencode`).
-- If a profile has `default_credentials: [anthropic]` and a custom
-  gateway `api`, `anthropic` stays the default for `claude`, `pi`,
-  `omp`, and `opencode`, while `api` automatically becomes the default
-  for `codex`.
-- Switch a profile's default gateway or built-in provider credential at
-  any time with `aide gateway use [<name>] [--profile <name>]` (or pass
-  `aide --gateway <name>` for a single launch).
+`--token-stdin`, `--token-env`, `--ttl` and `--store` still work as
+deprecated aliases and print a notice. `--no-credentials` is removed.
+Running `add` again with the same name and URL replaces the key, which
+is how you rotate it.
 
-Claude keeps one gateway model file per config dir. `aide gateway sync`
-writes it for Claude's default gateway (or the first custom gateway on
-the profile when Claude's default is a built-in credential such as
-`anthropic`); a launch that selects another gateway rewrites it before
-Claude starts.
+### What each harness gets
+
+Agent config files name the variable, never the key.
+
+| Harness | Variable injected | File written |
+| :--- | :--- | :--- |
+| `claude` | `ANTHROPIC_BASE_URL` and the key as `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` | `<dir>/cache/gateway-models.json`, only for the chosen gateway |
+| `pi` | `AIDE_GW_CORP_KEY` | `<dir>/models.json`, `providers.aide-corp` |
+| `omp` | `AIDE_GW_CORP_KEY` | `<dir>/models.yml`, `providers.aide-corp` |
+| `opencode` | `AIDE_GW_CORP_KEY` | `<dir>/opencode.jsonc`, `providers.aide-corp` |
+| `codex` | `AIDE_GW_CORP_KEY` | `<dir>/config.toml`, `[model_providers.aide-corp]` (`env_key`, `wire_api = "responses"`) |
+
+`<dir>` is the profile's config dir for that harness. aide edits only
+`aide-<name>` entries; other providers, MCP servers and plugins stay.
+It no longer writes OpenCode's top-level `model` or Codex's
+`model_provider`: the choice reaches the launched process instead
+(`-c model_provider=aide-<name>` for Codex; `--provider`/`--model` for
+Pi and omp; `OPENCODE_CONFIG_CONTENT` for OpenCode, which yields to a
+value you set yourself unless `--gateway` is passed). Comments in
+`opencode.jsonc` and `config.toml` are not preserved on rewrite.
+
+### Upgrading from earlier gateways
+
+On the first launch or config-writing command after upgrading, aide
+migrates a legacy profile: `base_url:` gateways and the gateway names in
+`default_credentials:` become `gateways:` entries plus an explicit
+`gateway_choice:`, so the launch uses the same endpoint as before. It
+backs up the YAML and `preferences.json` under
+`~/.local/state/aide/migrations/<UTC-timestamp>/` first and prints a
+one-time summary, highlighting any choice inherited from the old
+alphabetical rule. Read-only commands (`aide prompt`, `aide statusline`,
+completion) never write; they translate in memory. On a read-only
+config (a Nix dotfile) aide runs from the in-memory translation and
+hints at `aide config migrate`, which previews the change and applies
+it with `--write`. Downgrading means restoring the backups.
+
+Things that change:
+
+- Harness entries are renamed `<name>` to `aide-<name>`. A model
+  remembered in the harness's own state that names `<name>/<model>`
+  must be picked again in `/model`.
+- Startup pins aide wrote (OpenCode `model`, Codex `model_provider`)
+  become the harness's `gateway_choice` and are removed; pins you set
+  yourself are kept.
+- A legacy gateway that reached Codex only through the omitted
+  `harnesses:` default loses that mark, since Codex needs the Responses
+  API; the summary prints the `aide gateway add` command for Codex.
+  Where Codex did use it, the migration splits off a `<name>-codex`
+  gateway.
+- `aide status` reads key names from the store without decrypting, so
+  it no longer needs your age key.
+- `aide gateway rename` is not a command; use
+  `aide gateway edit <name> --name <new>`.
+- LLM provider `credentials:` and `default_credentials:` that are not
+  gateways keep working through the credential path (above) until they
+  are migrated; `aide gateway use` does not select them. Use
+  `--gateway <credential>` on a launch or
+  `aide project set --gateway <credential> --harness <h>`.
 
 ### Refresh at launch
 
 When the cached models are older than `refresh_ttl`, a launch fetches
-them again before starting the agent and prints what it did. If the
+them again before starting the harness and prints what it did. If the
 gateway cannot be reached, the launch warns and uses the cached models;
 with no cache at all it launches without a model list. When the cache
-is fresh but the launched agent's file is missing or out of date (after
-switching with `--agent` or `--gateway`), aide writes it from the
-cache with no network call. `--auth login` launches skip all of this.
+is fresh but the harness's file is missing or out of date, aide writes
+it from the cache with no network call. `--gateway none` launches skip
+all of this.
 
 ### Commands
 
-- `aide gateway list [--profile <name> | --all] [--models] [--format json]`:
-  each configured gateway and built-in provider credential on the
-  active profile (or across all profiles with `--all`), with active
-  defaults (`●`) sorted ahead of standby entries (`○`), URL, secret
-  store and key name (never the token), cache age, and per-agent file
-  status (`synced`, `stale`, `pending`, or `active`/`available` for
-  built-in credentials).
-- `aide gateway use [<name>] [--profile <name>]`: switch the profile's
-  default gateway or built-in provider credential (with an interactive
-  numbered picker on a terminal when `<name>` is omitted) and
-  materialize cached models for `claude` and `codex`.
-- `aide gateway edit [<name>] [--name <new>] [--url <url>] [--ttl <ttl>] [--harnesses <list>] [--rotate-token | --token-stdin | --token-env <VAR>] [--profile <name>]`:
-  update a gateway's name, base URL, bearer token, refresh TTL, or
-  configured agents in place (interactively on a terminal when no edit
-  flags are passed, or directly via flags), migrating its secret key,
-  cache, `default_credentials`, repository preferences, and agent config
-  files.
-- `aide gateway rename <old-name> [<new-name>] [--profile <name>]`:
-  rename a gateway and migrate its secret key (`<old>_token` →
-  `<new>_token`), cache file, and agent provider entries.
-- `aide gateway sync [<name>] [--profile <name>]`: fetch now, whatever
-  the TTL, and update every agent file that exists.
-- `aide gateway remove <name> [--profile <name>] [--keep-secret]`:
-  delete the gateway, its cache and its entries in agent files. The
-  token is deleted too unless `--keep-secret` is passed, another gateway
-  or credential (on any profile) uses the same store and key, or an
-  `env:` or MCP server template reads that key from a profile's
-  `secret:` store.
+- `aide gateway list [--all] [--models] [--format json]`: each gateway
+  with URL, secret store and key name (never the key), cache age,
+  per-harness file status (`synced`, `stale`, `pending`) and the
+  harnesses it is chosen for.
+- `aide gateway use [<name|none>] --harness <h> [--repo] [--unset]`:
+  set the harness's choice in the profile, or in this repository's
+  preferences with `--repo`. Without a name on a terminal it shows the
+  picker. `none` is the harness's own login.
+- `aide gateway edit [<name>] [--name <new>] [--url <url>] [--ttl <ttl>]`:
+  change a gateway in place (see `--help` for key rotation flags); a
+  rename migrates its secret key, cache, choices, repository
+  preferences and harness entries.
+- `aide gateway sync [<name>]`: fetch now, whatever the TTL, and update
+  every harness file that exists.
+- `aide gateway remove <name> [--keep-secret]`: delete the gateway, its
+  cache and its harness entries, and clear choices that named it (they
+  become unset). The key is deleted too unless `--keep-secret` is
+  passed or another gateway, credential or template uses it. A
+  split-off `<name>-codex` is an ordinary gateway and stays.
+- `aide project set --gateway <name|none> [--harness <h>]`: save a
+  repository's choice; see the [CLI reference](cli-reference.md#aide-project).
 
 ### Safety rules
 
-- `base_url` must use `https://`; `http://` is allowed only for
-  `localhost`, `127.0.0.1` and `::1`. It cannot carry credentials, a
-  query string or a fragment.
+- `url` must use `https://`; `http://` is allowed only for `localhost`,
+  `127.0.0.1` and `::1`, and a keyless gateway must be on one of them.
+  It cannot carry credentials, a query string or a fragment.
 - Model discovery refuses redirects to another host or from `https` to
   `http`, reads at most 4 MiB, keeps at most 1000 models, and strips
-  control characters from model names before caching or printing them.
-- `key` must be a valid variable name, and its uppercase form cannot be
-  a reserved, `never_allow_env`, provider (`ANTHROPIC_API_KEY`,
-  `OPENAI_BASE_URL`, ...), loader, proxy or TLS variable (`LD_*`,
-  `DYLD_*`, `NODE_OPTIONS`, `HTTPS_PROXY`, `SSL_CERT_FILE`, ...).
-- A gateway cannot share its name with a credential binding, including
-  one aide derives from a legacy provider key in `env:`.
-- `.aide.yaml` cannot declare `gateways:`.
+  control characters from model names.
+- A gateway cannot share its name with a built-in provider in a harness
+  file, and `aide-<name>` entries never override a harness's own
+  providers or saved logins.
+- `AIDE_GW_*` variables are removed from the environment aide inherits,
+  and so are the preset keys (`OPENROUTER_API_KEY`, ...): a key you
+  exported in your shell never reaches a harness except through a
+  gateway you chose.
+- `.aide.yaml` cannot declare `gateways:` or `gateway_choice:`.
+
+---
 
 ## Control Environment Variables
 
@@ -693,7 +791,8 @@ Each file in `~/.config/aide/profiles/<name>.yaml` defines one profile (the file
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
 - `credentials:` / `default_credentials:`: named provider API key bindings and the ones injected by default. See [Credential bindings](#credential-bindings).
-- `gateways:` (map, optional): custom LLM gateways and the agents they serve. Manage them with `aide gateway`; see [Custom gateways](#custom-gateways).
+- `gateways:` (map, optional): LLM gateways and the harnesses they serve. Manage them with `aide gateway`; see [Gateways](#gateways).
+- `gateway_choice:` (map, optional): per harness, the gateway a launch uses, or `none` for the harness's own login. Set with `aide gateway use`; see [Choosing a gateway](#choosing-a-gateway-no-silent-billing-changes).
 - `icon:` (string, optional): Unicode symbol displayed alongside the profile name in the banner and `aide prompt` output.
 - `config_dir_name:` (string, optional): names the profile's native agent config dirs. Driver derives the agent's config-dir env var (e.g. `CLAUDE_CONFIG_DIR=~/.claude-<name>`) and injects it at launch + sync + adopt + list. Avoids hand-rolling per-agent env vars. See [Provisioning § Profile interaction](provisioning.md#profile-interaction) and [Profiles](profiles.md).
 - `config_dir:` (string, optional): override the derived `~/.<agent>-<name>` path with an explicit absolute or HOME-rooted path for every agent.

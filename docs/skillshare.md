@@ -123,6 +123,10 @@ profiles, using `fromEnv` references for any secret. The
 variables must then be in the agent's environment: set them in the
 profile's `env:` or `credentials:` bindings.
 
+Gateway keys are not written either: a gateway's key stays in the age
+store and reaches a harness as `AIDE_GW_<NAME>_KEY` at launch, so a
+Skillshare MCP server cannot see it unless you set it in `env:`.
+
 ## Hooks, plugins and instructions
 
 The same one-writer rule applies to hooks, plugins and shared

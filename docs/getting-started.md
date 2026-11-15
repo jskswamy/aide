@@ -157,6 +157,20 @@ To proceed, run one of:
   aide profile set-default <name>     # use a fallback for unmatched folders
 ```
 
+## Using a Gateway
+
+To run a harness against a hosted service or company gateway instead of
+its own login, register it and choose it:
+
+```
+$ aide gateway add corp --url https://llm.example.com
+$ aide gateway use corp --harness claude
+```
+
+aide never selects a gateway for you. When `claude` or `codex` has gateways
+marked and no choice, aide shows a picker on a terminal and exits with code
+`78` in a script. See [Gateways](configuration.md#gateways).
+
 ## Creating a Profile
 
 `aide profile create` creates a new profile with an interactive wizard (TTY) or

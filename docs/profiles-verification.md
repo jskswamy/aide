@@ -20,6 +20,8 @@ credential errors. Run it with:
 nix develop path:. --command go test ./internal/launcher -run TestLauncher_CodexProfileContract -count=1
 ```
 
+With gateways, a harness's own login is the gateway choice `none` (`aide --gateway none`); the checks below use it. See [Gateways](configuration.md#gateways).
+
 This test uses a mocked executable. It does not establish Codex's native
 login storage, refresh, keyring behavior, or concurrent-account isolation.
 

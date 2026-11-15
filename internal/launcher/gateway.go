@@ -169,8 +169,8 @@ func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName,
 	logs := make([]bytes.Buffer, len(credPlan.Bindings))
 	var wg sync.WaitGroup
 	for i, b := range credPlan.Bindings {
-		if _, ok := ctx.Gateways[b.Name]; !ok {
-			continue
+		if gw, ok := ctx.Gateways[b.Name]; !ok || gw.SwitchSpec() != nil {
+			continue // a switch has no models and no harness file
 		}
 		injected = append(injected, b.Name)
 		token := ""
@@ -269,6 +269,12 @@ func (l *Launcher) syncGateway(w io.Writer, rc *aidectx.ResolvedContext, ctx con
 // only: never a value.
 func gatewayInfo(name, harnessName string, gw config.GatewayConfig) ui.CredentialInfo {
 	kind := "gateway"
+	if sw := gw.SwitchSpec(); sw != nil {
+		return ui.CredentialInfo{
+			Name: name, IsGateway: true, Kind: "switch",
+			URL: fmt.Sprintf("cloud credentials (%s capability)", sw.Capability),
+		}
+	}
 	if !gw.RequiresToken() {
 		kind = "keyless"
 	}
@@ -379,7 +385,7 @@ func EnrichBannerHarnessesAndGateways(
 			if c.Key == "" {
 				c.Key = gw.Key
 			}
-			if homeDir != "" {
+			if homeDir != "" && info.Kind != "switch" {
 				cat, _ := gateway.ReadCache(homeDir, rc.Name, c.Name)
 				if gateway.MatchesBaseURL(cat, gw.BaseURL) {
 					c.ModelCount = len(cat.Models)

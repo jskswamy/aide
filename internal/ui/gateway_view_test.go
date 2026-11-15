@@ -22,6 +22,11 @@ func TestGatewayLines_Cases(t *testing.T) {
 			Credentials:       []CredentialInfo{corp},
 			AvailableGateways: []GatewayOption{{Name: "openrouter"}},
 		}, "Gateway   ", []string{"corp → https://llm.corp/v1   (repo preference)", "key: work/corp → ANTHROPIC_AUTH_TOKEN", "models: not synced yet", "other: openrouter · none (claude login) — aide --gateway <name>"}, nil},
+		{"provider switch", BannerData{
+			ContextName: "work", Harness: "claude",
+			GatewayChoices: []CredentialInfo{{Harness: "claude", Choice: "aws", Source: "profile", Kind: "switch", Name: "aws", URL: "cloud credentials (aws capability)"}},
+			Credentials:    []CredentialInfo{{Name: "aws", IsGateway: true, Kind: "switch", URL: "cloud credentials (aws capability)"}},
+		}, "Gateway   ", []string{"aws → cloud credentials (aws capability)   (profile work)"}, []string{"key:", "models:", "file:"}},
 		{"none", BannerData{
 			ContextName: "work", Harness: "claude",
 			GatewayChoices:    []CredentialInfo{{Harness: "claude", Choice: "none", Source: "profile"}},

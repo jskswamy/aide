@@ -57,6 +57,8 @@ type PlannedCredential struct {
 	Store        string
 	Key          string
 	Capabilities []string
+	// Permit are variables a provider switch lets through the scrub.
+	Permit []string
 	// Optional marks a gateway a multi harness merely offers: its
 	// store failing to open withholds it instead of stopping the launch.
 	Optional bool
@@ -462,14 +464,20 @@ func gatewayBindings(ctx config.Context, harnessName string, choice Choice) []Pl
 	var out []PlannedCredential
 	for _, name := range names {
 		gw := ctx.Gateways[name]
-		route, ok := config.GatewayBinding(name, gw).Route(name, harnessName)
+		binding := config.GatewayBinding(name, gw)
+		route, ok := binding.Route(name, harnessName)
 		if !ok {
 			continue
 		}
-		out = append(out, PlannedCredential{
+		pc := PlannedCredential{
 			Name: name, Env: route.Env, Set: route.Set, Store: gw.Store, Key: gw.Key,
-			Optional: d.Reach == harness.ReachMulti && name != choice.Value,
-		})
+			Capabilities: binding.Capabilities,
+			Optional:     d.Reach == harness.ReachMulti && name != choice.Value,
+		}
+		if sw := gw.SwitchSpec(); sw != nil {
+			pc.Permit = sw.PermitEnv
+		}
+		out = append(out, pc)
 	}
 	return out
 }

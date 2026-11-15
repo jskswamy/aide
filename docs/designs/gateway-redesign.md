@@ -322,10 +322,12 @@ Upgrading is automatic (CUJ 6), but these behaviours change:
     limited to plain non-LLM variables. Existing `default_credentials:` and
     LLM `credentials:` entries are migrated to `gateways:` and
     `gateway_choice:` on the first launch or config write, with backups.
-    Until S10 lands, only legacy `gateways:` and their `default_credentials:`
-    names are migrated; built-in and custom LLM `credentials:`,
-    `bedrock`/`vertex` and `env:` switches keep working through the
-    credential path.
+    Until credentials migrate (deferred past S10), only legacy `gateways:`
+    and their `default_credentials:` names are migrated; built-in and custom
+    LLM `credentials:`, `bedrock`/`vertex` and `env:` switches keep working
+    through the credential path. `aide gateway use` no longer selects a
+    provider credential: use `--gateway <credential>` on launch or
+    `aide project set --gateway <credential> --harness <h>` until it returns.
 *   **Flags:** `--gateway` takes one value; `--no-credentials` is removed;
     `--auth login`, `--token-env`, and `--token-stdin` still work as deprecated
     aliases with a notice. `aide gateway rename` is not added; renaming uses
@@ -1914,3 +1916,5 @@ migration guard and backups.
 *   `gateway use` (S10): `--harness` is required; it chooses among the gateways marked for that harness (or `none`), writes `gateway_choice` or, with `--repo`, the repository preference, and no longer switches provider credentials. `gateway list` treats a provider credential as no longer the default for a harness with an explicit choice, matching `ResolveChoice`. `gateway rename` is removed in favour of `gateway edit <name> --name`.
 *   `project set` (S10): `--gateway <name|none> --harness <h>` (harness defaults to `--agent`) saves a per-harness repository choice; a name that is only a provider credential keeps the legacy selection until those credentials migrate. `--no-credentials` is removed; `--auth login` is a deprecated alias for `--gateway none` that errors when combined with another gateway, on `project set` and on the launch flags. `--gateway` on launch is single-valued.
 *   Age identity (S10): `ResolveRecipient` takes `allowGenerate` (`--generate-age-key`) and, for a new secret store only, `gateway add` resolves the recipient through it before encrypting; a YubiKey with no recipient is an error only off a terminal, so the interactive generate offer is unchanged.
+*   Deferred (S10): folder isolation that preserves custom `env:` config dirs, the `gateway remove` choice-clearing notice, and routing `aide init` through the migration helper are not implemented; they move with the credential migration. `gateway use <credential>` is a known regression until then.
+*   Review fixes (S10): a bare `--from-env=VAR` picks the first preset using VAR that aide can deliver and otherwise falls through to the custom-URL path; `--no-auth` rejects `--key`/`--secret-store`; `--default-for` errors for a harness no added gateway serves.

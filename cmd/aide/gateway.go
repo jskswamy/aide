@@ -142,6 +142,9 @@ Examples:
 			if noAuth && (tokenStdin || fromEnv != "") {
 				return errors.New("--no-auth takes no key; drop --key-stdin and --from-env")
 			}
+			if noAuth && (key != "" || store != "") {
+				return errors.New("--no-auth takes no key; drop --key and --secret-store")
+			}
 			if api != "" && api != string(gatewaypreset.APIAnthropicMessages) {
 				return fmt.Errorf("--api %s: %w", api, errWireNotDelivered)
 			}
@@ -171,8 +174,11 @@ Examples:
 			case len(args) == 1:
 				preset, isPreset = gatewaypreset.Lookup(args[0])
 			case fromEnv != "" && fromEnv != fromEnvAuto:
-				if preset, isPreset = gatewaypreset.ByShellVar(fromEnv); isPreset {
-					args = []string{preset.Name}
+				for _, p := range gatewaypreset.All() {
+					if slices.Contains(p.ShellVars, fromEnv) && presetDeliverable(p) == nil {
+						preset, isPreset, args = p, true, []string{p.Name}
+						break
+					}
 				}
 			}
 			var presetHarnesses []string
@@ -299,6 +305,11 @@ Examples:
 				}
 			}
 			gw = ctx.Gateways[name]
+			for _, h := range defaultFor {
+				if !slices.ContainsFunc(added, func(k string) bool { return slices.Contains(ctx.Gateways[k].EffectiveHarnesses(), h) }) {
+					return fmt.Errorf("--default-for %s: gateway %q does not serve %s", h, name, h)
+				}
+			}
 			interactive := !tokenStdin && stdinIsTTY()
 			wantDefault := func(k, h string) bool {
 				switch {
@@ -400,7 +411,7 @@ func presetDeliverable(p gatewaypreset.Preset) error {
 // usual variables that is set.
 func presetShellVar(p gatewaypreset.Preset, isPreset bool) (string, error) {
 	if !isPreset {
-		return "", errors.New("--from-env needs a variable name for a custom gateway: --from-env=VAR")
+		return "", errors.New("--from-env needs a variable name for a custom gateway: use --from-env=VAR, not --from-env VAR")
 	}
 	for _, v := range p.ShellVars {
 		if os.Getenv(v) != "" {
@@ -580,8 +591,12 @@ and prompts, with nothing preselected.`,
 				}
 			}
 			if name != "" && name != "none" && !slices.Contains(candidates, name) {
-				return fmt.Errorf("profile %q has no gateway %q marked for %s (marked: %s)",
-					profileName, name, harnessName, strings.Join(append(candidates, "none"), ", "))
+				hint := ""
+				if _, isGW := ctx.Gateways[name]; !isGW {
+					hint = "; provider credentials cannot be chosen here until they migrate: launch with --gateway " + name + " or run aide project set --gateway " + name + " --harness " + harnessName
+				}
+				return fmt.Errorf("profile %q has no gateway %q marked for %s (marked: %s)%s",
+					profileName, name, harnessName, strings.Join(append(candidates, "none"), ", "), hint)
 			}
 
 			if repo {
@@ -1638,9 +1653,9 @@ func resolveGatewayAddAuth(ctx context.Context, cmd *cobra.Command, reader *bufi
 	case err == nil && !gw.IsLoopback(), errors.Is(err, gateway.ErrUnauthorized), errors.Is(err, gateway.ErrForbidden):
 		if !stdinIsTTY() {
 			if err == nil {
-				return "", nil, errors.New("this gateway needs a bearer token; pass --token-stdin or --token-env")
+				return "", nil, errors.New("this gateway needs a bearer token; pass --key-stdin or --from-env=VAR")
 			}
-			return "", nil, fmt.Errorf("%w (pass --token-stdin or --token-env)", err)
+			return "", nil, fmt.Errorf("%w (pass --key-stdin or --from-env=VAR)", err)
 		}
 		return promptGatewayTokenUntilOK(ctx, cmd, reader, gateway.Endpoint(gw))
 	default:
@@ -1675,7 +1690,7 @@ func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, 
 	case envVar != "":
 		token = os.Getenv(envVar)
 		if token == "" {
-			return "", fmt.Errorf("--token-env %s: the variable is unset or empty", envVar)
+			return "", fmt.Errorf("--from-env=%s: the variable is unset or empty", envVar)
 		}
 	case fromStdin:
 		line, err := reader.ReadString('\n')
@@ -1705,7 +1720,7 @@ func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, 
 		}
 		token = strings.TrimSpace(string(raw))
 	default:
-		return "", errors.New("no token: stdin is not a terminal; pass --token-stdin or --token-env <VAR>")
+		return "", errors.New("no token: stdin is not a terminal; pass --key-stdin or --from-env=VAR")
 	}
 	if token == "" {
 		if allowEmpty {

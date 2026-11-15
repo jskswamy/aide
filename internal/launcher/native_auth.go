@@ -133,5 +133,5 @@ func piStoredLoginNotice(dir string, envNames []string) string {
 	}
 	slices.Sort(shadowed)
 	return fmt.Sprintf("%s has a stored Pi login for %s: Pi uses it ahead of the selected API key "+
-		"(remove it with /logout in Pi, or launch with --auth login)", path, strings.Join(shadowed, ", "))
+		"(remove it with /logout in Pi, or launch with --gateway none)", path, strings.Join(shadowed, ", "))
 }

@@ -167,10 +167,7 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 					"change it with: aide gateway use <name|none> --harness %s --profile %s", name, h, v, h, name))
 			}
 		}
-		migrated.DefaultCredentials = slices.DeleteFunc(migrated.DefaultCredentials, func(c string) bool {
-			_, wasGateway := ctx.Gateways[c]
-			return wasGateway
-		})
+		migrated.DefaultCredentials = nil // read only to derive gateway_choice; no longer written
 		for _, line := range conv.Converted {
 			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: %s", name, line))
 		}

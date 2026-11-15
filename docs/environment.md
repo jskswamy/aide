@@ -16,14 +16,14 @@ agents:
 # ~/.config/aide/profiles/personal.yaml
 agent: claude
 env:
-  ANTHROPIC_API_KEY: "{{ .secrets.personal_key }}"
+  GITHUB_TOKEN: "{{ .secrets.personal_key }}"
 ```
 
 ```yaml
 # ~/.config/aide/profiles/work.yaml
 agent: claude
 env:
-  ANTHROPIC_API_KEY: "{{ .secrets.work_key }}"
+  GITHUB_TOKEN: "{{ .secrets.work_key }}"
 ```
 
 ## Literal Values
@@ -32,7 +32,7 @@ Pass a plain string and aide forwards it unchanged. No secrets file required:
 
 ```yaml
 env:
-  CLAUDE_CODE_USE_BEDROCK: "1"
+  AWS_PROFILE: "work"
   AWS_REGION: "us-east-1"
 ```
 
@@ -51,7 +51,7 @@ Example using all three:
 agent: claude
 secret: work
 env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_key }}"
+  GITHUB_TOKEN: "{{ .secrets.github_token }}"
   PROJECT_ROOT: "{{ .project_root }}"
   AGENT_TMPDIR: "{{ .runtime_dir }}"
 ```
@@ -61,7 +61,7 @@ env:
 `aide env set KEY VALUE` writes a literal value to the CWD-matched profile:
 
 ```sh
-aide env set CLAUDE_CODE_USE_BEDROCK 1
+aide env set AWS_PROFILE work
 aide env set AWS_REGION us-east-1
 aide env set CONTEXT_VAR value --profile work
 ```
@@ -73,9 +73,9 @@ profile's secret store, rather than a raw value. `--global` is required because
 secrets are profile-scoped:
 
 ```sh
-aide env set ANTHROPIC_API_KEY --secret-key anthropic_key --global
-aide env set ANTHROPIC_API_KEY --secret-key anthropic_key --profile work --global
-aide env set ANTHROPIC_API_KEY --pick --global
+aide env set GITHUB_TOKEN --secret-key github_token --global
+aide env set GITHUB_TOKEN --secret-key github_token --profile work --global
+aide env set GITHUB_TOKEN --pick --global
 ```
 
 The profile must already have a secret store bound (via
@@ -92,7 +92,7 @@ decrypts the secrets file and presents available keys to choose from.
 
 ```
 Profile: work
-  ANTHROPIC_API_KEY   ← secrets.anthropic_key
+  GITHUB_TOKEN   ← secrets.github_token
   AWS_REGION          = us-east-1
   PROJECT_ROOT        ← project_root
   AGENT_TMPDIR        ← runtime_dir
@@ -109,7 +109,7 @@ aide env list --profile work
 `aide env remove KEY` deletes an env var from the CWD-matched profile:
 
 ```sh
-aide env remove ANTHROPIC_API_KEY
+aide env remove GITHUB_TOKEN
 aide env remove AWS_REGION --profile work
 ```
 

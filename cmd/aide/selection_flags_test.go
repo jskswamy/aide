@@ -118,7 +118,7 @@ func TestWhich_HonorsSavedPreferenceAndFlags(t *testing.T) {
 	}
 
 	got := runSelectionJSON(t, whichCmd())
-	if got["agent_name"] != "pi" || got["harness_source"] != "preference" || got["credential_source"] != "preference" {
+	if got["agent_name"] != "pi" || got["harness_source"] != "preference" || got["credential_source"] != "profile" {
 		t.Errorf("saved preference not applied: agent %v from %v, credentials from %v", got["agent_name"], got["harness_source"], got["credential_source"])
 	}
 	if c := choiceFor(got, "pi"); c != "openai" {

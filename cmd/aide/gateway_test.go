@@ -92,6 +92,24 @@ func (e *gatewayEnv) writeConfig(t *testing.T, body string) {
 	}
 }
 
+// writeLegacyProfile writes the work profile as the user's own
+// profiles/work.yaml, untouched: the writer no longer carries
+// default_credentials:, so a test that needs the legacy shapes must not
+// round-trip them through it.
+func (e *gatewayEnv) writeLegacyProfile(t *testing.T, body string) {
+	t.Helper()
+	cfgDir := filepath.Join(e.xdg, "aide")
+	_ = os.RemoveAll(filepath.Join(cfgDir, "profiles"))
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for f, content := range map[string]string{"config.yaml": "default_profile: work\n", "profiles/work.yaml": body} {
+		if err := os.WriteFile(filepath.Join(cfgDir, f), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func (e *gatewayEnv) config(t *testing.T) string {
 	t.Helper()
 	cfgDir := filepath.Join(e.xdg, "aide")
@@ -762,6 +780,77 @@ func TestGatewayCmd_Remove(t *testing.T) {
 	}
 }
 
+// Removing a gateway clears the choices that named it, in the profile
+// and for repositories, and says so.
+func TestGatewayCmd_RemoveClearsChoicesWithNotice(t *testing.T) {
+	e := newGatewayEnv(t)
+	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--default-for", "claude", "--default-for", "pi"); err != nil {
+		t.Fatal(err)
+	}
+	prefPath := prefs.DefaultPath(e.home)
+	pf := &prefs.File{Version: prefs.Version}
+	key := prefs.Key{Profile: "work", Remote: "github.com/org/repo"}
+	pf.Set(key, prefs.Preference{Gateway: map[string]string{"opencode": "corp", "claude": "none"}})
+	if err := prefs.Save(prefPath, pf); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runGateway(t, "", "remove", "corp")
+	if err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"Cleared the gateway choice for claude, pi on profile \"work\"",
+		"Cleared the repository's gateway choice for opencode (github.com/org/repo)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("remove output missing %q:\n%s", want, out)
+		}
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for h, v := range loaded.Contexts["work"].GatewayChoice {
+		if v == "corp" {
+			t.Errorf("gateway_choice[%s] still names the removed gateway", h)
+		}
+	}
+	got, err := prefs.Load(prefPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := got.Get(key); p.Gateway["opencode"] != "" || p.Gateway["claude"] != "none" {
+		t.Errorf("repository preference after remove = %+v, want only the unrelated choice kept", p)
+	}
+}
+
+// A provider credential becomes a gateway, so gateway use takes it like
+// any other.
+func TestGatewayCmd_UseAcceptsMigratedCredential(t *testing.T) {
+	e := newGatewayEnv(t)
+	e.writeLegacyProfile(t, `agent: claude
+config_dir_name: work
+credentials:
+  openrouter: {backend: age, store: work, key: openrouter_api_key}
+default_credentials: [openrouter]
+`)
+	out, err := runGateway(t, "", "use", "openrouter", "--harness", "pi", "--profile", "work")
+	if err != nil || !strings.Contains(out, `Set the gateway for pi on profile "work" to "openrouter"`) {
+		t.Fatalf("use openrouter: %v\n%s", err, out)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Contexts["work"].GatewayChoice["pi"]; got != "openrouter" {
+		t.Errorf("gateway_choice[pi] = %q, want openrouter", got)
+	}
+	if _, err := runGateway(t, "", "use", "openrouter", "--harness", "claude", "--profile", "work"); err == nil {
+		t.Error("openrouter is not marked for claude, but use accepted it")
+	}
+}
+
 func TestGatewayCmd_RemoveKeepsSharedSecret(t *testing.T) {
 	e := newGatewayEnv(t)
 	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--token-stdin", "--profile", "work", "--store", "shared"); err != nil {
@@ -855,17 +944,14 @@ func TestGatewayCmd_UseAndListWithBuiltinCredential(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(e.home, ".codex-work"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	e.writeConfig(t, `profiles:
-  work:
-    agent: claude
-    config_dir_name: work
-    credentials:
-      anthropic:
-        backend: age
-        store: work
-        key: anthropic_api_key
-    default_credentials: [anthropic]
-default_profile: work
+	e.writeLegacyProfile(t, `agent: claude
+config_dir_name: work
+credentials:
+  anthropic:
+    backend: age
+    store: work
+    key: anthropic_api_key
+default_credentials: [anthropic]
 `)
 	if _, err := runGateway(t, gwCmdToken, "add", "api", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
 		t.Fatal(err)
@@ -959,17 +1045,14 @@ default_profile: work
 
 func TestGatewayCmd_AddInteractiveNameAndDefaultPrompt(t *testing.T) {
 	e := newGatewayEnv(t)
-	e.writeConfig(t, `profiles:
-  work:
-    agent: claude
-    config_dir_name: work
-    credentials:
-      anthropic:
-        backend: age
-        store: work
-        key: anthropic_api_key
-    default_credentials: [anthropic]
-default_profile: work
+	e.writeLegacyProfile(t, `agent: claude
+config_dir_name: work
+credentials:
+  anthropic:
+    backend: age
+    store: work
+    key: anthropic_api_key
+default_credentials: [anthropic]
 `)
 	orig := stdinIsTTY
 	stdinIsTTY = func() bool { return true }

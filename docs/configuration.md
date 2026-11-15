@@ -257,13 +257,12 @@ not `--clean-env` is set:
 The full list lives in `internal/envscrub`. What still reaches the
 agent:
 
-- the profile's selected `credentials:` bindings (see "Credential
-  bindings" below);
-- values the profile sets in `env:`. A provider API key or token there
-  is no longer passed through `env:`: see "Legacy credentials in
-  `env:`" below. Provider selectors and endpoints
-  (`CLAUDE_CODE_USE_BEDROCK`, `ANTHROPIC_VERTEX_PROJECT_ID`,
-  `OPENAI_BASE_URL`, ...) are ordinary configuration there. Other
+- the profile's `credentials:` bindings (see "Credential bindings"
+  below) and its chosen gateways;
+- values the profile sets in `env:`. A provider API key, endpoint or
+  switch there is refused (add a [gateway](#gateways) instead); other
+  provider selectors (`ANTHROPIC_VERTEX_PROJECT_ID`, ...) are ordinary
+  configuration there. Other
   scrubbed names (cloud variables, `scrub_env:` names) are passed on
   with a warning naming the variable (never its value).
 - cloud variables a capability grants through `env_allow` (the
@@ -299,19 +298,7 @@ reaches:
   To keep them per profile, set `ANTHROPIC_CONFIG_DIR` in the
   profile's `env:` to a dir inside its config dir.
 
-Pi keeps logins and saved API keys in `auth.json` inside its config
-dir (`PI_CODING_AGENT_DIR`, so one per profile), and uses a stored
-entry ahead of the environment for that provider. A selected
-`credentials:` binding therefore does not win in Pi for a provider the
-profile has logged in to. A Pi launch that injects a binding reads
-the `auth.json` of the config dir it uses (the profile's own dir, else
-an exported `PI_CODING_AGENT_DIR`, else `~/.pi/agent`; provider names
-only, never the stored values) and prints `aide: note: <dir>/auth.json has a stored Pi login
-for <provider>: Pi uses it ahead of the selected API key ...`. The
-launch continues; run `/logout` for that provider in Pi to use the
-key, or launch with `--auth login` to use the login. Providers whose
-`auth.json` id aide does not know (Bedrock, Vertex, custom names)
-are not checked. Pi's Vertex provider without `GOOGLE_CLOUD_API_KEY` uses gcloud
+Pi's Vertex provider without `GOOGLE_CLOUD_API_KEY` uses gcloud
 application-default credentials
 (`~/.config/gcloud/application_default_credentials.json`). That file
 is one per user, not per profile: aide does not isolate it. The
@@ -350,155 +337,100 @@ in your shell cannot reach an agent that did not select it.
 
 ## Credential bindings
 
-LLM endpoints (hosted providers, company gateways, cloud switches) are
-[gateways](#gateways); `credentials:` is for plain environment-variable
-secrets such as `GITHUB_TOKEN`, and for env-only harnesses (`gemini`,
-`aider`, `goose`, `amp`). Provider credentials written the old way are
-migrated to gateways (see [Upgrading from earlier
-gateways](#upgrading-from-earlier-gateways)); the rest of this section
-describes the bindings that stay. A profile names its keys under
-`credentials:` and picks the ones a launch injects with
-`default_credentials:`. Each binding
-refers to one key in an age-encrypted secret store (the same stores
-`secret:` names; see `aide secrets`).
+LLM endpoints and keys (hosted providers, company gateways, cloud
+switches) are [gateways](#gateways); `credentials:` is for plain
+environment-variable secrets such as `GITHUB_TOKEN`, for env-only
+harnesses (`gemini`, `aider`, `goose`, `amp`) and for the built-in
+`gemini` key, which is also injected into `pi`, `omp` and `opencode`
+(and skipped there while a gateway is chosen for that harness).
+Provider credentials written the old way are migrated to gateways (see
+[Upgrading from earlier gateways](#upgrading-from-earlier-gateways)).
+There is no `default_credentials:`: every binding is injected into the
+harnesses it serves. Each binding refers to one key in an
+age-encrypted secret store (the same stores `secret:` names; see
+`aide secrets`).
 
 ```yaml
 # ~/.config/aide/profiles/work.yaml
 agent: claude
 credentials:
-  anthropic:
+  github:
     backend: age            # the only backend
     store: work             # secret store, named like secret:
-    key: anthropic_api_key  # key inside that store
-  openrouter:
+    key: github_token       # key inside that store
+    env: [GITHUB_TOKEN]
+    harnesses: [claude]     # required for a custom name
+  gemini:                   # built-in name: GEMINI_API_KEY
     backend: age
     store: work
-    key: openrouter_api_key
-    harnesses: [pi]         # optional: only for these agents
-  corp:                     # custom name: env: and harnesses: required
-    backend: age
-    store: corp
-    key: llm_token
-    env: [CORP_LLM_TOKEN]
-    harnesses: [pi]
-default_credentials: [anthropic]
+    key: gemini_api_key
 ```
 
-- Built-in names and the variable each sets: `anthropic`
-  (`ANTHROPIC_API_KEY`), `openai` (`OPENAI_API_KEY`), `openrouter`
-  (`OPENROUTER_API_KEY`), `codex` (`CODEX_API_KEY`), `gemini`
-  (`GEMINI_API_KEY`). `env:` on a built-in replaces its variable
-  names. A built-in without `harnesses:` is usable with every agent.
+- The built-in names and the variable each sets are `gemini`
+  (`GEMINI_API_KEY`) and, for a binding that is migrated rather than
+  kept, `anthropic`, `openai`, `openrouter` and `codex`. `env:` on a
+  built-in replaces its variable names.
 - Any other name is custom and must list `env:` and `harnesses:`.
   `harnesses:` matches the agent an `agents:` entry runs (`my-claude`
   with `binary: claude` is `claude`).
 - A binding cannot set `PATH`, `HOME` and other process essentials,
   `AIDE_*`, `SOPS_AGE_KEY*`, or an agent config-dir variable such as
   `CLAUDE_CONFIG_DIR`.
-- Only the selected bindings are injected, and only their stores are
-  decrypted. Unselected bindings and other profiles' bindings never
-  are: a profile without a key does not borrow one from another
-  profile.
-- A launch stops before anything runs when a selected binding is not
-  defined in the profile, or its store or key is missing, or
-  `--gateway` names one restricted to other agents.
-- `default_credentials:` and a saved selection (`aide project set
-  --gateway`) skip bindings restricted to other agents, so a profile
-  that runs several agents lists one binding per agent:
-  `default_credentials: [anthropic, openrouter]` with `anthropic`
-  restricted to `harnesses: [claude]` and `openrouter` to
-  `harnesses: [pi]` gives Claude only `ANTHROPIC_API_KEY` and Pi only
-  `OPENROUTER_API_KEY`. `aide which --format json` shows the full
-  selection under `credential_selection` and the injected bindings
-  under `credentials`.
-- Selected bindings are set after the profile's `env:`, so they win
-  over a general `env:` value; `never_allow_env:` still removes them.
+- A launch decrypts only the stores of the bindings it injects. Other
+  profiles' bindings never are: a profile without a key does not
+  borrow one from another profile.
+- `--credential` (and `--gateway`, for names that are not gateways)
+  replaces the whole selection with the names it lists, and stops the
+  launch when one is not defined in the profile, its store or key is
+  missing, or it is restricted to other agents. `--credential=` injects
+  none. `aide which --format json` shows the selection under
+  `credential_selection` and the injected bindings under `credentials`.
+- Bindings are set after the profile's `env:`, so they win over a
+  general `env:` value; `never_allow_env:` still removes them.
 - The banner, `aide which` and `aide status` show binding names and
   variable names only (`--format json`: `credentials` with `name` and
   `env`, and `auth_mode`), never values.
 - Loading fails with `invalid credentials` when `backend:` is not
   `age`, `store:` or `key:` is missing, a custom name lacks `env:` or
-  `harnesses:`, an agent in `harnesses:` is unknown, or
-  `default_credentials:` names an undefined binding.
-- `.aide.yaml` cannot declare `credentials:` or
-  `default_credentials:`, and a provider credential, selector or
-  endpoint in its `env:` stops the launch (an endpoint there could
-  redirect the profile's key to a host the repository chose).
+  `harnesses:`, an agent in `harnesses:` is unknown, or two bindings
+  serving the same agent set the same variable.
+- A provider endpoint (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, ...) or
+  switch (`CLAUDE_CODE_USE_BEDROCK`, ...) set in `credentials:` or in a
+  profile's `env:` is refused with a pointer to `aide gateway add`, and
+  so is a provider key in `env:`. Only a hand edit can leave one after
+  the migration. `aide env set` refuses the same names.
+- `.aide.yaml` cannot declare `credentials:`, and a provider
+  credential, selector or endpoint in its `env:` stops the launch.
 
 ### Routes: one binding, every agent
 
-Pick an agent and the profile picks the credential: give a binding a
+Pick an agent and the profile picks the variables: give a binding a
 route per agent with `for:`. Each route says which variables carry
 the key (`env:`) and which non-secret settings travel with it
-(`set:`), such as the endpoint. Switching with `--agent` then needs no
-`--gateway`.
+(`set:`).
 
 ```yaml
 # ~/.config/aide/profiles/work.yaml
 agent: claude
 credentials:
-  openrouter:
-    backend: age
-    store: work
-    key: openrouter_api_key
-    for:
-      claude:                      # Claude via OpenRouter's Anthropic API
-        env: [ANTHROPIC_AUTH_TOKEN]
-        set: {ANTHROPIC_BASE_URL: "https://openrouter.ai/api", ANTHROPIC_API_KEY: ""}
-      pi:
-        env: [OPENROUTER_API_KEY]
-  bedrock:                         # keyless: AWS login via the capability
+  cloud:                           # keyless: AWS login via the capability
     capabilities: [aws]
     for:
-      claude: {set: {CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: us-east-1}}
-default_credentials: [openrouter]
+      claude: {set: {AWS_PROFILE: dev}}
+      pi: {set: {AWS_REGION: us-east-1}}
 ```
-
-`aide` runs Claude through OpenRouter, `aide --agent pi` runs Pi
-through OpenRouter, and `aide --gateway bedrock` switches Claude to
-Bedrock. `aide --agent codex` notes that Codex has no route and uses
-its own login.
 
 - The `for:` keys are the agents the binding serves. `for:` replaces
   `env:` and `harnesses:` on that binding (those remain shorthand for
-  the same `env:` on every listed agent). A built-in name's route
-  without `env:` uses the built-in variable.
+  the same `env:` on every listed agent).
 - A binding without `backend:`, `store:` and `key:` is keyless: it
   injects only `set:` values and adds its `capabilities:` to the
   launch.
 - `set:` takes plain values (no templates). It cannot set reserved
-  variables, and a provider key variable only to `""` (to blank it).
-- Endpoints travel with the key: when a selected binding injects a key
-  and the profile's `env:` sets a provider endpoint (`ANTHROPIC_BASE_URL`,
-  `OPENAI_BASE_URL`, `AZURE_OPENAI_ENDPOINT`, ...) that no selected
-  route sets, the launch stops and names where to move it. Keys still
-  in legacy `env:` form keep their `env:` endpoint;
-  `aide profile migrate` moves both into a route.
-- Loading fails when two `default_credentials:` entries serving the
-  same agent set the same variable.
+  variables, a provider endpoint or switch, and a provider key variable
+  only to `""` (to blank it).
 - The banner and `aide which` list each route's variable names,
   including `set:` names, never values.
-
-### Legacy credentials in `env:`
-
-A secret-bearing provider credential in a profile's `env:` (API keys
-and tokens such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-`CODEX_API_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, or auth-file selectors such
-as `ANTHROPIC_IDENTITY_TOKEN_FILE`) is handled at launch, without
-changing your config file. Selectors and endpoints are not affected.
-
-- `ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"`, a single
-  secret reference with the profile's `secret:` store, becomes an
-  implicit binding that is selected by default, so the launch behaves
-  as before. aide prints a note once per run with the `credentials:`
-  block to replace it with.
-- Any other value (a literal key, a longer template, or a secret
-  reference without `secret:`) stops the launch with the
-  `credentials:` block to use instead. Values are never printed.
-
-`aide env set` refuses these names and shows the `credentials:` block
-to declare instead. It sets selectors and endpoints only with
-`--global`, since `.aide.yaml` cannot carry them.
 
 ---
 
@@ -692,11 +624,15 @@ migrates a legacy profile: `base_url:` gateways, LLM provider
 ones that set `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL`), keyless
 `bedrock`/`vertex` bindings, `env:` provider switches, an `env:`
 `ANTHROPIC_BASE_URL` with its key, and `default_credentials:` become
-`gateways:` entries plus an explicit `gateway_choice:`, so the launch
+`gateways:` entries plus an explicit `gateway_choice:` (and
+`default_credentials:` is no longer written), so the launch
 uses the same endpoint and key as before. `gemini` and credentials for
-other tools (`GITHUB_TOKEN`) stay under `credentials:`, as does a
-provider credential whose route a gateway cannot express exactly (another
-variable set, a harness that is no gateway harness). It
+other tools (`GITHUB_TOKEN`) stay under `credentials:`. What a gateway
+cannot express exactly (a route that sets another variable beside the
+endpoint, a keyless Claude endpoint, an `env:` provider endpoint with no
+key, an `OPENAI_BASE_URL` in `env:`) is not converted and is refused when the config
+loads, with a pointer to `aide gateway add`: add the gateway by hand and
+remove the old entry. It
 backs up the YAML and `preferences.json` under
 `~/.local/state/aide/migrations/<UTC-timestamp>/` first and prints a
 one-time summary, highlighting any choice inherited from the old
@@ -714,6 +650,13 @@ Things that change:
 - Startup pins aide wrote (OpenCode `model`, Codex `model_provider`)
   become the harness's `gateway_choice` and are removed; pins you set
   yourself are kept.
+- `openrouter` served Codex only through the built-in default set and
+  its preset speaks the OpenAI chat API, so it loses that mark; the
+  summary prints the `aide gateway add <name>-codex ... --api
+  openai-responses --harnesses codex` command for an endpoint that serves
+  `/responses`.
+- `gateway remove` clears the profile and repository choices that named
+  the gateway and says which.
 - A legacy gateway that reached Codex only through the omitted
   `harnesses:` default loses that mark, since Codex needs the Responses
   API; the summary prints the `aide gateway add` command for Codex.
@@ -813,7 +756,7 @@ Each file in `~/.config/aide/profiles/<name>.yaml` defines one profile (the file
 - `agent:`: agent name; must exist in `agents:`.
 - `secret:`: secret file name resolved under `~/.config/aide/secrets/`.
 - `env:`: environment variables passed to the agent; supports Go template syntax for secret injection.
-- `credentials:` / `default_credentials:`: named provider API key bindings and the ones injected by default. See [Credential bindings](#credential-bindings).
+- `credentials:`: plain environment-variable secret bindings, each injected into the harnesses it serves. See [Credential bindings](#credential-bindings).
 - `gateways:` (map, optional): LLM gateways and the harnesses they serve. Manage them with `aide gateway`; see [Gateways](#gateways).
 - `gateway_choice:` (map, optional): per harness, the gateway a launch uses, or `none` for the harness's own login. Set with `aide gateway use`; see [Choosing a gateway](#choosing-a-gateway-no-silent-billing-changes).
 - `icon:` (string, optional): Unicode symbol displayed alongside the profile name in the banner and `aide prompt` output.

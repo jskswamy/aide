@@ -345,19 +345,6 @@ default_profile: work`, betaURL), 1)
 	}
 }
 
-func TestLauncher_GatewayIgnoresProfileEndpointForOtherHarnesses(t *testing.T) {
-	fakeGatewayStore(t)
-	gs := newGatewayServer(t, `{"data":[]}`)
-	home := t.TempDir()
-	seedCache(t, home, gs.URL, time.Hour, "m")
-	cfg := strings.Replace(gatewayConfig(gs.URL), "    config_dir_name: work\n",
-		"    config_dir_name: work\n    env:\n      ANTHROPIC_BASE_URL: https://proxy.example.com\n", 1)
-	env, _ := launchGateway(t, home, cfg, "pi", "")
-	if got, _ := envValue(env, "AIDE_GW_CORP_KEY"); got != gatewayTestToken {
-		t.Errorf("AIDE_GW_CORP_KEY = %q", got)
-	}
-}
-
 func TestEnrichBannerHarnessesAndGateways_OmitsMismatchedCacheBaseURL(t *testing.T) {
 	home := t.TempDir()
 	seedCache(t, home, "https://old-gw.example.com", time.Minute, "m1", "m2")

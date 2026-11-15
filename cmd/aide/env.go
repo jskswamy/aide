@@ -67,12 +67,13 @@ func envSetCmd() *cobra.Command {
 		Long: `Set an environment variable on a context.
 
 Provider API keys and tokens (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
-are refused: declare them as credentials: bindings on the profile.
-Provider selectors and endpoints such as CLAUDE_CODE_USE_BEDROCK or
-ANTHROPIC_BASE_URL are ordinary env, but only with --global.
+are refused, and so are provider endpoints and switches such as
+ANTHROPIC_BASE_URL or CLAUDE_CODE_USE_BEDROCK: add a gateway with
+aide gateway add instead. Other provider selectors are ordinary env,
+but only with --global.
 
 Examples:
-  aide env set CLAUDE_CODE_USE_BEDROCK 1 --global                        # literal value
+  aide env set AWS_REGION us-east-1 --global                             # literal value
   aide env set GITHUB_TOKEN --secret-key github_token --global           # key in bound store
   aide env set GITHUB_TOKEN --secret-store personal --secret-key gh --global
   aide env set GITHUB_TOKEN --pick --global                              # interactive picker
@@ -88,6 +89,9 @@ Examples:
 			useSecret := secretKey != "" || pick || secretStore != ""
 			if envscrub.IsProviderSecretName(key) {
 				return providerSecretEnvError(key)
+			}
+			if err := config.ProviderSettingError(key); err != nil {
+				return err
 			}
 			if !global && envscrub.IsProviderSelectorName(key) {
 				return fmt.Errorf("%s is a provider selector or endpoint, which repository config (.aide.yaml) cannot set; "+
@@ -417,7 +421,5 @@ func envRemoveCmd() *cobra.Command {
 // shows the credentials: binding to declare instead.
 func providerSecretEnvError(key string) error {
 	return fmt.Errorf("%s is a provider credential and cannot be set with aide env set; "+
-		"store it in an age secret store (aide secrets edit <store>) and declare a binding on the profile "+
-		"in your aide config:\n    credentials:\n      <name>:\n        backend: age\n        store: <store>\n        key: <key>\n"+
-		"        env: [%s]\n        harnesses: [<agent>]\n    default_credentials: [<name>]", key, key)
+		"add a gateway that holds the key in an age secret store with: aide gateway add <preset> --key-stdin", key)
 }

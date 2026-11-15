@@ -128,11 +128,12 @@ type Context struct {
 	// canonical harness name; it wins over ProfileDir for that harness.
 	// See NativeConfigDir for the resolution order.
 	ConfigDirs map[string]string `yaml:"config_dirs,omitempty"`
-	// Credentials are the profile's named provider credential bindings;
-	// DefaultCredentials names the ones a launch injects when nothing
-	// else selects. See credentials.go.
-	Credentials        map[string]CredentialBinding `yaml:"credentials,omitempty"`
-	DefaultCredentials []string                     `yaml:"default_credentials,omitempty"`
+	// Credentials are the profile's plain credential bindings, every
+	// one injected into the harnesses it serves. See credentials.go.
+	Credentials map[string]CredentialBinding `yaml:"credentials,omitempty"`
+	// DefaultCredentials is read only so the migration can turn it into
+	// gateway_choice; it is never written.
+	DefaultCredentials []string `yaml:"default_credentials,omitempty"`
 	// Gateways are custom LLM gateways; each injects through a
 	// credential binding of the same name synthesized at load time
 	// (see gateway.go), never written back as credentials:.
@@ -204,9 +205,6 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	}
 	if len(c.Credentials) > 0 {
 		out["credentials"] = c.Credentials
-	}
-	if len(c.DefaultCredentials) > 0 {
-		out["default_credentials"] = c.DefaultCredentials
 	}
 	if len(c.Gateways) > 0 {
 		out["gateways"] = c.Gateways

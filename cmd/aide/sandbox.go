@@ -405,7 +405,7 @@ func sandboxSelection(cmd *cobra.Command, cfg *config.Config, cwd, homeDir, prof
 	}
 	// The gateway choice can open a capability (a provider switch opens
 	// aws or gcp), so show and test plan it as a launch does.
-	if ctx, _, _, err := launcher.PlanProfileCredentials(cfg, p.RC, p.Inputs, &p.Sel); err == nil {
+	if ctx, _, err := launcher.PlanProfileCredentials(cfg, p.RC, p.Inputs, &p.Sel); err == nil {
 		p.RC.Context = ctx
 	}
 	return p.RC, nil

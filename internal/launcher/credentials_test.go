@@ -320,9 +320,12 @@ default_profile: work
 	}
 }
 
-func TestLauncher_LegacySecretEnvBecomesBinding(t *testing.T) {
+// A provider key in env: that cannot become a gateway (here the store
+// is a path, which a gateway cannot name) is refused with a pointer to
+// aide gateway add, never passed through.
+func TestLauncher_ProviderKeyInEnvIsRefused(t *testing.T) {
 	store, values := fixtureStore(t)
-	cfg := fmt.Sprintf(`
+	_, stderr, err := launchCredentials(t, fmt.Sprintf(`
 contexts:
   work:
     agent: claude
@@ -330,27 +333,12 @@ contexts:
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 default_context: work
-`, store)
-	env, stderr, err := launchCredentials(t, cfg, "", false)
-	if err != nil {
-		t.Fatalf("Launch() error = %v", err)
+`, store), "", false)
+	if !errors.Is(err, config.ErrInvalidCredentials) || !strings.Contains(err.Error(), "aide gateway add") {
+		t.Fatalf("Launch() error = %v, want ErrInvalidCredentials pointing to aide gateway add", err)
 	}
-	if got, _ := envValue(env, "ANTHROPIC_API_KEY"); got != values["anthropic_api_key"] {
-		t.Error("legacy ANTHROPIC_API_KEY was not injected")
-	}
-	if !strings.Contains(stderr, "ANTHROPIC_API_KEY") || !strings.Contains(stderr, "default_credentials") {
-		t.Errorf("no migration hint:\n%s", stderr)
-	}
-	if strings.Contains(stderr, values["anthropic_api_key"]) {
-		t.Error("hint printed the value")
-	}
-	// Native login drops the translated binding too.
-	env, _, err = launchCredentials(t, cfg, AuthLogin, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := envValue(env, "ANTHROPIC_API_KEY"); ok {
-		t.Error("login launch injected a legacy credential")
+	if strings.Contains(err.Error()+stderr, values["anthropic_api_key"]) {
+		t.Error("a secret value was printed")
 	}
 }
 
@@ -363,10 +351,10 @@ contexts:
       OPENAI_API_KEY: sk-literal-in-config
 default_context: work
 `, "", false)
-	if !errors.Is(err, config.ErrLegacyCredentialEnv) {
-		t.Fatalf("Launch() error = %v, want ErrLegacyCredentialEnv", err)
+	if !errors.Is(err, config.ErrInvalidCredentials) {
+		t.Fatalf("Launch() error = %v, want ErrInvalidCredentials", err)
 	}
-	if !strings.Contains(err.Error(), "credentials:") || !strings.Contains(err.Error(), `"work"`) {
+	if !strings.Contains(err.Error(), "aide gateway add") || !strings.Contains(err.Error(), "work") {
 		t.Errorf("error lacks migration guidance: %v", err)
 	}
 	if strings.Contains(err.Error()+stderr, "sk-literal-in-config") {
@@ -401,7 +389,7 @@ default_context: work
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, _, err = profileCredentials(cfg, rc)
+			_, err = profileCredentials(cfg, rc)
 			if !errors.Is(err, config.ErrLegacyCredentialEnv) {
 				t.Fatalf("profileCredentials() error = %v, want ErrLegacyCredentialEnv", err)
 			}
@@ -431,7 +419,7 @@ func TestLauncher_ProjectConfigCannotSetHarnessConfigDir(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, _, err = profileCredentials(cfg, rc)
+			_, err = profileCredentials(cfg, rc)
 			if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "aide config") {
 				t.Fatalf("profileCredentials() error = %v, want a refusal naming %s with guidance", err, key)
 			}
@@ -454,40 +442,6 @@ default_profile: work
 	}
 	if _, ok := envValue(env, "CORP_LLM_TOKEN"); ok {
 		t.Error("a custom credential env name exported in the shell reached the agent unselected")
-	}
-}
-
-func TestLauncher_LegacyHintPrintedOncePerLauncher(t *testing.T) {
-	store, _ := fixtureStore(t)
-	t.Setenv("HOME", t.TempDir())
-	configDir := t.TempDir()
-	cwd := t.TempDir()
-	writeMinimalConfig(t, configDir, fmt.Sprintf(`
-contexts:
-  work:
-    agent: claude
-    secret: %s
-    env:
-      ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-default_context: work
-`, store))
-	ctrl := gomock.NewController(t)
-	mockExec := mocks.NewMockExecer(ctrl)
-	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	var stderr bytes.Buffer
-	l := &Launcher{
-		Execer:    mockExec,
-		ConfigDir: configDir,
-		Stderr:    &stderr,
-		LookPath:  func(file string) (string, error) { return "/usr/local/bin/" + file, nil },
-	}
-	for range 2 {
-		if err := l.Launch(cwd, "", nil, false, false, nil, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if n := strings.Count(stderr.String(), "default_credentials"); n != 1 {
-		t.Errorf("hint printed %d times, want once:\n%s", n, stderr.String())
 	}
 }
 
@@ -571,24 +525,23 @@ func TestLauncher_ProviderSelectorInEnvLaunches(t *testing.T) {
 profiles:
   work:
     agent: claude
-    capabilities: [aws]
     env:
-      CLAUDE_CODE_USE_BEDROCK: "1"
+      CLOUD_ML_REGION: us-east5
       ANTHROPIC_VERTEX_PROJECT_ID: proj
 default_profile: work
 `, "", false)
 	if err != nil {
 		t.Fatalf("Launch() error = %v", err)
 	}
-	if got, _ := envValue(env, "CLAUDE_CODE_USE_BEDROCK"); got != "1" {
-		t.Errorf("CLAUDE_CODE_USE_BEDROCK = %q, want the profile's 1", got)
+	if _, ok := envValue(env, "CLAUDE_CODE_USE_BEDROCK"); ok {
+		t.Error("the shell's CLAUDE_CODE_USE_BEDROCK reached the agent")
 	}
 	if got, _ := envValue(env, "ANTHROPIC_VERTEX_PROJECT_ID"); got != "proj" {
 		t.Errorf("ANTHROPIC_VERTEX_PROJECT_ID = %q, want proj", got)
 	}
 	for _, line := range strings.Split(stderr, "\n") {
 		if (strings.Contains(line, "warning") || strings.Contains(line, "note")) &&
-			(strings.Contains(line, "CLAUDE_CODE_USE_BEDROCK") || strings.Contains(line, "ANTHROPIC_VERTEX_PROJECT_ID")) {
+			(strings.Contains(line, "CLOUD_ML_REGION") || strings.Contains(line, "ANTHROPIC_VERTEX_PROJECT_ID")) {
 			t.Errorf("selector in env: was warned about: %s", line)
 		}
 	}
@@ -621,7 +574,6 @@ func routeProfile() config.Context {
 				"claude": {Set: map[string]string{"CLAUDE_CODE_USE_BEDROCK": "1"}},
 			}},
 		},
-		DefaultCredentials: []string{"openrouter"},
 	}
 }
 
@@ -671,7 +623,7 @@ func planProfile(t *testing.T, ctx config.Context, agent string, in SelectionInp
 	ctx.Agent = agent
 	cfg := &config.Config{Contexts: map[string]config.Context{"work": ctx}}
 	var sel Selection
-	out, _, plan, err := PlanProfileCredentials(cfg, &aidectx.ResolvedContext{Name: "work", Context: ctx}, in, &sel)
+	out, plan, err := PlanProfileCredentials(cfg, &aidectx.ResolvedContext{Name: "work", Context: ctx}, in, &sel)
 	return out, plan, sel, err
 }
 
@@ -682,38 +634,6 @@ func TestPlanProfileCredentials_RouteCapabilitiesJoinTheLaunch(t *testing.T) {
 	}
 	if !slices.Contains(ctx.Capabilities, "aws") {
 		t.Errorf("capabilities = %v, want aws from the bedrock route", ctx.Capabilities)
-	}
-}
-
-func TestPlanProfileCredentials_EndpointMustTravelWithTheKey(t *testing.T) {
-	ctx := routeProfile()
-	ctx.Env = map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.example"}
-	_, _, _, err := planProfile(t, ctx, "claude", SelectionInputs{Credentials: []string{"anthropic"}, CredentialsSet: true})
-	if !errors.Is(err, ErrEndpointOutsideRoute) || !strings.Contains(err.Error(), "credentials.anthropic.for.claude.set") {
-		t.Fatalf("error = %v, want ErrEndpointOutsideRoute naming where to move it", err)
-	}
-	// The selected route sets the endpoint itself: allowed.
-	if _, _, _, err := planProfile(t, ctx, "claude", SelectionInputs{}); err != nil {
-		t.Errorf("openrouter route sets ANTHROPIC_BASE_URL itself: %v", err)
-	}
-	// Keyless and login launches send no key anywhere.
-	for name, in := range map[string]SelectionInputs{
-		"keyless": {Credentials: []string{"bedrock"}, CredentialsSet: true},
-		"login":   {Auth: AuthLogin},
-	} {
-		if _, _, _, err := planProfile(t, ctx, "claude", in); err != nil {
-			t.Errorf("%s: %v", name, err)
-		}
-	}
-}
-
-func TestPlanProfileCredentials_LegacyKeyKeepsItsEndpoint(t *testing.T) {
-	ctx := config.Context{Secret: "work", Env: map[string]string{
-		"ANTHROPIC_API_KEY":  "{{ .secrets.anthropic_api_key }}",
-		"ANTHROPIC_BASE_URL": "https://proxy.example",
-	}}
-	if _, plan, _, err := planProfile(t, ctx, "claude", SelectionInputs{}); err != nil || len(plan.Bindings) != 1 {
-		t.Errorf("legacy env: key with endpoint: plan = %+v err = %v, want it to launch", plan, err)
 	}
 }
 
@@ -759,9 +679,8 @@ func TestPlanCredentials_APIKeyToAnotherRouteBaseURLFails(t *testing.T) {
 
 func TestSelection_DefaultsSendingAPIKeyToAnotherBaseURLFail(t *testing.T) {
 	ctx := baseURLRouteProfile()
-	ctx.DefaultCredentials = []string{"anthropic", "proxy"}
 	var s Selection
-	s.SelectCredentials(SelectionInputs{}, ctx.DefaultCredentials)
+	s.SelectCredentials(SelectionInputs{}, []string{"anthropic", "proxy"})
 	plan, err := s.PlanCredentials("work", ctx, "claude", AuthAPI)
 	if err == nil {
 		var names []string

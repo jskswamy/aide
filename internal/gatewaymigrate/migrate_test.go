@@ -279,7 +279,7 @@ func TestPlanConvertsProviderCredentials(t *testing.T) {
 	if len(got.Credentials) != 2 || got.Credentials["gemini"].Key != "gemini_key" || got.Credentials["github"].Key != "gh" {
 		t.Errorf("credentials = %v, want gemini and github only", got.Credentials)
 	}
-	if !slices.Equal(got.DefaultCredentials, []string{"gemini", "github"}) || len(got.Env) != 3 || got.Env["EDITOR"] != "vim" || got.Env["CLOUD_ML_REGION"] == "" {
+	if len(got.DefaultCredentials) != 0 || len(got.Env) != 3 || got.Env["EDITOR"] != "vim" || got.Env["CLOUD_ML_REGION"] == "" {
 		t.Errorf("default_credentials = %v, env = %v", got.DefaultCredentials, got.Env)
 	}
 	// The vertex switch wins for claude, as it did; the rest follow default_credentials

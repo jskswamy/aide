@@ -86,7 +86,6 @@ func TestSelectHarness_UnknownSavedHarnessFails(t *testing.T) {
 }
 
 func TestSelectCredentials_Precedence(t *testing.T) {
-	saved := prefs.Preference{LegacyCredentials: prefs.Selection("openrouter")}
 	defaults := []string{"anthropic"}
 	tests := []struct {
 		name       string
@@ -94,11 +93,10 @@ func TestSelectCredentials_Precedence(t *testing.T) {
 		want       []string
 		wantSource string
 	}{
-		{"flag replaces saved and default", SelectionInputs{Credentials: []string{"openai"}, CredentialsSet: true, Saved: saved}, []string{"openai"}, SourceFlag},
-		{"explicit empty flag", SelectionInputs{CredentialsSet: true, Saved: saved}, []string{}, SourceFlag},
-		{"login injects nothing", SelectionInputs{Auth: AuthLogin, Saved: saved}, []string{}, SourceAuthLogin},
-		{"saved replaces default", SelectionInputs{Saved: saved}, []string{"openrouter"}, SourcePreference},
-		{"saved explicit empty", SelectionInputs{Saved: prefs.Preference{LegacyCredentials: prefs.Selection()}}, []string{}, SourcePreference},
+		{"flag replaces the default", SelectionInputs{Credentials: []string{"openai"}, CredentialsSet: true}, []string{"openai"}, SourceFlag},
+		{"explicit empty flag", SelectionInputs{CredentialsSet: true}, []string{}, SourceFlag},
+		{"login injects nothing", SelectionInputs{Auth: AuthLogin}, []string{}, SourceAuthLogin},
+		{"a saved version 1 credential selection is not read", SelectionInputs{Saved: prefs.Preference{LegacyCredentials: prefs.Selection("openrouter")}}, []string{"anthropic"}, SourceProfile},
 		{"profile default", SelectionInputs{}, []string{"anthropic"}, SourceProfile},
 	}
 	for _, tt := range tests {
@@ -296,57 +294,45 @@ default_profile: work
 	}
 }
 
-func TestLauncher_CredentialSelectionReplacesSavedAndDefault(t *testing.T) {
+// Every plain credential reaches the harnesses it serves; --credential
+// replaces that, and a saved version 1 selection no longer applies.
+func TestLauncher_CredentialFlagReplacesDefault(t *testing.T) {
 	store, values := fixtureStore(t)
 	t.Setenv("HOME", t.TempDir())
 	cwd := t.TempDir()
 	gitRepo(t, cwd, "git@github.com:org/repo.git")
 	prefsPath := filepath.Join(t.TempDir(), "preferences.json")
-	key := prefs.Key{Profile: "work", Remote: "github.com/org/repo"}
+	savePreference(t, prefsPath, prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{LegacyCredentials: prefs.Selection()})
 	cfg := fmt.Sprintf(`
 profiles:
   work:
     agent: claude
     credentials:
-      anthropic: {backend: age, store: %[1]s, key: anthropic_api_key}
-      openai: {backend: age, store: %[1]s, key: openai_api_key, harnesses: [claude]}
-    default_credentials: [anthropic]
+      a: {backend: age, store: %[1]s, key: anthropic_api_key, env: [TEAM_A_TOKEN], harnesses: [claude]}
+      b: {backend: age, store: %[1]s, key: openai_api_key, env: [TEAM_B_TOKEN], harnesses: [claude]}
 default_profile: work
 `, store)
 
-	// Saved selection replaces the profile default.
-	savePreference(t, prefsPath, key, prefs.Preference{LegacyCredentials: prefs.Selection("openai")})
 	env, _, err := selectionLaunch(t, cfg, cwd, &Launcher{PrefsPath: prefsPath}, "")
 	if err != nil {
 		t.Fatalf("Launch() error = %v", err)
 	}
-	if _, ok := envValue(env, "ANTHROPIC_API_KEY"); ok {
-		t.Error("saved selection unioned with the profile default")
+	if got, _ := envValue(env, "TEAM_A_TOKEN"); got != values["anthropic_api_key"] {
+		t.Error("credential a was not injected by default")
 	}
-	if got, _ := envValue(env, "OPENAI_API_KEY"); got != values["openai_api_key"] {
-		t.Error("saved selection not injected")
+	if got, _ := envValue(env, "TEAM_B_TOKEN"); got != values["openai_api_key"] {
+		t.Error("credential b was not injected by default")
 	}
 
-	// A launch selection replaces the saved one.
-	env, _, err = selectionLaunch(t, cfg, cwd, &Launcher{PrefsPath: prefsPath, Credentials: []string{"anthropic"}, CredentialsSet: true}, "")
+	env, _, err = selectionLaunch(t, cfg, cwd, &Launcher{PrefsPath: prefsPath, Credentials: []string{"a"}, CredentialsSet: true}, "")
 	if err != nil {
 		t.Fatalf("Launch() error = %v", err)
 	}
-	if _, ok := envValue(env, "OPENAI_API_KEY"); ok {
-		t.Error("--credential unioned with the saved selection")
+	if _, ok := envValue(env, "TEAM_B_TOKEN"); ok {
+		t.Error("--credential a unioned with the default")
 	}
-	if got, _ := envValue(env, "ANTHROPIC_API_KEY"); got != values["anthropic_api_key"] {
+	if got, _ := envValue(env, "TEAM_A_TOKEN"); got != values["anthropic_api_key"] {
 		t.Error("--credential selection not injected")
-	}
-
-	// An explicitly empty saved selection injects nothing.
-	savePreference(t, prefsPath, key, prefs.Preference{LegacyCredentials: prefs.Selection()})
-	env, _, err = selectionLaunch(t, cfg, cwd, &Launcher{PrefsPath: prefsPath}, "")
-	if err != nil {
-		t.Fatalf("Launch() error = %v", err)
-	}
-	if _, ok := envValue(env, "ANTHROPIC_API_KEY"); ok {
-		t.Error("explicitly empty saved selection fell back to the profile default")
 	}
 }
 

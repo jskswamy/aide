@@ -155,8 +155,6 @@ type Launcher struct {
 	IgnoreProjectConfig bool         // skip .aide.yaml entirely
 	UnrestrictedNetwork bool         // force unrestricted network, clear port rules (-N flag)
 	TrustStore          *trust.Store // override for testing (default: trust.DefaultStore())
-	// hintedLegacy records legacy credential hints already printed.
-	hintedLegacy map[string]bool
 	// Auth selects API credential injection (default) or native login,
 	// which injects no provider credentials.
 	Auth AuthMode
@@ -316,12 +314,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return err
 	}
 
-	// 5a. Credentials: translate legacy env: credentials, check the
+	// 5a. Credentials: check the
 	// selection against the final harness, and decrypt only the selected
 	// bindings' stores, all before any side effect: a missing binding,
 	// store or key stops the launch here.
 	sel.prompt = l.choicePrompter(cwd, homeDir)
-	profileCtx, legacyCreds, credPlan, err := PlanProfileCredentials(cfg, rc, inputs, &sel)
+	profileCtx, credPlan, err := PlanProfileCredentials(cfg, rc, inputs, &sel)
 	for _, n := range sel.ChoiceNotices {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", n)
 	}
@@ -335,10 +333,6 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 				return err
 			}
 		}
-	}
-	l.printLegacyCredentialHints(profileLabel(cfg, rc.Name), legacyCreds)
-	if notice := selectedKeyNotice(cfg.HarnessOf(rc.Context.Agent), rc.Context, homeDir, os.Getenv, credPlan); notice != "" {
-		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
 	if len(credPlan.Bindings) == 0 && len(credPlan.Skipped) > 0 {
 		fmt.Fprintf(l.stderr(), "aide: note: %s has no credential for %s (%s: other harnesses only); %s uses its own login\n",

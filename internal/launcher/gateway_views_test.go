@@ -20,7 +20,7 @@ func TestBuildGatewayViews_OnePerHarness(t *testing.T) {
 	cfg := &config.Config{}
 	rc := &aidectx.ResolvedContext{Name: "work", Context: viewCtx("claude")}
 	sel := Selection{}
-	ctx, _, _, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel)
+	ctx, _, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestEnrichBanner_GatewayFields(t *testing.T) {
 	rc := &aidectx.ResolvedContext{Name: "work", Context: viewCtx("claude")}
 	in := SelectionInputs{Credentials: []string{"b"}, CredentialsSet: true}
 	sel := Selection{}
-	ctx, _, plan, err := PlanProfileCredentials(cfg, rc, in, &sel)
+	ctx, plan, err := PlanProfileCredentials(cfg, rc, in, &sel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestPlanProfileCredentials_StaleChoiceIsWarningOnItsHarness(t *testing.T) {
 	ctx.Agent = "claude"
 	rc := &aidectx.ResolvedContext{Name: "work", Context: ctx}
 	sel := Selection{}
-	if _, _, _, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel); err != nil {
+	if _, _, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel); err != nil {
 		t.Fatal(err)
 	}
 	if got := sel.Choices["codex"]; len(got.Notices) != 1 {

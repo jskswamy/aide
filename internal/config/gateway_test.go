@@ -190,9 +190,9 @@ func TestGateway_SynthesizeCredentials(t *testing.T) {
 			"corp": {BaseURL: "https://alpha.gateway.example.com/v1/", Store: "work", Key: "corp_token"},
 		},
 	}
-	got, err := SynthesizeGatewayCredentials(ctx)
+	got, err := synthesizeGatewayCredentials(ctx)
 	if err != nil {
-		t.Fatalf("SynthesizeGatewayCredentials() error = %v", err)
+		t.Fatalf("synthesizeGatewayCredentials() error = %v", err)
 	}
 	if ctx.Credentials != nil || ctx.DefaultCredentials != nil {
 		t.Fatalf("input context mutated: %+v", ctx)
@@ -236,7 +236,7 @@ func TestGateway_SynthesizeRestrictedHarnesses(t *testing.T) {
 	ctx := Context{Gateways: map[string]GatewayConfig{
 		"beta": {BaseURL: "https://beta.example.com", Store: "work", Key: "beta_token", Harnesses: []string{"opencode", "codex"}},
 	}}
-	got, err := SynthesizeGatewayCredentials(ctx)
+	got, err := synthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestGateway_SynthesizeDefaultsDoNotCollide(t *testing.T) {
 	// No explicit defaults: alpha (first sorted) claims all four
 	// gateway harnesses (claude, pi, opencode, codex), so neither beta
 	// nor gamma is appended.
-	got, err := SynthesizeGatewayCredentials(ctx)
+	got, err := synthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestGateway_SynthesizeDefaultsDoNotCollide(t *testing.T) {
 	// An explicit default (anthropic) claims claude, pi and opencode;
 	// alpha is appended for codex, which anthropic does not serve.
 	ctx.DefaultCredentials = []string{"anthropic"}
-	got, err = SynthesizeGatewayCredentials(ctx)
+	got, err = synthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestGateway_SynthesizeDefaultsDoNotCollide(t *testing.T) {
 	// A gateway named explicitly in default_credentials claims all four
 	// harnesses and is not added twice.
 	ctx.DefaultCredentials = []string{"beta"}
-	got, err = SynthesizeGatewayCredentials(ctx)
+	got, err = synthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestGateway_SynthesizeNoAuth(t *testing.T) {
 	ctx := Context{Gateways: map[string]GatewayConfig{
 		"ollama": {BaseURL: "http://127.0.0.1:11434"},
 	}}
-	got, err := SynthesizeGatewayCredentials(ctx)
+	got, err := synthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestGateway_SynthesizeNoAuthPiOnly(t *testing.T) {
 	ctx := Context{Gateways: map[string]GatewayConfig{
 		"ollama": {BaseURL: "http://127.0.0.1:11434", Harnesses: []string{"pi"}},
 	}}
-	got, err := SynthesizeGatewayCredentials(ctx)
+	got, err := synthesizeGatewayCredentials(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

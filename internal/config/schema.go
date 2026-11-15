@@ -63,6 +63,12 @@ type Config struct {
 	// at load, never serialized.
 	LegacyRenames map[string]map[string]map[string]string `yaml:"-"`
 
+	// NeedsGatewayMigration is true when a profile still has a legacy
+	// gateway (base_url:), which Load translates in memory only.
+	// WriteConfigTo refuses such a config until gatewaymigrate.Apply
+	// has rewritten it.
+	NeedsGatewayMigration bool `yaml:"-"`
+
 	// SynthesizedDefault is true when cfg.Contexts["default"] was synthesized
 	// in memory during Load because profiles/default.yaml did not exist on disk.
 	SynthesizedDefault bool `yaml:"-"`

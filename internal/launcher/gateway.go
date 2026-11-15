@@ -155,13 +155,15 @@ func (l *Launcher) rememberChoice(scope ui.Remember, key prefs.Key, harnessName,
 // cannot be reached falls back to its cached catalogue, or launches
 // without one, with a warning.
 func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName, homeDir string, choice Choice, credPlan CredentialPlan, credEnv map[string]string) {
-	// Only the chosen gateway is the harness's default (its Codex
-	// model_provider, Claude's gateway file); pre-bound credentials keep
-	// the context from synthesizing another.
+	// Claude's gateway file follows the profile's saved choice; a choice
+	// derived from a legacy config that could not be migrated stands in.
 	ctx := rc.Context
-	ctx.DefaultCredentials = nil
-	if _, ok := ctx.Gateways[choice.Value]; ok {
-		ctx.DefaultCredentials = []string{choice.Value}
+	if choice.Derived {
+		ctx.GatewayChoice = maps.Clone(ctx.GatewayChoice)
+		if ctx.GatewayChoice == nil {
+			ctx.GatewayChoice = map[string]string{}
+		}
+		ctx.GatewayChoice[harnessName] = choice.Value
 	}
 	var injected []string
 	logs := make([]bytes.Buffer, len(credPlan.Bindings))
@@ -184,6 +186,11 @@ func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName,
 	wg.Wait()
 	for i := range logs {
 		_, _ = l.stderr().Write(logs[i].Bytes())
+	}
+	if d, ok := harness.Lookup(harnessName); ok && d.Reach != harness.ReachNone {
+		if _, err := gateway.Prune(ctx, harnessName, homeDir, ctx.GatewayCandidates(harnessName)); err != nil {
+			fmt.Fprintf(l.stderr(), "aide: warning: could not clean aide entries from %s's config: %v\n", harnessName, err)
+		}
 	}
 	if harnessName != "codex" {
 		return

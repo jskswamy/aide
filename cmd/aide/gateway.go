@@ -137,7 +137,10 @@ Examples:
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err
@@ -230,14 +233,27 @@ Examples:
 				}
 			}
 
-			if cmd.Flags().Changed("default") {
-				if makeDefault {
-					ctx.DefaultCredentials = setProfileDefaultCredential(ctx, name)
+			// The new gateway is written in its one-API-per-gateway form: one
+			// that serves Codex gets a Responses sibling.
+			converted, _ := config.ConvertLegacyGateways(config.Context{Gateways: ctx.Gateways, DefaultCredentials: []string{name}})
+			var added []string
+			for _, k := range slices.Sorted(maps.Keys(converted)) {
+				if _, saved := cfg.Contexts[profileName].Gateways[k]; k == name || !saved {
+					ctx.Gateways[k] = converted[k].WithBaseURL()
+					added = append(added, k)
 				}
-			} else if existing := collidingDefaultForGateway(ctx, name, gw); existing != "" && !tokenStdin && stdinIsTTY() {
-				if promptMakeDefault(cmd, reader, profileName, existing, name) {
-					ctx.DefaultCredentials = setProfileDefaultCredential(ctx, name)
-				}
+			}
+			gw = ctx.Gateways[name]
+			onlyUnclaimed := true
+			existing := collidingDefaultForGateway(ctx, name, gw)
+			switch {
+			case cmd.Flags().Changed("default"):
+				onlyUnclaimed = !makeDefault
+			case existing != "" && !tokenStdin && stdinIsTTY():
+				onlyUnclaimed = !promptMakeDefault(cmd, reader, profileName, existing, name)
+			}
+			for _, k := range added {
+				ctx = setProfileDefault(ctx, k, onlyUnclaimed)
 			}
 
 			home := userHomeDir()
@@ -387,7 +403,7 @@ func selectableGateways(ctx config.Context) []selectableGateway {
 		}
 		var defs []string
 		for _, h := range gatewayCredentialHarnesses {
-			if gateway.IsDefaultGateway(ctx, name, h) {
+			if isDefaultFor(ctx, name, h) {
 				defs = append(defs, h)
 			}
 		}
@@ -397,7 +413,7 @@ func selectableGateways(ctx config.Context) []selectableGateway {
 		gw := ctx.Gateways[name]
 		var defs []string
 		for _, h := range gw.EffectiveHarnesses() {
-			if gateway.IsDefaultGateway(ctx, name, h) {
+			if isDefaultFor(ctx, name, h) {
 				defs = append(defs, h)
 			}
 		}
@@ -423,7 +439,10 @@ built-in provider credentials and prompts for a selection.`,
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err
@@ -480,7 +499,7 @@ built-in provider credentials and prompts for a selection.`,
 					profileName, name, strings.Join(names, ", "))
 			}
 
-			ctx.DefaultCredentials = setProfileDefaultCredential(ctx, name)
+			ctx = setProfileDefault(ctx, name, false)
 			cfg.Contexts[profileName] = ctx
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
@@ -488,7 +507,7 @@ built-in provider credentials and prompts for a selection.`,
 
 			var activeOn []string
 			for _, h := range gatewayCredentialHarnesses {
-				if gateway.IsDefaultGateway(ctx, name, h) {
+				if isDefaultFor(ctx, name, h) {
 					activeOn = append(activeOn, h)
 				}
 			}
@@ -533,7 +552,10 @@ value as the default.`,
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, oldName, ctx, err := resolveEditableGatewayTarget(cmd, reader, cfg, env.CWD(), *profile, args, tokenStdin)
 			if err != nil {
 				return err
@@ -681,7 +703,10 @@ repository preferences, cached model catalogue, and harness provider entries.`,
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err
@@ -804,7 +829,10 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err
@@ -821,7 +849,8 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 			if len(updated.Gateways) == 0 {
 				updated.Gateways = nil
 			}
-			updated.DefaultCredentials = slices.DeleteFunc(slices.Clone(ctx.DefaultCredentials), func(s string) bool { return s == name })
+			updated.GatewayChoice = maps.Clone(ctx.GatewayChoice)
+			maps.DeleteFunc(updated.GatewayChoice, func(_, v string) bool { return v == name })
 			cfg.Contexts[profileName] = updated
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
@@ -1156,14 +1185,13 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 	updatedCtx.Gateways = maps.Clone(ctx.Gateways)
 	delete(updatedCtx.Gateways, oldName)
 	updatedCtx.Gateways[newName] = newGW
-	if newName != oldName && len(ctx.DefaultCredentials) > 0 {
-		defs := slices.Clone(ctx.DefaultCredentials)
-		for i, c := range defs {
-			if c == oldName {
-				defs[i] = newName
+	if newName != oldName {
+		updatedCtx.GatewayChoice = maps.Clone(ctx.GatewayChoice)
+		for h, v := range updatedCtx.GatewayChoice {
+			if v == oldName {
+				updatedCtx.GatewayChoice[h] = newName
 			}
 		}
-		updatedCtx.DefaultCredentials = defs
 	}
 	if err := config.ValidateGateways("profiles."+profileName, updatedCtx, cfg.NeverAllowEnv); err != nil {
 		return err
@@ -1333,8 +1361,7 @@ func reconcileProfileHarnesses(ctx config.Context, profileName, skipGateway, hom
 			if !slices.Contains(gw.EffectiveHarnesses(), h) {
 				continue
 			}
-			if (h == "claude" && gateway.CanSyncHarness(ctx, g, "claude")) ||
-				(h == "codex" && gateway.IsDefaultGateway(ctx, g, "codex")) {
+			if gateway.CanSyncHarness(ctx, g, h) {
 				_, _ = gateway.MaterializeHarness(ctx, g, gw, cat, h, home, false)
 			}
 		}
@@ -1593,28 +1620,31 @@ func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, 
 	return token, nil
 }
 
-// collidingDefaultForGateway returns the existing default credential or
-// gateway name that claims any of gw's harnesses ahead of name, or ""
-// when name is already default across all of gw.EffectiveHarnesses().
+// collidingDefaultForGateway returns the existing gateway choice or
+// default credential that claims any of gw's harnesses ahead of name,
+// or "" when none does.
 func collidingDefaultForGateway(ctx config.Context, name string, gw config.GatewayConfig) string {
-	synth, err := config.SynthesizeGatewayCredentials(ctx)
-	if err != nil {
-		return ""
-	}
 	for _, h := range gw.EffectiveHarnesses() {
-		defs := config.DefaultCredentialsForHarness(synth, h)
-		if slices.Contains(defs, name) {
-			continue
+		if c := ctx.GatewayChoice[h]; c != "" && c != "none" && c != name {
+			return c
 		}
-		for _, d := range defs {
-			b := synth.Credentials[d]
-			_, isGw := synth.Gateways[d]
-			if isGw || b.IsLLMProvider(d) {
+		for _, d := range config.DefaultCredentialsForHarness(ctx, h) {
+			if ctx.Credentials[d].IsLLMProvider(d) {
 				return d
 			}
 		}
 	}
 	return ""
+}
+
+// isDefaultFor reports whether name is what harness h uses by default:
+// the profile's gateway choice for a gateway, the default credential
+// rule for a provider credential.
+func isDefaultFor(ctx config.Context, name, h string) bool {
+	if _, isGateway := ctx.Gateways[name]; isGateway {
+		return ctx.GatewayChoice[h] == name
+	}
+	return slices.Contains(config.DefaultCredentialsForHarness(ctx, h), name)
 }
 
 func promptMakeDefault(cmd *cobra.Command, reader *bufio.Reader, profileName, existing, name string) bool {
@@ -1628,35 +1658,58 @@ func promptMakeDefault(cmd *cobra.Command, reader *bufio.Reader, profileName, ex
 	return ans == "" || ans == "y" || ans == "yes"
 }
 
-// setProfileDefaultCredential places name first in ctx.DefaultCredentials
-// and removes any other LLM provider or gateway whose harness scope
-// overlaps with name, while preserving unrelated non-provider bindings.
-func setProfileDefaultCredential(ctx config.Context, name string) []string {
-	synth, err := config.SynthesizeGatewayCredentials(ctx)
-	if err != nil {
-		return []string{name}
+// setProfileDefault makes name what its harnesses use by default. A
+// gateway becomes the gateway choice of each harness it serves (only
+// those nothing claims yet when onlyUnclaimed) and displaces provider
+// credentials that overlap it; a provider credential goes first in
+// default_credentials, displacing overlapping ones, and replaces the
+// gateway choice of the harnesses it covers with none. Unrelated
+// bindings stay.
+func setProfileDefault(ctx config.Context, name string, onlyUnclaimed bool) config.Context {
+	choice := maps.Clone(ctx.GatewayChoice)
+	if choice == nil {
+		choice = map[string]string{}
 	}
-	nameB := synth.Credentials[name]
-	_, nameIsGw := synth.Gateways[name]
-	nameIsProvider := nameIsGw || nameB.IsLLMProvider(name)
+	llmDefault := func(h string) bool {
+		return slices.ContainsFunc(config.DefaultCredentialsForHarness(ctx, h), func(d string) bool { return ctx.Credentials[d].IsLLMProvider(d) })
+	}
+	if gw, isGateway := ctx.Gateways[name]; isGateway {
+		served := gw.EffectiveHarnesses()
+		for _, h := range served {
+			if !onlyUnclaimed || choice[h] == "" && !llmDefault(h) {
+				choice[h] = name
+			}
+		}
+		ctx.DefaultCredentials = slices.DeleteFunc(slices.Clone(ctx.DefaultCredentials), func(c string) bool {
+			cb := ctx.Credentials[c]
+			return cb.IsLLMProvider(c) && slices.ContainsFunc(served, func(h string) bool { return choice[h] == name && cb.DefaultAllowsHarness(c, h) })
+		})
+	} else {
+		nameB := ctx.Credentials[name]
+		for _, h := range gatewayCredentialHarnesses {
+			if nameB.DefaultAllowsHarness(name, h) && gatewayServes(ctx, h) {
+				choice[h] = "none"
+			}
+		}
+		out := []string{name}
+		for _, c := range ctx.DefaultCredentials {
+			cb, ok := ctx.Credentials[c]
+			if c == name || !ok || nameB.IsLLMProvider(name) && cb.IsLLMProvider(c) && bindingsOverlapHarnesses(name, nameB, c, cb) {
+				continue
+			}
+			out = append(out, c)
+		}
+		ctx.DefaultCredentials = out
+	}
+	ctx.GatewayChoice = choice
+	return ctx
+}
 
-	out := []string{name}
-	for _, c := range ctx.DefaultCredentials {
-		if c == name {
-			continue
-		}
-		cb, ok := synth.Credentials[c]
-		if !ok {
-			continue
-		}
-		_, cIsGw := synth.Gateways[c]
-		cIsProvider := cIsGw || cb.IsLLMProvider(c)
-		if nameIsProvider && cIsProvider && bindingsOverlapHarnesses(name, nameB, c, cb) {
-			continue
-		}
-		out = append(out, c)
-	}
-	return out
+// gatewayServes reports whether any gateway of ctx is marked for harness h.
+func gatewayServes(ctx config.Context, h string) bool {
+	return slices.ContainsFunc(slices.Collect(maps.Values(ctx.Gateways)), func(gw config.GatewayConfig) bool {
+		return slices.Contains(gw.EffectiveHarnesses(), h)
+	})
 }
 
 func bindingsOverlapHarnesses(nameA string, a config.CredentialBinding, nameB string, b config.CredentialBinding) bool {
@@ -1782,7 +1835,7 @@ func credentialListEntry(profile string, ctx config.Context, name string, b conf
 		if !ok {
 			continue
 		}
-		isDef := gateway.IsDefaultGateway(ctx, name, h)
+		isDef := isDefaultFor(ctx, name, h)
 		if isDef {
 			e.DefaultFor = append(e.DefaultFor, h)
 		}
@@ -1828,7 +1881,7 @@ func gatewayListEntry(profile string, ctx config.Context, name, home string, wit
 		}
 	}
 	for _, h := range gw.EffectiveHarnesses() {
-		if gateway.IsDefaultGateway(ctx, name, h) {
+		if isDefaultFor(ctx, name, h) {
 			e.DefaultFor = append(e.DefaultFor, h)
 		}
 		e.Harnesses = append(e.Harnesses, gateway.InspectHarness(ctx, name, gw, cat, h, home))

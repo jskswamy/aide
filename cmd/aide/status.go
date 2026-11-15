@@ -167,7 +167,7 @@ func initCmd() *cobra.Command {
 					"default": defaultCtx,
 				},
 			}
-			if err := config.WriteConfigTo(cfg, configPath); err != nil {
+			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 

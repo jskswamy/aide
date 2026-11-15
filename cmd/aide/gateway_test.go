@@ -83,6 +83,7 @@ func (e *gatewayEnv) writeConfig(t *testing.T, body string) {
 		t.Fatal(err)
 	}
 	cfg.LegacyMonolithic = false
+	cfg.NeedsGatewayMigration = false // the helper seeds the split layout; gateways are written in the new form
 	cfg.ProfileSchema = true
 	if err := config.WriteConfigTo(cfg, cfgPath); err != nil {
 		t.Fatal(err)
@@ -168,8 +169,15 @@ func TestGatewayCmd_AddWithTokenStdin(t *testing.T) {
 	}
 	gw := loaded.Contexts["work"].Gateways["corp"]
 	want := config.GatewayConfig{BaseURL: e.srv.URL, RefreshTTL: "24h", Store: "work", Key: "corp_token"}
-	if gw.BaseURL != want.BaseURL || gw.RefreshTTL != want.RefreshTTL || gw.Store != want.Store || gw.Key != want.Key || gw.Harnesses != nil {
-		t.Errorf("gateways.corp = %+v, want %+v", gw, want)
+	if gw.BaseURL != want.BaseURL || gw.RefreshTTL != want.RefreshTTL || gw.Store != want.Store || gw.Key != want.Key ||
+		strings.Join(gw.Harnesses, ",") != "claude,pi,omp,opencode" || gw.API != "anthropic-messages" {
+		t.Errorf("gateways.corp = %+v, want %+v serving every harness but codex", gw, want)
+	}
+	if cx := loaded.Contexts["work"].Gateways["corp-codex"]; cx.API != "openai-responses" || cx.URL != e.srv.URL+"/v1" || strings.Join(cx.Harnesses, ",") != "codex" {
+		t.Errorf("gateways.corp-codex = %+v, want the Responses gateway serving codex", cx)
+	}
+	if loaded.NeedsGatewayMigration {
+		t.Error("add must write the new gateway form")
 	}
 	if got := e.store(t, "work"); got["corp_token"] != gwCmdToken {
 		t.Errorf("secret store = %v", got)
@@ -200,8 +208,11 @@ func TestGatewayCmd_AddWithTokenEnvAndDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("no gateway named after the host: %+v", loaded.Contexts["work"].Gateways)
 	}
-	if gw.RefreshTTL != "12h" || gw.Key != "llm_key" || gw.Store != "gw" || strings.Join(gw.Harnesses, ",") != "pi,codex" {
+	if gw.RefreshTTL != "12h" || gw.Key != "llm_key" || gw.Store != "gw" || strings.Join(gw.Harnesses, ",") != "pi" {
 		t.Errorf("gateway = %+v", gw)
+	}
+	if cx := loaded.Contexts["work"].Gateways["localhost-codex"]; strings.Join(cx.Harnesses, ",") != "codex" {
+		t.Errorf("localhost-codex = %+v, want the codex sibling", cx)
 	}
 	if got := e.store(t, "gw"); got["llm_key"] != gwCmdToken {
 		t.Errorf("secret store = %v", got)
@@ -343,12 +354,15 @@ func TestGatewayCmd_AddHarnessesNonTTYPrintsDefault(t *testing.T) {
 	if !strings.Contains(out, want) {
 		t.Errorf("output missing %q:\n%s", want, out)
 	}
-	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
-		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	if gw := loadedGateway(t, e, "ollama"); !slices.Equal(gw.Harnesses, []string{"claude", "pi", "omp", "opencode"}) {
+		t.Errorf("Harnesses = %v, want every harness but codex (its own gateway, ollama-codex, serves it)", gw.Harnesses)
+	}
+	if cx := loadedGateway(t, e, "ollama-codex"); !slices.Equal(cx.Harnesses, []string{"codex"}) {
+		t.Errorf("ollama-codex Harnesses = %v, want [codex]", cx.Harnesses)
 	}
 }
 
-func TestGatewayCmd_AddHarnessesTTYEnterOmitsYAML(t *testing.T) {
+func TestGatewayCmd_AddHarnessesTTYEnterTakesDefault(t *testing.T) {
 	e, srv := addHarnessesAnon(t)
 	stubStdinTTY(t)
 	out, err := runGateway(t, "\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
@@ -358,11 +372,11 @@ func TestGatewayCmd_AddHarnessesTTYEnterOmitsYAML(t *testing.T) {
 	if !strings.Contains(out, "Harnesses [claude,pi,omp,opencode,codex]:") {
 		t.Errorf("output missing TTY prompt:\n%s", out)
 	}
-	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
-		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	if gw := loadedGateway(t, e, "ollama"); !slices.Equal(gw.Harnesses, []string{"claude", "pi", "omp", "opencode"}) {
+		t.Errorf("Harnesses = %v, want every harness but codex (its own gateway, ollama-codex, serves it)", gw.Harnesses)
 	}
-	if strings.Contains(e.config(t), "harnesses:") {
-		t.Errorf("config.yaml still has harnesses:\n%s", e.config(t))
+	if cx := loadedGateway(t, e, "ollama-codex"); !slices.Equal(cx.Harnesses, []string{"codex"}) {
+		t.Errorf("ollama-codex Harnesses = %v, want [codex]", cx.Harnesses)
 	}
 }
 
@@ -391,7 +405,7 @@ func TestGatewayCmd_AddHarnessesTTYGeminiSavesNothing(t *testing.T) {
 	}
 }
 
-func TestGatewayCmd_AddHarnessesTTYTypedDefaultOmitsYAML(t *testing.T) {
+func TestGatewayCmd_AddHarnessesTTYTypedDefault(t *testing.T) {
 	e, srv := addHarnessesAnon(t)
 	stubStdinTTY(t)
 	out, err := runGateway(t, "claude,pi,omp,opencode,codex\n", "add", "ollama", "--url", srv.URL, "--profile", "work")
@@ -401,8 +415,11 @@ func TestGatewayCmd_AddHarnessesTTYTypedDefaultOmitsYAML(t *testing.T) {
 	if !strings.Contains(out, "Harnesses [claude,pi,omp,opencode,codex]:") {
 		t.Errorf("output missing TTY prompt:\n%s", out)
 	}
-	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
-		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	if gw := loadedGateway(t, e, "ollama"); !slices.Equal(gw.Harnesses, []string{"claude", "pi", "omp", "opencode"}) {
+		t.Errorf("Harnesses = %v, want every harness but codex (its own gateway, ollama-codex, serves it)", gw.Harnesses)
+	}
+	if cx := loadedGateway(t, e, "ollama-codex"); !slices.Equal(cx.Harnesses, []string{"codex"}) {
+		t.Errorf("ollama-codex Harnesses = %v, want [codex]", cx.Harnesses)
 	}
 }
 
@@ -440,8 +457,11 @@ func TestGatewayCmd_AddHarnessesFlagAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
-	if gw := loadedGateway(t, e, "ollama"); gw.Harnesses != nil {
-		t.Errorf("Harnesses = %v, want nil", gw.Harnesses)
+	if gw := loadedGateway(t, e, "ollama"); !slices.Equal(gw.Harnesses, []string{"claude", "pi", "omp", "opencode"}) {
+		t.Errorf("Harnesses = %v, want every harness but codex (its own gateway, ollama-codex, serves it)", gw.Harnesses)
+	}
+	if cx := loadedGateway(t, e, "ollama-codex"); !slices.Equal(cx.Harnesses, []string{"codex"}) {
+		t.Errorf("ollama-codex Harnesses = %v, want [codex]", cx.Harnesses)
 	}
 }
 
@@ -631,8 +651,11 @@ func TestGatewayCmd_RemoveNoAuthSkipsSecret(t *testing.T) {
 	if strings.Contains(out, "Deleted secret") {
 		t.Errorf("deleted a secret:\n%s", out)
 	}
-	if strings.Contains(e.config(t), "ollama") {
+	if gw := loadedGateway(t, e, "ollama"); gw.BaseURL != "" {
 		t.Error("gateway still in config")
+	}
+	if gw := loadedGateway(t, e, "ollama-codex"); gw.BaseURL == "" {
+		t.Error("remove must leave the split-off ollama-codex gateway in place")
 	}
 }
 
@@ -666,8 +689,8 @@ func TestGatewayCmd_List(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &entries); err != nil {
 		t.Fatalf("list json: %v\n%s", err, out)
 	}
-	if len(entries) != 1 || entries[0].Profile != "work" || entries[0].Gateway != "corp" ||
-		entries[0].ModelCount != 2 || len(entries[0].Models) != 2 || len(entries[0].Harnesses) != 5 || entries[0].Expired ||
+	if len(entries) != 2 || entries[0].Profile != "work" || entries[0].Gateway != "corp" || entries[1].Gateway != "corp-codex" ||
+		entries[0].ModelCount != 2 || len(entries[0].Models) != 2 || len(entries[0].Harnesses) != 4 || entries[0].Expired ||
 		len(entries[0].ChosenFor) == 0 || entries[0].ChosenFor[0] != (GatewayChoice{Harness: "claude", Source: "profile work"}) {
 		t.Errorf("entries = %+v", entries)
 	}
@@ -709,10 +732,15 @@ func TestGatewayCmd_Remove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remove: %v\n%s", err, out)
 	}
-	for _, want := range []string{`Removed gateway "corp"`, `Deleted secret key "corp_token"`, "Removed cache", `removed provider "corp"`} {
+	for _, want := range []string{`Removed gateway "corp"`, `Kept secret key "corp_token"`, "Removed cache", `removed provider "corp"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("remove output missing %q:\n%s", want, out)
 		}
+	}
+	// The split-off corp-codex still uses the key; removing it frees it.
+	out, err = runGateway(t, "", "remove", "corp-codex")
+	if err != nil || !strings.Contains(out, `Deleted secret key "corp_token"`) {
+		t.Fatalf("remove corp-codex: %v\n%s", err, out)
 	}
 	cfg := e.config(t)
 	if strings.Contains(cfg, "corp") || !strings.Contains(cfg, "other") {
@@ -841,7 +869,7 @@ default_profile: work
 		t.Fatal(err)
 	}
 
-	// List shows both built-in anthropic (default for claude, pi, omp, opencode) and api (default for codex).
+	// List shows both built-in anthropic (default for claude, pi, omp, opencode) and api-codex (default for codex).
 	out, err := runGateway(t, "", "list", "--profile", "work")
 	if err != nil {
 		t.Fatalf("list: %v\n%s", err, out)
@@ -849,7 +877,8 @@ default_profile: work
 	for _, want := range []string{
 		"● GATEWAY: anthropic  [ACTIVE — default for: claude, pi, omp, opencode]",
 		"https://api.anthropic.com (built-in)",
-		"● GATEWAY: api  [ACTIVE — default for: codex; switch all: aide gateway use api --profile work]",
+		"● GATEWAY: api-codex  [ACTIVE — default for: codex]",
+		"○ GATEWAY: api  [standby — switch: aide gateway use api --profile work, or launch: aide --gateway api]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list missing %q:\n%s", want, out)
@@ -861,15 +890,18 @@ default_profile: work
 	if err != nil {
 		t.Fatalf("use api: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `Set default gateway for profile "work" to "api" (claude, pi, omp, opencode, codex)`) {
+	if !strings.Contains(out, `Set default gateway for profile "work" to "api" (claude, pi, omp, opencode)`) {
 		t.Errorf("unexpected use output:\n%s", out)
 	}
 	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := loaded.Contexts["work"].DefaultCredentials; len(got) != 1 || got[0] != "api" {
-		t.Errorf("DefaultCredentials after use api = %v, want [api]", got)
+	if got := loaded.Contexts["work"].DefaultCredentials; len(got) != 0 {
+		t.Errorf("DefaultCredentials after use api = %v, want anthropic displaced", got)
+	}
+	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "api" || got["codex"] != "api-codex" {
+		t.Errorf("GatewayChoice after use api = %v", got)
 	}
 
 	// Verify `aide gateway list` (with no --profile flag) defaults to the active profile ("work"),
@@ -878,7 +910,7 @@ default_profile: work
 	if err != nil {
 		t.Fatalf("list default profile: %v\n%s", err, out)
 	}
-	apiIdx := strings.Index(out, "● GATEWAY: api  [ACTIVE — default for: claude, pi, omp, opencode, codex]")
+	apiIdx := strings.Index(out, "● GATEWAY: api  [ACTIVE — default for: claude, pi, omp, opencode]")
 	anthIdx := strings.Index(out, "○ GATEWAY: anthropic  [standby — switch: aide gateway use anthropic --profile work, or launch: aide --gateway anthropic]")
 	if apiIdx < 0 || anthIdx < 0 || apiIdx > anthIdx {
 		t.Errorf("expected active api before standby anthropic (apiIdx=%d, anthIdx=%d):\n%s", apiIdx, anthIdx, out)
@@ -944,8 +976,8 @@ default_profile: work
 	if _, ok := loaded.Contexts["work"].Gateways["acme"]; !ok {
 		t.Errorf("gateways = %+v, want acme", loaded.Contexts["work"].Gateways)
 	}
-	if got := loaded.Contexts["work"].DefaultCredentials; len(got) != 1 || got[0] != "acme" {
-		t.Errorf("DefaultCredentials = %v, want [acme]", got)
+	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "acme" || got["pi"] != "acme" {
+		t.Errorf("GatewayChoice = %v, want acme", got)
 	}
 }
 
@@ -980,7 +1012,7 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "api", "--url", e.srv.URL, "--default", "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "api", "--url", e.srv.URL, "--default", "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1021,8 +1053,8 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 	if gw, ok := wctx.Gateways["acme"]; !ok || gw.Key != "acme_token" {
 		t.Errorf("gateways.acme = %+v, ok=%v", gw, ok)
 	}
-	if len(wctx.DefaultCredentials) != 1 || wctx.DefaultCredentials[0] != "acme" {
-		t.Errorf("DefaultCredentials = %v, want [acme]", wctx.DefaultCredentials)
+	if wctx.GatewayChoice["claude"] != "acme" || wctx.GatewayChoice["pi"] != "acme" {
+		t.Errorf("GatewayChoice = %v, want acme", wctx.GatewayChoice)
 	}
 
 	// Verify secret key migrated and old key deleted.
@@ -1050,14 +1082,6 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 	if strings.Contains(string(piRaw), `"$API_TOKEN"`) || !strings.Contains(string(piRaw), `"aide-acme"`) || !strings.Contains(string(piRaw), `"$AIDE_GW_ACME_KEY"`) {
 		t.Errorf("pi models.json after rename:\n%s", piRaw)
 	}
-	codexRaw, err := os.ReadFile(filepath.Join(e.home, ".codex-work", "config.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(codexRaw), "[model_providers.api]") || strings.Contains(string(codexRaw), "API_TOKEN") || !strings.Contains(string(codexRaw), "model_provider = 'aide-acme'") {
-		t.Errorf("codex config.toml after rename:\n%s", codexRaw)
-	}
-
 	// Verify repository preference updated to "acme".
 	updatedPrefs, err := prefs.Load(prefPath)
 	if err != nil {
@@ -1094,7 +1118,7 @@ func TestGatewayCmd_EditInteractiveAndTokenRotation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", rotSrv.URL, "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", rotSrv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1143,10 +1167,10 @@ func TestGatewayCmd_EditInteractiveAndTokenRotation(t *testing.T) {
 
 func TestGatewayCmd_ListDefaultProfileVsAllAndGatewayCompletion(t *testing.T) {
 	e := newGatewayEnv(t)
-	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "home-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "home"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "home-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "home"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1187,10 +1211,10 @@ func TestGatewayCmd_PersistentProfileFlagAndPrecedence(t *testing.T) {
 			t.Fatalf("subcommand %q defines a local --profile flag shadowing persistent --profile", sub.Name())
 		}
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "home-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "home"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "home-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "home"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1225,10 +1249,10 @@ func TestGatewayCmd_EditCrossProfileLookupAndPicker(t *testing.T) {
     config_dir_name: work
 default_profile: acme
 `)
-	if _, err := runGateway(t, gwCmdToken, "add", "acme-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "acme"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "acme-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "acme"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1308,7 +1332,7 @@ func TestGatewayCmd_EditRotateTokenAndURLPromptMatrix(t *testing.T) {
 	}))
 	t.Cleanup(newSrv.Close)
 
-	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1386,7 +1410,7 @@ func TestGatewayCmd_EditPreSaveVerificationAndURLMismatchCache(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(e.home, ".pi-work"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1469,16 +1493,16 @@ func TestGatewayCmd_EditFixPassCWDOrderingAmbiguousTTYAndStaleCacheMetadataEdit(
     config_dir_name: work
 default_profile: work
 `)
-	if _, err := runGateway(t, gwCmdToken, "add", "alpha-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "alpha"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "alpha-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "alpha"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "work-gw", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "work"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "shared", "--url", e.srv.URL, "--token-stdin", "--profile", "alpha"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "shared", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "alpha"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGateway(t, gwCmdToken, "add", "shared", "--url", e.srv.URL, "--token-stdin", "--profile", "beta"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "shared", "--url", e.srv.URL, "--token-stdin", "--harnesses", "claude,pi,omp,opencode", "--profile", "beta"); err != nil {
 		t.Fatal(err)
 	}
 

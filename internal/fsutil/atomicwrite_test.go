@@ -292,3 +292,24 @@ func TestAtomicWriteLeavesNoTempFilesOnSuccess(t *testing.T) {
 		t.Errorf("unexpected leftover entry %q", e.Name())
 	}
 }
+
+func TestBackupToDirCopiesWithBakSuffix(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "work.yaml")
+	if err := os.WriteFile(src, []byte("agent: claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "migrations", "ts")
+	got, err := fsutil.BackupToDir(src, root, "profiles/work.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "profiles", "work.yaml.bak"); got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+	if b, _ := os.ReadFile(got); string(b) != "agent: claude\n" {
+		t.Fatalf("backup = %q", b)
+	}
+	if _, err := fsutil.BackupToDir(filepath.Join(root, "missing"), root, "x"); err == nil {
+		t.Fatal("missing source must fail")
+	}
+}

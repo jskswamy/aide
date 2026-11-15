@@ -69,3 +69,18 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	}
 	return nil
 }
+
+// BackupToDir copies the file at srcPath to <backupRoot>/<relName>.bak
+// and returns the backup's path. Parent directories are created, and the
+// copy is atomic. A missing source is an error.
+func BackupToDir(srcPath, backupRoot, relName string) (string, error) {
+	data, err := os.ReadFile(srcPath) // #nosec G304 -- caller supplies aide's own config path
+	if err != nil {
+		return "", fmt.Errorf("reading %s for backup: %w", srcPath, err)
+	}
+	dst := filepath.Join(backupRoot, relName+".bak")
+	if err := AtomicWrite(dst, data); err != nil {
+		return "", fmt.Errorf("writing backup %s: %w", dst, err)
+	}
+	return dst, nil
+}

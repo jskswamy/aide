@@ -144,11 +144,10 @@ func credentialNamesForCompletion(cmd *cobra.Command) []string {
 	if err != nil {
 		return nil
 	}
-	synth, err := config.SynthesizeGatewayCredentials(rc.Context)
-	if err == nil {
-		return slices.Sorted(maps.Keys(synth.Credentials))
-	}
-	return slices.Sorted(maps.Keys(rc.Context.Credentials))
+	names := slices.Collect(maps.Keys(rc.Context.Credentials))
+	names = append(names, slices.Collect(maps.Keys(rc.Context.Gateways))...)
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // previewSelection resolves what a launch from cwd would select with

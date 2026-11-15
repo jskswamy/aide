@@ -376,14 +376,13 @@ func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []strin
 }
 
 // dropGatewayNames removes from the credential selection the names that
-// choose a gateway instead ("none", and gateways that exist only in
-// their converted form, such as a split-off <gw>-codex); the gateway
-// choice carries them.
-func (s *Selection) dropGatewayNames(ctx, synth config.Context) {
+// choose a gateway instead ("none", and gateways, including a split-off
+// <gw>-codex); the gateway choice carries them.
+func (s *Selection) dropGatewayNames(ctx config.Context) {
 	s.requested = slices.DeleteFunc(s.requested, func(name string) bool {
 		_, converted := ctx.ConvertedGateways[name]
-		_, bound := synth.Credentials[name]
-		return name == gatewayNone || converted && !bound
+		_, declared := ctx.Gateways[name]
+		return name == gatewayNone || converted || declared
 	})
 	if s.CredentialSource != SourceAuthLogin {
 		s.Credentials = slices.Clone(s.requested)

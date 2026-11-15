@@ -191,6 +191,7 @@ func (c *Config) ApplyDefaultProfileDir(name string, ctx *Context) {
 
 func (c *Config) applyDefaultProfileDirs() {
 	for name, ctx := range c.Contexts {
+		ctx.Name = name
 		applyDefaultProfileDir(name, &ctx, c.HarnessOf)
 		c.Contexts[name] = ctx
 	}
@@ -218,6 +219,62 @@ func applyDefaultProfileDir(name string, ctx *Context, harnessOf func(string) st
 		return
 	}
 	ctx.Profile = configDirName(name)
+}
+
+// isolateNativeDirs gives a named profile whose env: pins a harness dir
+// to the native one its own dirs: the pin is dropped, config_dir_name
+// is the profile name and a custom dir variable moves to config_dirs.
+// It marks the config for migration, which writes the result.
+// shortcut: a dir variable that is templated, relative or outside home stays in
+// env:, where it blocks the derived name on reload; upgrade if that is seen.
+func (c *Config) isolateNativeDirs(home string) {
+	for name, ctx := range c.Contexts {
+		if IsDefaultProfile(name) || name == "" {
+			continue
+		}
+		pinned := false
+		for _, d := range harness.All() {
+			pinned = pinned || d.SupportsProfiles() && d.DefaultConfigDir != "" && envPinsGlobalDir(ctx, d, home)
+		}
+		if !pinned {
+			continue
+		}
+		ctx.Env, ctx.ConfigDirs = maps.Clone(ctx.Env), maps.Clone(ctx.ConfigDirs)
+		// pi and omp share one variable: it is global when it names either default.
+		for _, key := range slices.Sorted(maps.Keys(ctx.Env)) {
+			v := ctx.Env[key]
+			dir := homepath.Expand(v, home)
+			var users []harness.Descriptor
+			global := false
+			for _, d := range harness.All() {
+				if d.ProfileEnvKey == key && d.SupportsProfiles() {
+					users = append(users, d)
+					global = global || sameDirPath(dir, d.DefaultDir(home))
+				}
+			}
+			custom := filepath.IsAbs(dir) && fsutil.IsUnderDir(dir, home) && filepath.Clean(dir) != filepath.Clean(home) && !strings.Contains(v, "{{")
+			if len(users) == 0 || !global && !custom {
+				continue
+			}
+			if !global {
+				if ctx.ConfigDirs == nil {
+					ctx.ConfigDirs = map[string]string{}
+				}
+				for _, d := range users {
+					ctx.ConfigDirs[d.Name] = v
+				}
+			}
+			delete(ctx.Env, key)
+			ctx.IsolatedEnv = append(ctx.IsolatedEnv, key)
+		}
+		slices.Sort(ctx.IsolatedEnv)
+		if len(ctx.Env) == 0 {
+			ctx.Env = nil
+		}
+		ctx.Profile = configDirName(name)
+		c.Contexts[name] = ctx
+		c.NeedsGatewayMigration = true
+	}
 }
 
 func stripDefaultConfigDirOverrides(ctx *Context) bool {

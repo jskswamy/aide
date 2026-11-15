@@ -332,3 +332,26 @@ func TestApplyPersistsProviderCredentialsOnce(t *testing.T) {
 		t.Errorf("second Migrate() = %+v, %v", res2, err)
 	}
 }
+
+func TestMigrateIsolatesEnvPinnedNativeDir(t *testing.T) {
+	cfgDir, cfg := loadLegacy(t, "agent: claude\nenv:\n  CLAUDE_CONFIG_DIR: ~/.claude\n  PI_CODING_AGENT_DIR: ~/custom-pi\n")
+	res, err := Migrate(cfg, nil, cfgDir, t.TempDir())
+	if err != nil || res.ReadOnly || res.BackupDir == "" {
+		t.Fatalf("Migrate() = %+v, %v", res, err)
+	}
+	if !strings.Contains(res.Summary, "profile \"work\": CLAUDE_CONFIG_DIR") {
+		t.Errorf("summary lacks the isolation note:\n%s", res.Summary)
+	}
+	body, _ := os.ReadFile(filepath.Join(cfgDir, "profiles", "work.yaml"))
+	if strings.Contains(string(body), "CLAUDE_CONFIG_DIR") || !strings.Contains(string(body), "omp: ~/custom-pi") {
+		t.Errorf("migrated profile:\n%s", body)
+	}
+	loaded, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatalf("the migrated config must load: %v", err)
+	}
+	got := loaded.Contexts["work"]
+	if loaded.NeedsGatewayMigration || got.Profile != "work" || got.ConfigDirs["omp"] != "~/custom-pi" || len(got.IsolatedEnv) != 0 {
+		t.Errorf("reloaded = %+v (needs migration %v)", got, loaded.NeedsGatewayMigration)
+	}
+}

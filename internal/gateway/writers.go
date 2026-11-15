@@ -83,7 +83,13 @@ func HarnessConfigDir(ctx config.Context, harnessName, home string) (string, err
 	return dir, nil
 }
 
-// harnessTarget resolves the harness's file handler, dir and file.
+// ErrSharedNativeDir reports a named profile that would use a harness's
+// native dir, which other profiles share.
+var ErrSharedNativeDir = errors.New("gateway: named profile would use the shared native harness dir")
+
+// harnessTarget resolves the harness's file handler, dir and file. A
+// named profile never gets the native dir: only the built-in default
+// profile owns it.
 func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, string, string, error) {
 	hf, err := lookupHarnessFile(harnessName)
 	if err != nil {
@@ -92,6 +98,9 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 	dir, err := HarnessConfigDir(ctx, harnessName, home)
 	if err != nil {
 		return nil, "", "", err
+	}
+	if d, ok := harness.Lookup(harnessName); ok && ctx.Name != "" && !config.IsDefaultProfile(ctx.Name) && fsutil.SameDir(d.DefaultDir(home), dir) {
+		return nil, "", "", fmt.Errorf("%w: profile %q, %s dir %s; give it its own config_dir_name", ErrSharedNativeDir, ctx.Name, harnessName, homepath.Tilde(dir, home))
 	}
 	path := hf.path(ctx, dir, home)
 	if !hf.singleGatewayPerDir() {
@@ -255,8 +264,8 @@ func Prune(ctx config.Context, harnessName, home string, configured []string) (b
 		return false, nil
 	}
 	keep := setOf(configured)
-	// shortcut: the native default dir is shared with other profiles, whose
-	// aide-<gw> entries are not ours to drop; revisit with profile folder isolation.
+	// Only the default profile reaches the native dir (harnessTarget refuses
+	// named profiles), and other profiles' older entries there are not its to drop.
 	if d, ok := harness.Lookup(harnessName); ok && d.DefaultDir(home) == dir {
 		keep = nil
 	}

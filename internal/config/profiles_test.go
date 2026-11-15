@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -448,7 +449,6 @@ func TestLoad_ForbidsGlobalDefaultHarnessDir(t *testing.T) {
 	for name, body := range map[string]string{
 		"config_dirs": "profiles:\n  a:\n    agent: claude\n    config_dirs: {claude: ~/.claude}\n",
 		"config_dir":  "profiles:\n  a:\n    agent: claude\n    config_dir: ~/.claude\n",
-		"env":         "profiles:\n  a:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadYAML(t, body)
@@ -670,5 +670,30 @@ func TestDefaultProfile_NativeConfigDirLockAndStripping(t *testing.T) {
 		if strings.Contains(out, forbidden) {
 			t.Errorf("EncodeProfileYAML(default) still contains %q:\n%s", forbidden, out)
 		}
+	}
+}
+
+// A named profile whose env: pins a harness dir to the native one loads
+// isolated: the pin goes, config_dir_name is the profile name and a
+// custom path moves to config_dirs. The default profile is untouched.
+func TestLoad_IsolatesEnvPinnedNativeDirs(t *testing.T) {
+	cfg, err := loadYAML(t, "profiles:\n  work:\n    agent: claude\n    env:\n"+
+		"      CLAUDE_CONFIG_DIR: ~/.claude\n      PI_CODING_AGENT_DIR: ~/custom-pi\n      KEEP: me\n"+
+		"  plain:\n    agent: claude\n")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.Contexts["work"]
+	if got.Profile != "work" || got.ConfigDirs["pi"] != "~/custom-pi" || got.ConfigDirs["omp"] != "~/custom-pi" || len(got.ConfigDirs) != 2 {
+		t.Errorf("work = profile %q, config_dirs %v", got.Profile, got.ConfigDirs)
+	}
+	if len(got.Env) != 1 || got.Env["KEEP"] != "me" {
+		t.Errorf("work env = %v, want only KEEP", got.Env)
+	}
+	if want := []string{"CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR"}; !slices.Equal(got.IsolatedEnv, want) {
+		t.Errorf("IsolatedEnv = %v, want %v", got.IsolatedEnv, want)
+	}
+	if !cfg.NeedsGatewayMigration || got.Name != "work" || len(cfg.Contexts["plain"].IsolatedEnv) != 0 {
+		t.Errorf("NeedsGatewayMigration = %v, Name = %q", cfg.NeedsGatewayMigration, got.Name)
 	}
 }

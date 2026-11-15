@@ -173,6 +173,13 @@ type Context struct {
 	// config_dirs, profile, profile_dir, or harness config-dir redirect
 	// env vars were stripped from the built-in "default" profile.
 	IgnoredDefaultConfigDir bool `yaml:"-"`
+
+	// Name is the profile's own name, set at load; gateway writers use it
+	// to refuse a native dir shared with other profiles.
+	Name string `yaml:"-"`
+	// IsolatedEnv lists the env: dir variables isolateNativeDirs removed
+	// from a named profile that pinned a native dir; migration writes that.
+	IsolatedEnv []string `yaml:"-"`
 }
 
 // MarshalYAML emits the Context with mcp_servers/plugins serialized

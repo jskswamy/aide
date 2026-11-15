@@ -130,7 +130,8 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
 		ctx := cfg.Contexts[name]
 		conv := config.ConvertLegacy(ctx)
-		if !conv.NeedsMigration() {
+		isolated := ctx.IsolatedEnv
+		if !conv.NeedsMigration() && len(isolated) == 0 {
 			continue
 		}
 		renames := conv.Renames
@@ -150,7 +151,11 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 			}
 			migrated.Gateways[gwName] = gw
 		}
-		migrated.ConvertedGateways = migrated.Gateways
+		migrated.ConvertedGateways, migrated.IsolatedEnv = migrated.Gateways, nil
+		if len(isolated) > 0 {
+			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: %s no longer pins a native harness dir in env:; the profile now has its own dirs "+
+				"(config_dir_name %q, custom paths in config_dirs); a login in the native dir stays there", name, strings.Join(isolated, ", "), migrated.Profile))
+		}
 		migrated.DerivedChoice, migrated.ConvertedCredentials, migrated.ConvertedEnv = nil, nil, nil
 		migrated.GatewayChoice = maps.Clone(ctx.GatewayChoice)
 		if migrated.GatewayChoice == nil {

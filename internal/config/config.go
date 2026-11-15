@@ -90,6 +90,7 @@ func Load(configDir, projectDir string) (*Config, error) {
 	cfg.ensureBuiltinDefault()
 
 	if home, ok := userHome(); ok {
+		cfg.isolateNativeDirs(home)
 		if err := cfg.validateConfigDirs(home); err != nil {
 			return nil, fmt.Errorf("config: %w", err)
 		}

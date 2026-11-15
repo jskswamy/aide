@@ -19,7 +19,17 @@ import (
 // Launches inject it through a credential binding synthesized in memory
 // (SynthesizeGatewayCredentials); nothing is duplicated on disk.
 type GatewayConfig struct {
-	BaseURL    string   `yaml:"base_url" json:"base_url"`
+	// BaseURL is the legacy single URL; URL and API replace it, and
+	// the loader translates one into the other in memory (see
+	// ConvertLegacyGateways).
+	BaseURL    string   `yaml:"base_url,omitempty" json:"base_url,omitempty"`
+	Preset     string   `yaml:"preset,omitempty" json:"preset,omitempty"`
+	URL        string   `yaml:"url,omitempty" json:"url,omitempty"`
+	API        string   `yaml:"api,omitempty" json:"api,omitempty"`
+	NoAuth     bool     `yaml:"no_auth,omitempty" json:"no_auth,omitempty"`
+	Model      string   `yaml:"model,omitempty" json:"model,omitempty"`
+	Region     string   `yaml:"region,omitempty" json:"region,omitempty"`
+	Project    string   `yaml:"project,omitempty" json:"project,omitempty"`
 	RefreshTTL string   `yaml:"refresh_ttl,omitempty" json:"refresh_ttl,omitempty"`
 	Store      string   `yaml:"store,omitempty" json:"store,omitempty"`
 	Key        string   `yaml:"key,omitempty" json:"key,omitempty"`

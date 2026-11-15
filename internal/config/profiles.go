@@ -155,7 +155,7 @@ var validProfileEntryKeys = []string{
 	"config_dir_name", "config_dir", "config_dirs",
 	"credentials", "default_credentials", "gateways",
 	"mcp_servers", "sandbox", "yolo", "capabilities",
-	"plugins", "hooks",
+	"plugins", "hooks", "gateway_choice",
 }
 
 // DecodeProfileYAML decodes a single profile YAML node (using the

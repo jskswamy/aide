@@ -375,14 +375,18 @@ func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []strin
 	}
 }
 
+func isGatewayName(ctx config.Context, name string) bool {
+	_, converted := ctx.ConvertedGateways[name]
+	_, declared := ctx.Gateways[name]
+	return converted || declared
+}
+
 // dropGatewayNames removes from the credential selection the names that
 // choose a gateway instead ("none", and gateways, including a split-off
 // <gw>-codex); the gateway choice carries them.
 func (s *Selection) dropGatewayNames(ctx config.Context) {
 	s.requested = slices.DeleteFunc(s.requested, func(name string) bool {
-		_, converted := ctx.ConvertedGateways[name]
-		_, declared := ctx.Gateways[name]
-		return name == gatewayNone || converted || declared
+		return name == gatewayNone || isGatewayName(ctx, name)
 	})
 	if s.CredentialSource != SourceAuthLogin {
 		s.Credentials = slices.Clone(s.requested)

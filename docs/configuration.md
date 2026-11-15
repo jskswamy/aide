@@ -28,9 +28,9 @@ For a single profile setup, a flat `config.yaml` with no `agents:` key acts as a
 ```yaml
 # ~/.config/aide/config.yaml
 agent: claude
-env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-secret: personal
+gateways:
+  anthropic: {preset: anthropic, store: personal, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 yolo: true          # optional: skip agent permission checks
 auto_approve: true  # alias for yolo
 ```
@@ -68,8 +68,9 @@ match:
 icon: "💼"
 agent: claude
 secret: work
-env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+gateways:
+  anthropic: {preset: anthropic, store: work, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 sandbox:
   network: outbound
   writable:
@@ -83,8 +84,9 @@ match:
 icon: "🏠"
 agent: claude
 secret: personal
-env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+gateways:
+  anthropic: {preset: anthropic, store: personal, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 sandbox: false
 ```
 
@@ -94,8 +96,13 @@ match:
   - path: "~/oss/*"
 agent: aider
 secret: oss
-env:
-  OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
+credentials:
+  openai-key:
+    store: oss
+    key: openai_api_key
+    env: [OPENAI_API_KEY]
+    harnesses: [aider]
+default_credentials: [openai-key]
 sandbox: strict
 ```
 
@@ -346,7 +353,7 @@ harnesses (`gemini`, `aider`, `goose`, `amp`) and for the built-in
 Provider credentials written the old way are migrated to gateways (see
 [Upgrading from earlier gateways](#upgrading-from-earlier-gateways)).
 `default_credentials:` names the bindings a launch injects when nothing
-else selects (`--credential` replaces it); a binding it leaves out is
+else selects (`--gateway <binding>` replaces it); a binding it leaves out is
 never decrypted or injected. Each binding refers to one key in an
 age-encrypted secret store (the same stores `secret:` names; see
 `aide secrets`).
@@ -634,7 +641,9 @@ default) and credentials for other tools (`GITHUB_TOKEN`) stay under
 `credentials:`. What a gateway
 cannot express exactly (a route that sets another variable beside the
 endpoint, a remote keyless Claude endpoint, an `env:` provider endpoint
-with no key, an `OPENAI_BASE_URL` in `env:`) is not converted: the config
+with no key, an `OPENAI_BASE_URL` in `env:`, an `ANTHROPIC_API_KEY` sent to a custom
+URL: a gateway you add with `--url` sends its key as a bearer token, so
+such keys are not converted automatically) is not converted: the config
 still loads, but launching that profile fails with a hint to edit it by
 hand (`aide gateway add` for the gateway, then remove the old entry). It
 backs up the YAML and `preferences.json` under
@@ -670,19 +679,15 @@ Things that change:
   `harnesses:` default loses that mark, since Codex needs the Responses
   API; the summary prints the `aide gateway add` command for Codex.
   Where Codex did use it, the migration splits off a `<name>-codex`
-  gateway.
+  gateway. A custom credential that set `OPENAI_BASE_URL` splits the
+  same way.
 - `aide status` reads key names from the store without decrypting, so
   it no longer needs your age key.
 - `aide gateway rename` is not a command; use
   `aide gateway edit <name> --name <new>`.
 - A migrated credential keeps its name as the gateway name, so
   `aide gateway use <name> --harness <h>` and `--gateway <name>` select
-  it. `openrouter` no longer serves Codex (the preset speaks Chat
-  Completions); the summary prints the `aide gateway add` command for
-  Codex. A custom credential that set `OPENAI_BASE_URL` for Codex becomes
-  a `<name>` Chat gateway plus a `<name>-codex`
-  Responses gateway. A key sent to a custom endpoint is delivered as a
-  bearer token.
+  it.
 
 ### Refresh at launch
 

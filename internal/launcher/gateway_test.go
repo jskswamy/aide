@@ -361,3 +361,20 @@ func TestEnrichBannerHarnessesAndGateways_OmitsMismatchedCacheBaseURL(t *testing
 		t.Fatalf("banner credential = %+v, want ModelCount=0 and empty ModelAge on URL mismatch", data.Credentials[0])
 	}
 }
+
+// --gateway <gateway> chooses the gateway only; the profile's default
+// plain credentials are still injected.
+func TestLauncher_GatewayFlagKeepsDefaultCredentials(t *testing.T) {
+	fakeGatewayStore(t)
+	srv := newGatewayServer(t, `{"data":[{"id":"m1"}]}`)
+	cfg := gatewayConfig(srv.URL) + `
+`
+	cfg = strings.Replace(cfg, "    gateways:", `    credentials:
+      github: {backend: age, store: work, key: corp_token, env: [GITHUB_TOKEN], harnesses: [pi]}
+    default_credentials: [github]
+    gateways:`, 1)
+	env, _ := launchGateway(t, t.TempDir(), cfg, "", AuthAPI, "corp")
+	if got, _ := envValue(env, "GITHUB_TOKEN"); got != gatewayTestToken {
+		t.Errorf("GITHUB_TOKEN = %q, want the default credential kept under --gateway corp", got)
+	}
+}

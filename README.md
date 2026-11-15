@@ -381,7 +381,8 @@ match:
 agent: aider
 secret: personal
 credentials:
-  anthropic: {backend: age, store: personal, key: anthropic_api_key, harnesses: [aider]}
+  anthropic-key: {store: personal, key: anthropic_api_key, env: [ANTHROPIC_API_KEY], harnesses: [aider]}
+default_credentials: [anthropic-key]
 ```
 
 Profiles match git remote URL patterns and directory path globs. The most specific match wins. `default_profile` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.

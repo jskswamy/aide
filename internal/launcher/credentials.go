@@ -306,6 +306,9 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 		sel.Choices = passiveChoices(cfg, rc.Name, ctx, in)
 		sel.Choices[harnessName] = ResolvedChoice{sel.Gateway, sel.ChoiceNotices}
 	}
+	if in.CredentialsSet && len(in.Credentials) == 1 && in.Credentials[0] != gatewayNone && isGatewayName(ctx, in.Credentials[0]) {
+		in.CredentialsSet = false // --gateway <gw> chooses the gateway only; plain credentials keep their default
+	}
 	sel.SelectCredentials(in, ctx.DefaultCredentials)
 	sel.dropGatewayNames(ctx)
 	plan, err := sel.PlanCredentials(rc.Name, ctx, harnessName, in.Auth)

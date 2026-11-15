@@ -24,7 +24,7 @@ sandbox policy.
 |------|---------|-------------|
 | `--agent <name>` | | Override which agent (harness) to launch, for this run only |
 | `--profile <name>` | | Use this profile instead of the one matched for the directory |
-| `--gateway <name\|none>` | | Use this gateway for this run (one value; `none` is the harness's own login); replaces the saved choice. A credential binding name still works for legacy credentials |
+| `--gateway <name\|none>` | | Use this gateway for this run (one value; `none` is the harness's own login); replaces the saved choice. A plain `credentials:` binding name selects that binding instead |
 | `--auth <mode>` | api | Deprecated: `--auth login` is `--gateway none` |
 | `--with <caps>` | | Activate capabilities for this session (e.g., `--with k8s,docker`) |
 | `--without <caps>` | | Disable profile capabilities for this session |
@@ -58,11 +58,11 @@ One-time flags never change saved preferences. Precedence:
   marked for it. `claude` and `codex` with gateways marked and no choice
   open a picker on a terminal and exit `78` otherwise. aide never picks a
   gateway on its own. See [Gateways](configuration.md#gateways).
-- Credentials: the `default_credentials:` bindings (or a saved
-  repository selection) are injected into the harnesses they serve,
-  skipping bindings restricted to other agents; `--credential` names
-  replace that selection (`--credential=` injects none). Bindings outside
-  it are not injected.
+- Credentials: plain `credentials:` bindings selected by
+  `default_credentials:` or a saved repository selection are injected
+  into the harnesses they serve, skipping bindings restricted to other
+  agents; `--gateway <credential>` replaces that selection and
+  `--gateway none` injects none. Bindings outside it are not injected.
 
 **Exit codes:** `78` (`EX_CONFIG`) when a `claude` or `codex` gateway
 choice is unset in a script; stderr names the gateways and the command
@@ -642,7 +642,7 @@ aide profile remove-secret --profile work
 ### aide profile migrate
 
 ```
-aide profile migrate [--write] [--adopt <profile>]...
+aide profile migrate [--write]
 ```
 
 Converts `config.yaml` from `contexts:` to `profiles:`. Without `--write`
@@ -656,7 +656,6 @@ refused; expand it by hand first.
 | Flag | Description |
 |------|-------------|
 | `--write` | Write the migrated config (default: preview only) |
-| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}`. Under `--agent <other agent>` the profile then uses a fresh `~/.<agent>-<profile>` dir with its own login; the preview lists them. Repeatable, but two profiles cannot adopt the same dir, and a profile cannot adopt while another profile still has no config dir of its own |
 
 See [Profiles § Migrating from contexts](profiles.md#migrating-from-contexts).
 
@@ -1315,7 +1314,7 @@ aide config edit
 ### aide config migrate
 
 ```
-aide config migrate [--write] [--adopt <profile>]...
+aide config migrate [--write]
 ```
 
 Also converts legacy gateways (`base_url:`), LLM provider credentials, `env:` provider
@@ -1327,7 +1326,6 @@ a hint to run this command. Splits a single-file `config.yaml` (upgrading `conte
 | Flag | Description |
 |------|-------------|
 | `--write` | Write the split config files (default: preview only) |
-| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}` |
 
 ```
 aide config migrate

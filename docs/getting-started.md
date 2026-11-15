@@ -288,6 +288,13 @@ env:
   GITHUB_TOKEN: "{{ .secrets.github_token }}"
 ```
 
+Select Bedrock for the work profile with a gateway; Bedrock is never set through `env:`:
+
+```
+$ aide gateway add bedrock --region us-east-1 --profile work
+$ aide gateway use bedrock --harness claude --profile work
+```
+
 ## Verifying
 
 `aide which` shows which profile matched and why:

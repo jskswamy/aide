@@ -776,6 +776,43 @@ Gateways (profile work)
 **`aide gateway list`** keeps today's rows and adds a `chosen for` column
 listing the harnesses whose resolved choice is that gateway, with the source.
 
+**`aide prompt` and `aide statusline`** offer an opt-in gateway segment (off by
+default) showing the active harness's choice as `⇄<gw>`, `⇄login` (when `none`),
+or `⇄?` (when unset with candidates), omitted on harnesses without gateway
+support (`ReachNone`), computed passively from config and repository preferences
+only (never reading model caches, harness files, or secret stores, and never
+writing to disk) to stay well within the 100ms shell-prompt budget:
+
+*   `aide prompt`: enabled when `preferences.prompt_gateway: true` is set in
+    `config.yaml` or a trusted `.aide.yaml` (or via `--gateway` on `aide prompt`);
+    resolves `ResolveChoice(cfg, resolved.Name, resolved.Context,
+    cfg.HarnessOf(resolved.Context.Agent), res.Inputs, nil)` from the existing
+    `ResolveSelection` result and places `"⇄" + seg` after the
+    agent icon and before the sandbox/trust badge.
+*   `aide statusline`: adds a `gateway` module (`statusline.gateway`, default
+    `disabled: true`, `icon: "⇄"`, `validStatuslineModules` including `"gateway"`
+    after `"context"`). `defaultStatuslineConfig().Order` stays
+    `["sandbox", "network", "caps", "trust", "context"]`; in
+    `applyStatuslineOverride`, `applyModuleOverride(&dst.Gateway, src.Gateway)`
+    runs and listing `"gateway"` in `src.Order` (when `src.Gateway == nil ||
+    src.Gateway.Disabled == nil`) sets `dst.Gateway.Disabled = false`, while
+    `ResolveStatusline` appends `"gateway"` to `Order` whenever
+    `!isModuleDisabled(dst.Gateway)` and `"gateway"` is not already in `Order`.
+    Requesting `--module gateway` in `renderStatuslineModules` forces
+    `cfg.Gateway.Disabled = false` and appends `"gateway"` to `cfg.Order` if
+    absent. `renderModule("gateway", ...)` formats `icon + gw` with no space
+    (normalizing `"none"` → `"login"` and `"unset"` → `"?"`).
+    `injectAideSessionEnv` always sets `AIDE_GATEWAY` (even
+    when `""`) from `Launcher.Launch` (`sel.Gateway.Segment()`) and
+    `PreviewSessionEnv` (`PlanProfileCredentials` with passive `ResolveChoice`
+    fallback so provider-switch capabilities also populate `AIDE_CAPS`); in
+    piped mode, only when `gateway` is active (`!isModuleDisabled` or in
+    `--module`), `cfgErr == nil`, and `os.LookupEnv("AIDE_GATEWAY")` is unset,
+    `statusline` falls back to passive `ResolveSelection` + `ResolveChoice`
+    seeded with `Profile: cmp.Or(env["AIDE_PROFILE"], env["AIDE_CONTEXT"])`,
+    `SelectionInputs{Agent: agent}`, and `cwd` from
+    `cmp.Or(input.Workspace.CurrentDir, input.Cwd)` (or `os.Getwd()`).
+
 **Data model.** No parallel type is added. `ui.CredentialInfo` already carries
 URL, store, key, model cache, and target file
 ([`types.go:177-188`](../../internal/ui/types.go#L177-L188)); it gains
@@ -1097,11 +1134,6 @@ files into a fragile multi-directory lock/rollback transaction inside
 *   **Picker subscription plan labels**: bounded, sandboxed status probes for
     Claude (`claude auth status --json`), Codex (`codex login status`), and Pi
     (`pi auth check --json --no-refresh`).
-*   **Prompt and statusline gateway segment**: an opt-in `⇄corp` / `⇄login` /
-    `⇄?` segment for `aide prompt` and the Claude statusline, computed from
-    config and preferences only (never caches or harness files) to stay in the
-    100ms budget. Deferred from v1 on 2026-11-13; the banner, `which`,
-    `status`, and `gateway list` cover visibility.
 *   **Microsoft Foundry & static-key switches**: add `foundry` once upstream
     `CLAUDE_CODE_USE_FOUNDRY` resource/URL variables are verified, plus static
     keys on cloud switches (`AWS_BEARER_TOKEN_BEDROCK`) and switches on Pi and
@@ -1279,7 +1311,7 @@ migration guard and backups.
     `ANTHROPIC_VERTEX_PROJECT_ID`, and `AWS_WEB_IDENTITY_TOKEN_FILE` and apply
     switch variables after `envscrub` pins.
 
-#### 7. [`internal/config/gateway.go`](../../internal/config/gateway.go), [`internal/config/credentials.go`](../../internal/config/credentials.go), [`internal/config/schema.go`](../../internal/config/schema.go), [`internal/config/profiles.go`](../../internal/config/profiles.go), [`internal/config/writer.go`](../../internal/config/writer.go), [`internal/config/migrate.go`](../../internal/config/migrate.go) (Modify)
+#### 7. [`internal/config/gateway.go`](../../internal/config/gateway.go), [`internal/config/credentials.go`](../../internal/config/credentials.go), [`internal/config/schema.go`](../../internal/config/schema.go), [`internal/config/project_layers.go`](../../internal/config/project_layers.go), [`internal/config/profiles.go`](../../internal/config/profiles.go), [`internal/config/writer.go`](../../internal/config/writer.go), [`internal/config/migrate.go`](../../internal/config/migrate.go) (Modify)
 
 *   **Type / Scope**: Config schema, validation, scoped `credentials:`, and
     legacy in-memory translation.
@@ -1313,6 +1345,18 @@ migration guard and backups.
         and update [`MigrateProfiles`](../../internal/config/migrate.go#L145-L341)
         so monolithic splits emit `gateways:` + `gateway_choice:` instead of
         `default_credentials:`.
+    *   Add `Preferences.PromptGateway *bool` (`yaml:"prompt_gateway,omitempty"`,
+        merged in `ResolvePreferences` and `mergePreferences` in
+        `project_layers.go`, default off) and `StatuslineConfig.Gateway
+        *ModuleConfig` (`yaml:"gateway,omitempty"`, default `Disabled: true,
+        Icon: "⇄"` while keeping `defaultStatuslineConfig().Order` as
+        `["sandbox", "network", "caps", "trust", "context"]`; in
+        `applyStatuslineOverride`, call `applyModuleOverride(&dst.Gateway,
+        src.Gateway)` and clear `dst.Gateway.Disabled` to `false` when
+        `src.Order` lists `"gateway"` and `src.Gateway == nil ||
+        src.Gateway.Disabled == nil`; at the end of `ResolveStatusline`, append
+        `"gateway"` to `dst.Order` when `dst.Gateway.Disabled` is `false` and
+        `"gateway"` is not already in `dst.Order`).
 
 #### 8. [`internal/gateway/endpoint.go`](../../internal/gateway) (Create), [`internal/gateway/fetch.go`](../../internal/gateway/fetch.go), [`internal/gateway/writers.go`](../../internal/gateway/writers.go), [`internal/gateway/sync.go`](../../internal/gateway/sync.go) (Modify)
 
@@ -1421,14 +1465,19 @@ migration guard and backups.
     *   Include redacted `Gateways` and `GatewayChoice` in
         [`explain.StateFromConfig`](../../internal/explain/state.go#L16).
 
-#### 13. [`internal/launcher/selection.go`](../../internal/launcher/selection.go), [`internal/launcher/agentcfg.go`](../../internal/launcher/agentcfg.go), [`internal/launcher/credentials.go`](../../internal/launcher/credentials.go), [`internal/launcher/gateway.go`](../../internal/launcher/gateway.go), [`internal/launcher/launcher.go`](../../internal/launcher/launcher.go), [`internal/launcher/ambient_keys.go`](../../internal/launcher/ambient_keys.go), [`internal/launcher/native_auth.go`](../../internal/launcher/native_auth.go), [`internal/launcher/codex_env_keys.go`](../../internal/launcher/codex_env_keys.go) (Modify)
+#### 13. [`internal/launcher/selection.go`](../../internal/launcher/selection.go), [`internal/launcher/agentcfg.go`](../../internal/launcher/agentcfg.go), [`internal/launcher/credentials.go`](../../internal/launcher/credentials.go), [`internal/launcher/gateway.go`](../../internal/launcher/gateway.go), [`internal/launcher/launcher.go`](../../internal/launcher/launcher.go), [`internal/launcher/preview.go`](../../internal/launcher/preview.go), [`internal/launcher/ambient_keys.go`](../../internal/launcher/ambient_keys.go), [`internal/launcher/native_auth.go`](../../internal/launcher/native_auth.go), [`internal/launcher/codex_env_keys.go`](../../internal/launcher/codex_env_keys.go) (Modify)
 
 *   **Type / Scope**: Launch choice resolution, key/switch planning, parallel
     sync, and dead-code cleanup.
 *   **Proposed Changes**:
     *   In `selection.go`: implement `ResolveChoice` (flag → repo → profile →
         zero-candidates → TTY picker / passive preview / exit 78), returning
-        `Choice{Value, Source}` and rejecting
+        `Choice{Value, Source}` (with `Choice.Segment()` returning `<gw>`,
+        `"login"`, `"?"`, or `""` for `prompt`/`statusline` and `AIDE_GATEWAY`
+        injection in `launcher.go` via `sel.Gateway.Segment()` and in
+        `preview.go` via `PlanProfileCredentials` with passive `ResolveChoice`
+        fallback, always setting `add["AIDE_GATEWAY"] = gateway` in
+        `injectAideSessionEnv`) and rejecting
         unknown gateway names (adding an `aide gateway add <name>` hint if
         `<name>` is a preset). Exit 78 returns
         `fmt.Errorf("<candidates and commands>: %w", &usage.ExitError{Code:
@@ -1529,7 +1578,16 @@ migration guard and backups.
         endpoints/switches with an `aide gateway add` hint and refresh `Example`
         + `providerSecretEnvError`; share switch capability resolution with
         `sandbox show`/`test`; keep `prompt`, `statusline`, `which`, and `status`
-        strictly passive.
+        strictly passive, and wire the opt-in gateway segment (`AIDE-eha8.5`) in
+        `cmd/aide/prompt.go` (`preferences.prompt_gateway` / `--gateway`,
+        calling `ResolveChoice` with `cfg.HarnessOf(resolved.Context.Agent)` and
+        formatting `"⇄" + seg` after the agent icon) and
+        `cmd/aide/statusline.go` (`"gateway"` in `validStatuslineModules`,
+        `--module gateway` enabling and appending `"gateway"` to `cfg.Order` if
+        absent, no-space `icon + gw` in `renderModule`, `AIDE_GATEWAY` in
+        `envForRender`, and gated piped-mode passive `ResolveSelection` +
+        `ResolveChoice` fallback seeded with `AIDE_PROFILE`/`AIDE_CONTEXT`,
+        `agent`, and `input` CWD when `os.LookupEnv("AIDE_GATEWAY")` is unset).
 
 #### 16. Unit & Integration Tests (Create/Modify)
 
@@ -1578,9 +1636,15 @@ migration guard and backups.
         [`cmd/aide/env_set_test.go`](../../cmd/aide/env_set_test.go),
         [`cmd/aide/examples_test.go`](../../cmd/aide/examples_test.go),
         [`cmd/aide/profile_migrate_test.go`](../../cmd/aide/profile_migrate_test.go),
+        [`cmd/aide/prompt_test.go`](../../cmd/aide/prompt_test.go),
+        [`cmd/aide/statusline_test.go`](../../cmd/aide/statusline_test.go),
+        [`internal/config/statusline_test.go`](../../internal/config/statusline_test.go),
+        [`internal/config/schema_test.go`](../../internal/config/schema_test.go),
+        [`internal/launcher/launcher_statusline_test.go`](../../internal/launcher/launcher_statusline_test.go),
         plus regression tests verifying `aide prompt`, `aide statusline`,
         `aide which`, and `aide sandbox show` succeed with zero disk writes when
-        a gateway slot is unset (`""`).
+        a gateway slot is unset (`""`) and covering `⇄<gw>`, `⇄login`, `⇄?`, and
+        off-by-default states for `prompt` and `statusline`.
     *   **Visibility & OpenCode**: golden banner tests for each kind
         (static-key, keyless, switch), `none`, `unset`, stale choice, withheld
         gateway, and `server-controlled` across all three templates (fixtures
@@ -1684,6 +1748,8 @@ migration guard and backups.
     [`cmd/aide/sandbox.go`](../../cmd/aide/sandbox.go),
     [`internal/config/gateway.go`](../../internal/config/gateway.go),
     [`internal/config/credentials.go`](../../internal/config/credentials.go),
+    [`internal/config/schema.go`](../../internal/config/schema.go),
+    [`internal/config/project_layers.go`](../../internal/config/project_layers.go),
     [`internal/config/profile_dirs.go`](../../internal/config/profile_dirs.go),
     [`internal/config/migrate.go`](../../internal/config/migrate.go),
     [`internal/config/writer.go`](../../internal/config/writer.go),
@@ -1879,6 +1945,31 @@ migration guard and backups.
     the synthesized default context) fixed.
 *   **User approval of the re-reviewed change:** approved by the user on
     2026-11-14.
+*   **Post-approval scope addition (`AIDE-eha8.5`, 2026-11-15):** User requested
+    completing `AIDE-eha8.5` (opt-in gateway segment `⇄<gw>`, `⇄login`, `⇄?` for
+    `aide prompt` via `preferences.prompt_gateway` / `--gateway` and for
+    `aide statusline` via `statusline.gateway` / `AIDE_GATEWAY`, computed
+    passively from config and preferences without decryption, disk writes, or
+    cache/harness file reads).
+*   **Targeted Re-Review of `AIDE-eha8.5` Amendment (2026-11-15, `Full` mode):**
+    `egm-design` (0B, 0M, 3N), `egm-implementation-readiness` (0B, 2M, 1N),
+    `egm-codebase-details` (0B, 1M, 2N), and Ponytail proposed-design (1 Must
+    fix, 2 Should fix; no implementation tests claimed). All findings fixed in
+    spec: (1) explicit `statusline.gateway` enablement and `Order` rules
+    (default `Order` preserved as 5 elements; `applyStatuslineOverride` clears
+    `dst.Gateway.Disabled` when `src.Order` includes `"gateway"`;
+    `ResolveStatusline` appends `"gateway"` to `dst.Order` when enabled;
+    `--module gateway` forces `cfg.Gateway` enabled and in `cfg.Order`); (2)
+    `injectAideSessionEnv` always sets `AIDE_GATEWAY`, and piped-mode fallback
+    runs only when `gateway` is active and `os.LookupEnv("AIDE_GATEWAY")` is
+    unset, seeded with `AIDE_PROFILE`/`AIDE_CONTEXT`, `agent`, and `input` CWD;
+    (3) `prompt` uses `cfg.HarnessOf(resolved.Context.Agent)` and
+    `PreviewSessionEnv` uses `PlanProfileCredentials` (with passive
+    `ResolveChoice` fallback) so custom agent aliases and provider-switch
+    capabilities work; and (4) `internal/config/project_layers.go` added to Step
+    7 and Evidence Provenance, with no-space `icon + gw` formatting specified.
+*   **User approval of `AIDE-eha8.5` amendment:** approved by the user on
+    2026-11-15 ("lookg good to me").
 
 ### Implementation decisions
 

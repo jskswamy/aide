@@ -579,3 +579,24 @@ default_profile: work
 		})
 	}
 }
+
+func TestChoiceSegment(t *testing.T) {
+	cases := []struct {
+		name   string
+		choice Choice
+		want   string
+	}{
+		{name: "chosen_gateway", choice: Choice{Value: "corp", Source: SourceProfile}, want: "corp"},
+		{name: "explicit_none", choice: Choice{Value: "none", Source: SourceProfile}, want: "login"},
+		{name: "no_candidates", choice: Choice{Value: "none", Source: SourceNoCandidates}, want: "login"},
+		{name: "unset", choice: Choice{Value: "", Source: SourceUnset}, want: "?"},
+		{name: "reach_none_zero", choice: Choice{}, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.choice.Segment(); got != tc.want {
+				t.Errorf("Choice%+v.Segment() = %q, want %q", tc.choice, got, tc.want)
+			}
+		})
+	}
+}

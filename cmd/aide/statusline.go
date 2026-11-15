@@ -1,9 +1,11 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -98,7 +100,7 @@ func runStatuslineInstallRemove(cmd *cobra.Command, agent string, install, _ boo
 // validStatuslineModules are the module names renderStatuslineModules
 // understands. Kept in cfg.Order's canonical rendering order for use in
 // error messages.
-var validStatuslineModules = []string{"sandbox", "network", "caps", "trust", "context", "auto_approve"}
+var validStatuslineModules = []string{"sandbox", "network", "caps", "trust", "context", "gateway", "auto_approve"}
 
 // validateStatuslineModules returns an error naming the first unrecognized
 // module in modules, so a typo'd --module value (the primary use case is a
@@ -160,6 +162,7 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 
 	var agent string
 	var env map[string]string
+	var stdinData []byte
 
 	switch {
 	case contextName != "":
@@ -196,6 +199,7 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 		if err != nil {
 			return fmt.Errorf("reading stdin: %w", err)
 		}
+		stdinData = data
 		agent = resolveStatuslineAgent(explicitAgent, isTTY, data)
 		env = envForRender()
 	}
@@ -212,6 +216,23 @@ func runStatuslineRenderWithStdin(cmd *cobra.Command, explicitAgent string, modu
 		}
 	}
 	resolved := config.ResolveStatusline(global, project)
+
+	// In piped mode, when AIDE_GATEWAY is absent from the process environment
+	// (e.g. a session started outside aide or by an older binary) and the
+	// gateway module is active, passively resolve the gateway choice from
+	// config and repository preferences without decrypting or writing files.
+	if !isTTY && contextName == "" && cfgErr == nil {
+		if _, hasGW := env["AIDE_GATEWAY"]; !hasGW && (!isModuleDisabled(resolved.Gateway) || slices.Contains(modules, "gateway")) {
+			homeDir, _ := os.UserHomeDir()
+			fallbackCWD := statuslineInputCWD(stdinData, cwd)
+			profile := cmp.Or(env["AIDE_PROFILE"], env["AIDE_CONTEXT"])
+			res, err := (&launcher.Launcher{Profile: profile}).ResolveSelection(cfg, fallbackCWD, homeDir, launcher.SelectionInputs{Agent: agent})
+			if err == nil && res.RC != nil {
+				env["AIDE_GATEWAY"] = res.PassiveChoice().Segment()
+			}
+		}
+	}
+
 	result := statuslineResult{Line: renderStatuslineModules(resolved, env, modules)}
 
 	format, ferr := output.FromCmd(cmd)
@@ -303,6 +324,19 @@ func renderStatuslineModules(cfg config.StatuslineConfig, env map[string]string,
 	want := make(map[string]bool, len(modules))
 	for _, m := range modules {
 		want[m] = true
+	}
+	if want["gateway"] {
+		f := false
+		if cfg.Gateway == nil {
+			cfg.Gateway = &config.ModuleConfig{Disabled: &f, Icon: "⇄"}
+		} else {
+			cfgCp := *cfg.Gateway
+			cfgCp.Disabled = &f
+			cfg.Gateway = &cfgCp
+		}
+		if !slices.Contains(cfg.Order, "gateway") {
+			cfg.Order = append(slices.Clone(cfg.Order), "gateway")
+		}
 	}
 	var parts []string
 	if want["auto_approve"] && env["AIDE_AUTO_APPROVE"] == "1" && cfg.AutoApprove != nil {
@@ -399,6 +433,25 @@ func renderModule(name string, cfg config.StatuslineConfig, env map[string]strin
 		}
 		return icon + " " + ctx
 
+	case "gateway":
+		if isModuleDisabled(cfg.Gateway) || cfg.Gateway == nil {
+			return ""
+		}
+		gw := env["AIDE_GATEWAY"]
+		switch gw {
+		case "":
+			return ""
+		case "none":
+			gw = "login"
+		case "unset":
+			gw = "?"
+		}
+		icon := cfg.Gateway.Icon
+		if icon == "" {
+			icon = "⇄"
+		}
+		return icon + gw
+
 	case "auto_approve":
 		return "" // always prepended separately; ignored in order loop
 	}
@@ -415,6 +468,7 @@ func envForRender() map[string]string {
 	for _, k := range []string{
 		"AIDE_SANDBOX", "AIDE_NETWORK_MODE", "AIDE_CAPS",
 		"AIDE_TRUST", "AIDE_AUTO_APPROVE", "AIDE_CONTEXT", "AIDE_PROFILE",
+		"AIDE_GATEWAY",
 	} {
 		if v, ok := os.LookupEnv(k); ok {
 			env[k] = v

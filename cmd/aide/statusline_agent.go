@@ -61,3 +61,23 @@ func resolveStatuslineAgent(explicitAgent string, isTTY bool, stdinData []byte) 
 	}
 	return "claude"
 }
+
+// statuslineInputCWD extracts the workspace CWD from Claude Code's piped
+// statusline JSON when available, falling back to fallback.
+func statuslineInputCWD(data []byte, fallback string) string {
+	var in struct {
+		Cwd       string `json:"cwd"`
+		Workspace struct {
+			CurrentDir string `json:"current_dir"`
+		} `json:"workspace"`
+	}
+	if err := json.Unmarshal(data, &in); err == nil {
+		if in.Workspace.CurrentDir != "" {
+			return in.Workspace.CurrentDir
+		}
+		if in.Cwd != "" {
+			return in.Cwd
+		}
+	}
+	return fallback
+}

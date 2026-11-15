@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -853,10 +854,11 @@ type ProjectOverride struct {
 
 // Preferences holds global display/behavior settings.
 type Preferences struct {
-	ShowInfo   *bool  `yaml:"show_info,omitempty"`
-	InfoStyle  string `yaml:"info_style,omitempty"`
-	InfoDetail string `yaml:"info_detail,omitempty"`
-	Yolo       *bool  `yaml:"yolo,omitempty"`
+	ShowInfo      *bool  `yaml:"show_info,omitempty"`
+	InfoStyle     string `yaml:"info_style,omitempty"`
+	InfoDetail    string `yaml:"info_detail,omitempty"`
+	Yolo          *bool  `yaml:"yolo,omitempty"`
+	PromptGateway *bool  `yaml:"prompt_gateway,omitempty"`
 }
 
 // ResolvePreferences merges global and project preferences,
@@ -878,6 +880,9 @@ func ResolvePreferences(global, project *Preferences) Preferences {
 		if global.InfoDetail != "" {
 			result.InfoDetail = global.InfoDetail
 		}
+		if global.PromptGateway != nil {
+			result.PromptGateway = global.PromptGateway
+		}
 	}
 	if project != nil {
 		if project.ShowInfo != nil {
@@ -888,6 +893,9 @@ func ResolvePreferences(global, project *Preferences) Preferences {
 		}
 		if project.InfoDetail != "" {
 			result.InfoDetail = project.InfoDetail
+		}
+		if project.PromptGateway != nil {
+			result.PromptGateway = project.PromptGateway
 		}
 	}
 	return result
@@ -923,6 +931,7 @@ type StatuslineConfig struct {
 	Context     *ModuleConfig `yaml:"context,omitempty"`
 	AutoApprove *ModuleConfig `yaml:"auto_approve,omitempty"`
 	Agent       *ModuleConfig `yaml:"agent,omitempty"`
+	Gateway     *ModuleConfig `yaml:"gateway,omitempty"`
 }
 
 // ModuleConfig holds per-module statusline display configuration.
@@ -943,6 +952,7 @@ type ModuleConfig struct {
 }
 
 func defaultStatuslineConfig() StatuslineConfig {
+	disabled := true
 	return StatuslineConfig{
 		Order:       []string{"sandbox", "network", "caps", "trust", "context"},
 		Sandbox:     &ModuleConfig{On: "🔒", Off: "🔓", Unmanaged: "💀"},
@@ -951,6 +961,7 @@ func defaultStatuslineConfig() StatuslineConfig {
 		Trust:       &ModuleConfig{Untrusted: "⚠️"},
 		Context:     &ModuleConfig{Icon: "📁"},
 		AutoApprove: &ModuleConfig{Value: "🚨"},
+		Gateway:     &ModuleConfig{Disabled: &disabled, Icon: "⇄"},
 	}
 }
 
@@ -964,6 +975,9 @@ func ResolveStatusline(global, project *StatuslineConfig) StatuslineConfig {
 	if project != nil {
 		applyStatuslineOverride(&result, project)
 	}
+	if result.Gateway != nil && result.Gateway.Disabled != nil && !*result.Gateway.Disabled && !slices.Contains(result.Order, "gateway") {
+		result.Order = append(result.Order, "gateway")
+	}
 	return result
 }
 
@@ -971,6 +985,13 @@ func applyStatuslineOverride(dst *StatuslineConfig, src *StatuslineConfig) {
 	if src.Order != nil { // nil = unset; []string{} = explicitly empty
 		dst.Order = make([]string, len(src.Order))
 		copy(dst.Order, src.Order)
+		if slices.Contains(src.Order, "gateway") && (src.Gateway == nil || src.Gateway.Disabled == nil) {
+			if dst.Gateway == nil {
+				dst.Gateway = &ModuleConfig{}
+			}
+			f := false
+			dst.Gateway.Disabled = &f
+		}
 	}
 	applyModuleOverride(&dst.Sandbox, src.Sandbox)
 	applyModuleOverride(&dst.Network, src.Network)
@@ -978,6 +999,7 @@ func applyStatuslineOverride(dst *StatuslineConfig, src *StatuslineConfig) {
 	applyModuleOverride(&dst.Trust, src.Trust)
 	applyModuleOverride(&dst.Context, src.Context)
 	applyModuleOverride(&dst.AutoApprove, src.AutoApprove)
+	applyModuleOverride(&dst.Gateway, src.Gateway)
 }
 
 func applyModuleOverride(dst **ModuleConfig, src *ModuleConfig) {

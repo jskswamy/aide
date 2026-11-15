@@ -802,3 +802,134 @@ func TestRunStatusline_ExplicitContext_AgentFromContextWhenNoAgentFlag(t *testin
 		t.Errorf("error should mention gemini (from context, not a flag), got: %v", err)
 	}
 }
+
+func TestRenderStatusline_GatewayModuleStatesAndEnablement(t *testing.T) {
+	// 1. Default config has gateway disabled.
+	defaultCfg := config.ResolveStatusline(nil, nil)
+	env := map[string]string{
+		"AIDE_SANDBOX":      "on",
+		"AIDE_NETWORK_MODE": "outbound",
+		"AIDE_GATEWAY":      "corp",
+	}
+	if got := renderStatusline(defaultCfg, env); got != "🔒 | 🌐" {
+		t.Errorf("default (gateway disabled) = %q, want %q", got, "🔒 | 🌐")
+	}
+
+	// 2. Enabled via gateway.disabled: false -> renders ⇄corp, ⇄login, ⇄?, or omits when empty.
+	enabledCfg := config.ResolveStatusline(&config.StatuslineConfig{
+		Gateway: &config.ModuleConfig{Disabled: boolPtrST(false)},
+	}, nil)
+	for _, tc := range []struct {
+		gw   string
+		want string
+	}{
+		{gw: "corp", want: "🔒 | 🌐 | ⇄corp"},
+		{gw: "login", want: "🔒 | 🌐 | ⇄login"},
+		{gw: "none", want: "🔒 | 🌐 | ⇄login"},
+		{gw: "?", want: "🔒 | 🌐 | ⇄?"},
+		{gw: "unset", want: "🔒 | 🌐 | ⇄?"},
+		{gw: "", want: "🔒 | 🌐"},
+	} {
+		t.Run("val_"+tc.gw, func(t *testing.T) {
+			e := map[string]string{
+				"AIDE_SANDBOX":      "on",
+				"AIDE_NETWORK_MODE": "outbound",
+				"AIDE_GATEWAY":      tc.gw,
+			}
+			if got := renderStatusline(enabledCfg, e); got != tc.want {
+				t.Errorf("renderStatusline(AIDE_GATEWAY=%q) = %q, want %q", tc.gw, got, tc.want)
+			}
+		})
+	}
+
+	// 3. Enabled via statusline.order containing "gateway".
+	orderCfg := config.ResolveStatusline(&config.StatuslineConfig{
+		Order: []string{"sandbox", "gateway"},
+	}, nil)
+	if got := renderStatusline(orderCfg, env); got != "🔒 | ⇄corp" {
+		t.Errorf("order-enabled gateway = %q, want %q", got, "🔒 | ⇄corp")
+	}
+
+	// 4. Requested via --module gateway even when default config has gateway disabled.
+	if got := renderStatuslineModules(defaultCfg, env, []string{"gateway"}); got != "⇄corp" {
+		t.Errorf("--module gateway on defaultCfg = %q, want %q", got, "⇄corp")
+	}
+}
+
+func TestRunStatusline_PipedGatewayEnvAndPassiveFallback(t *testing.T) {
+	dir := isolatedConfigDir(t)
+	cfgYAML := `
+statusline:
+  gateway:
+    disabled: false
+default_context: default
+contexts:
+  default:
+    agent: claude
+    gateways:
+      corp:
+        url: https://gw.example.com/v1
+        api: anthropic-messages
+        store: work
+        key: k
+  work:
+    agent: claude
+    gateways:
+      corp:
+        url: https://gw.example.com/v1
+        api: anthropic-messages
+        store: work
+        key: k
+    gateway_choice:
+      claude: corp
+`
+	cfgPath := filepath.Join(dir, "xdg", "aide", "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("AIDE_SANDBOX", "on")
+	t.Setenv("AIDE_NETWORK_MODE", "outbound")
+	t.Setenv("AIDE_CAPS", "")
+	t.Setenv("AIDE_TRUST", "")
+	t.Setenv("AIDE_AUTO_APPROVE", "")
+	t.Setenv("AIDE_CONTEXT", "")
+	t.Setenv("AIDE_AGENT", "claude")
+
+	// Case A: AIDE_GATEWAY is absent from env, AIDE_PROFILE=work -> passive fallback resolves ⇄corp.
+	if orig, ok := os.LookupEnv("AIDE_GATEWAY"); ok {
+		_ = os.Unsetenv("AIDE_GATEWAY")
+		t.Cleanup(func() { _ = os.Setenv("AIDE_GATEWAY", orig) })
+	}
+	t.Setenv("AIDE_PROFILE", "work")
+	withPipedStdin(t, `{"session_id":"abc"}`)
+	cmd := statuslineCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute fallback work: %v\n%s", err, buf.String())
+	}
+	if got, want := strings.TrimSpace(buf.String()), "🔒 | 🌐 | 📁 work | ⇄corp"; got != want {
+		t.Errorf("fallback work = %q, want %q", got, want)
+	}
+
+	// Case B: AIDE_GATEWAY is absent from env, AIDE_PROFILE=default (unset slot) -> passive fallback resolves ⇄? with zero writes.
+	t.Setenv("AIDE_PROFILE", "default")
+	withPipedStdin(t, `{"session_id":"abc"}`)
+	cmd2 := statuslineCmd()
+	buf.Reset()
+	cmd2.SetOut(&buf)
+	cmd2.SetErr(&buf)
+	cmd2.SetArgs([]string{})
+	if err := cmd2.Execute(); err != nil {
+		t.Fatalf("execute fallback unset: %v\n%s", err, buf.String())
+	}
+	if got, want := strings.TrimSpace(buf.String()), "🔒 | 🌐 | 📁 default | ⇄?"; got != want {
+		t.Errorf("fallback unset = %q, want %q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "xdg", "aide", "preferences.json")); !os.IsNotExist(err) {
+		t.Errorf("expected no preferences.json written by passive statusline fallback, stat err = %v", err)
+	}
+}

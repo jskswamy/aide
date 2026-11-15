@@ -93,8 +93,9 @@ func injectAideSessionEnv(
 	contextName string,
 	agentName string,
 	trustInfo *ui.TrustInfo,
+	gateway string,
 ) []string {
-	add := make(map[string]string, 9)
+	add := make(map[string]string, 10)
 
 	if sbDisabled {
 		add["AIDE_SANDBOX"] = "off"
@@ -138,6 +139,8 @@ func injectAideSessionEnv(
 	if agentName != "" {
 		add["AIDE_AGENT"] = agentName
 	}
+
+	add["AIDE_GATEWAY"] = gateway
 
 	return mergeEnv(env, add)
 }
@@ -679,7 +682,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	}
 
 	// Inject AIDE_* session vars for statusline and subprocesses.
-	env = injectAideSessionEnv(env, sbDisabled, sandboxCfg, effectiveYolo, resolvedCapSet, rc.Name, agentName, gate.Primary())
+	env = injectAideSessionEnv(env, sbDisabled, sandboxCfg, effectiveYolo, resolvedCapSet, rc.Name, agentName, gate.Primary(), sel.Gateway.Segment())
 
 	// 14. Exec the agent binary
 	args := append([]string{binary}, extraArgs...)

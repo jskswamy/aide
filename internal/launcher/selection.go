@@ -61,6 +61,22 @@ type Choice struct {
 	Derived bool
 }
 
+// Segment returns the gateway segment string for prompt and statusline
+// ("login" when Value is "none", Value when a gateway is chosen, "?"
+// when Source is SourceUnset, or "" when the harness has no gateway reach).
+func (c Choice) Segment() string {
+	switch {
+	case c.Value == gatewayNone:
+		return "login"
+	case c.Value != "":
+		return c.Value
+	case c.Source == SourceUnset:
+		return "?"
+	default:
+		return ""
+	}
+}
+
 // ResolvedChoice is a harness's Choice and what resolving it reported.
 type ResolvedChoice struct {
 	Choice
@@ -128,6 +144,17 @@ type Resolution struct {
 	// Refused is why a launch would refuse the selection: its
 	// harness's global login is another profile's too.
 	Refused error
+}
+
+// PassiveChoice resolves the active harness's gateway choice passively
+// (without prompting or failing on unset slots) from r's resolved
+// profile, config, and repository preference.
+func (r Resolution) PassiveChoice() Choice {
+	if r.Config == nil || r.RC == nil {
+		return Choice{}
+	}
+	c, _, _ := ResolveChoice(r.Config, r.RC.Name, r.RC.Context.Residual(), r.Config.HarnessOf(r.RC.Context.Agent), r.Inputs, nil)
+	return c
 }
 
 // ResolveSelection makes a launch's selection from cwd: the .aide.yaml

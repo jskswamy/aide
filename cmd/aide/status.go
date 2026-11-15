@@ -251,7 +251,7 @@ func whichCmd() *cobra.Command {
 
 			launcher.SetBannerCredentials(data, credPlan)
 			launcher.SetBannerSelection(data, sel)
-			launcher.EnrichBannerHarnessesAndGateways(data, cfg, resolved, agentName, homeDir, exec.LookPath)
+			launcher.EnrichBannerHarnessesAndGateways(data, cfg, resolved, agentName, homeDir, exec.LookPath, sel.Choices)
 			preview.Gate.SetBanner(data)
 			data.Warnings = append(data.Warnings, notices...)
 			if credErr != nil {
@@ -478,6 +478,9 @@ func whichCmd() *cobra.Command {
 			return output.Emit(out, format, data, func(w io.Writer) error {
 				if err := ui.RenderBanner(w, style, data); err != nil {
 					return fmt.Errorf("rendering banner: %w", err)
+				}
+				for _, l := range ui.GatewaySummary(resolved.Name, data.GatewayChoices) {
+					fmt.Fprintln(w, l)
 				}
 				return nil
 			})
@@ -713,6 +716,7 @@ type statusResult struct {
 	AutoApprove         bool             `json:"auto_approve"`
 	// Credentials names the bindings a launch injects (never values).
 	Credentials     []ui.CredentialInfo `json:"credentials,omitempty"`
+	GatewayChoices  []ui.CredentialInfo `json:"gateway_choices,omitempty"`
 	AuthMode        string              `json:"auth_mode,omitempty"`
 	CredentialError string              `json:"credential_error,omitempty"`
 	// Selection sources and the selected credential names (never
@@ -756,6 +760,8 @@ func statusCmd() *cobra.Command {
 			resolved.Context = credCtx
 			launcher.SetBannerCredentials(&credData, credPlan)
 			launcher.SetBannerSelection(&credData, sel)
+			homeDirForGateways, _ := os.UserHomeDir()
+			launcher.EnrichBannerHarnessesAndGateways(&credData, cfg, resolved, resolved.Context.Agent, homeDirForGateways, nil, sel.Choices)
 			credError := ""
 			if credErr != nil {
 				credError = credErr.Error()
@@ -772,13 +778,9 @@ func statusCmd() *cobra.Command {
 			secretName := resolved.Context.Secret
 			var secretKeyCount int
 			if secretName != "" {
-				filePath := config.ResolveSecretPath(secretName)
-				identity, idErr := secrets.DiscoverAgeKey()
-				if idErr == nil {
-					if data, decErr := secrets.DecryptSecretsFile(filePath, identity); decErr == nil {
-						secretKeyCount = len(data)
-					}
-				}
+				// Key names are in clear in a sops store: count without decrypting.
+				names, _ := secrets.KeyNames(config.ResolveSecretPath(secretName))
+				secretKeyCount = len(names)
 			}
 
 			// Build capability registry and resolve capabilities
@@ -905,6 +907,7 @@ func statusCmd() *cobra.Command {
 				SandboxGuardCount:   guardCount,
 				AutoApprove:         autoApprove,
 				Credentials:         credData.Credentials,
+				GatewayChoices:      credData.GatewayChoices,
 				AuthMode:            credData.AuthMode,
 				CredentialError:     credError,
 				ProfileSource:       credData.ProfileSource,
@@ -943,7 +946,10 @@ func statusCmd() *cobra.Command {
 				}
 
 				if line := statusCredentialLine(result); line != "" {
-					fmt.Fprintf(w, "Credentials:  %s\n", line)
+					fmt.Fprintf(w, "Keys:         %s\n", line)
+				}
+				for _, l := range ui.GatewaySummary(result.Context, result.GatewayChoices) {
+					fmt.Fprintln(w, l)
 				}
 
 				if len(result.Capabilities) > 0 {

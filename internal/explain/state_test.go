@@ -181,3 +181,29 @@ func TestContextState_IncludesV2MCPOverride(t *testing.T) {
 		t.Errorf("v2 MCP override not summarized, got %v", st.Contexts[0].MCPServers)
 	}
 }
+
+func TestStateFromConfig_ShowsGatewaysWithoutCredentials(t *testing.T) {
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"work": {
+				Agent: "claude",
+				Gateways: map[string]config.GatewayConfig{
+					"corp":   {BaseURL: "https://user:pw@llm.corp/v1?token=sk-secret", Store: "work", Key: "corp"},
+					"ollama": {BaseURL: "http://127.0.0.1:11434"},
+				},
+				GatewayChoice: map[string]string{"claude": "corp"},
+			},
+		},
+	}
+	st := StateFromConfig(cfg)
+	got := strings.Join(st.Contexts[0].Gateways, ", ")
+	if got != "corp (https://llm.corp; work/corp), ollama (http://127.0.0.1:11434; keyless)" {
+		t.Errorf("gateways = %q", got)
+	}
+	if strings.Contains(got, "pw") || strings.Contains(got, "sk-secret") {
+		t.Errorf("gateways leak a credential: %q", got)
+	}
+	if st.Contexts[0].GatewayChoice["claude"] != "corp" {
+		t.Errorf("choice = %v", st.Contexts[0].GatewayChoice)
+	}
+}

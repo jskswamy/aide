@@ -205,7 +205,7 @@ func TestLauncher_GatewayWarmLaunchMakesNoRequest(t *testing.T) {
 
 	// Second launch finds it synced and stays quiet.
 	_, stderr = launchGateway(t, home, gatewayConfig(gs.URL), "", "")
-	if strings.Contains(stderr, "gateway") {
+	if strings.Contains(stderr, `for gateway "corp"`) {
 		t.Errorf("warm launch printed gateway output:\n%s", stderr)
 	}
 	if n := gs.hits.Load(); n != 0 {
@@ -369,7 +369,7 @@ func TestEnrichBannerHarnessesAndGateways_OmitsMismatchedCacheBaseURL(t *testing
 	}
 	rc := &aidectx.ResolvedContext{Name: "work", Context: cfg.Contexts["work"]}
 	data := &ui.BannerData{Credentials: []ui.CredentialInfo{{Name: "corp"}}}
-	EnrichBannerHarnessesAndGateways(data, cfg, rc, "pi", home, nil)
+	EnrichBannerHarnessesAndGateways(data, cfg, rc, "pi", home, nil, nil)
 	if data.Credentials[0].ModelCount != 0 || data.Credentials[0].ModelAge != "" {
 		t.Fatalf("banner credential = %+v, want ModelCount=0 and empty ModelAge on URL mismatch", data.Credentials[0])
 	}

@@ -24,11 +24,13 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/gateway"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/secrets"
+	"github.com/jskswamy/aide/internal/ui"
 )
 
 // GatewayListEntry is one gateway or provider credential in `aide gateway list --format json`.
@@ -47,9 +49,34 @@ type GatewayListEntry struct {
 	DefaultFor []string                    `json:"default_for"`
 	Harnesses  []gateway.HarnessFileStatus `json:"harnesses"`
 	Models     []gateway.Model             `json:"models,omitempty"`
+	// ChosenFor lists the harnesses whose resolved choice is this
+	// gateway, with where the choice came from.
+	ChosenFor []GatewayChoice `json:"chosen_for"`
 
 	URLMismatch bool `json:"-"`
 	ttl         time.Duration
+}
+
+// GatewayChoice is one harness's choice of a gateway and its source.
+type GatewayChoice struct {
+	Harness string `json:"harness"`
+	Source  string `json:"source"`
+}
+
+// chosenFor maps each gateway of profile p to the harnesses that
+// resolve to it from the profile's own configuration (a repository
+// preference is not read here).
+func chosenFor(cfg *config.Config, p string, ctx config.Context) map[string][]GatewayChoice {
+	out := map[string][]GatewayChoice{}
+	for _, d := range harness.All() {
+		if d.Reach == harness.ReachNone {
+			continue
+		}
+		if c, _, err := launcher.ResolveChoice(cfg, p, ctx, d.Name, launcher.SelectionInputs{}, nil); err == nil && c.Value != "" {
+			out[c.Value] = append(out[c.Value], GatewayChoice{Harness: d.Name, Source: ui.SourceLabel(c.Source, p)})
+		}
+	}
+	return out
 }
 
 func gatewayCmd() *cobra.Command {
@@ -310,6 +337,10 @@ func gatewayListCmd(profile *string) *cobra.Command {
 				}
 				for _, name := range slices.Sorted(maps.Keys(ctx.Gateways)) {
 					pEntries = append(pEntries, gatewayListEntry(p, ctx, name, home, models))
+				}
+				chosen := chosenFor(cfg, p, ctx)
+				for i := range pEntries {
+					pEntries[i].ChosenFor = append([]GatewayChoice{}, chosen[pEntries[i].Gateway]...)
 				}
 				slices.SortStableFunc(pEntries, func(a, b GatewayListEntry) int {
 					aActive, bActive := len(a.DefaultFor) > 0, len(b.DefaultFor) > 0
@@ -1835,6 +1866,13 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 		}
 		if e.Store != "" || e.Key != "" {
 			fmt.Fprintf(w, "    Secret:       store=%s, key=%s\n", e.Store, e.Key)
+		}
+		if len(e.ChosenFor) > 0 {
+			parts := make([]string, len(e.ChosenFor))
+			for i, c := range e.ChosenFor {
+				parts[i] = fmt.Sprintf("%s (%s)", c.Harness, c.Source)
+			}
+			fmt.Fprintf(w, "    Chosen for:   %s\n", strings.Join(parts, ", "))
 		}
 		if e.Kind != "credential" {
 			fmt.Fprintf(w, "    Refresh TTL:  %s\n", e.RefreshTTL)

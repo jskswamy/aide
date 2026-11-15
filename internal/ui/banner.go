@@ -98,20 +98,28 @@ func secretDisplay(data *BannerData) string {
 	return data.SecretName
 }
 
-// credentialDisplay names the injected credential bindings and their
-// env vars, or the native-login mode. Values are never shown.
+// credentialDisplay names the plain (non-gateway) credential bindings
+// and their env vars, or the native-login mode when no gateway block
+// says so. Values are never shown.
 func credentialDisplay(data *BannerData) string {
+	if len(data.GatewayChoices) > 0 && len(gatewayLines(data)) > 0 {
+		return CredentialSummary(data.Credentials, "")
+	}
 	return CredentialSummary(data.Credentials, data.AuthMode)
 }
 
-// CredentialSummary renders credential bindings as "name (ENV, ...)" or
-// "name → url (ENV, ...)", or the native-login mode. It never includes values.
+// CredentialSummary renders the non-gateway credential bindings as
+// "name (ENV, ...)" or "name → url (ENV, ...)", or the native-login
+// mode. It never includes values.
 func CredentialSummary(creds []CredentialInfo, authMode string) string {
 	if authMode == "login" {
 		return "native login (no API keys)"
 	}
 	parts := make([]string, 0, len(creds))
 	for _, c := range creds {
+		if c.IsGateway {
+			continue
+		}
 		label := c.Name
 		if c.URL != "" {
 			label = fmt.Sprintf("%s → %s", c.Name, c.URL)
@@ -123,57 +131,6 @@ func CredentialSummary(creds []CredentialInfo, authMode string) string {
 		}
 	}
 	return strings.Join(parts, ", ")
-}
-
-// credentialDetailLines returns supplemental detail lines for active
-// credentials (store/key, gateway model cache + target file status) and
-// available alternative gateways on the profile.
-func credentialDetailLines(data *BannerData) []string {
-	var lines []string
-	for _, c := range data.Credentials {
-		var details []string
-		if c.Store != "" && c.Key != "" {
-			details = append(details, fmt.Sprintf("auth: store=%s, key=%s", c.Store, c.Key))
-		}
-		if c.IsGateway {
-			var modelPart string
-			switch {
-			case c.ModelCount > 0 && c.ModelAge != "":
-				modelPart = fmt.Sprintf("models: %d cached (%s ago)", c.ModelCount, c.ModelAge)
-			case c.ModelCount > 0:
-				modelPart = fmt.Sprintf("models: %d cached", c.ModelCount)
-			default:
-				modelPart = "models: not synced yet"
-			}
-			if c.TargetFile != "" {
-				if c.TargetSync != "" {
-					modelPart += fmt.Sprintf(" · %s (%s)", c.TargetFile, c.TargetSync)
-				} else {
-					modelPart += fmt.Sprintf(" · %s", c.TargetFile)
-				}
-			}
-			details = append(details, modelPart)
-		}
-		if len(details) > 0 {
-			lines = append(lines, strings.Join(details, " · "))
-		}
-	}
-	if len(data.AvailableGateways) > 0 {
-		opts := make([]string, 0, len(data.AvailableGateways))
-		for _, g := range data.AvailableGateways {
-			if g.URL != "" {
-				opts = append(opts, fmt.Sprintf("%s → %s", g.Name, g.URL))
-			} else {
-				opts = append(opts, g.Name)
-			}
-		}
-		switchHint := "aide gateway use"
-		if len(data.AvailableGateways) == 1 {
-			switchHint = fmt.Sprintf("aide gateway use %s", data.AvailableGateways[0].Name)
-		}
-		lines = append(lines, fmt.Sprintf("available: %s (switch: %s)", strings.Join(opts, " · "), switchHint))
-	}
-	return lines
 }
 
 // envItemLines returns formatted env variable lines from EnvItems.

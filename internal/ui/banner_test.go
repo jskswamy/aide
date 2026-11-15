@@ -1393,6 +1393,11 @@ func TestRenderBanner_GatewayAndHarnesses(t *testing.T) {
 		},
 		AuthMode:         "api",
 		CredentialSource: "profile",
+		Harness:          "claude",
+		GatewayChoices: []CredentialInfo{{
+			Harness: "claude", Choice: "api", Source: "repo", Kind: "gateway", Name: "api",
+			URL: "https://gw.example.com", Store: "work", Key: "api_token", KeyEnv: "ANTHROPIC_AUTH_TOKEN",
+		}},
 		Credentials: []CredentialInfo{
 			{
 				Name:       "api",
@@ -1423,17 +1428,22 @@ func TestRenderBanner_GatewayAndHarnesses(t *testing.T) {
 				t.Fatalf("RenderBanner(%s) error = %v", style, err)
 			}
 			out := buf.String()
-			for _, want := range []string{
+			wants := []string{
 				"~/.claude-work",
 				"pi (~/.pi-work)",
-				"https://gw.example.com",
-				"auth: store=work, key=api_token",
-				"7 cached",
-				"gateway-models.json",
-				"anthropic",
-				"aide gateway use anthropic",
+				"api → https://gw.example.com",
+				"(repo preference)",
 				"CUSTOM_VAR",
-			} {
+			}
+			if style != "compact" { // compact carries the choice line only
+				wants = append(wants,
+					"key: work/api_token → ANTHROPIC_AUTH_TOKEN",
+					"7 cached",
+					"gateway-models.json",
+					"other: anthropic · none (claude login) — aide --gateway <name>",
+				)
+			}
+			for _, want := range wants {
 				if !strings.Contains(out, want) {
 					t.Errorf("style %s output missing %q:\n%s", style, want, out)
 				}

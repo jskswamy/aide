@@ -2,6 +2,8 @@ package explain
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -42,6 +44,12 @@ func RenderHuman(doc Document) string {
 			}
 			if len(c.Hooks) > 0 {
 				fmt.Fprintf(&b, "    hooks:   %s\n", strings.Join(c.Hooks, ", "))
+			}
+			if len(c.Gateways) > 0 {
+				fmt.Fprintf(&b, "    gateways: %s\n", strings.Join(c.Gateways, ", "))
+			}
+			for _, h := range slices.Sorted(maps.Keys(c.GatewayChoice)) {
+				fmt.Fprintf(&b, "    gateway_choice: %s = %s\n", h, c.GatewayChoice[h])
 			}
 		}
 		if len(st.TopLevelHooks) > 0 {

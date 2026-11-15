@@ -61,6 +61,12 @@ type Choice struct {
 	Derived bool
 }
 
+// ResolvedChoice is a harness's Choice and what resolving it reported.
+type ResolvedChoice struct {
+	Choice
+	Notices []string
+}
+
 // ChoicePrompter asks which of options harness should use in profile,
 // and reports how long the answer was remembered.
 type ChoicePrompter func(harness, profile string, options []ui.PickerOption) (string, ui.Remember, error)
@@ -92,6 +98,9 @@ type Selection struct {
 	// reported.
 	Gateway       Choice
 	ChoiceNotices []string
+	// Choices is every gateway-capable harness's choice, resolved
+	// without asking (the launched harness's is Gateway), for display.
+	Choices map[string]ResolvedChoice
 	// prompt, when set, lets an unset slot choice ask (a launch); nil
 	// resolves in passive preview mode.
 	prompt ChoicePrompter

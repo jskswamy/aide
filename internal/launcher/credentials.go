@@ -329,6 +329,8 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 			return ctx, legacy, CredentialPlan{}, err
 		}
 		sel.gatewayFor = harnessName
+		sel.Choices = passiveChoices(cfg, rc.Name, ctx, in)
+		sel.Choices[harnessName] = ResolvedChoice{sel.Gateway, sel.ChoiceNotices}
 	}
 	sel.SelectCredentials(in, synth.DefaultCredentials)
 	sel.dropGatewayNames(ctx, synth)
@@ -363,6 +365,24 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 		}
 	}
 	return ctx, legacy, plan, nil
+}
+
+// passiveChoices resolves every gateway-capable harness's choice
+// without asking. A choice that cannot be resolved is shown unset with
+// the reason.
+func passiveChoices(cfg *config.Config, profile string, ctx config.Context, in SelectionInputs) map[string]ResolvedChoice {
+	out := map[string]ResolvedChoice{}
+	for _, d := range harness.All() {
+		if d.Reach == harness.ReachNone {
+			continue
+		}
+		c, notices, err := ResolveChoice(cfg, profile, ctx, d.Name, in, nil)
+		if err != nil {
+			c, notices = Choice{Source: SourceUnset}, append(notices, err.Error())
+		}
+		out[d.Name] = ResolvedChoice{c, notices}
+	}
+	return out
 }
 
 // checkEndpointsRouted stops a launch that would send a selected key to

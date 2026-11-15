@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -220,9 +221,53 @@ func (l *Launcher) syncGateway(w io.Writer, rc *aidectx.ResolvedContext, ctx con
 	fmt.Fprintf(w, "aide: "+verb+" for gateway %q -> %s\n", len(cat.Models), name, homepath.Tilde(st.FilePath, homeDir))
 }
 
+// gatewayInfo is gw's endpoint and key location for display, by name
+// only: never a value.
+func gatewayInfo(name, harnessName string, gw config.GatewayConfig) ui.CredentialInfo {
+	kind := "gateway"
+	if !gw.RequiresToken() {
+		kind = "keyless"
+	}
+	return ui.CredentialInfo{
+		Name: name, IsGateway: true, Kind: kind,
+		URL:   gateway.NormalizeBaseURL(cmp.Or(gw.URL, gw.BaseURL)),
+		Store: gw.Store, Key: gw.Key,
+		KeyEnv: gw.TokenEnv(name, harnessName),
+	}
+}
+
+// BuildGatewayViews returns one entry per gateway-capable harness of
+// rc's profile: its choice, where the choice came from, and the chosen
+// gateway's URL and key location. It reads config only.
+func BuildGatewayViews(rc *aidectx.ResolvedContext, choices map[string]ResolvedChoice) []ui.CredentialInfo {
+	var out []ui.CredentialInfo
+	gws := launchGateways(rc.Context)
+	for _, d := range harness.All() {
+		rch, ok := choices[d.Name]
+		if !ok || d.Reach == harness.ReachNone {
+			continue
+		}
+		cands := rc.Context.GatewayCandidates(d.Name)
+		v := ui.CredentialInfo{}
+		switch gw, isGW := gws[rch.Value]; {
+		case isGW:
+			v = gatewayInfo(rch.Value, d.Name, gw)
+			v.Startup = d.Reach == harness.ReachMulti
+			if v.Startup {
+				v.Others = len(cands) - 1
+			}
+		case rch.Value == "" && d.Reach == harness.ReachMulti:
+			v.Others = len(cands)
+		}
+		v.Harness, v.Choice, v.Source, v.Warnings = d.Name, cmp.Or(rch.Value, "unset"), cmp.Or(rch.Source, SourceUnset), rch.Notices
+		out = append(out, v)
+	}
+	return out
+}
+
 // EnrichBannerHarnessesAndGateways populates HarnessConfigDir,
-// AvailableHarnesses, AvailableGateways, and gateway/endpoint metadata
-// on data.Credentials for both Launch and `aide which`.
+// AvailableHarnesses, the gateway views, and gateway/endpoint metadata
+// on data.Credentials for Launch, `aide which` and `aide status`.
 func EnrichBannerHarnessesAndGateways(
 	data *ui.BannerData,
 	cfg *config.Config,
@@ -230,6 +275,7 @@ func EnrichBannerHarnessesAndGateways(
 	agentName string,
 	homeDir string,
 	lookPath LookPathFunc,
+	choices map[string]ResolvedChoice,
 ) {
 	if data == nil || rc == nil {
 		return
@@ -238,6 +284,8 @@ func EnrichBannerHarnessesAndGateways(
 	if cfg != nil {
 		harnessName = cfg.HarnessOf(agentName)
 	}
+	data.Harness = harnessName
+	data.GatewayChoices = BuildGatewayViews(rc, choices)
 	if dir := launchConfigDir(harnessName, rc.Context, homeDir, os.Getenv); dir != "" {
 		data.HarnessConfigDir = homepath.Tilde(dir, homeDir)
 	}
@@ -267,14 +315,20 @@ func EnrichBannerHarnessesAndGateways(
 		}
 	}
 
-	// Enrich active credentials with endpoint URL and gateway cache/file status.
+	// Enrich active credentials with endpoint URL, the harness's choice
+	// and gateway cache/file status.
+	gws := launchGateways(rc.Context)
+	active := choices[harnessName]
+	multi := isMultiHarness(harnessName)
 	selected := map[string]bool{}
 	for i := range data.Credentials {
 		c := &data.Credentials[i]
 		selected[c.Name] = true
-		if gw, ok := rc.Context.Gateways[c.Name]; ok {
-			c.IsGateway = true
-			c.URL = gateway.NormalizeBaseURL(gw.BaseURL)
+		if gw, ok := gws[c.Name]; ok {
+			info := gatewayInfo(c.Name, harnessName, gw)
+			c.IsGateway, c.Kind, c.URL, c.KeyEnv = true, info.Kind, info.URL, info.KeyEnv
+			c.Harness, c.Choice, c.Source = harnessName, cmp.Or(active.Value, "unset"), cmp.Or(active.Source, SourceUnset)
+			c.Startup = multi && c.Name == active.Value
 			if c.Store == "" {
 				c.Store = gw.Store
 			}
@@ -302,29 +356,22 @@ func EnrichBannerHarnessesAndGateways(
 		}
 	}
 
-	// Populate AvailableGateways: other credentials/gateways on the profile that serve harnessName.
+	// A slot harness's other gateways are what --gateway can switch to;
+	// a multi harness has them all in /model already.
 	data.AvailableGateways = nil
-	for _, name := range slices.Sorted(maps.Keys(rc.Context.Credentials)) {
-		if selected[name] {
-			continue
-		}
-		b := rc.Context.Credentials[name]
-		if _, isGW := rc.Context.Gateways[name]; isGW {
-			if !b.AllowsHarness(harnessName) {
-				continue
-			}
-			data.AvailableGateways = append(data.AvailableGateways, ui.GatewayOption{
-				Name: name,
-				URL:  gateway.NormalizeBaseURL(rc.Context.Gateways[name].BaseURL),
-			})
-			continue
-		}
-		if !b.DefaultAllowsHarness(name, harnessName) {
-			continue
-		}
-		data.AvailableGateways = append(data.AvailableGateways, ui.GatewayOption{
-			Name: name,
-			URL:  b.EndpointURL(name, harnessName),
-		})
+	if multi {
+		return
 	}
+	for _, name := range rc.Context.GatewayCandidates(harnessName) {
+		if !selected[name] {
+			info := gatewayInfo(name, harnessName, gws[name])
+			data.AvailableGateways = append(data.AvailableGateways, ui.GatewayOption{
+				Name: name, URL: info.URL, Store: info.Store, Key: info.Key, KeyEnv: info.KeyEnv})
+		}
+	}
+}
+
+func isMultiHarness(name string) bool {
+	d, ok := harness.Lookup(name)
+	return ok && d.Reach == harness.ReachMulti
 }

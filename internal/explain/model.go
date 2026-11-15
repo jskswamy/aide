@@ -24,6 +24,10 @@ type ContextState struct {
 	MCPServers   []string `json:"mcp_servers,omitempty"`
 	SandboxNote  string   `json:"sandbox_note,omitempty"`
 	Hooks        []string `json:"hooks,omitempty"`
+	// Gateways lists each gateway as "name (scheme://host; store/key)":
+	// locations only, never a key value or a URL's userinfo or query.
+	Gateways      []string          `json:"gateways,omitempty"`
+	GatewayChoice map[string]string `json:"gateway_choice,omitempty"`
 }
 
 // EnvRef is a redacted environment entry. At most one of SecretRef / Redacted

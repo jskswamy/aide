@@ -648,6 +648,7 @@ func TestGatewayCmd_List(t *testing.T) {
 	for _, want := range []string{
 		"PROFILE: work", "GATEWAY: corp", e.srv.URL, "store=work, key=corp_token", "2 models",
 		"ANTHROPIC_AUTH_TOKEN", "AIDE_GW_CORP_KEY", "pending", "Model One", "acme",
+		"Chosen for:   claude (profile work)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output missing %q:\n%s", want, out)
@@ -666,7 +667,8 @@ func TestGatewayCmd_List(t *testing.T) {
 		t.Fatalf("list json: %v\n%s", err, out)
 	}
 	if len(entries) != 1 || entries[0].Profile != "work" || entries[0].Gateway != "corp" ||
-		entries[0].ModelCount != 2 || len(entries[0].Models) != 2 || len(entries[0].Harnesses) != 5 || entries[0].Expired {
+		entries[0].ModelCount != 2 || len(entries[0].Models) != 2 || len(entries[0].Harnesses) != 5 || entries[0].Expired ||
+		len(entries[0].ChosenFor) == 0 || entries[0].ChosenFor[0] != (GatewayChoice{Harness: "claude", Source: "profile work"}) {
 		t.Errorf("entries = %+v", entries)
 	}
 }

@@ -2,6 +2,9 @@ package explain
 
 import (
 	"fmt"
+	"maps"
+	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
@@ -52,6 +55,10 @@ func contextState(name string, ctx config.Context) ContextState {
 		Env:          redactEnv(ctx.Env),
 		SandboxNote:  sandboxNote(ctx.Sandbox),
 		Hooks:        contextHooksSummary(ctx.Hooks),
+		Gateways:     gatewaySummaries(ctx),
+	}
+	if len(ctx.GatewayChoice) > 0 {
+		cs.GatewayChoice = ctx.GatewayChoice
 	}
 	for _, m := range ctx.Match {
 		if m.Path != "" {
@@ -61,6 +68,33 @@ func contextState(name string, ctx config.Context) ContextState {
 		}
 	}
 	return cs
+}
+
+// gatewaySummaries describes ctx's gateways without credentials: the
+// URL is reduced to scheme and host, the key to its store/key location.
+func gatewaySummaries(ctx config.Context) []string {
+	gws := ctx.ConvertedGateways
+	if len(gws) == 0 {
+		gws = ctx.Gateways
+	}
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(gws)) {
+		gw := gws[name]
+		where := "keyless"
+		if gw.Key != "" {
+			where = gw.Store + "/" + gw.Key
+		}
+		raw := gw.URL
+		if raw == "" {
+			raw = gw.BaseURL
+		}
+		host := "?"
+		if u, err := url.Parse(raw); err == nil && u.Host != "" {
+			host = u.Scheme + "://" + u.Host
+		}
+		out = append(out, fmt.Sprintf("%s (%s; %s)", name, host, where))
+	}
+	return out
 }
 
 func mcpState(name string, m config.MCPServer) MCPState {

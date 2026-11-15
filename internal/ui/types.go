@@ -113,6 +113,10 @@ type BannerData struct {
 	// "login" (native login, nothing injected); empty when unresolved.
 	Credentials []CredentialInfo `json:"credentials,omitempty"`
 	AuthMode    string           `json:"auth_mode,omitempty"`
+	// Harness is the launched harness; GatewayChoices has one entry per
+	// gateway-capable harness of the profile.
+	Harness        string           `json:"harness,omitempty"`
+	GatewayChoices []CredentialInfo `json:"gateway_choices,omitempty"`
 	// Selection sources: how the profile, harness and credential
 	// selection were chosen ("flag", "match", "default", "preference",
 	// "repository", "profile", "auth"). CredentialSelection is the
@@ -168,8 +172,11 @@ type HarnessOption struct {
 // GatewayOption describes an alternate credential or gateway on the
 // profile that supports the active harness.
 type GatewayOption struct {
-	Name string `json:"name"`
-	URL  string `json:"url,omitempty"`
+	Name   string `json:"name"`
+	URL    string `json:"url,omitempty"`
+	Store  string `json:"store,omitempty"`
+	Key    string `json:"key,omitempty"`
+	KeyEnv string `json:"key_env,omitempty"`
 }
 
 // CredentialInfo names one injected credential binding and the env
@@ -185,6 +192,19 @@ type CredentialInfo struct {
 	ModelAge   string   `json:"model_age,omitempty"`
 	TargetFile string   `json:"target_file,omitempty"`
 	TargetSync string   `json:"target_sync,omitempty"`
+	// Gateway visibility: the harness this binding or choice is for,
+	// the choice ("<gw>", "none", "unset"), where it came from, the
+	// gateway kind ("gateway" or "keyless"), the variable that delivers
+	// its key, whether a multi harness starts on it, how many more
+	// gateways are in /model, and what is wrong with it.
+	Harness  string   `json:"harness,omitempty"`
+	Choice   string   `json:"choice,omitempty"`
+	Source   string   `json:"source,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
+	KeyEnv   string   `json:"key_env,omitempty"`
+	Startup  bool     `json:"startup,omitempty"`
+	Others   int      `json:"others,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // SandboxInfo describes sandbox configuration for display.

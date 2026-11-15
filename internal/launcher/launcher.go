@@ -336,6 +336,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		agentName = rc.Context.Agent
 		scrubNames = ScrubNames(cfg, homeDir)
 	}
+	var withheldNotes []string
 	if !ambientHandled {
 		var withheld map[string]error
 		credEnv, withheld, err = resolveCredentialEnv(credPlan, loadStore)
@@ -344,6 +345,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		}
 		for _, name := range slices.Sorted(maps.Keys(withheld)) {
 			fmt.Fprintf(l.stderr(), "aide: warning: gateway %q is withheld for this launch: %v\n", name, withheld[name])
+			withheldNotes = append(withheldNotes, fmt.Sprintf("gateway %q is withheld for this launch: %v", name, withheld[name]))
 		}
 		credPlan.Bindings = slices.DeleteFunc(credPlan.Bindings, func(b PlannedCredential) bool { return withheld[b.Name] != nil })
 	}
@@ -651,7 +653,12 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		bannerData.Yolo = effectiveYolo
 		SetBannerCredentials(bannerData, credPlan)
 		SetBannerSelection(bannerData, sel)
-		EnrichBannerHarnessesAndGateways(bannerData, cfg, rc, agentName, homeDir, l.lookPath())
+		EnrichBannerHarnessesAndGateways(bannerData, cfg, rc, agentName, homeDir, l.lookPath(), sel.Choices)
+		for i := range bannerData.GatewayChoices {
+			if g := &bannerData.GatewayChoices[i]; g.Harness == bannerData.Harness {
+				g.Warnings = append(g.Warnings, withheldNotes...)
+			}
+		}
 		bannerData.AutoApprove = effectiveYolo
 		style := ui.EffectiveBannerStyle(prefs.InfoStyle, isStdoutTTY(), os.Getenv("AIDE_INFO_STYLE"))
 		if err := ui.RenderBanner(l.stderr(), style, bannerData); err != nil {

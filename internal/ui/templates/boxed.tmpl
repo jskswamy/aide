@@ -12,11 +12,14 @@
 {{- if .SecretName}}
 │ 🔐 {{cyan "Secret    "}}{{secretDisplay .}}
 {{- end}}
-{{- with credentialDisplay .}}
-│ 🔑 {{cyan "Auth      "}}{{.}}
-{{- end}}
-{{- range credentialDetailLines .}}
+{{- with gatewayLines .}}
+│ ⇄  {{cyan (gatewayLabel $)}}{{index . 0}}
+{{- range slice . 1}}
 │               {{dim .}}
+{{- end}}
+{{- end}}
+{{- with credentialDisplay .}}
+│ 🔑 {{cyan "Keys      "}}{{.}}
 {{- end}}
 {{- range trustEntries .}}
 │

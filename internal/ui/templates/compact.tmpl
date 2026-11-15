@@ -9,11 +9,11 @@
 {{- if .SecretName}}
    🔐 secret: {{secretDisplay .}}
 {{- end}}
+{{- with gatewayLines .}}
+   ⇄  gateway: {{index . 0}}
+{{- end}}
 {{- with credentialDisplay .}}
    🔑 credentials: {{.}}
-{{- end}}
-{{- range credentialDetailLines .}}
-                  {{dim .}}
 {{- end}}
 {{- range trustEntries .}}
 

@@ -5,13 +5,14 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/jskswamy/aide/internal/gatewaypreset"
 )
 
-// Wire protocol names as in gatewaypreset, which config cannot import
-// (gatewaypreset's tests reach config through capability).
+// Wire protocol names as the api: field spells them.
 const (
-	apiAnthropicMessages = "anthropic-messages"
-	apiOpenAIResponses   = "openai-responses"
+	apiAnthropicMessages = string(gatewaypreset.APIAnthropicMessages)
+	apiOpenAIResponses   = string(gatewaypreset.APIOpenAIResponses)
 )
 
 // ConvertLegacyGateways translates ctx's legacy gateways (one base_url

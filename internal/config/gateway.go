@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/envscrub"
+	"github.com/jskswamy/aide/internal/gatewaypreset"
 	"gopkg.in/yaml.v3"
 )
 
@@ -122,10 +123,14 @@ var gatewayDangerousEnv = []string{
 }
 
 // EffectiveHarnesses returns the harnesses gw serves: Harnesses, or
-// DefaultGatewayHarnesses when omitted.
+// DefaultGatewayHarnesses when omitted (a provider switch serves only
+// Claude Code).
 func (gw GatewayConfig) EffectiveHarnesses() []string {
 	if len(gw.Harnesses) > 0 {
 		return slices.Clone(gw.Harnesses)
+	}
+	if gw.SwitchSpec() != nil {
+		return []string{"claude"}
 	}
 	return slices.Clone(DefaultGatewayHarnesses)
 }
@@ -168,14 +173,43 @@ func (gw GatewayConfig) IsLoopback() bool {
 	return isLoopbackHost(u.Hostname())
 }
 
+// ResolvedPreset is the built-in preset gw takes its endpoint from: its
+// preset when gw has no other url (a url set on purpose resolves as a
+// custom gateway, so a key never goes to the preset's host), always for
+// a provider switch, which has no url.
+func (gw GatewayConfig) ResolvedPreset() (gatewaypreset.Preset, bool) {
+	p, ok := gatewaypreset.Lookup(gw.Preset)
+	if !ok {
+		return p, false
+	}
+	u := cmp.Or(gw.BaseURL, gw.URL)
+	if p.Kind == gatewaypreset.KindProviderSwitch || u == "" || NormalizeGatewayBaseURL(u) == NormalizeGatewayBaseURL(p.BaseURL) {
+		return p, true
+	}
+	return gatewaypreset.Preset{}, false
+}
+
+// SwitchSpec is what gw switches on when it is a provider switch
+// (bedrock, vertex), else nil.
+func (gw GatewayConfig) SwitchSpec() *gatewaypreset.SwitchSpec {
+	if p, ok := gw.ResolvedPreset(); ok {
+		return p.Switch
+	}
+	return nil
+}
+
 // TokenEnv is the variable harness h reads the token of gateway name
-// from: Claude Code's fixed ANTHROPIC_AUTH_TOKEN, else
-// AIDE_GW_<NAME>_KEY. Empty when gw has no token.
+// from: Claude Code's fixed ANTHROPIC_AUTH_TOKEN (ANTHROPIC_API_KEY for
+// a preset that sends x-api-key), else AIDE_GW_<NAME>_KEY. Empty when gw
+// has no token.
 func (gw GatewayConfig) TokenEnv(name, h string) string {
 	if !gw.RequiresToken() {
 		return ""
 	}
 	if h == "claude" {
+		if p, ok := gw.ResolvedPreset(); ok && p.Header == gatewaypreset.HeaderXAPIKey {
+			return claudeGatewayAPIKeyEnv
+		}
 		return claudeGatewayTokenEnv
 	}
 	return GatewayKeyVar(name)
@@ -187,7 +221,7 @@ func (gw GatewayConfig) TokenEnv(name, h string) string {
 // the gateway stays removable and editable; add, edit, sync and launch
 // call this.
 func ValidateGatewayTarget(name string, gw GatewayConfig) error {
-	if gw.RequiresToken() || gw.IsLoopback() {
+	if gw.RequiresToken() || gw.IsLoopback() || gw.SwitchSpec() != nil {
 		return nil
 	}
 	return fmt.Errorf("gateway %q: %s is keyless but not on localhost, 127.0.0.1 or ::1; give it a token, "+
@@ -240,23 +274,16 @@ func validateGateway(name string, gw GatewayConfig, ctx Context, neverAllowEnv [
 			return fmt.Errorf("env: %s already becomes credential %q at launch; give the gateway another name", k, name)
 		}
 	}
-	if err := checkGatewayURL(gw.BaseURL); err != nil {
-		return err
+	preset, isPreset := gatewaypreset.Lookup(gw.Preset)
+	if gw.Preset != "" && !isPreset {
+		return fmt.Errorf("preset: %q is not a built-in preset", gw.Preset)
 	}
-	switch {
-	case gw.Store == "" && gw.Key == "":
-		// no-auth
-	case gw.Store == "":
-		return errors.New("store: is required when key is set")
-	case gw.Key == "":
-		return errors.New("key: is required when store is set")
-	default:
-		if !gatewayIdentRE.MatchString(gw.Store) {
-			return fmt.Errorf("store: %q must be a secret store name (letters, digits, '-' or '_')", gw.Store)
-		}
-		if err := checkGatewayKey(gw, neverAllowEnv); err != nil {
+	if sw := gw.SwitchSpec(); sw != nil {
+		if err := validateSwitch(gw, preset.Name, sw); err != nil {
 			return err
 		}
+	} else if err := validateEndpointAuth(gw, neverAllowEnv); err != nil {
+		return err
 	}
 	if _, err := gw.EffectiveTTL(); err != nil {
 		return fmt.Errorf("refresh_ttl: %v (use a Go duration such as 12h or 24h)", err)
@@ -270,6 +297,81 @@ func validateGateway(name string, gw GatewayConfig, ctx Context, neverAllowEnv [
 			return fmt.Errorf("harnesses: %q is listed twice", h)
 		}
 		seen[h] = true
+		if isPreset && !slices.Contains(preset.Harnesses, h) {
+			return fmt.Errorf("harnesses: preset %s does not serve %q (use %s)", preset.Name, h, strings.Join(preset.Harnesses, ", "))
+		}
+	}
+	return checkHarnessAPI(gw, isPreset)
+}
+
+// validateEndpointAuth checks the url of a gateway that is not a
+// provider switch, and that its store and key are given together.
+func validateEndpointAuth(gw GatewayConfig, neverAllowEnv []string) error {
+	u := cmp.Or(gw.BaseURL, gw.URL)
+	if p, ok := gw.ResolvedPreset(); ok {
+		u = cmp.Or(u, p.BaseURL)
+	}
+	if err := checkGatewayURL(u); err != nil {
+		return err
+	}
+	switch {
+	case gw.Store == "" && gw.Key == "":
+		// no-auth
+	case gw.Store == "":
+		return errors.New("store: is required when key is set")
+	case gw.Key == "":
+		return errors.New("key: is required when store is set")
+	default:
+		if !gatewayIdentRE.MatchString(gw.Store) {
+			return fmt.Errorf("store: %q must be a secret store name (letters, digits, '-' or '_')", gw.Store)
+		}
+		return checkGatewayKey(gw, neverAllowEnv)
+	}
+	return nil
+}
+
+// validateSwitch checks a provider switch: it carries the cloud region
+// (and project) its preset needs and no key or url of its own.
+func validateSwitch(gw GatewayConfig, preset string, sw *gatewaypreset.SwitchSpec) error {
+	switch {
+	case gw.Store != "" || gw.Key != "" || gw.NoAuth:
+		return fmt.Errorf("preset %s is a provider switch: it takes no store, key or no_auth (cloud credentials come from the %s capability)", preset, sw.Capability)
+	case sw.RequireRegion && gw.Region == "":
+		return fmt.Errorf("region: is required for preset %s", preset)
+	case sw.RequireProject && gw.Project == "":
+		return fmt.Errorf("project: is required for preset %s", preset)
+	}
+	return nil
+}
+
+// harnessAPI is the one wire protocol each of these harnesses speaks;
+// the others take any.
+var harnessAPI = map[string]gatewaypreset.API{
+	"claude": gatewaypreset.APIAnthropicMessages,
+	"codex":  gatewaypreset.APIOpenAIResponses,
+}
+
+// checkHarnessAPI rejects a harness mark the gateway's wire protocol
+// cannot serve, and an unknown api. A gateway still in the legacy
+// base_url form is not checked: its conversion splits Codex off.
+func checkHarnessAPI(gw GatewayConfig, isPreset bool) error {
+	if gw.SwitchSpec() != nil {
+		return nil
+	}
+	api := gatewaypreset.API(cmp.Or(gw.API, apiAnthropicMessages))
+	if p, ok := gw.ResolvedPreset(); ok {
+		api = p.API
+	}
+	if !slices.Contains([]gatewaypreset.API{gatewaypreset.APIAnthropicMessages, gatewaypreset.APIOpenAIChat, gatewaypreset.APIOpenAIResponses}, api) {
+		return fmt.Errorf("api: %q is not anthropic-messages, openai-chat or openai-responses", gw.API)
+	}
+	if gw.URL == "" && !isPreset {
+		return nil
+	}
+	for _, h := range gw.Harnesses {
+		if want, ok := harnessAPI[h]; ok && want != api {
+			return fmt.Errorf("harnesses: %q speaks %s but this gateway's api is %s", h, want, api)
+		}
 	}
 	return nil
 }
@@ -341,19 +443,38 @@ func checkGatewayKey(gw GatewayConfig, neverAllowEnv []string) error {
 // its own fixed variables plus the endpoint, the other harnesses get
 // the token as GatewayKeyVar(name).
 func GatewayBinding(name string, gw GatewayConfig) CredentialBinding {
+	if sw := gw.SwitchSpec(); sw != nil {
+		set := maps.Clone(sw.Env)
+		for env, v := range map[string]string{sw.RegionEnv: gw.Region, sw.ProjectEnv: gw.Project} {
+			if env != "" && v != "" {
+				set[env] = v
+			}
+		}
+		return CredentialBinding{For: map[string]CredentialRoute{"claude": {Set: set}}, Capabilities: []string{sw.Capability}}
+	}
+	baseURL := gw.BaseURL
+	if p, ok := gw.ResolvedPreset(); ok && baseURL == "" {
+		baseURL = p.BaseURL
+	}
 	routes := map[string]CredentialRoute{}
 	for _, h := range gw.EffectiveHarnesses() {
 		if h == "claude" {
 			env := []string{}
 			set := map[string]string{
-				claudeGatewayBaseURLEnv:   NormalizeGatewayBaseURL(gw.BaseURL),
+				claudeGatewayBaseURLEnv:   NormalizeGatewayBaseURL(baseURL),
 				claudeGatewayDiscoveryEnv: "1",
 				claudeGatewayAPIKeyEnv:    "",
 			}
-			if e := gw.TokenEnv(name, h); e != "" {
-				env = []string{e}
-			} else {
+			switch e := gw.TokenEnv(name, h); e {
+			case "":
 				set[claudeGatewayTokenEnv] = KeylessPlaceholder
+			case claudeGatewayAPIKeyEnv:
+				// x-api-key: the key is the API key; blank the token instead.
+				delete(set, claudeGatewayAPIKeyEnv)
+				set[claudeGatewayTokenEnv] = ""
+				env = []string{e}
+			default:
+				env = []string{e}
 			}
 			routes[h] = CredentialRoute{Env: env, Set: set}
 			continue

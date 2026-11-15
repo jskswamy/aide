@@ -51,7 +51,7 @@ func valid(name string, gw GatewayConfig) bool {
 // that serves Claude and is Claude's choice, as the switch applied to
 // every Claude launch.
 func (cv *converter) envSwitch() {
-	gw, keys, ok := switchGateway(cv.ctx.Env)
+	gw, _, ok := switchGateway(cv.ctx.Env)
 	if !ok || !valid(gw.Preset, gw) {
 		return
 	}
@@ -59,8 +59,8 @@ func (cv *converter) envSwitch() {
 	cv.Gateways[name] = gw
 	cv.made = append(cv.made, name)
 	cv.forced = map[string]string{"claude": name}
-	cv.Env = append(cv.Env, keys...)
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(gw.SwitchSpec().Env))
+	cv.Env = append(cv.Env, keys...) // the region and project stay: other harnesses read them
 	cv.Converted = append(cv.Converted, fmt.Sprintf("env: %s became gateway %q (preset %s, serving claude)", strings.Join(keys, ", "), name, gw.Preset))
 }
 
@@ -74,11 +74,15 @@ func (cv *converter) envEndpoint() {
 		return
 	}
 	for _, l := range cv.implicit {
-		if l.EnvVar != "ANTHROPIC_API_KEY" && l.EnvVar != "ANTHROPIC_AUTH_TOKEN" {
-			continue
-		}
 		gw := GatewayConfig{URL: u, API: apiAnthropicMessages, Store: l.Binding.Store, Key: l.Binding.Key,
 			Harnesses: []string{"claude", "pi", "omp", "opencode"}}
+		switch p, _ := gatewaypreset.Lookup("anthropic"); {
+		case l.EnvVar == "ANTHROPIC_AUTH_TOKEN":
+		case l.EnvVar == "ANTHROPIC_API_KEY" && NormalizeGatewayBaseURL(u) == p.BaseURL:
+			gw.URL, gw.API, gw.Preset = "", "", "anthropic" // keeps the x-api-key header
+		default:
+			continue // a custom gateway would send the key as a Bearer token instead
+		}
 		if !valid(l.Name, gw) {
 			return
 		}
@@ -132,10 +136,16 @@ func (cv *converter) implicitVar(name string) string {
 // that is no gateway harness, capabilities, an endpoint that would not
 // load) is left as it is.
 func (cv *converter) credentials() {
+	endpointLeft := slices.ContainsFunc(slices.Collect(maps.Keys(cv.ctx.Env)), func(k string) bool {
+		return envscrub.IsProviderEndpointName(k) && !slices.Contains(cv.Env, k)
+	})
 	for _, name := range slices.Sorted(maps.Keys(cv.ctx2.Credentials)) {
 		b := cv.ctx2.Credentials[name]
 		if cv.names[name] || name == "gemini" || !b.IsLLMProvider(name) {
 			continue
+		}
+		if endpointLeft && cv.implicitVar(name) != "" {
+			continue // its key would leave for the vendor, not for the endpoint env: keeps
 		}
 		if len(b.Capabilities) > 0 {
 			cv.credentialSwitch(name, b)
@@ -181,6 +191,10 @@ func credentialSpec(name string, r CredentialRoute, h string) (s credSpec, serve
 		return s, false, false
 	case anthropic != "":
 		s = credSpec{api: apiAnthropicMessages, url: anthropic}
+		if slices.Contains(r.Env, "ANTHROPIC_API_KEY") { // a custom gateway sends Bearer, not x-api-key
+			p, _ := gatewaypreset.Lookup("anthropic")
+			return credSpec{preset: p.Name}, slices.Contains(p.Harnesses, h), NormalizeGatewayBaseURL(anthropic) == p.BaseURL
+		}
 	case openai != "":
 		s = credSpec{api: string(gatewaypreset.APIOpenAIChat), url: openai}
 		if h == "codex" {
@@ -221,9 +235,15 @@ func (cv *converter) credential(name string, b CredentialBinding) {
 		switch {
 		case !ok || !serves && h != "codex":
 			return
-		case !serves: // only a preset that lacks Codex gets here with a url to print
+		case h == "claude" && s.api == apiAnthropicMessages && b.Keyless():
+			return // a keyless gateway would stop Claude sending its saved login
+		case !serves: // only a preset whose url speaks the OpenAI API gets an add command
 			p, _ := gatewaypreset.Lookup(s.preset)
-			lost = append(lost, CodexLoss{Name: name, URL: p.BaseURL, Store: b.Store, Key: b.Key})
+			loss := CodexLoss{Name: name}
+			if p.API == gatewaypreset.APIOpenAIChat {
+				loss = CodexLoss{Name: name, URL: p.BaseURL, Store: b.Store, Key: b.Key}
+			}
+			lost = append(lost, loss)
 		default:
 			if groups[s] == nil {
 				order = append(order, s)

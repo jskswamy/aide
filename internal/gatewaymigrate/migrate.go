@@ -176,6 +176,10 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 		}
 		plan.Notes = append(plan.Notes, codexNotes(name, ctx, renames)...)
 		for _, l := range conv.CodexLost {
+			if l.URL == "" {
+				plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: credential %q no longer serves codex", name, l.Name))
+				continue
+			}
 			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: credential %q no longer serves codex; if its endpoint serves /responses add one with: "+
 				"aide gateway add %s-codex --url %s --api openai-responses --secret-store %s --key %s --harnesses codex --profile %s",
 				name, l.Name, l.Name, l.URL, l.Store, l.Key, name))

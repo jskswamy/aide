@@ -1,9 +1,11 @@
 package launcher
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -65,49 +67,144 @@ default_credentials: [gemini]
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
-			cfgDir := t.TempDir()
-			if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			for f, body := range map[string]string{
-				"config.yaml":        "default_profile: work\n",
-				"profiles/work.yaml": "agent: " + tt.harness + "\n" + tt.profile,
-			} {
-				if err := os.WriteFile(filepath.Join(cfgDir, f), []byte(body), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			loaded, err := config.Load(cfgDir, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			plan, err := gatewaymigrate.PlanGatewayMigration(loaded, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var got [2][]PlannedCredential
-			for i, cfg := range []*config.Config{loaded, plan.Config} {
-				rc, err := aidectx.Resolve(cfg, t.TempDir(), nil)
-				if err != nil {
-					t.Fatal(err)
-				}
-				var sel Selection
-				_, _, cp, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel)
-				if err != nil {
-					t.Fatalf("PlanProfileCredentials() = %v", err)
-				}
-				got[i] = cp.Bindings
-			}
-			if !reflect.DeepEqual(got[0], got[1]) {
-				t.Errorf("before = %+v\nafter  = %+v", got[0], got[1])
+			before, after, _ := planBoth(t, tt.harness, tt.profile)
+			if !reflect.DeepEqual(before, after) {
+				t.Errorf("before = %+v\nafter  = %+v", before, after)
 			}
 			var names []string
-			for _, b := range got[0] {
+			for _, b := range before {
 				names = append(names, b.Name)
 			}
 			if !reflect.DeepEqual(names, tt.want) {
 				t.Errorf("bindings = %v, want %v", names, tt.want)
+			}
+		})
+	}
+}
+
+// planBoth plans profile for harness before migration (the in-memory
+// translation) and after (the written gateways).
+func planBoth(t *testing.T, harness, profile string) (before, after []PlannedCredential, env [2]map[string]string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	cfgDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for f, body := range map[string]string{
+		"config.yaml":        "default_profile: work\n",
+		"profiles/work.yaml": "agent: " + harness + "\n" + profile,
+	} {
+		if err := os.WriteFile(filepath.Join(cfgDir, f), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loaded, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := gatewaymigrate.PlanGatewayMigration(loaded, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got [2][]PlannedCredential
+	for i, cfg := range []*config.Config{loaded, plan.Config} {
+		rc, err := aidectx.Resolve(cfg, t.TempDir(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sel Selection
+		ctx, _, cp, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel)
+		if err != nil {
+			t.Fatalf("PlanProfileCredentials() = %v", err)
+		}
+		got[i], env[i] = cp.Bindings, ctx.Env
+	}
+	return got[0], got[1], env
+}
+
+// What a launch sends where does not change with the migration: the key
+// stays with the endpoint the profile set, in the header it used, and a
+// profile env: keeps the variables no gateway carries.
+func TestPlanProfileCredentials_RoutingUnchanged(t *testing.T) {
+	type route struct {
+		name, store, key, url string
+		env                   []string
+	}
+	tests := []struct {
+		name, harness, profile string
+		want                   []route
+		wantEnv                map[string]string // left in env:
+	}{
+		{"env OPENAI_BASE_URL keeps its key off the vendor", "pi", `
+secret: work
+env:
+  OPENAI_BASE_URL: https://llm.corp/v1
+  OPENAI_API_KEY: "{{ .secrets.oa }}"
+`, []route{{"openai", "work", "oa", "", []string{"OPENAI_API_KEY"}}}, map[string]string{"OPENAI_BASE_URL": "https://llm.corp/v1"}},
+		{"env templated ANTHROPIC_BASE_URL keeps its key off the vendor", "claude", `
+secret: work
+env:
+  ANTHROPIC_BASE_URL: "{{ .secrets.url }}"
+  ANTHROPIC_API_KEY: "{{ .secrets.k }}"
+`, []route{{"anthropic", "work", "k", "", []string{"ANTHROPIC_API_KEY"}}}, map[string]string{"ANTHROPIC_BASE_URL": "{{ .secrets.url }}"}},
+		{"env x-api-key to a custom endpoint", "claude", `
+secret: work
+env:
+  ANTHROPIC_BASE_URL: https://proxy.corp
+  ANTHROPIC_API_KEY: "{{ .secrets.k }}"
+`, []route{{"anthropic", "work", "k", "", []string{"ANTHROPIC_API_KEY"}}}, map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.corp"}},
+		{"credential x-api-key to a custom endpoint", "claude", `
+credentials:
+  corp:
+    backend: age
+    store: work
+    key: k
+    for:
+      claude: {env: [ANTHROPIC_API_KEY], set: {ANTHROPIC_BASE_URL: https://proxy.corp}}
+default_credentials: [corp]
+`, []route{{"corp", "work", "k", "https://proxy.corp", []string{"ANTHROPIC_API_KEY"}}}, nil},
+		{"keyless claude endpoint keeps the login", "claude", `
+credentials:
+  local:
+    for:
+      claude: {set: {ANTHROPIC_BASE_URL: "http://127.0.0.1:4000"}}
+default_credentials: [local]
+`, []route{{"local", "", "", "http://127.0.0.1:4000", nil}}, nil},
+		{"converted and unconverted credential share the one provider slot", "claude", `
+secret: work
+credentials:
+  anthropic: {backend: age, store: work, key: ak}
+  corp:
+    backend: age
+    store: work
+    key: k
+    for:
+      claude: {env: [ANTHROPIC_AUTH_TOKEN], set: {ANTHROPIC_BASE_URL: https://x.corp, ANTHROPIC_MODEL: opus}}
+default_credentials: [anthropic, corp]
+`, []route{{"anthropic", "work", "ak", "https://api.anthropic.com", []string{"ANTHROPIC_API_KEY"}}}, nil},
+		{"env switch keeps the region for pi", "pi", `
+env:
+  CLAUDE_CODE_USE_BEDROCK: "1"
+  AWS_REGION: eu-west-1
+`, nil, map[string]string{"AWS_REGION": "eu-west-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before, after, env := planBoth(t, tt.harness, tt.profile)
+			for i, got := range [][]PlannedCredential{before, after} {
+				var routes []route
+				for _, b := range got {
+					routes = append(routes, route{b.Name, b.Store, b.Key, cmp.Or(b.Set["ANTHROPIC_BASE_URL"], b.Set["OPENAI_BASE_URL"]), slices.Clone(b.Env)})
+				}
+				if !reflect.DeepEqual(routes, tt.want) {
+					t.Errorf("bindings (%d) = %+v, want %+v", i, routes, tt.want)
+				}
+				for k, v := range tt.wantEnv {
+					if env[i][k] != v {
+						t.Errorf("env (%d) lost %s = %q: %v", i, k, v, env[i])
+					}
+				}
 			}
 		})
 	}

@@ -401,10 +401,14 @@ func (s *Selection) PlanCredentials(profile string, ctx config.Context, harnessN
 		forHarnessCtx := ctx
 		forHarnessCtx.DefaultCredentials = requested
 		allowed := config.DefaultCredentialsForHarness(forHarnessCtx, harnessName)
+		gatewayOn := s.Gateway.Value != "" && s.Gateway.Value != gatewayNone
 		requested = slices.DeleteFunc(slices.Clone(requested), func(name string) bool {
 			b, ok := ctx.Credentials[name]
 			if !ok {
 				return false
+			}
+			if gatewayOn && b.IsLLMProvider(name) { // the gateway holds the one LLM provider slot
+				return true
 			}
 			if !b.DefaultAllowsHarness(name, harnessName) {
 				skipped = append(skipped, name)

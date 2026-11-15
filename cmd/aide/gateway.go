@@ -301,6 +301,12 @@ Examples:
 			for _, k := range slices.Sorted(maps.Keys(converted)) {
 				if _, saved := cfg.Contexts[profileName].Gateways[k]; k == name || !saved {
 					ctx.Gateways[k] = converted[k].WithBaseURL()
+					if k == name && gw.Preset != "" {
+						// conversion makes gateways custom; the added one keeps its preset
+						c := ctx.Gateways[k]
+						c.Preset = gw.Preset
+						ctx.Gateways[k] = c
+					}
 					added = append(added, k)
 				}
 			}

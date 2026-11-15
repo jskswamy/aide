@@ -295,7 +295,7 @@ func ResolveChoice(cfg *config.Config, profile string, ctx config.Context, harne
 	if v := ctx.GatewayChoice[harnessName]; stored(v, fmt.Sprintf("profile %q gateway_choice", profile)) {
 		return Choice{Value: v, Source: SourceProfile}, notices, nil
 	}
-	if v := config.LegacyGatewayChoice(ctx, harnessName, allRenames); v != "" {
+	if v := ctx.DerivedChoice[harnessName]; v != "" {
 		return Choice{Value: v, Source: SourceProfile, Derived: true}, notices, nil
 	}
 	if len(candidates) == 0 {

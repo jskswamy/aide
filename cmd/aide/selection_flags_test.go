@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -81,6 +80,17 @@ func names(v any) []string {
 	return out
 }
 
+// choiceFor is the gateway choice which reports for harness h.
+func choiceFor(got map[string]any, h string) any {
+	views, _ := got["gateway_choices"].([]any)
+	for _, v := range views {
+		if m, _ := v.(map[string]any); m["harness"] == h {
+			return m["choice"]
+		}
+	}
+	return nil
+}
+
 func TestWhich_ReportsSelectionSources(t *testing.T) {
 	selectionEnv(t, selectionTestConfig)
 	got := runSelectionJSON(t, whichCmd())
@@ -88,8 +98,12 @@ func TestWhich_ReportsSelectionSources(t *testing.T) {
 		got["harness_source"] != "profile" || got["credential_source"] != "profile" {
 		t.Errorf("sources = %v/%v/%v for %v", got["profile_source"], got["harness_source"], got["credential_source"], got["context_name"])
 	}
-	if sel := names(got["credential_selection"]); !slices.Equal(sel, []string{"anthropic"}) {
-		t.Errorf("credential_selection = %v, want [anthropic]", sel)
+	// The provider credentials are gateways: the default is Claude's choice.
+	if c := choiceFor(got, "claude"); c != "anthropic" {
+		t.Errorf("claude choice = %v, want anthropic", c)
+	}
+	if sel := names(got["credential_selection"]); len(sel) != 0 {
+		t.Errorf("credential_selection = %v, want none", sel)
 	}
 }
 
@@ -107,8 +121,8 @@ func TestWhich_HonorsSavedPreferenceAndFlags(t *testing.T) {
 	if got["agent_name"] != "pi" || got["harness_source"] != "preference" || got["credential_source"] != "preference" {
 		t.Errorf("saved preference not applied: agent %v from %v, credentials from %v", got["agent_name"], got["harness_source"], got["credential_source"])
 	}
-	if sel := names(got["credential_selection"]); !slices.Equal(sel, []string{"openai"}) {
-		t.Errorf("credential_selection = %v, want [openai]", sel)
+	if c := choiceFor(got, "pi"); c != "openai" {
+		t.Errorf("pi choice = %v, want the saved openai", c)
 	}
 
 	got = runSelectionJSON(t, whichCmd(), "--agent", "claude", "--gateway", "anthropic")
@@ -275,8 +289,8 @@ func writeProjectConfig(t *testing.T, body string, trusted bool) {
 
 func TestWhichStatus_UntrustedProjectConfigContributesNothing(t *testing.T) {
 	selectionEnv(t, strings.Replace(selectionTestConfig,
-		"openai: {backend: age, store: work, key: openai_api_key}",
-		"openai: {backend: age, store: work, key: openai_api_key, harnesses: [claude]}", 1))
+		"anthropic: {backend: age, store: work, key: anthropic_api_key}",
+		"anthropic: {backend: age, store: work, key: anthropic_api_key, harnesses: [claude]}", 1))
 	writeProjectConfig(t, "agent: pi\nprofile: personal\n", false)
 
 	for name, cmd := range map[string]*cobra.Command{"which": whichCmd(), "status": statusCmd()} {
@@ -297,9 +311,9 @@ func TestWhichStatus_UntrustedProjectConfigContributesNothing(t *testing.T) {
 		}
 	}
 
-	// openai allows only claude: judged against the untrusted pi it
+	// anthropic serves only claude: judged against the untrusted pi it
 	// would be refused.
-	if out, err := runProject(t, "set", "--gateway", "openai"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "anthropic", "--harness", "claude"); err != nil {
 		t.Errorf("project set judged against the untrusted agent: %v\n%s", err, out)
 	}
 }

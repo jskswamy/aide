@@ -143,6 +143,13 @@ type Context struct {
 	// ConvertedGateways is Gateways in the one-API-per-gateway form,
 	// derived at load and never serialized.
 	ConvertedGateways map[string]GatewayConfig `yaml:"-"`
+	// DerivedChoice is the choice per harness that the legacy default
+	// rules make, ConvertedCredentials and ConvertedEnv the credentials:
+	// names and env: keys that became gateways. All derived at load by
+	// ConvertLegacy and never serialized (see Residual).
+	DerivedChoice        map[string]string `yaml:"-"`
+	ConvertedCredentials []string          `yaml:"-"`
+	ConvertedEnv         []string          `yaml:"-"`
 	// MCPServers retains the v1 list-of-names form for the per-context
 	// selection of which MCP servers (declared at the top level) are
 	// enabled in this context. The v2 ContextOverride[MCPServer]

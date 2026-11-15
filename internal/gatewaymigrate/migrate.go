@@ -111,14 +111,16 @@ type Result struct {
 	Summary  string
 }
 
-// PlanGatewayMigration converts every profile that has legacy gateways
-// into gateways: in the one-API-per-gateway form plus an explicit
-// gateway_choice: (the choice today's default rule makes, flagged in
-// the notes when it was inherited from the sorted gateway order, not
-// named in default_credentials:), drops the gateway names from
-// default_credentials: and backfills a missing model from caches. It
-// reads cfg and caches only. Plain credentials: and everything else
-// stay as they are.
+// PlanGatewayMigration converts every profile that has legacy gateways,
+// LLM provider credentials, keyless bedrock/vertex bindings or an env:
+// provider switch or endpoint (config.ConvertLegacy) into gateways: in
+// the one-API-per-gateway form plus an explicit gateway_choice: (the
+// choice today's default rule makes, flagged in the notes when it was
+// inherited from the sorted gateway order, not named in
+// default_credentials:), drops what became a gateway from
+// credentials:, env: and default_credentials: and backfills a missing
+// model from caches. It reads cfg and caches only. Plain credentials:,
+// gemini and everything else stay as they are.
 func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) {
 	out := *cfg
 	out.Contexts = maps.Clone(cfg.Contexts)
@@ -127,17 +129,18 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 	plan := Plan{Config: &out, legacy: map[string]config.Context{}, renames: map[string]map[string]map[string]string{}}
 	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
 		ctx := cfg.Contexts[name]
-		if !slices.ContainsFunc(slices.Collect(maps.Values(ctx.Gateways)), config.GatewayConfig.IsLegacy) {
+		conv := config.ConvertLegacy(ctx)
+		if !conv.NeedsMigration() {
 			continue
 		}
-		var renames map[string]map[string]string
-		ctx.ConvertedGateways, renames = config.ConvertLegacyGateways(ctx)
-		plan.legacy[name], plan.renames[name] = ctx, renames
-		migrated := ctx
+		renames := conv.Renames
+		ctx = conv.Apply(ctx)
+		migrated := ctx.Residual()
+		plan.legacy[name], plan.renames[name] = migrated, renames
 		migrated.Gateways = map[string]config.GatewayConfig{}
-		for gwName, gw := range ctx.ConvertedGateways {
+		for gwName, gw := range conv.Gateways {
 			gw = gw.WithBaseURL()
-			if gw.Model == "" && caches != nil {
+			if gw.Model == "" && caches != nil && gw.SwitchSpec() == nil {
 				if slices.Contains(gw.EffectiveHarnesses(), "opencode") {
 					gw.Model = caches.PinnedModel(ctx, gwName)
 				}
@@ -148,29 +151,35 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 			migrated.Gateways[gwName] = gw
 		}
 		migrated.ConvertedGateways = migrated.Gateways
+		migrated.DerivedChoice, migrated.ConvertedCredentials, migrated.ConvertedEnv = nil, nil, nil
 		migrated.GatewayChoice = maps.Clone(ctx.GatewayChoice)
 		if migrated.GatewayChoice == nil {
 			migrated.GatewayChoice = map[string]string{}
 		}
 		for _, h := range config.DefaultGatewayHarnesses {
-			if !ctx.ChoiceIsUnset(h) {
-				continue
-			}
-			v := config.LegacyGatewayChoice(ctx, h, renames)
-			if v == "" {
+			v := conv.Choice[h]
+			if v == "" || !ctx.ChoiceIsUnset(h) {
 				continue
 			}
 			migrated.GatewayChoice[h] = v
-			if v != "none" && !named(ctx.DefaultCredentials, v, renames[h]) {
+			if conv.Inherited[h] {
 				plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: %s now uses gateway %q, inherited from the old sorted gateway order; "+
 					"change it with: aide gateway use <name|none> --harness %s --profile %s", name, h, v, h, name))
 			}
 		}
-		migrated.DefaultCredentials = slices.DeleteFunc(slices.Clone(ctx.DefaultCredentials), func(c string) bool {
+		migrated.DefaultCredentials = slices.DeleteFunc(migrated.DefaultCredentials, func(c string) bool {
 			_, wasGateway := ctx.Gateways[c]
 			return wasGateway
 		})
+		for _, line := range conv.Converted {
+			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: %s", name, line))
+		}
 		plan.Notes = append(plan.Notes, codexNotes(name, ctx, renames)...)
+		for _, l := range conv.CodexLost {
+			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: credential %q no longer serves codex; if its endpoint serves /responses add one with: "+
+				"aide gateway add %s-codex --url %s --api openai-responses --secret-store %s --key %s --harnesses codex --profile %s",
+				name, l.Name, l.Name, l.URL, l.Store, l.Key, name))
+		}
 		out.Contexts[name] = migrated
 	}
 	return plan, nil
@@ -189,12 +198,6 @@ func Migrate(cfg *config.Config, caches CacheReader, configDir, stateDir string)
 		*cfg = *plan.Config
 	}
 	return res, err
-}
-
-// named reports whether default_credentials: lists gateway v under its
-// legacy name (renames maps old names to new for the harness).
-func named(defaults []string, v string, renames map[string]string) bool {
-	return slices.Contains(defaults, v) || slices.ContainsFunc(defaults, func(d string) bool { return renames[d] == v })
 }
 
 // codexNotes names the legacy gateways that reached Codex only through

@@ -438,12 +438,14 @@ func TestGateway_ValidateRejectsLegacyCredentialNameClash(t *testing.T) {
 	}
 }
 
-func TestGateway_ValidateRejectsProviderVariableKeys(t *testing.T) {
+// The key names an entry in the secret store; the token is injected as
+// AIDE_GW_<NAME>_KEY, so a converted provider credential keeps its key.
+func TestGateway_ValidateAcceptsProviderVariableKeys(t *testing.T) {
 	for _, key := range []string{"anthropic_api_key", "openai_api_key", "anthropic_base_url", "anthropic_auth_token"} {
 		ctx := Context{Gateways: map[string]GatewayConfig{"corp": {BaseURL: "https://gw.example.com", Store: "work", Key: key}}}
 		err := ValidateGateways("profiles.work", ctx, nil)
-		if err == nil || !strings.Contains(err.Error(), strings.ToUpper(key)) {
-			t.Errorf("key %s: ValidateGateways() = %v, want rejection", key, err)
+		if err != nil {
+			t.Errorf("key %s: ValidateGateways() = %v, want it accepted", key, err)
 		}
 	}
 }

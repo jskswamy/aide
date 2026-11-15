@@ -237,3 +237,98 @@ func TestPlanGatewayMigration_PinnedModelWins(t *testing.T) {
 		t.Errorf("alpha model = %q, want the pinned claude-opus-4", got)
 	}
 }
+
+const legacyCredentialProfile = `agent: claude
+config_dir_name: work
+secret: work
+env:
+  CLAUDE_CODE_USE_VERTEX: "1"
+  CLOUD_ML_REGION: us-east5
+  ANTHROPIC_VERTEX_PROJECT_ID: acme-ml
+  EDITOR: vim
+credentials:
+  anthropic: {backend: age, store: work, key: anthropic_api_key}
+  openrouter: {backend: age, store: work, key: openrouter_api_key}
+  gemini: {backend: age, store: work, key: gemini_key}
+  github: {backend: age, store: work, key: gh, env: [GITHUB_TOKEN], harnesses: [claude]}
+  corp:
+    backend: age
+    store: work
+    key: corp_token
+    for:
+      pi: {env: [CORP_KEY], set: {OPENAI_BASE_URL: "https://llm.corp/v1"}}
+      codex: {env: [CORP_KEY], set: {OPENAI_BASE_URL: "https://llm.corp/v1"}}
+default_credentials: [anthropic, openrouter, gemini, github]
+`
+
+func TestPlanConvertsProviderCredentials(t *testing.T) {
+	_, cfg := loadLegacy(t, legacyCredentialProfile)
+	if !cfg.NeedsGatewayMigration {
+		t.Fatal("provider credentials must flag the config")
+	}
+	plan, err := PlanGatewayMigration(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := plan.Config.Contexts["work"]
+	for _, name := range []string{"anthropic", "openrouter", "corp", "corp-codex", "vertex"} {
+		if _, ok := got.Gateways[name]; !ok {
+			t.Errorf("gateway %q missing from %v", name, got.Gateways)
+		}
+	}
+	if len(got.Credentials) != 2 || got.Credentials["gemini"].Key != "gemini_key" || got.Credentials["github"].Key != "gh" {
+		t.Errorf("credentials = %v, want gemini and github only", got.Credentials)
+	}
+	if !slices.Equal(got.DefaultCredentials, []string{"gemini", "github"}) || len(got.Env) != 1 || got.Env["EDITOR"] != "vim" {
+		t.Errorf("default_credentials = %v, env = %v", got.DefaultCredentials, got.Env)
+	}
+	// The vertex switch wins for claude, as it did; the rest follow default_credentials
+	// (corp is not default-selected, so codex keeps its own login).
+	want := map[string]string{"claude": "vertex", "pi": "anthropic", "omp": "anthropic", "opencode": "anthropic", "codex": "none"}
+	for h, v := range want {
+		if got.GatewayChoice[h] != v {
+			t.Errorf("gateway_choice[%s] = %q, want %q", h, got.GatewayChoice[h], v)
+		}
+	}
+	notes := strings.Join(plan.Notes, "\n")
+	for _, w := range []string{
+		`credential "anthropic" became gateway "anthropic"`,
+		`credential "openrouter" no longer serves codex`,
+		"aide gateway add openrouter-codex --url https://openrouter.ai/api/v1 --api openai-responses --secret-store work --key openrouter_api_key --harnesses codex",
+		`CLAUDE_CODE_USE_VERTEX, CLOUD_ML_REGION became gateway "vertex"`,
+	} {
+		if !strings.Contains(notes, w) {
+			t.Errorf("notes lack %q:\n%s", w, notes)
+		}
+	}
+}
+
+func TestApplyPersistsProviderCredentialsOnce(t *testing.T) {
+	cfgDir, cfg := loadLegacy(t, legacyCredentialProfile)
+	state := t.TempDir()
+	res, err := Migrate(cfg, nil, cfgDir, state)
+	if err != nil || res.ReadOnly {
+		t.Fatalf("Migrate() = %+v, %v", res, err)
+	}
+	if _, err := os.Stat(filepath.Join(res.BackupDir, "profiles/work.yaml.bak")); err != nil {
+		t.Errorf("the profile was not backed up: %v", err)
+	}
+	loaded, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatalf("the migrated config must load: %v", err)
+	}
+	got := loaded.Contexts["work"]
+	if loaded.NeedsGatewayMigration || len(got.ConvertedCredentials) != 0 || len(got.ConvertedEnv) != 0 || len(got.DerivedChoice) != 0 {
+		t.Errorf("reloaded profile still converts: %+v", got)
+	}
+	if got.GatewayChoice["claude"] != "vertex" || got.Gateways["vertex"].Project != "acme-ml" || got.Gateways["anthropic"].Preset != "anthropic" {
+		t.Errorf("reloaded = %+v", got)
+	}
+	body, _ := os.ReadFile(filepath.Join(cfgDir, "profiles", "work.yaml"))
+	if strings.Contains(string(body), "CLAUDE_CODE_USE_VERTEX") || strings.Contains(string(body), "anthropic_api_key: ") {
+		t.Errorf("migrated profile keeps converted entries:\n%s", body)
+	}
+	if res2, err := Migrate(loaded, nil, cfgDir, state); err != nil || res2.BackupDir != "" {
+		t.Errorf("second Migrate() = %+v, %v", res2, err)
+	}
+}

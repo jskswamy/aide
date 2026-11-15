@@ -258,7 +258,8 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 			}
 		}
 	}
-	ctx, legacy, err := config.TranslateLegacyCredentials(rc.Context, rc.Context.Secret)
+	// What became a gateway is injected by the gateway, not here.
+	ctx, legacy, err := config.TranslateLegacyCredentials(rc.Context.Residual(), rc.Context.Secret)
 	if err != nil {
 		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
 	}

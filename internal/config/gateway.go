@@ -444,9 +444,6 @@ func checkGatewayKey(gw GatewayConfig, neverAllowEnv []string) error {
 	if err := checkBindingEnv("key", env); err != nil {
 		return err
 	}
-	if envscrub.IsProviderName(env) {
-		return fmt.Errorf("key: %s is a provider variable that agents send to their own endpoints; choose another key", env)
-	}
 	if slices.Contains(neverAllowEnv, env) {
 		return fmt.Errorf("key: %s is in never_allow_env", env)
 	}

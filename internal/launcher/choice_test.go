@@ -82,7 +82,7 @@ func TestResolveChoice_LegacyDerivedLosesToExplicitChoice(t *testing.T) {
 	ctx := config.Context{Gateways: map[string]config.GatewayConfig{
 		"corp": {BaseURL: "https://corp.example.com", Store: "s", Key: "k", Harnesses: []string{"claude"}},
 	}}
-	ctx.ConvertedGateways, _ = config.ConvertLegacyGateways(ctx)
+	ctx = config.ConvertLegacy(ctx).Apply(ctx)
 	got, _, _ := ResolveChoice(&config.Config{}, "work", ctx, "claude", SelectionInputs{}, nil)
 	if got.Value != "corp" || !got.Derived || got.Source != SourceProfile {
 		t.Errorf("legacy choice = %+v, want derived corp", got)
@@ -367,7 +367,7 @@ func TestResolveChoice_SavedNonGatewaySelectionIsNone(t *testing.T) {
 	ctx := config.Context{Gateways: map[string]config.GatewayConfig{
 		"corp": {BaseURL: "https://corp.example.com", Store: "s", Key: "k", Harnesses: []string{"claude"}},
 	}}
-	ctx.ConvertedGateways, _ = config.ConvertLegacyGateways(ctx)
+	ctx = config.ConvertLegacy(ctx).Apply(ctx)
 	ctx.Agent = "claude"
 	ctx.Credentials = map[string]config.CredentialBinding{"anthropic": {Store: "s", Key: "ak"}}
 	in := SelectionInputs{Saved: prefs.Preference{Harness: "claude", LegacyCredentials: prefs.Selection("anthropic")}}

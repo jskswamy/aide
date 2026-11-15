@@ -128,7 +128,7 @@ func initCmd() *cobra.Command {
 					secretsName = "default"
 				}
 
-				ageKey, err := secrets.ResolveRecipient("", reader, out, isInputTTY(cmd))
+				ageKey, err := secrets.ResolveRecipient("", reader, out, isInputTTY(cmd), false)
 				if err != nil {
 					return err
 				}

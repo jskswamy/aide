@@ -580,7 +580,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		got, err := ResolveRecipient("  "+id1.Recipient().String()+" ", nil, &out, false)
+		got, err := ResolveRecipient("  "+id1.Recipient().String()+" ", nil, &out, false, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -591,7 +591,7 @@ func TestResolveRecipient(t *testing.T) {
 
 	t.Run("explicit invalid key", func(t *testing.T) {
 		isolateConfigDir(t)
-		if _, err := ResolveRecipient("not-an-age-key", nil, nil, false); err == nil {
+		if _, err := ResolveRecipient("not-an-age-key", nil, nil, false, false); err == nil {
 			t.Fatal("expected error for invalid explicit key")
 		}
 	})
@@ -602,7 +602,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		got, err := ResolveRecipient("", nil, &out, true)
+		got, err := ResolveRecipient("", nil, &out, true, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -620,7 +620,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("2\n")), &out, false)
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("2\n")), &out, false, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -636,7 +636,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("2\n")), &out, true)
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("2\n")), &out, true, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -654,7 +654,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("\n")), &out, true)
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("\n")), &out, true, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -670,7 +670,7 @@ func TestResolveRecipient(t *testing.T) {
 
 		var out bytes.Buffer
 		in := bufio.NewReader(strings.NewReader("3\n" + customID.Recipient().String() + "\n"))
-		got, err := ResolveRecipient("", in, &out, true)
+		got, err := ResolveRecipient("", in, &out, true, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -685,7 +685,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		_, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("99\n")), &out, true)
+		_, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("99\n")), &out, true, false)
 		if err == nil || !strings.Contains(err.Error(), "invalid selection") {
 			t.Fatalf("expected invalid selection error, got: %v", err)
 		}
@@ -698,7 +698,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("\n")), &out, true)
+		got, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("\n")), &out, true, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -721,7 +721,7 @@ func TestResolveRecipient(t *testing.T) {
 
 		var out bytes.Buffer
 		in := bufio.NewReader(strings.NewReader("2\n" + customID.Recipient().String() + "\n"))
-		got, err := ResolveRecipient("", in, &out, true)
+		got, err := ResolveRecipient("", in, &out, true, false)
 		if err != nil {
 			t.Fatalf("ResolveRecipient() error = %v", err)
 		}
@@ -737,7 +737,7 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 		var out bytes.Buffer
-		_, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("9\n")), &out, true)
+		_, err := ResolveRecipient("", bufio.NewReader(strings.NewReader("9\n")), &out, true, false)
 		if err == nil || !strings.Contains(err.Error(), "invalid selection") {
 			t.Fatalf("expected invalid selection error, got: %v", err)
 		}
@@ -749,9 +749,53 @@ func TestResolveRecipient(t *testing.T) {
 		t.Setenv("SOPS_AGE_KEY", "")
 		t.Setenv("SOPS_AGE_KEY_FILE", "")
 
-		_, err := ResolveRecipient("", nil, nil, false)
+		_, err := ResolveRecipient("", nil, nil, false, false)
 		if err == nil || !strings.Contains(err.Error(), "no age identity found") {
 			t.Fatalf("expected no age identity found error, got: %v", err)
+		}
+	})
+
+	t.Run("0-key non-TTY generates with allowGenerate", func(t *testing.T) {
+		defaultFile := isolateConfigDir(t)
+		t.Setenv("PATH", "")
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		var out bytes.Buffer
+		got, err := ResolveRecipient("", nil, &out, false, true)
+		if err != nil || !strings.HasPrefix(got, "age1") {
+			t.Fatalf("got %q, %v", got, err)
+		}
+		if _, err := os.Stat(defaultFile); err != nil {
+			t.Errorf("key file not written: %v", err)
+		}
+	})
+
+	t.Run("malformed SOPS_AGE_KEY is an explicit error", func(t *testing.T) {
+		isolateConfigDir(t)
+		t.Setenv("PATH", "")
+		t.Setenv("SOPS_AGE_KEY", "garbage")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		_, err := ResolveRecipient("", nil, nil, false, true)
+		if err == nil || !strings.Contains(err.Error(), "SOPS_AGE_KEY") {
+			t.Fatalf("expected SOPS_AGE_KEY error, got: %v", err)
+		}
+	})
+
+	t.Run("YubiKey without recipients asks for --age-key", func(t *testing.T) {
+		isolateConfigDir(t)
+		bin := t.TempDir()
+		if err := os.WriteFile(filepath.Join(bin, "age-plugin-yubikey"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", bin)
+		t.Setenv("SOPS_AGE_KEY", "")
+		t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+		_, err := ResolveRecipient("", nil, nil, false, true)
+		if err == nil || !strings.Contains(err.Error(), "--age-key") {
+			t.Fatalf("expected --age-key error, got: %v", err)
 		}
 	})
 }

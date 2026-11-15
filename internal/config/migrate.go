@@ -14,9 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/fsutil"
-	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/statedir"
 	"github.com/jskswamy/aide/internal/yamlnode"
 )
@@ -25,22 +23,6 @@ import (
 type MigrateOptions struct {
 	// Home expands ~ in native config dirs for validation.
 	Home string
-}
-
-// MigratedCredential is a legacy env: provider credential rewritten
-// as a credentials: binding. It names the store and key, never the
-// value.
-type MigratedCredential struct {
-	Profile   string
-	Name      string
-	EnvVar    string
-	Store     string
-	Key       string
-	Harnesses []string
-	// Set are the profile's provider endpoints moved into this
-	// binding's route for Harness, so the key keeps its endpoint.
-	Set     map[string]string
-	Harness string
 }
 
 // Migration is the result of MigrateProfiles. Nothing is written.
@@ -62,8 +44,7 @@ type Migration struct {
 	// minimal config settings).
 	SplitErr error
 	// Renamed lists the key renames applied, as "old -> new".
-	Renamed     []string
-	Credentials []MigratedCredential
+	Renamed []string
 	// MentionsOpenCode reports that a profile runs OpenCode or pins an
 	// OpenCode config dir, so its accounts may now open another database.
 	MentionsOpenCode bool
@@ -131,11 +112,8 @@ func InspectLoadedMigration(cfg *Config) bool {
 // MigrateProfiles converts a config.yaml from the contexts: schema to
 // the profiles: schema: contexts: -> profiles:, default_context: ->
 // default_profile:, and in each entry profile: -> config_dir_name:
-// and profile_dir: -> config_dir:. Provider credentials templated
-// into env: from the profile's secret: store become credentials:
-// bindings selected by default_credentials:. Profiles on a harness's
-// global login are reported and changed only when opts.Adopt names
-// them.
+// and profile_dir: -> config_dir:. Provider credentials and endpoints
+// are not touched here: the gateway migration converts them.
 //
 // The YAML node tree is edited in place, so comments and every
 // unrelated key survive; blank lines and indentation are normalized
@@ -169,34 +147,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 		return m, nil
 	}
 
-	names := sortedKeys(cfg.Contexts)
-	moves := map[string][]MigratedCredential{}
-	for _, name := range names {
-		ctx := cfg.Contexts[name]
-		_, legacy, err := TranslateLegacyCredentials(ctx, ctx.Secret)
-		if err != nil {
-			return nil, fmt.Errorf("profiles.%s: %w", name, err)
-		}
-		for _, l := range legacy {
-			mc := MigratedCredential{Profile: name, Name: l.Name, EnvVar: l.EnvVar, Store: l.Binding.Store, Key: l.Binding.Key}
-			if !IsBuiltinCredential(l.Name) {
-				h := cfg.HarnessOf(ctx.Agent)
-				if _, ok := harness.Lookup(h); !ok {
-					return nil, fmt.Errorf("%w: profiles.%s: env: %s is a custom provider credential, and its binding must name the "+
-						"harnesses it is for, but the profile's agent %q is not a known harness; move it to credentials: by hand "+
-						"with harnesses: [<harness>] and re-run", ErrLegacyCredentialEnv, name, l.EnvVar, ctx.Agent)
-				}
-				mc.Harnesses = []string{h}
-			}
-			if len(moves[name]) == 0 {
-				if err := attachEndpoints(&mc, ctx, cfg.HarnessOf(ctx.Agent)); err != nil {
-					return nil, fmt.Errorf("profiles.%s: %w", name, err)
-				}
-			}
-			moves[name] = append(moves[name], mc)
-		}
-	}
-	if cfg.ProfileSchema && len(moves) == 0 {
+	if cfg.ProfileSchema {
 		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
 			if err := refuseSharedNodes(root, "config"); err != nil {
 				m.SplitErr = err
@@ -206,29 +157,11 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 		}
 		return m, nil
 	}
-	sectionKey := keyProfiles
-	if !cfg.ProfileSchema {
-		sectionKey = keyContexts
-	}
-	if err := refuseSharedNodes(yamlnode.Value(root, sectionKey), sectionKey); err != nil {
+	if err := refuseSharedNodes(yamlnode.Value(root, keyContexts), keyContexts); err != nil {
 		return nil, err
 	}
-
-	if !cfg.ProfileSchema {
-		m.renameTopLevel(root)
-	}
-	section := yamlnode.Value(root, keyProfiles)
-	for _, name := range names {
-		entry := yamlnode.Value(section, name)
-		for _, mc := range moves[name] {
-			if err := moveCredential(entry, mc); err != nil {
-				return nil, fmt.Errorf("profiles.%s: %w", name, err)
-			}
-			m.Credentials = append(m.Credentials, mc)
-		}
-	}
-
-	if len(m.Renamed) == 0 && len(m.Credentials) == 0 {
+	m.renameTopLevel(root)
+	if len(m.Renamed) == 0 {
 		if cfg.hasInlineProfiles() || cfg.hasInlineSandbox() || cfg.hasInlineProvisioning() {
 			if err := refuseSharedNodes(root, "config"); err != nil {
 				m.SplitErr = err
@@ -245,7 +178,7 @@ func MigrateProfiles(data []byte, opts MigrateOptions) (*Migration, error) {
 	if err := validateLoadable(out, opts.Home, "migrated config"); err != nil {
 		return nil, err
 	}
-	if err := checkEnvKept(&cfg, out, moves); err != nil {
+	if err := checkEnvKept(&cfg, out); err != nil {
 		return nil, err
 	}
 	m.Output = out
@@ -280,66 +213,6 @@ func (m *Migration) renameTopLevel(root *yaml.Node) {
 	}
 }
 
-// attachEndpoints moves ctx's provider endpoints into mc's route for h,
-// where a launch requires them (they decide where the key is sent).
-// shortcut: with several legacy keys the endpoints go to the first one;
-// a launch then names any other key that needs them.
-func attachEndpoints(mc *MigratedCredential, ctx Context, h string) error {
-	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
-		if !envscrub.IsProviderEndpointName(k) {
-			continue
-		}
-		if _, ok := harness.Lookup(h); !ok {
-			return fmt.Errorf("%w: env: %s is a provider endpoint for %s, but the profile's agent %q is not a known harness; "+
-				"move both to credentials.%s.for.<harness> by hand", ErrLegacyCredentialEnv, k, mc.EnvVar, ctx.Agent, mc.Name)
-		}
-		if strings.Contains(ctx.Env[k], "{{") {
-			return fmt.Errorf("%w: env: %s is a templated provider endpoint; a route's set: holds plain values, "+
-				"so move it to credentials.%s.for.%s.set by hand", ErrLegacyCredentialEnv, k, mc.Name, h)
-		}
-		if mc.Set == nil {
-			mc.Set, mc.Harness = map[string]string{}, h
-		}
-		mc.Set[k] = ctx.Env[k]
-	}
-	return nil
-}
-
-// moveCredential removes mc's env: entry from a profile entry node and
-// adds the matching credentials: binding and default_credentials:
-// selection.
-func moveCredential(entry *yaml.Node, mc MigratedCredential) error {
-	env := yamlnode.Value(entry, "env")
-	if env == nil || yamlnode.Value(env, mc.EnvVar) == nil {
-		return fmt.Errorf("env: %s not found in the profile's own env: map; move it to credentials: by hand", mc.EnvVar)
-	}
-	deleteKey(env, mc.EnvVar)
-	for k := range mc.Set {
-		deleteKey(env, k)
-	}
-	if len(env.Content) == 0 {
-		deleteKey(entry, "env")
-	}
-	binding := CredentialBinding{Backend: CredentialBackendAge, Store: mc.Store, Key: mc.Key}
-	if !IsBuiltinCredential(mc.Name) {
-		binding.Env = []string{mc.EnvVar}
-		binding.Harnesses = mc.Harnesses
-	}
-	if len(mc.Set) > 0 {
-		binding.For = map[string]CredentialRoute{mc.Harness: {Env: binding.Env, Set: mc.Set}}
-		binding.Env, binding.Harnesses = nil, nil
-	}
-	var value yaml.Node
-	if err := value.Encode(binding); err != nil {
-		return err
-	}
-	creds := ensureValue(entry, "credentials", yaml.MappingNode)
-	creds.Content = append(creds.Content, yamlnode.Str(mc.Name), &value)
-	defaults := ensureValue(entry, "default_credentials", yaml.SequenceNode)
-	defaults.Content = append(defaults.Content, yamlnode.Str(mc.Name))
-	return nil
-}
-
 // mentionsOpenCode reports whether any profile runs OpenCode, or a
 // profile pins an OpenCode config dir.
 func mentionsOpenCode(cfg *Config) bool {
@@ -370,25 +243,6 @@ func validateLoadable(data []byte, home, what string) error {
 		}
 	}
 	return nil
-}
-
-// ensureValue returns the value of key in mapping, adding an empty
-// node of kind when absent.
-func ensureValue(mapping *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
-	if v := yamlnode.Value(mapping, key); v != nil {
-		if v.Kind == kind || kind == yaml.ScalarNode {
-			return v
-		}
-		// An empty value (key:) decodes as a null scalar; replace it.
-		*v = yaml.Node{Kind: kind}
-		return v
-	}
-	v := &yaml.Node{Kind: kind}
-	if kind == yaml.ScalarNode {
-		v.Tag = "!!str"
-	}
-	mapping.Content = append(mapping.Content, yamlnode.Str(key), v)
-	return v
 }
 
 func deleteKey(mapping *yaml.Node, key string) {
@@ -449,9 +303,9 @@ func refuseSharedNodes(section *yaml.Node, key string) error {
 var ErrSharedYAML = errors.New("cannot migrate shared YAML nodes")
 
 // checkEnvKept fails unless every profile's effective env: in the
-// migrated text equals the input's minus the credentials moved out of
-// it: a safety net against any edit dropping unrelated variables.
-func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCredential) error {
+// migrated text equals the input's: a safety net against any edit
+// dropping variables.
+func checkEnvKept(before *Config, migrated []byte) error {
 	var after Config
 	if err := yaml.Unmarshal(migrated, &after); err != nil {
 		return fmt.Errorf("migrated config does not parse: %w", err)
@@ -460,13 +314,7 @@ func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCr
 		return errors.New("migration changed the set of profiles; nothing written")
 	}
 	for name, ctx := range before.Contexts {
-		want := maps.Clone(ctx.Env)
-		for _, mc := range moves[name] {
-			delete(want, mc.EnvVar)
-			for k := range mc.Set {
-				delete(want, k)
-			}
-		}
+		want := ctx.Env
 		if len(want) == 0 {
 			want = nil
 		}
@@ -475,7 +323,7 @@ func checkEnvKept(before *Config, migrated []byte, moves map[string][]MigratedCr
 			got = nil
 		}
 		if !maps.Equal(want, got) {
-			return fmt.Errorf("migration would change profiles.%s env: beyond the moved credentials; nothing written", name)
+			return fmt.Errorf("migration would change profiles.%s env:; nothing written", name)
 		}
 	}
 	return nil

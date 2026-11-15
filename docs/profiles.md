@@ -22,9 +22,9 @@ match:
   - path: ~/work/*
   - remote: "github.com/acme/*"
 config_dir_name: work      # claude runs from ~/.claude-work
-credentials:
-  anthropic: {backend: age, store: work, key: ANTHROPIC_API_KEY}
-default_credentials: [anthropic]
+gateways:
+  anthropic: {preset: anthropic, store: work, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 ```
 
 Each profile contains: `agent`, `secret`, `env`, `match`, `sandbox`, `capabilities`, and optionally `yolo`, `config_dir_name`, `config_dir`, `config_dirs`, `gateways`, `gateway_choice`, and `credentials` (plain environment-variable secrets; see [Configuration](configuration.md) and [Gateways](configuration.md#gateways)).
@@ -232,9 +232,9 @@ agent: claude
 match: [{path: ~/personal/*}]
 secret: personal
 config_dir_name: personal
-credentials:
-  anthropic: {backend: age, store: personal, key: anthropic_api_key}
-default_credentials: [anthropic]
+gateways:
+  anthropic: {preset: anthropic, store: personal, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 ```
 
 ```yaml

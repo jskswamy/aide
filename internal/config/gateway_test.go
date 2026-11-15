@@ -268,9 +268,6 @@ func TestGateway_SynthesizeDefaultsDoNotCollide(t *testing.T) {
 	if !slices.Equal(got.DefaultCredentials, []string{"alpha"}) {
 		t.Errorf("DefaultCredentials = %v, want [alpha]", got.DefaultCredentials)
 	}
-	if err := checkDefaultRoutes(got); err != nil {
-		t.Errorf("checkDefaultRoutes() = %v", err)
-	}
 
 	// An explicit default (anthropic) claims claude, pi and opencode;
 	// alpha is appended for codex, which anthropic does not serve.
@@ -283,12 +280,12 @@ func TestGateway_SynthesizeDefaultsDoNotCollide(t *testing.T) {
 		t.Errorf("DefaultCredentials = %v, want [anthropic alpha]", got.DefaultCredentials)
 	}
 	for _, h := range []string{"claude", "pi", "opencode"} {
-		if defs := DefaultCredentialsForHarness(got, h); !slices.Equal(defs, []string{"anthropic"}) {
-			t.Errorf("DefaultCredentialsForHarness(%s) = %v, want [anthropic]", h, defs)
+		if defs := defaultCredentialsForHarness(got, h); !slices.Equal(defs, []string{"anthropic"}) {
+			t.Errorf("defaultCredentialsForHarness(%s) = %v, want [anthropic]", h, defs)
 		}
 	}
-	if defs := DefaultCredentialsForHarness(got, "codex"); !slices.Equal(defs, []string{"alpha"}) {
-		t.Errorf("DefaultCredentialsForHarness(codex) = %v, want [alpha]", defs)
+	if defs := defaultCredentialsForHarness(got, "codex"); !slices.Equal(defs, []string{"alpha"}) {
+		t.Errorf("defaultCredentialsForHarness(codex) = %v, want [alpha]", defs)
 	}
 	if !slices.Equal(ctx.DefaultCredentials, []string{"anthropic"}) {
 		t.Errorf("input DefaultCredentials mutated: %v", ctx.DefaultCredentials)
@@ -423,18 +420,6 @@ func TestGateway_CredentialScrubNames(t *testing.T) {
 		if !slices.Contains(got, want) {
 			t.Errorf("CredentialScrubNames() = %v, missing %s", got, want)
 		}
-	}
-}
-
-func TestGateway_ValidateRejectsLegacyCredentialNameClash(t *testing.T) {
-	ctx := Context{
-		Secret:   "work",
-		Env:      map[string]string{"OPENAI_API_KEY": "{{ .secrets.openai_key }}"},
-		Gateways: map[string]GatewayConfig{"openai": {BaseURL: "https://openai.corp.example", Store: "work", Key: "openai_gw_token"}},
-	}
-	err := ValidateGateways("profiles.work", ctx, nil)
-	if !errors.Is(err, ErrInvalidGateway) || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
-		t.Fatalf("ValidateGateways() = %v, want a clash with the env: credential", err)
 	}
 }
 

@@ -58,10 +58,11 @@ One-time flags never change saved preferences. Precedence:
   marked for it. `claude` and `codex` with gateways marked and no choice
   open a picker on a terminal and exit `78` otherwise. aide never picks a
   gateway on its own. See [Gateways](configuration.md#gateways).
-- Legacy credentials: `default_credentials:` and saved credential
-  selections still apply to non-gateway credentials and skip bindings
-  restricted to other agents; `--gateway` naming one restricted to
-  another agent stops the launch.
+- Credentials: every `credentials:` binding is injected into the
+  harnesses it serves, skipping bindings restricted to other agents;
+  `--credential` names replace that selection (`--credential=` injects
+  none). `default_credentials:` is gone and a saved version 1 credential
+  selection is only read to migrate it.
 
 **Exit codes:** `78` (`EX_CONFIG`) when a `claude` or `codex` gateway
 choice is unset in a script; stderr names the gateways and the command
@@ -1317,8 +1318,8 @@ aide config edit
 aide config migrate [--write] [--adopt <profile>]...
 ```
 
-Also converts legacy gateways (`base_url:`) and the gateway names in
-`default_credentials:` into `gateways:` plus an explicit `gateway_choice:`;
+Also converts legacy gateways (`base_url:`), LLM provider credentials, `env:` provider
+switches and endpoints, and `default_credentials:` into `gateways:` plus an explicit `gateway_choice:`;
 backups go to `~/.local/state/aide/migrations/<UTC-timestamp>/`. aide does this
 on its own at the next launch or config write; on a read-only config it prints
 a hint to run this command. Splits a single-file `config.yaml` (upgrading `contexts:` to `profiles:` if needed) into the modular layout (`config.yaml`, `sandbox.yaml`, `provisioning.yaml`, and `profiles/<name>.yaml`). Without `--write` it prints the preview of each file (with YAML syntax highlighting on a terminal) and a summary; nothing is written. With `--write` it backs up the original as `config.yaml.bak` (or `config.yaml.bak-<timestamp>`), writes the split files atomically, and updates provisioning state (`managed.json`) so the split is not reported as drift.

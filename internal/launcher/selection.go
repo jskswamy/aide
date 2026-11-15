@@ -29,7 +29,7 @@ const (
 	SourceAuthLogin  = "auth"             // --auth login: nothing injected
 	SourcePreference = "preference"       // saved with aide project set
 	SourceRepository = "repository"       // trusted .aide.yaml agent:
-	SourceProfile    = "profile"          // the profile's agent: / default_credentials:
+	SourceProfile    = "profile"          // the profile's agent: / credentials:
 )
 
 // Gateway choice sources, reported as Choice.Source. A flag choice is
@@ -355,17 +355,14 @@ func flagChoice(ctx config.Context, harnessName string, names []string, renames 
 }
 
 // SelectCredentials sets the credential selection by precedence:
-// --credential, then the saved repository selection, then
-// profileDefault. A selection replaces the lower ones; it never unions
-// with them, and there is no ambient fallback. --auth login selects
-// nothing; what it displaces is kept for the "not injecting" note.
+// --credential, then profileDefault (every credential the profile
+// defines). A selection replaces the lower ones; it never unions with
+// them, and there is no ambient fallback. --auth login selects nothing;
+// what it displaces is kept for the "not injecting" note.
 func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []string) {
-	switch {
-	case in.CredentialsSet:
+	if in.CredentialsSet {
 		s.requested, s.CredentialSource = in.Credentials, SourceFlag
-	case in.Saved.LegacyCredentials != nil:
-		s.requested, s.CredentialSource = *in.Saved.LegacyCredentials, SourcePreference
-	default:
+	} else {
 		s.requested, s.CredentialSource = profileDefault, SourceProfile
 	}
 	s.requested = append([]string{}, s.requested...)
@@ -391,16 +388,13 @@ func (s *Selection) dropGatewayNames(ctx config.Context) {
 
 // PlanCredentials plans s's selection for profile ctx and harnessName
 // (see the package-level PlanCredentials). In login mode the displaced
-// selection is reported as ignored. A saved or default selection
-// covers every harness the profile runs, so it skips bindings
-// restricted to other harnesses; --credential stays strict.
+// selection is reported as ignored. The profile default covers every
+// harness the profile runs, so it skips credentials restricted to other
+// harnesses, and those of an LLM provider while a gateway is chosen;
+// --credential stays strict.
 func (s *Selection) PlanCredentials(profile string, ctx config.Context, harnessName string, auth AuthMode) (CredentialPlan, error) {
 	requested, skipped := s.requested, []string(nil)
-	switch s.CredentialSource {
-	case SourceProfile:
-		forHarnessCtx := ctx
-		forHarnessCtx.DefaultCredentials = requested
-		allowed := config.DefaultCredentialsForHarness(forHarnessCtx, harnessName)
+	if s.CredentialSource == SourceProfile {
 		gatewayOn := s.Gateway.Value != "" && s.Gateway.Value != gatewayNone
 		requested = slices.DeleteFunc(slices.Clone(requested), func(name string) bool {
 			b, ok := ctx.Credentials[name]
@@ -414,32 +408,13 @@ func (s *Selection) PlanCredentials(profile string, ctx config.Context, harnessN
 				skipped = append(skipped, name)
 				return true
 			}
-			return !slices.Contains(allowed, name)
-		})
-		s.Credentials = slices.Clone(requested)
-	case SourcePreference:
-		requested = slices.DeleteFunc(slices.Clone(requested), func(name string) bool {
-			b, ok := ctx.Credentials[name]
-			if ok && !b.AllowsHarness(harnessName) {
-				skipped = append(skipped, name)
-				return true
-			}
 			return false
 		})
+		s.Credentials = slices.Clone(requested)
 	}
 	plan, err := PlanCredentials(profile, ctx, harnessName, requested, auth)
 	plan.Skipped = skipped
-	return plan, s.explainSavedSelection(err)
-}
-
-// explainSavedSelection adds a remedy to a credential planning error
-// caused by a saved selection.
-func (s *Selection) explainSavedSelection(err error) error {
-	if err == nil || s.CredentialSource != SourcePreference {
-		return err
-	}
-	return fmt.Errorf("credentials saved for this repository: %w\n\n"+
-		"Change them with: aide project set --gateway <name>, or clear them with: aide project clear --gateway", err)
+	return plan, err
 }
 
 // SetBannerSelection records sel's sources and credential selection on

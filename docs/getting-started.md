@@ -275,7 +275,6 @@ secret: work
 match:
   - path: ~/work/*
 env:
-  CLAUDE_CODE_USE_BEDROCK: "1"
   AWS_PROFILE: "{{ .secrets.aws_profile }}"
 ```
 
@@ -286,7 +285,7 @@ secret: personal
 match:
   - path: ~/oss/*
 env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+  GITHUB_TOKEN: "{{ .secrets.github_token }}"
 ```
 
 ## Verifying
@@ -302,7 +301,6 @@ Agent:    claude (/usr/local/bin/claude)
 Secret:   work
 Env:
   AWS_PROFILE              ← from secrets.aws_profile
-  CLAUDE_CODE_USE_BEDROCK  ← literal
 ```
 
 `aide validate` checks the config for errors:

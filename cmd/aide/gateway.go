@@ -34,7 +34,7 @@ import (
 	"github.com/jskswamy/aide/internal/ui"
 )
 
-// GatewayListEntry is one gateway or provider credential in `aide gateway list --format json`.
+// GatewayListEntry is one gateway in `aide gateway list --format json`.
 type GatewayListEntry struct {
 	Profile    string                      `json:"profile"`
 	Gateway    string                      `json:"gateway"`
@@ -470,8 +470,9 @@ func promptDefaultFor(cmd *cobra.Command, reader *bufio.Reader, name, h, profile
 
 // setGatewayDefaults records gateway_choice for the harnesses name
 // serves: name where want says so; otherwise none for a claude or
-// codex whose choice is unset and not already covered by a provider
-// credential default, so launches stay on the harness's own login.
+// codex whose choice is unset and that no pending legacy conversion
+// derives a choice for (the migration saves that one), so launches stay
+// on the harness's own login.
 // Multi harnesses and existing choices are left alone.
 func setGatewayDefaults(ctx config.Context, name string, want func(name, h string) bool) config.Context {
 	choice := maps.Clone(ctx.GatewayChoice)
@@ -482,7 +483,7 @@ func setGatewayDefaults(ctx config.Context, name string, want func(name, h strin
 		switch {
 		case want(name, h):
 			choice[h] = name
-		case isSlotHarness(h) && choice[h] == "" && !slices.ContainsFunc(config.DefaultCredentialsForHarness(ctx, h), func(d string) bool { return ctx.Credentials[d].IsLLMProvider(d) }):
+		case isSlotHarness(h) && choice[h] == "" && ctx.DerivedChoice[h] == "":
 			choice[h] = "none"
 		}
 	}
@@ -531,13 +532,6 @@ func gatewayListCmd(profile *string) *cobra.Command {
 			for _, p := range profiles {
 				ctx := cfg.Contexts[p]
 				var pEntries []GatewayListEntry
-				for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
-					b := ctx.Credentials[name]
-					if !b.IsLLMProvider(name) {
-						continue
-					}
-					pEntries = append(pEntries, credentialListEntry(p, ctx, name, b))
-				}
 				for _, name := range slices.Sorted(maps.Keys(ctx.Gateways)) {
 					pEntries = append(pEntries, gatewayListEntry(p, ctx, name, home, models))
 				}
@@ -567,8 +561,6 @@ func gatewayListCmd(profile *string) *cobra.Command {
 	cmd.Flags().BoolVar(&models, "models", false, "Include each gateway's cached models")
 	return cmd
 }
-
-var gatewayCredentialHarnesses = []string{"claude", "pi", "omp", "opencode", "codex", "gemini"}
 
 func gatewayUseCmd(profile *string) *cobra.Command {
 	var harnessName string
@@ -981,12 +973,22 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 				updated.Gateways = nil
 			}
 			updated.GatewayChoice = maps.Clone(ctx.GatewayChoice)
+			var clearedChoices []string
+			for _, h := range slices.Sorted(maps.Keys(ctx.GatewayChoice)) {
+				if ctx.GatewayChoice[h] == name {
+					clearedChoices = append(clearedChoices, h)
+				}
+			}
 			maps.DeleteFunc(updated.GatewayChoice, func(_, v string) bool { return v == name })
 			cfg.Contexts[profileName] = updated
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
 			fmt.Fprintf(out, "✓ Removed gateway %q from profile %q in %s\n", name, profileName, homepath.Tilde(config.FilePath(), home))
+			if len(clearedChoices) > 0 {
+				fmt.Fprintf(out, "! Cleared the gateway choice for %s on profile %q; choose another with: aide gateway use <name|none> --harness <h> --profile %s\n",
+					strings.Join(clearedChoices, ", "), profileName, profileName)
+			}
 
 			if gw.RequiresToken() {
 				storePath := homepath.Tilde(config.ResolveSecretPath(gw.Store), home)
@@ -1025,8 +1027,12 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 				}
 			}
 			reconcileProfileHarnesses(updated, profileName, "", home)
-			if err := updateRepoPrefsGatewayRemove(home, profileName, name); err != nil {
+			repoCleared, err := updateRepoPrefsGatewayRemove(home, profileName, name)
+			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "aide: warning: could not update repository preferences: %v\n", err)
+			}
+			for _, c := range repoCleared {
+				fmt.Fprintf(out, "! Cleared the repository's gateway choice for %s (%s); choose another with: aide gateway use <name|none> --harness <h> --repo\n", c.harness, c.remote)
 			}
 			return nil
 		},
@@ -1530,34 +1536,47 @@ func updateRepoPrefsGatewayName(home, profileName, oldName, newName string) erro
 	})
 }
 
-func updateRepoPrefsGatewayRemove(home, profileName, name string) error {
+// repoChoice is a repository's saved gateway choice for a harness.
+type repoChoice struct{ remote, harness string }
+
+// updateRepoPrefsGatewayRemove drops every repository preference of
+// profileName that names gateway name, in the version 1 credential
+// selection and in the per-harness choices, and reports the choices it
+// cleared.
+func updateRepoPrefsGatewayRemove(home, profileName, name string) ([]repoChoice, error) {
 	if home == "" {
-		return nil
+		return nil, nil
 	}
-	return prefs.Update(prefs.DefaultPath(home), func(f *prefs.File) error {
-		remotes := f.Profiles[profileName]
-		if len(remotes) == 0 {
-			return prefs.ErrUnchanged
-		}
+	var cleared []repoChoice
+	err := prefs.Update(prefs.DefaultPath(home), func(f *prefs.File) error {
+		cleared = nil
 		changed := false
-		for remote, p := range remotes {
-			if p.LegacyCredentials == nil || !slices.Contains(*p.LegacyCredentials, name) {
-				continue
-			}
-			creds := slices.DeleteFunc(slices.Clone(*p.LegacyCredentials), func(c string) bool { return c == name })
-			if len(creds) == 0 {
-				p.LegacyCredentials = nil
-			} else {
+		for _, remote := range slices.Sorted(maps.Keys(f.Profiles[profileName])) {
+			p := f.Profiles[profileName][remote]
+			if p.LegacyCredentials != nil && slices.Contains(*p.LegacyCredentials, name) {
+				creds := slices.DeleteFunc(slices.Clone(*p.LegacyCredentials), func(c string) bool { return c == name })
 				p.LegacyCredentials = &creds
+				if len(creds) == 0 {
+					p.LegacyCredentials = nil
+				}
+				changed = true
+			}
+			if hs := slices.DeleteFunc(slices.Sorted(maps.Keys(p.Gateway)), func(h string) bool { return p.Gateway[h] != name }); len(hs) > 0 {
+				p.Gateway = maps.Clone(p.Gateway)
+				for _, h := range hs {
+					delete(p.Gateway, h)
+					cleared = append(cleared, repoChoice{remote, h})
+				}
+				changed = true
 			}
 			f.Set(prefs.Key{Profile: profileName, Remote: remote}, p)
-			changed = true
 		}
 		if !changed {
 			return prefs.ErrUnchanged
 		}
 		return nil
 	})
+	return cleared, err
 }
 
 // resolveGatewayProfile returns the named profile, or the one matching
@@ -1762,20 +1781,6 @@ func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, 
 	return token, nil
 }
 
-// isDefaultFor reports whether name is what harness h uses by default:
-// the profile's gateway choice for a gateway, the default credential
-// rule for a provider credential.
-func isDefaultFor(ctx config.Context, name, h string) bool {
-	if _, isGateway := ctx.Gateways[name]; isGateway {
-		return ctx.GatewayChoice[h] == name
-	}
-	// An explicit gateway choice displaces a provider credential default.
-	if ctx.GatewayChoice[h] != "" && ctx.Credentials[name].IsLLMProvider(name) {
-		return false
-	}
-	return slices.Contains(config.DefaultCredentialsForHarness(ctx, h), name)
-}
-
 // checkKeyUnclaimed refuses a key that already holds a value in store
 // unless a gateway owns it (re-adding a gateway rotates its own token).
 func checkKeyUnclaimed(cfg *config.Config, store, key string) error {
@@ -1872,45 +1877,6 @@ func printHarnessStatuses(w io.Writer, statuses []gateway.HarnessFileStatus, hom
 	_ = tw.Flush()
 }
 
-func credentialListEntry(profile string, ctx config.Context, name string, b config.CredentialBinding) GatewayListEntry {
-	e := GatewayListEntry{
-		Profile:    profile,
-		Gateway:    name,
-		Kind:       "credential",
-		BaseURL:    b.EndpointURL(name, ""),
-		Store:      b.Store,
-		Key:        b.Key,
-		DefaultFor: []string{},
-	}
-	for _, h := range gatewayCredentialHarnesses {
-		if !b.DefaultAllowsHarness(name, h) {
-			continue
-		}
-		r, ok := b.Route(name, h)
-		if !ok {
-			continue
-		}
-		isDef := isDefaultFor(ctx, name, h)
-		if isDef {
-			e.DefaultFor = append(e.DefaultFor, h)
-		}
-		state := gateway.HarnessSyncState("available")
-		detail := "select with --gateway " + name
-		if isDef {
-			state = "active"
-			detail = "default"
-		}
-		e.Harnesses = append(e.Harnesses, gateway.HarnessFileStatus{
-			Harness:  h,
-			EnvVar:   strings.Join(r.Env, ", "),
-			FilePath: "-",
-			State:    state,
-			Detail:   detail,
-		})
-	}
-	return e
-}
-
 func gatewayListEntry(profile string, ctx config.Context, name, home string, withModels bool) GatewayListEntry {
 	gw := ctx.Gateways[name]
 	ttl := gw.TTL()
@@ -1938,7 +1904,7 @@ func gatewayListEntry(profile string, ctx config.Context, name, home string, wit
 		}
 	}
 	for _, h := range gw.EffectiveHarnesses() {
-		if isDefaultFor(ctx, name, h) {
+		if ctx.GatewayChoice[h] == name {
 			e.DefaultFor = append(e.DefaultFor, h)
 		}
 		e.Harnesses = append(e.Harnesses, gateway.InspectHarness(ctx, name, gw, cat, h, home))
@@ -1961,18 +1927,11 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			defaults := "default for: " + strings.Join(e.DefaultFor, ", ")
 			fmt.Fprintf(w, "  ● GATEWAY: %s  [ACTIVE — %s]\n", e.Gateway, defaults)
 		} else {
-			switchHint := ""
-			if e.Kind != "credential" {
-				switchHint = fmt.Sprintf("switch: aide gateway use %s --harness <h> --profile %s, or ", e.Gateway, e.Profile)
-			}
-			fmt.Fprintf(w, "  ○ GATEWAY: %s  [standby — %slaunch: aide --gateway %s]\n", e.Gateway, switchHint, e.Gateway)
+			fmt.Fprintf(w, "  ○ GATEWAY: %s  [standby — switch: aide gateway use %s --harness <h> --profile %s, or launch: aide --gateway %s]\n",
+				e.Gateway, e.Gateway, e.Profile, e.Gateway)
 		}
-		urlDisplay := e.BaseURL
-		if e.Kind == "credential" && config.IsBuiltinCredential(e.Gateway) && urlDisplay != "" {
-			urlDisplay += " (built-in)"
-		}
-		if urlDisplay != "" {
-			fmt.Fprintf(w, "    URL:          %s\n", urlDisplay)
+		if e.BaseURL != "" {
+			fmt.Fprintf(w, "    URL:          %s\n", e.BaseURL)
 		}
 		if e.Store != "" || e.Key != "" {
 			fmt.Fprintf(w, "    Secret:       store=%s, key=%s\n", e.Store, e.Key)
@@ -1984,7 +1943,7 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			}
 			fmt.Fprintf(w, "    Chosen for:   %s\n", strings.Join(parts, ", "))
 		}
-		if e.Kind != "credential" && e.Kind != "switch" {
+		if e.Kind != "switch" {
 			fmt.Fprintf(w, "    Refresh TTL:  %s\n", e.RefreshTTL)
 			fmt.Fprintf(w, "    Cache:        %s\n", cacheSummary(e))
 			fmt.Fprintf(w, "                  %s\n", homepath.Tilde(e.CachePath, home))
@@ -1999,7 +1958,7 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 				status += " (" + st.Detail + ")"
 			}
 			envVar := st.EnvVar
-			if envVar == "" && e.Kind != "credential" {
+			if envVar == "" {
 				envVar = gw.TokenEnv(e.Gateway, st.Harness)
 			}
 			targetFile := st.FilePath
@@ -2009,7 +1968,7 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			fmt.Fprintf(tw, "      %s\t%s\t%s\t%s\n", st.Harness, envVar, targetFile, status)
 		}
 		_ = tw.Flush()
-		if withModels && e.Kind != "credential" && e.Kind != "switch" {
+		if withModels && e.Kind != "switch" {
 			fmt.Fprintf(w, "    Models (%d):\n", len(e.Models))
 			tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(tw, "      ID\tDISPLAY NAME\tPROVIDER\tCONTEXT\tMAX OUTPUT")

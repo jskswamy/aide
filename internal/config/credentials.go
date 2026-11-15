@@ -144,12 +144,6 @@ func BuiltinCredentialURL(name string) string {
 	return builtinCredentialURLs[name]
 }
 
-// BuiltinCredentialHarnesses returns the default target harnesses for a
-// built-in provider credential when neither Harnesses nor For is set.
-func BuiltinCredentialHarnesses(name string) []string {
-	return slices.Clone(builtinCredentialHarnesses[name])
-}
-
 // EndpointURL returns the base URL that binding name targets on
 // harnessName: an explicit endpoint in the route's Set map if present,
 // else BuiltinCredentialURL(name).
@@ -165,11 +159,10 @@ func (b CredentialBinding) EndpointURL(name, harnessName string) string {
 }
 
 // DefaultAllowsHarness reports whether binding name applies to agent by
-// default (when selected via default_credentials rather than explicit
-// --credential). For a built-in provider credential with neither For
-// nor Harnesses set, it restricts default selection to the harnesses in
-// BuiltinCredentialHarnesses(name) so e.g. "anthropic" does not claim
-// "codex" by default.
+// default (rather than by an explicit --credential). For a built-in
+// provider credential with neither For nor Harnesses set, it restricts
+// the default to the built-in harness set, so e.g. "gemini" does not
+// claim "claude".
 func (b CredentialBinding) DefaultAllowsHarness(name, agent string) bool {
 	if len(b.For) == 0 && len(b.Harnesses) == 0 && len(b.Env) == 0 {
 		if hs := builtinCredentialHarnesses[name]; len(hs) > 0 {
@@ -238,14 +231,15 @@ func canonicalHarness(name string) string {
 	return name
 }
 
-// ErrInvalidCredentials reports a malformed credentials: or
-// default_credentials: entry.
+// ErrInvalidCredentials reports a malformed credentials: entry, or a
+// provider endpoint or switch set where only a gateway may set one.
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
 var envNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// validateCredentials checks every profile's credential bindings and
-// default selection.
+// validateCredentials checks every profile's credential bindings, and
+// that what the legacy conversion leaves in credentials: and env: sets
+// no provider endpoint, switch or key.
 func (c *Config) validateCredentials() error {
 	section := "profiles"
 	if !c.ProfileSchema {
@@ -253,55 +247,84 @@ func (c *Config) validateCredentials() error {
 	}
 	for _, name := range sortedKeys(c.Contexts) {
 		at := fmt.Sprintf("%s.%s", section, name)
-		if err := ValidateGateways(at, c.Contexts[name], c.NeverAllowEnv); err != nil {
-			return err
-		}
 		orig := c.Contexts[name]
-		ctx, err := synthesizeGatewayCredentials(orig)
-		if err != nil {
+		if err := ValidateGateways(at, orig, c.NeverAllowEnv); err != nil {
 			return err
 		}
-		for _, cred := range slices.Sorted(maps.Keys(ctx.Credentials)) {
-			if _, synthesized := orig.Gateways[cred]; synthesized {
-				continue
-			}
-			if err := validateBinding(cred, ctx.Credentials[cred]); err != nil {
+		for _, cred := range slices.Sorted(maps.Keys(orig.Credentials)) {
+			if err := validateBinding(cred, orig.Credentials[cred]); err != nil {
 				return fmt.Errorf("%w: %s: credentials.%s: %s", ErrInvalidCredentials, at, cred, err)
 			}
 		}
-		for _, sel := range ctx.DefaultCredentials {
-			if _, ok := ctx.Credentials[sel]; !ok {
-				return fmt.Errorf("%w: %s: default_credentials names %q, which is not under credentials: (defined: %s)",
-					ErrInvalidCredentials, at, sel, definedBindings(ctx))
-			}
+		// What became a gateway is checked as one; the rest must be plain.
+		rest := ConvertLegacy(orig).Apply(orig).Residual()
+		if err := checkNoProviderSettings(rest); err != nil {
+			return fmt.Errorf("%w: %s: %s", ErrInvalidCredentials, at, err)
 		}
-		explicitCtx := ctx
-		explicitCtx.DefaultCredentials = c.Contexts[name].DefaultCredentials
-		if err := checkDefaultRoutes(explicitCtx); err != nil {
+		if err := checkRouteClashes(rest); err != nil {
 			return fmt.Errorf("%w: %s: %s", ErrInvalidCredentials, at, err)
 		}
 	}
 	return nil
 }
 
-// checkDefaultRoutes fails when two default bindings serving the same
-// harness set the same variable, so switching harness never needs a
-// --credential to resolve a clash.
-func checkDefaultRoutes(ctx Context) error {
+// ProviderSettingError says why name may not be set in env: or
+// credentials:, or nil when it may: a provider endpoint or switch
+// (CLAUDE_CODE_USE_BEDROCK, ...) is a gateway's to set.
+func ProviderSettingError(name string) error {
+	if envscrub.IsProviderEndpointName(name) || strings.HasPrefix(name, "CLAUDE_CODE_USE_") {
+		return fmt.Errorf("%s is a provider endpoint or switch, which only a gateway sets; add one with: aide gateway add", name)
+	}
+	return nil
+}
+
+// checkNoProviderSettings rejects a provider endpoint, switch or key
+// that ctx's credentials: or env: still carry: after migration only a
+// hand edit leaves one.
+func checkNoProviderSettings(ctx Context) error {
+	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
+		if err := ProviderSettingError(k); err != nil {
+			return fmt.Errorf("env: %w", err)
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
+		if envscrub.IsProviderSecretName(k) {
+			return fmt.Errorf("env: %s holds a provider key, which aide does not pass through env:; store it in a secret store "+
+				"and add a gateway for it with: aide gateway add", k)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
+		b := ctx.Credentials[name]
+		names := b.EnvNames(name)
+		for _, r := range b.For {
+			names = append(names, slices.Collect(maps.Keys(r.Set))...)
+		}
+		for _, k := range names {
+			if err := ProviderSettingError(k); err != nil {
+				return fmt.Errorf("credentials.%s: %w", name, err)
+			}
+		}
+	}
+	return nil
+}
+
+// checkRouteClashes fails when two credentials serving the same
+// harness set the same variable, so a launch never has to choose.
+func checkRouteClashes(ctx Context) error {
 	for _, d := range harness.All() {
 		if !d.Launchable() {
 			continue
 		}
 		setBy := map[string]string{}
-		for _, name := range slices.Compact(slices.Clone(ctx.DefaultCredentials)) {
+		for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
 			r, ok := ctx.Credentials[name].Route(name, d.Name)
 			if !ok {
 				continue
 			}
 			for _, e := range append(r.Env, slices.Sorted(maps.Keys(r.Set))...) {
 				if other, dup := setBy[e]; dup && other != name {
-					return fmt.Errorf("default_credentials %q and %q both set %s for %s; "+
-						"keep one in default_credentials: or route them to different harnesses with for", other, name, e, d.Name)
+					return fmt.Errorf("credentials %q and %q both set %s for %s; "+
+						"route them to different harnesses (harnesses: or for:)", other, name, e, d.Name)
 				}
 				setBy[e] = name
 			}
@@ -426,13 +449,6 @@ func reservedEnvReason(e string) string {
 	return ""
 }
 
-func definedBindings(ctx Context) string {
-	if len(ctx.Credentials) == 0 {
-		return "none"
-	}
-	return strings.Join(slices.Sorted(maps.Keys(ctx.Credentials)), ", ")
-}
-
 // CredentialScrubNames returns, sorted, the names to scrub from an
 // inherited environment on top of the built-in registry: scrub_env:
 // plus every env name any profile's credential binding or gateway
@@ -461,8 +477,8 @@ func (c *Config) CredentialScrubNames() []string {
 	return slices.Sorted(maps.Keys(seen))
 }
 
-// ErrLegacyCredentialEnv reports a provider credential in a profile's
-// env: that cannot be translated into a credential binding.
+// ErrLegacyCredentialEnv reports a provider credential in env: or
+// repository config that cannot be translated.
 var ErrLegacyCredentialEnv = errors.New("provider credential in env")
 
 // LegacyCredential is a provider credential env: entry translated in
@@ -471,57 +487,38 @@ type LegacyCredential struct {
 	Name    string // implicit binding name
 	EnvVar  string
 	Binding CredentialBinding
-	Agent   string // harness, for the suggested harnesses: of a custom name
-}
-
-// Hint is a migration note naming the env var and the credentials:
-// block to replace it with. It never contains the value.
-func (l LegacyCredential) Hint(profileLabel string) string {
-	return fmt.Sprintf("%s: env: %s is a provider credential; aide injects it as credential binding %q for now. "+
-		"Replace the env: entry with:\n%s",
-		profileLabel, l.EnvVar, l.Name, suggestedBinding(l.Name, l.EnvVar, l.Binding.Store, l.Binding.Key, l.Agent))
 }
 
 // legacySecretRef matches a value that is exactly one secret reference.
 var legacySecretRef = regexp.MustCompile(`^\s*\{\{\s*(?:\.secrets\.(\w+)|index\s+\.secrets\s+"(\w+)")\s*\}\}\s*$`)
 
-// TranslateLegacyCredentials moves ctx's provider credential env:
-// entries into implicit credential bindings that are selected by
-// default. An entry translates only when its value is a single
-// {{ .secrets.<key> }} reference and store (the profile's own secret:
-// store) is set; anything else fails with ErrLegacyCredentialEnv and
-// migration guidance. ctx is not modified and nothing is written.
-func TranslateLegacyCredentials(ctx Context, store string) (Context, []LegacyCredential, error) {
+// implicitCredentials moves ctx's provider credential env: entries
+// into implicit credential bindings that are selected by default, for
+// the conversion to turn into gateways. An entry translates only when
+// its value is a single {{ .secrets.<key> }} reference and store (the
+// profile's own secret: store) is set; anything else is an error and
+// ctx stays as it is.
+func implicitCredentials(ctx Context, store string) (Context, []LegacyCredential, error) {
 	var legacy []LegacyCredential
 	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
 		if !envscrub.IsProviderSecretName(k) {
 			continue
 		}
-		name := legacyBindingName(k)
+		name := LegacyBindingName(k)
 		if owner := bindingFor(ctx, k); owner != "" {
-			return ctx, nil, fmt.Errorf("%w: %s duplicates credentials.%s, which already injects it; remove %s from the env: map",
-				ErrLegacyCredentialEnv, k, owner, k)
+			return ctx, nil, fmt.Errorf("%w: %s duplicates credentials.%s", ErrLegacyCredentialEnv, k, owner)
 		}
 		if _, taken := ctx.Credentials[name]; taken {
-			return ctx, nil, fmt.Errorf("%w: %s cannot become credential binding %q, which credentials: already defines; remove %s from the env: map",
-				ErrLegacyCredentialEnv, k, name, k)
+			return ctx, nil, fmt.Errorf("%w: %s cannot become credential %q, which credentials: defines", ErrLegacyCredentialEnv, k, name)
 		}
 		m := legacySecretRef.FindStringSubmatch(ctx.Env[k])
 		if m == nil || store == "" {
-			reason := "its value is not a single {{ .secrets.<key> }} reference"
-			if m != nil {
-				reason = "the profile has no secret: store"
-			}
-			return ctx, nil, fmt.Errorf("%w: %s holds a provider credential and aide no longer passes those through env: "+
-				"(%s). Put the key in an age secret store (aide secrets edit <store>) and replace the env: entry with:\n%s",
-				ErrLegacyCredentialEnv, k, reason, suggestedBinding(name, k, "<store>", "<key>", ctx.Agent))
+			return ctx, nil, fmt.Errorf("%w: %s is not a single {{ .secrets.<key> }} reference of the profile's secret: store", ErrLegacyCredentialEnv, k)
 		}
-		key := m[1] + m[2]
 		legacy = append(legacy, LegacyCredential{
 			Name:    name,
 			EnvVar:  k,
-			Binding: CredentialBinding{Backend: CredentialBackendAge, Store: store, Key: key, Env: []string{k}},
-			Agent:   ctx.Agent,
+			Binding: CredentialBinding{Backend: CredentialBackendAge, Store: store, Key: m[1] + m[2], Env: []string{k}},
 		})
 	}
 	if len(legacy) == 0 {
@@ -560,20 +557,4 @@ func LegacyBindingName(envVar string) string {
 		}
 	}
 	return strings.ToLower(envVar)
-}
-
-func legacyBindingName(envVar string) string {
-	return LegacyBindingName(envVar)
-}
-
-// suggestedBinding renders the credentials: block replacing a legacy
-// env: entry.
-func suggestedBinding(name, envVar, store, key, agent string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "    credentials:\n      %s:\n        backend: age\n        store: %s\n        key: %s\n", name, store, key)
-	if !IsBuiltinCredential(name) {
-		fmt.Fprintf(&b, "        env: [%s]\n        harnesses: [%s]\n", envVar, canonicalHarness(filepath.Base(agent)))
-	}
-	fmt.Fprintf(&b, "    default_credentials: [%s]", name)
-	return b.String()
 }

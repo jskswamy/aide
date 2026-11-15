@@ -276,7 +276,6 @@ func isBareSynthesizedDefault(cfg *Config) bool {
 		ctx.ProfileDir == "" &&
 		len(ctx.ConfigDirs) == 0 &&
 		len(ctx.Credentials) == 0 &&
-		len(ctx.DefaultCredentials) == 0 &&
 		len(ctx.Gateways) == 0 &&
 		len(ctx.MCPServers) == 0 &&
 		ctx.MCPServersOverride == nil &&

@@ -114,7 +114,7 @@ func planBoth(t *testing.T, harness, profile string) (before, after []PlannedCre
 			t.Fatal(err)
 		}
 		var sel Selection
-		ctx, _, cp, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel)
+		ctx, cp, err := PlanProfileCredentials(cfg, rc, SelectionInputs{}, &sel)
 		if err != nil {
 			t.Fatalf("PlanProfileCredentials() = %v", err)
 		}
@@ -125,7 +125,8 @@ func planBoth(t *testing.T, harness, profile string) (before, after []PlannedCre
 
 // What a launch sends where does not change with the migration: the key
 // stays with the endpoint the profile set, in the header it used, and a
-// profile env: keeps the variables no gateway carries.
+// profile env: keeps the variables no gateway carries. What no gateway
+// can express exactly is refused when the config loads, never rerouted.
 func TestPlanProfileCredentials_RoutingUnchanged(t *testing.T) {
 	type route struct {
 		name, store, key, url string
@@ -136,53 +137,18 @@ func TestPlanProfileCredentials_RoutingUnchanged(t *testing.T) {
 		want                   []route
 		wantEnv                map[string]string // left in env:
 	}{
-		{"env OPENAI_BASE_URL keeps its key off the vendor", "pi", `
+		{"env x-api-key to the vendor endpoint", "claude", `
 secret: work
 env:
-  OPENAI_BASE_URL: https://llm.corp/v1
-  OPENAI_API_KEY: "{{ .secrets.oa }}"
-`, []route{{"openai", "work", "oa", "", []string{"OPENAI_API_KEY"}}}, map[string]string{"OPENAI_BASE_URL": "https://llm.corp/v1"}},
-		{"env templated ANTHROPIC_BASE_URL keeps its key off the vendor", "claude", `
-secret: work
-env:
-  ANTHROPIC_BASE_URL: "{{ .secrets.url }}"
+  ANTHROPIC_BASE_URL: https://api.anthropic.com
   ANTHROPIC_API_KEY: "{{ .secrets.k }}"
-`, []route{{"anthropic", "work", "k", "", []string{"ANTHROPIC_API_KEY"}}}, map[string]string{"ANTHROPIC_BASE_URL": "{{ .secrets.url }}"}},
-		{"env x-api-key to a custom endpoint", "claude", `
+`, []route{{"anthropic", "work", "k", "https://api.anthropic.com", []string{"ANTHROPIC_API_KEY"}}}, nil},
+		{"env bearer key to a custom endpoint", "claude", `
 secret: work
 env:
   ANTHROPIC_BASE_URL: https://proxy.corp
-  ANTHROPIC_API_KEY: "{{ .secrets.k }}"
-`, []route{{"anthropic", "work", "k", "", []string{"ANTHROPIC_API_KEY"}}}, map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.corp"}},
-		{"credential x-api-key to a custom endpoint", "claude", `
-credentials:
-  corp:
-    backend: age
-    store: work
-    key: k
-    for:
-      claude: {env: [ANTHROPIC_API_KEY], set: {ANTHROPIC_BASE_URL: https://proxy.corp}}
-default_credentials: [corp]
-`, []route{{"corp", "work", "k", "https://proxy.corp", []string{"ANTHROPIC_API_KEY"}}}, nil},
-		{"keyless claude endpoint keeps the login", "claude", `
-credentials:
-  local:
-    for:
-      claude: {set: {ANTHROPIC_BASE_URL: "http://127.0.0.1:4000"}}
-default_credentials: [local]
-`, []route{{"local", "", "", "http://127.0.0.1:4000", nil}}, nil},
-		{"converted and unconverted credential share the one provider slot", "claude", `
-secret: work
-credentials:
-  anthropic: {backend: age, store: work, key: ak}
-  corp:
-    backend: age
-    store: work
-    key: k
-    for:
-      claude: {env: [ANTHROPIC_AUTH_TOKEN], set: {ANTHROPIC_BASE_URL: https://x.corp, ANTHROPIC_MODEL: opus}}
-default_credentials: [anthropic, corp]
-`, []route{{"anthropic", "work", "ak", "https://api.anthropic.com", []string{"ANTHROPIC_API_KEY"}}}, nil},
+  ANTHROPIC_AUTH_TOKEN: "{{ .secrets.k }}"
+`, []route{{"anthropic_auth_token", "work", "k", "https://proxy.corp", []string{"ANTHROPIC_AUTH_TOKEN"}}}, nil},
 		{"env switch keeps the region for pi", "pi", `
 env:
   CLAUDE_CODE_USE_BEDROCK: "1"

@@ -33,7 +33,6 @@ var (
 	ErrCredentialNotFound     = errors.New("credential binding not found")
 	ErrCredentialIncompatible = errors.New("credential binding not usable with harness")
 	ErrCredentialKeyMissing   = errors.New("credential key missing from secret store")
-	ErrEndpointOutsideRoute   = errors.New("provider endpoint outside the credential route")
 )
 
 // CredentialPlan is what a launch injects: binding and env var names,
@@ -233,37 +232,30 @@ func CachingStoreLoader(load StoreLoader) StoreLoader {
 // decryptions.
 var loadSecretStore StoreLoader = secrets.LoadSecretsMap
 
-// profileCredentials returns rc's profile with legacy provider
-// credential env: entries translated into implicit bindings. Legacy
-// entries use the profile's own secret: store (.aide.yaml cannot set
-// one; the loader rejects it), and .aide.yaml may not set provider credentials,
-// selectors or endpoints at all (an endpoint could redirect the
+// profileCredentials returns rc's profile without what became a gateway
+// (the gateway injects that). .aide.yaml may not set provider
+// credentials, selectors or endpoints (an endpoint could redirect the
 // profile's key to a repository-chosen host), nor a harness config-dir
 // variable (that picks the login the profile runs under).
-func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config.Context, []config.LegacyCredential, error) {
+func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config.Context, error) {
 	label := profileLabel(cfg, rc.Name)
 	if po := cfg.ProjectOverride; po != nil {
 		for _, k := range slices.Sorted(maps.Keys(po.Env)) {
 			if envscrub.IsProviderName(k) {
-				return config.Context{}, nil, fmt.Errorf("%w: %s sets %s; repository config cannot set provider credentials, "+
-					"selectors or endpoints. Remove it there and set it for %s in your aide config "+
-					"(credentials: for keys, env: for selectors and endpoints)",
-					config.ErrLegacyCredentialEnv, projectFileSettingEnv(cfg, k), k, label)
+				return config.Context{}, fmt.Errorf("%w: %s sets %s; repository config cannot set provider credentials, "+
+					"selectors or endpoints. Remove it there; a provider endpoint is a gateway in your aide config "+
+					"(aide gateway add)",
+					config.ErrLegacyCredentialEnv, projectFileSettingEnv(cfg, k), k)
 			}
 			if slices.Contains(envscrub.ConfigDirRedirects(), k) {
-				return config.Context{}, nil, fmt.Errorf("%s sets %s; repository config cannot choose a harness's config dir, "+
+				return config.Context{}, fmt.Errorf("%s sets %s; repository config cannot choose a harness's config dir, "+
 					"which holds its login. Remove it there and give %s its dir in your aide config "+
 					"(config_dir_name:, config_dir: or config_dirs:)",
 					projectFileSettingEnv(cfg, k), k, label)
 			}
 		}
 	}
-	// What became a gateway is injected by the gateway, not here.
-	ctx, legacy, err := config.TranslateLegacyCredentials(rc.Context.Residual(), rc.Context.Secret)
-	if err != nil {
-		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
-	}
-	return ctx, legacy, nil
+	return rc.Context.Residual(), nil
 }
 
 // projectFileSettingEnv names the .aide.yaml whose env: sets key.
@@ -272,22 +264,6 @@ func projectFileSettingEnv(cfg *config.Config, key string) string {
 		_, ok := po.Env[key]
 		return ok
 	})
-}
-
-// printLegacyCredentialHints prints each legacy credential's migration
-// hint once per Launcher.
-func (l *Launcher) printLegacyCredentialHints(label string, legacy []config.LegacyCredential) {
-	for _, c := range legacy {
-		key := label + "\x00" + c.EnvVar
-		if l.hintedLegacy[key] {
-			continue
-		}
-		if l.hintedLegacy == nil {
-			l.hintedLegacy = map[string]bool{}
-		}
-		l.hintedLegacy[key] = true
-		fmt.Fprintf(l.stderr(), "aide: note: %s\n", c.Hint(label))
-	}
 }
 
 // storePaths returns the secret store paths plan decrypts, in order,
@@ -310,29 +286,27 @@ func (p CredentialPlan) storePaths() []string {
 // credential precedence to sel, resolves the harness's gateway choice
 // into sel.Gateway (once per harness; asking through sel's prompter on
 // a launch, passively otherwise) and plans the gateways that choice
-// injects by the harness's reach. It returns the profile with legacy
-// env: credentials translated (so their values are not displayed as
-// env) and its gateways in the one-API-per-gateway form, the legacy
-// credentials translated, and the plan.
-func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in SelectionInputs, sel *Selection) (config.Context, []config.LegacyCredential, CredentialPlan, error) {
-	ctx, legacy, err := profileCredentials(cfg, rc)
+// injects by the harness's reach. It returns the profile with its
+// gateways in the one-API-per-gateway form, and the plan.
+func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in SelectionInputs, sel *Selection) (config.Context, CredentialPlan, error) {
+	ctx, err := profileCredentials(cfg, rc)
 	if err != nil {
-		return rc.Context, nil, CredentialPlan{}, err
+		return rc.Context, CredentialPlan{}, err
 	}
 	harnessName := cfg.HarnessOf(ctx.Agent)
 	if sel.gatewayFor != harnessName {
 		if sel.Gateway, sel.ChoiceNotices, err = ResolveChoice(cfg, rc.Name, ctx, harnessName, in, sel.prompt); err != nil {
-			return ctx, legacy, CredentialPlan{}, err
+			return ctx, CredentialPlan{}, err
 		}
 		sel.gatewayFor = harnessName
 		sel.Choices = passiveChoices(cfg, rc.Name, ctx, in)
 		sel.Choices[harnessName] = ResolvedChoice{sel.Gateway, sel.ChoiceNotices}
 	}
-	sel.SelectCredentials(in, ctx.DefaultCredentials)
+	sel.SelectCredentials(in, slices.Sorted(maps.Keys(ctx.Credentials)))
 	sel.dropGatewayNames(ctx)
 	plan, err := sel.PlanCredentials(rc.Name, ctx, harnessName, in.Auth)
 	if err != nil {
-		return ctx, legacy, plan, err
+		return ctx, plan, err
 	}
 	ctx.Gateways = launchGateways(ctx)
 	ctx.Credentials = maps.Clone(ctx.Credentials)
@@ -346,11 +320,8 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 		plan.Bindings = append(plan.Bindings, gatewayBindings(ctx, harnessName, sel.Gateway)...)
 		err = checkKeyStaysWithEndpoint(rc.Name, plan.Bindings)
 	}
-	if err == nil {
-		err = checkEndpointsRouted(profileLabel(cfg, rc.Name), ctx, harnessName, plan, legacy)
-	}
 	if err != nil {
-		return ctx, legacy, plan, err
+		return ctx, plan, err
 	}
 	for _, b := range plan.Bindings {
 		for _, c := range b.Capabilities {
@@ -359,7 +330,7 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 			}
 		}
 	}
-	return ctx, legacy, plan, nil
+	return ctx, plan, nil
 }
 
 // passiveChoices resolves every gateway-capable harness's choice
@@ -379,38 +350,6 @@ func passiveChoices(cfg *config.Config, profile string, ctx config.Context, in S
 		out[d.Name] = ResolvedChoice{c, notices}
 	}
 	return out
-}
-
-// checkEndpointsRouted stops a launch that would send a selected key to
-// a provider endpoint set in the profile's general env: rather than in
-// a selected route's set:. Keys translated from legacy env: entries
-// keep the endpoint the user paired them with there.
-func checkEndpointsRouted(label string, ctx config.Context, harnessName string, plan CredentialPlan, legacy []config.LegacyCredential) error {
-	keyed := ""
-	routed := map[string]bool{}
-	for _, b := range plan.Bindings {
-		for k := range b.Set {
-			routed[k] = true
-		}
-		isLegacy := slices.ContainsFunc(legacy, func(l config.LegacyCredential) bool { return l.Name == b.Name })
-		// A gateway's key goes to its base_url: Claude's route sets the
-		// endpoint, the other harnesses read it from their own config.
-		_, isGateway := ctx.Gateways[b.Name]
-		if keyed == "" && b.Store != "" && !isLegacy && !isGateway {
-			keyed = b.Name
-		}
-	}
-	if keyed == "" {
-		return nil
-	}
-	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
-		if envscrub.IsProviderEndpointName(k) && !routed[k] {
-			return fmt.Errorf("%w: %s: env: %s is a provider endpoint and credential %q would send its key there. "+
-				"Move it into the route that uses it: credentials.%s.for.%s.set.%s",
-				ErrEndpointOutsideRoute, label, k, keyed, keyed, harnessName, k)
-		}
-	}
-	return nil
 }
 
 // SetBannerCredentials records plan on data by name only. A launch

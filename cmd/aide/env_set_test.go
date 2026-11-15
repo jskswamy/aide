@@ -127,7 +127,7 @@ func TestEnvSet_RefusesProviderSecretNames(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected refusal, got success: %s", out)
 			}
-			for _, w := range []string{args[0], "credentials:"} {
+			for _, w := range []string{args[0], "aide gateway add"} {
 				if !strings.Contains(err.Error(), w) {
 					t.Errorf("error %q lacks %q", err, w)
 				}
@@ -144,7 +144,7 @@ func TestEnvSet_RefusesProviderSecretNames(t *testing.T) {
 
 func TestEnvSet_ProviderSelectorsOnlyInUserConfig(t *testing.T) {
 	dir := projectTempDir(t)
-	_, err := runEnvSet(t, "CLAUDE_CODE_USE_BEDROCK", "1")
+	_, err := runEnvSet(t, "CLOUD_ML_REGION", "us-east5")
 	if err == nil || !strings.Contains(err.Error(), "--global") {
 		t.Fatalf("project-level selector error = %v, want a refusal pointing to --global", err)
 	}
@@ -162,8 +162,24 @@ func TestEnvSet_ProviderSelectorsOnlyInUserConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "work.yaml"), []byte("agent: claude\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := runEnvSet(t, "CLAUDE_CODE_USE_BEDROCK", "1", "--global"); err != nil {
+	if out, err := runEnvSet(t, "CLOUD_ML_REGION", "us-east5", "--global"); err != nil {
 		t.Fatalf("global selector refused: %v\n%s", err, out)
+	}
+}
+
+// Endpoints and switches belong to gateways, in any scope.
+func TestEnvSet_RefusesProviderEndpointsAndSwitches(t *testing.T) {
+	for _, key := range []string{"ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"} {
+		for _, args := range [][]string{{key, "x"}, {key, "x", "--global"}} {
+			dir := projectTempDir(t)
+			out, err := runEnvSet(t, args...)
+			if err == nil || !strings.Contains(err.Error(), "aide gateway add") {
+				t.Errorf("%v: error = %v, want a refusal pointing to aide gateway add\n%s", args, err, out)
+			}
+			if _, statErr := os.Stat(filepath.Join(dir, ".aide.yaml")); statErr == nil {
+				t.Error("refused command still wrote .aide.yaml")
+			}
+		}
 	}
 }
 

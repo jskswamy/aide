@@ -179,9 +179,6 @@ func (t *projectTarget) setGateway(p *prefs.Preference, gw, h string) error {
 func (t *projectTarget) check(p prefs.Preference) error {
 	rc := *t.rc
 	in := launcher.SelectionInputs{Agent: p.Harness}
-	if p.LegacyCredentials != nil {
-		in.Credentials, in.CredentialsSet = *p.LegacyCredentials, true
-	}
 	sel, _, err := launcher.SelectHarness(t.cfg, &rc, in, exec.LookPath)
 	if err != nil {
 		return err
@@ -189,7 +186,7 @@ func (t *projectTarget) check(p prefs.Preference) error {
 	if _, err := provision.InjectProfileEnv(t.cfg.HarnessOf(rc.Context.Agent), rc.Context, rc.Context.Env, t.home); err != nil {
 		return fmt.Errorf("profile %q: %w", rc.Name, err)
 	}
-	_, _, _, err = launcher.PlanProfileCredentials(t.cfg, &rc, in, &sel)
+	_, _, err = launcher.PlanProfileCredentials(t.cfg, &rc, in, &sel)
 	return err
 }
 

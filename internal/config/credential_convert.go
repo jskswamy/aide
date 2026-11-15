@@ -329,7 +329,7 @@ func (cv *converter) choices() {
 			continue
 		}
 		v := "none"
-		for _, name := range DefaultCredentialsForHarness(cv.synth, h) {
+		for _, name := range defaultCredentialsForHarness(cv.synth, h) {
 			if !cv.names[name] {
 				continue
 			}

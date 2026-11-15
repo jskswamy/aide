@@ -130,7 +130,7 @@ func TestPlanProfileCredentials_InjectsByReach(t *testing.T) {
 		ctx := choiceCtx(choice)
 		ctx.Agent = agent
 		sel := Selection{}
-		_, _, p, err := PlanProfileCredentials(cfg, &aidectx.ResolvedContext{Name: "work", Context: ctx}, SelectionInputs{}, &sel)
+		_, p, err := PlanProfileCredentials(cfg, &aidectx.ResolvedContext{Name: "work", Context: ctx}, SelectionInputs{}, &sel)
 		if err != nil {
 			t.Fatalf("%s: %v", agent, err)
 		}
@@ -376,7 +376,7 @@ func TestResolveChoice_SavedNonGatewaySelectionIsNone(t *testing.T) {
 		t.Fatalf("choice = %+v, %v, want repo none", got, err)
 	}
 	sel := Selection{}
-	if _, _, _, err := PlanProfileCredentials(&config.Config{}, &aidectx.ResolvedContext{Name: "work", Context: ctx}, in, &sel); err != nil {
+	if _, _, err := PlanProfileCredentials(&config.Config{}, &aidectx.ResolvedContext{Name: "work", Context: ctx}, in, &sel); err != nil {
 		t.Errorf("PlanProfileCredentials: %v", err)
 	}
 }

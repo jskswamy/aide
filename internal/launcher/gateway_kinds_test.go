@@ -85,7 +85,7 @@ func TestPlanProfileCredentials_ProviderSwitchOpensItsCapability(t *testing.T) {
 			"aws": {Preset: "bedrock", Region: "eu-west-1"},
 		},
 	}}
-	ctx, _, plan, err := PlanProfileCredentials(&config.Config{}, rc, SelectionInputs{}, &Selection{})
+	ctx, plan, err := PlanProfileCredentials(&config.Config{}, rc, SelectionInputs{}, &Selection{})
 	if err != nil {
 		t.Fatal(err)
 	}

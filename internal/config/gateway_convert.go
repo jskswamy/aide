@@ -95,7 +95,7 @@ func ConvertLegacyGateways(ctx Context) (gateways map[string]GatewayConfig, rena
 func ConvertLegacy(ctx Context) LegacyConversion {
 	cv := &converter{ctx: ctx, LegacyConversion: LegacyConversion{Gateways: map[string]GatewayConfig{}}}
 	cv.ctx2 = ctx
-	if t, l, err := TranslateLegacyCredentials(ctx, ctx.Secret); err == nil {
+	if t, l, err := implicitCredentials(ctx, ctx.Secret); err == nil {
 		cv.ctx2, cv.implicit = t, l
 	}
 	cv.synth, cv.err = synthesizeGatewayCredentials(cv.ctx2)
@@ -177,7 +177,7 @@ func (cv *converter) gateways() {
 		}
 		cv.made = append(cv.made, name)
 		served := gw.EffectiveHarnesses()
-		codexUsed := slices.Contains(gw.Harnesses, "codex") || slices.Contains(DefaultCredentialsForHarness(cv.synth, "codex"), old)
+		codexUsed := slices.Contains(gw.Harnesses, "codex") || slices.Contains(defaultCredentialsForHarness(cv.synth, "codex"), old)
 		conv := gw
 		conv.BaseURL, conv.URL, conv.NoAuth = "", gw.BaseURL, gw.Key == ""
 		conv.API, conv.Preset = apiAnthropicMessages, "" // converted gateways are custom url+api

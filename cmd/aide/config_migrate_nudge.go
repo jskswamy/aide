@@ -87,14 +87,6 @@ func saveConfigWithMigrationPromptIO(cfg *config.Config, cfgPath, home string, i
 	if err != nil {
 		return fmt.Errorf("reading %s for backup: %w", cfgPath, err)
 	}
-	// Migrate legacy credentials on cfg if it was using the contexts: schema
-	if !cfg.ProfileSchema {
-		for name, ctx := range cfg.Contexts {
-			if translated, legacy, terr := config.TranslateLegacyCredentials(ctx, ctx.Secret); terr == nil && len(legacy) > 0 {
-				cfg.Contexts[name] = translated
-			}
-		}
-	}
 	cfg.ProfileSchema = true
 	cfg.LegacyMonolithic = false
 

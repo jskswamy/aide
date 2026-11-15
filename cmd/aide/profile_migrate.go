@@ -35,8 +35,9 @@ the new file is written atomically.
 
   contexts: -> profiles:, default_context: -> default_profile:
   profile: -> config_dir_name:, profile_dir: -> config_dir:
-  env: provider keys templated from the profile's secret: store
-    -> credentials: bindings selected by default_credentials:
+
+Provider keys and endpoints are converted to gateways by the gateway
+migration, not by this command.
 
 Comments, unrelated keys and native config dirs are kept, so no login
 moves. .aide.yaml files are never changed, and launching aide never
@@ -262,19 +263,6 @@ func printMigrationSummary(out io.Writer, m *config.Migration) {
 		fmt.Fprintln(out, "Renamed:")
 		for _, r := range m.Renamed {
 			fmt.Fprintf(out, "  %s\n", r)
-		}
-	}
-	if len(m.Credentials) > 0 {
-		fmt.Fprintln(out, "Provider keys moved from env: to credentials: (values stay in the secret store):")
-		for _, c := range m.Credentials {
-			fmt.Fprintf(out, "  profile %s: %s -> credential %s (store %s, key %s)", c.Profile, c.EnvVar, c.Name, c.Store, c.Key)
-			if len(c.Harnesses) > 0 {
-				fmt.Fprintf(out, "; custom name, limited to harnesses: [%s]", strings.Join(c.Harnesses, ", "))
-			}
-			if len(c.Set) > 0 {
-				fmt.Fprintf(out, "; endpoint %s moved into its %s route", strings.Join(slices.Sorted(maps.Keys(c.Set)), ", "), c.Harness)
-			}
-			fmt.Fprintln(out)
 		}
 	}
 	fmt.Fprintln(out, "Comments, unrelated keys and native config dirs are kept (blank lines and indentation are normalized). .aide.yaml files are not changed.")

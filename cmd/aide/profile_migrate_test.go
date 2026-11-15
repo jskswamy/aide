@@ -131,7 +131,7 @@ func TestProfileMigrate_PreviewWritesNothing(t *testing.T) {
 		t.Fatalf("migrate: %v\n%s", err, out)
 	}
 	for _, want := range []string{"profiles:", "default_profile: personal", "config_dir_name: work",
-		"credentials:", "nothing written", "--write", "personal"} {
+		"nothing written", "--write", "personal"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("preview missing %q:\n%s", want, out)
 		}
@@ -171,8 +171,7 @@ func TestProfileMigrate_WriteKeepsOwnershipWithoutFalseDrift(t *testing.T) {
 		t.Fatalf("backup missing or wrong (%v):\n%s", err, bak)
 	}
 	written, _ := os.ReadFile(cfgPath)
-	if strings.Contains(string(written), "contexts:") || strings.Contains(string(written), ".secrets.") ||
-		!strings.Contains(string(written), "# my aide config") {
+	if strings.Contains(string(written), "contexts:") || !strings.Contains(string(written), "# my aide config") {
 		t.Errorf("config.yaml not migrated or comment lost:\n%s", written)
 	}
 

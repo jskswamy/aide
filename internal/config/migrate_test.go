@@ -3,7 +3,6 @@ package config
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -27,7 +26,6 @@ contexts:
       - remote: github.com/acme/*
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_key }}"
-      GROQ_API_KEY: "{{ .secrets.groq }}"
       EDITOR: vim
   oss:
     agent: claude
@@ -96,36 +94,19 @@ func TestMigrateProfiles_KeepsComments(t *testing.T) {
 	}
 }
 
-func TestMigrateProfiles_LegacyCredentialEnvBecomesBindings(t *testing.T) {
-	m := migrate(t, legacyMigrateConfig)
-	cfg := decodeMigrated(t, m)
-	work := cfg.Contexts["work"]
-	if _, ok := work.Env["ANTHROPIC_API_KEY"]; ok {
-		t.Errorf("ANTHROPIC_API_KEY still in env: %+v", work.Env)
+// Provider keys in env: are converted into gateways by the gateway
+// migration, not here: the schema migration leaves them where they are.
+func TestMigrateProfiles_LeavesProviderKeysForTheGatewayMigration(t *testing.T) {
+	work := decodeMigrated(t, migrate(t, legacyMigrateConfig)).Contexts["work"]
+	if work.Env["ANTHROPIC_API_KEY"] != "{{ .secrets.anthropic_key }}" || work.Env["EDITOR"] != "vim" {
+		t.Errorf("env = %+v, want it unchanged", work.Env)
 	}
-	if work.Env["EDITOR"] != "vim" {
-		t.Errorf("ordinary env lost: %+v", work.Env)
-	}
-	a := work.Credentials["anthropic"]
-	if a.Backend != "age" || a.Store != "work" || a.Key != "anthropic_key" {
-		t.Errorf("anthropic binding = %+v", a)
-	}
-	g := work.Credentials["groq_api_key"]
-	if g.Key != "groq" || len(g.Env) != 1 || g.Env[0] != "GROQ_API_KEY" || len(g.Harnesses) != 1 || g.Harnesses[0] != "claude" {
-		t.Errorf("custom binding = %+v", g)
-	}
-	if strings.Join(work.DefaultCredentials, ",") != "anthropic,groq_api_key" {
-		t.Errorf("default_credentials = %v", work.DefaultCredentials)
-	}
-	if len(m.Credentials) != 2 || m.Credentials[0].Profile != "work" || m.Credentials[0].EnvVar != "ANTHROPIC_API_KEY" {
-		t.Errorf("credential report = %+v", m.Credentials)
-	}
-	if strings.Contains(string(m.Output), ".secrets.") {
-		t.Errorf("secret template left behind:\n%s", m.Output)
+	if len(work.Credentials) != 0 || len(work.DefaultCredentials) != 0 {
+		t.Errorf("credentials = %+v, default_credentials = %v, want none", work.Credentials, work.DefaultCredentials)
 	}
 }
 
-func TestMigrateProfiles_UntranslatableCredentialFails(t *testing.T) {
+func TestMigrateProfiles_ProviderKeyThatCannotConvertFails(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	_, err := MigrateProfiles([]byte(`contexts:
@@ -134,8 +115,8 @@ func TestMigrateProfiles_UntranslatableCredentialFails(t *testing.T) {
     env:
       ANTHROPIC_API_KEY: sk-literal-value
 `), MigrateOptions{Home: home})
-	if !errors.Is(err, ErrLegacyCredentialEnv) {
-		t.Fatalf("err = %v, want ErrLegacyCredentialEnv", err)
+	if !errors.Is(err, ErrInvalidCredentials) || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Fatalf("err = %v, want ErrInvalidCredentials naming the key", err)
 	}
 	if strings.Contains(err.Error(), "sk-literal-value") {
 		t.Errorf("error printed the value: %v", err)
@@ -224,8 +205,7 @@ func TestMigrateProfiles_AnchorsInMigratedFileWithNothingToDo(t *testing.T) {
 	}
 }
 
-// Every migrated profile keeps its effective env: except the moved
-// credential entries.
+// Every migrated profile keeps its effective env:.
 func TestMigrateProfiles_EffectiveEnvKept(t *testing.T) {
 	m := migrate(t, legacyMigrateConfig)
 	var before Config
@@ -233,25 +213,9 @@ func TestMigrateProfiles_EffectiveEnvKept(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := decodeMigrated(t, m)
-	moved := map[string]bool{}
-	for _, c := range m.Credentials {
-		moved[c.Profile+"/"+c.EnvVar] = true
-	}
 	for name, ctx := range before.Contexts {
-		for k, v := range ctx.Env {
-			got, ok := after.Contexts[name].Env[k]
-			if moved[name+"/"+k] {
-				if ok {
-					t.Errorf("%s: moved %s still in env", name, k)
-				}
-				continue
-			}
-			if !ok || got != v {
-				t.Errorf("%s: env %s = %q (present %v), want %q", name, k, got, ok, v)
-			}
-		}
-		if len(after.Contexts[name].Env) > len(ctx.Env) {
-			t.Errorf("%s: env grew: %v", name, after.Contexts[name].Env)
+		if !maps.Equal(ctx.Env, after.Contexts[name].Env) {
+			t.Errorf("%s: env = %v, want %v", name, after.Contexts[name].Env, ctx.Env)
 		}
 	}
 }
@@ -261,59 +225,17 @@ func TestCheckEnvKept_RejectsDroppedVars(t *testing.T) {
 	if err := yaml.Unmarshal([]byte("contexts:\n  work:\n    agent: claude\n    env: {EDITOR: vim, A: b}\n"), &before); err != nil {
 		t.Fatal(err)
 	}
-	err := checkEnvKept(&before, []byte("profiles:\n  work:\n    agent: claude\n    env: {A: b}\n"), nil)
+	err := checkEnvKept(&before, []byte("profiles:\n  work:\n    agent: claude\n    env: {A: b}\n"))
 	if err == nil {
 		t.Fatal("dropped EDITOR not detected")
 	}
-	if err := checkEnvKept(&before, []byte("profiles:\n  work:\n    agent: claude\n    env: {A: b, EDITOR: vim}\n"), nil); err != nil {
+	if err := checkEnvKept(&before, []byte("profiles:\n  work:\n    agent: claude\n    env: {A: b, EDITOR: vim}\n")); err != nil {
 		t.Errorf("unchanged env rejected: %v", err)
 	}
 }
 
-func TestMigrateProfiles_CustomCredentialWithoutKnownHarness(t *testing.T) {
-	for name, agent := range map[string]string{"no agent": "", "unknown": "    agent: mytool\n"} {
-		t.Run(name, func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			body := "contexts:\n  work:\n" + agent + "    secret: work\n    env:\n      GROQ_API_KEY: \"{{ .secrets.groq }}\"\n"
-			_, err := MigrateProfiles([]byte(body), MigrateOptions{Home: home})
-			if !errors.Is(err, ErrLegacyCredentialEnv) || !strings.Contains(err.Error(), "not a known harness") {
-				t.Fatalf("err = %v", err)
-			}
-			if strings.Contains(err.Error(), `"."`) {
-				t.Errorf("confusing harness name in error: %v", err)
-			}
-		})
-	}
-}
-
-func TestMigrateProfiles_EndpointMovesIntoTheKeysRoute(t *testing.T) {
-	m := migrate(t, `profiles:
-  work:
-    agent: claude
-    secret: work
-    env:
-      ANTHROPIC_AUTH_TOKEN: "{{ .secrets.or_key }}"
-      ANTHROPIC_BASE_URL: https://openrouter.ai/api
-      EDITOR: vim
-`)
-	work := decodeMigrated(t, m).Contexts["work"]
-	if _, ok := work.Env["ANTHROPIC_BASE_URL"]; ok || work.Env["EDITOR"] != "vim" {
-		t.Errorf("env = %v, want the endpoint moved and EDITOR kept", work.Env)
-	}
-	b := work.Credentials["anthropic_auth_token"]
-	r := b.For["claude"]
-	if r.Set["ANTHROPIC_BASE_URL"] != "https://openrouter.ai/api" || !slices.Equal(r.Env, []string{"ANTHROPIC_AUTH_TOKEN"}) ||
-		len(b.Env) != 0 || len(b.Harnesses) != 0 {
-		t.Errorf("binding = %+v, want the key and endpoint in for.claude", b)
-	}
-	if !strings.Contains(fmt.Sprint(m.Credentials), "ANTHROPIC_BASE_URL") {
-		t.Errorf("report should name the moved endpoint: %+v", m.Credentials)
-	}
-}
-
 func TestMigrateProfiles_TemplatedEndpointStops(t *testing.T) {
-	_, err := MigrateProfiles([]byte(`profiles:
+	_, err := MigrateProfiles([]byte(`contexts:
   work:
     agent: claude
     secret: work

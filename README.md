@@ -287,9 +287,9 @@ aide --with k8s docker
 agent: claude
 capabilities: [docker, k8s, gcp]
 secret: work
-credentials:
-  anthropic: {backend: age, store: work, key: anthropic_api_key}
-default_credentials: [anthropic]
+gateways:
+  anthropic: {preset: anthropic, store: work, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 ```
 
 **Need something not in the list?** Create your own in one command:
@@ -341,7 +341,7 @@ All config lives under `~/.config/aide/` (or `$XDG_CONFIG_HOME/aide/`), split by
 agent: claude
 secret: personal
 env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+  GITHUB_TOKEN: "{{ .secrets.github_token }}"
 ```
 
 **Multi-profile config:**
@@ -360,7 +360,6 @@ agent: claude
 capabilities: [docker, k8s, aws]
 secret: work
 env:
-  CLAUDE_CODE_USE_BEDROCK: "1"
   AWS_PROFILE: "{{ .secrets.aws_profile }}"
 ```
 
@@ -370,9 +369,9 @@ match:
   - remote: "github.com/myuser/*"
 agent: codex
 secret: personal
-credentials:
-  openai: {backend: age, store: personal, key: openai_api_key}
-default_credentials: [openai]
+gateways:
+  openai: {preset: openai, store: personal, key: openai_api_key}
+gateway_choice: {codex: openai}
 ```
 
 ```yaml
@@ -382,8 +381,7 @@ match:
 agent: aider
 secret: personal
 credentials:
-  anthropic: {backend: age, store: personal, key: anthropic_api_key}
-default_credentials: [anthropic]
+  anthropic: {backend: age, store: personal, key: anthropic_api_key, harnesses: [aider]}
 ```
 
 Profiles match git remote URL patterns and directory path globs. The most specific match wins. `default_profile` is the fallback. See [docs/configuration.md](docs/configuration.md) for the full reference.

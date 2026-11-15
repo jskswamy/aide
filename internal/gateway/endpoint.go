@@ -34,16 +34,14 @@ func Endpoint(gw config.GatewayConfig) EndpointSpec {
 		Header:  gatewaypreset.HeaderBearer,
 		Keyless: gw.NoAuth,
 	}
-	if p, ok := gatewaypreset.Lookup(gw.Preset); ok {
-		if p.Kind == gatewaypreset.KindProviderSwitch {
+	// A url that differs from the preset's was set on purpose (gateway edit --url);
+	// ResolvedPreset then says no, so the key goes where the user pointed it.
+	if p, ok := gw.ResolvedPreset(); ok {
+		if p.Switch != nil {
 			return EndpointSpec{Switch: p.Switch}
 		}
-		// A url that differs from the preset's was set on purpose (gateway edit --url):
-		// resolve it as a custom gateway so the key goes where the user pointed it.
-		if ep.BaseURL == "" || NormalizeBaseURL(ep.BaseURL) == NormalizeBaseURL(p.BaseURL) {
-			ep.BaseURL, ep.API, ep.Header = p.BaseURL, p.API, p.Header
-			ep.Keyless = ep.Keyless || p.Kind == gatewaypreset.KindKeylessLoopback
-		}
+		ep.BaseURL, ep.API, ep.Header = p.BaseURL, p.API, p.Header
+		ep.Keyless = ep.Keyless || p.Kind == gatewaypreset.KindKeylessLoopback
 	}
 	if ep.API == gatewaypreset.APIAnthropicMessages {
 		ep.BaseURL = NormalizeBaseURL(ep.BaseURL)

@@ -638,11 +638,15 @@ func TestMaterialize_NoAuthPiOpenCodeCodex(t *testing.T) {
 	writeFile(t, filepath.Join(f.dir("codex"), "config.toml"), ``)
 
 	for _, h := range []string{"pi", "opencode", "codex"} {
-		st, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, h, f.home, false)
+		gw := f.gw
+		if h == "codex" {
+			gw.API = "openai-responses"
+		}
+		st, err := MaterializeHarness(f.ctx, "corp", gw, f.cat, h, f.home, false)
 		if err != nil || st.State != StateSynced || st.EnvVar != "" {
 			t.Fatalf("%s MaterializeHarness() = %+v, %v", h, st, err)
 		}
-		if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, h, f.home); got.State != StateSynced {
+		if got := InspectHarness(f.ctx, "corp", gw, f.cat, h, f.home); got.State != StateSynced {
 			t.Errorf("%s InspectHarness() = %+v, want synced", h, got)
 		}
 	}
@@ -655,20 +659,20 @@ func TestMaterialize_NoAuthPiOpenCodeCodex(t *testing.T) {
 		t.Fatal(err)
 	}
 	corp := piDoc.Providers["aide-corp"]
-	if corp["apiKey"] != "corp" || corp["authHeader"] != false {
-		t.Errorf("pi provider = %v, want apiKey=corp authHeader=false", corp)
+	if corp["apiKey"] != "aide-no-auth" || corp["authHeader"] != false {
+		t.Errorf("pi provider = %v, want apiKey=aide-no-auth authHeader=false", corp)
 	}
 	// Hand-edited literal placeholder keys remain synced; env/command refs or missing keys become stale.
 	rawPi := readFile(t, piPath)
-	writeFile(t, piPath, strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "ollama"`, 1))
+	writeFile(t, piPath, strings.Replace(rawPi, `"apiKey": "aide-no-auth"`, `"apiKey": "ollama"`, 1))
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home); got.State != StateSynced {
 		t.Errorf("InspectHarness(pi literal placeholder) = %+v, want synced", got)
 	}
 	for _, bad := range []string{
-		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": ""`, 1),
-		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "$CORP_TOKEN"`, 1),
-		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "Bearer $CORP_TOKEN"`, 1),
-		strings.Replace(rawPi, `"apiKey": "corp"`, `"apiKey": "!echo x"`, 1),
+		strings.Replace(rawPi, `"apiKey": "aide-no-auth"`, `"apiKey": ""`, 1),
+		strings.Replace(rawPi, `"apiKey": "aide-no-auth"`, `"apiKey": "$CORP_TOKEN"`, 1),
+		strings.Replace(rawPi, `"apiKey": "aide-no-auth"`, `"apiKey": "Bearer $CORP_TOKEN"`, 1),
+		strings.Replace(rawPi, `"apiKey": "aide-no-auth"`, `"apiKey": "!echo x"`, 1),
 		strings.Replace(rawPi, `"authHeader": false`, `"authHeader": true`, 1),
 	} {
 		writeFile(t, piPath, bad)
@@ -770,6 +774,7 @@ func TestMaterialize_OpenCode(t *testing.T) {
 
 func TestMaterialize_Codex(t *testing.T) {
 	f := newFixture(t)
+	f.gw.API = "openai-responses"
 	path := filepath.Join(f.dir("codex"), "config.toml")
 	writeFile(t, path, "model = \"gpt-5\"\n\n[mcp_servers.fs]\ncommand = \"fs\"\n")
 	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home, false); err != nil {
@@ -1063,6 +1068,7 @@ func TestSync_FetchErrorWritesNothing(t *testing.T) {
 
 func TestRemoveFromHarness_LeavesOtherURLsEntries(t *testing.T) {
 	f := newFixture(t)
+	f.gw.API = "openai-responses"
 	other := f.gw
 	other.BaseURL = "https://someone-else.example.com"
 	otherCat := *f.cat
@@ -1210,6 +1216,7 @@ func TestMaterialize_RemovesLegacyBareEntries(t *testing.T) {
 // A split-off <gw>-codex leaves no pin behind for the bare <gw> entry.
 func TestPrune_CodexSplitDropsBareEntryAndPin(t *testing.T) {
 	f := newFixture(t)
+	f.gw.API = "openai-responses"
 	path := filepath.Join(f.dir("codex"), "config.toml")
 	writeFile(t, path, "model_provider = 'corp'\n[model_providers.corp]\nbase_url = 'https://gw.example.com/v1'\n")
 	f.ctx.Gateways = map[string]config.GatewayConfig{"corp-codex": f.gw}

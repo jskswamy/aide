@@ -1,7 +1,6 @@
 package config
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -198,7 +197,7 @@ func validateGateway(name string, gw GatewayConfig, ctx Context, neverAllowEnv [
 			return fmt.Errorf("env: %s already becomes credential %q at launch; give the gateway another name", k, name)
 		}
 	}
-	if err := checkGatewayURL(cmp.Or(gw.BaseURL, gw.URL)); err != nil {
+	if err := checkGatewayURL(gw.BaseURL); err != nil {
 		return err
 	}
 	switch {

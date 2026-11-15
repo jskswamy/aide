@@ -59,7 +59,11 @@ func ConvertLegacyGateways(ctx Context) (gateways map[string]GatewayConfig, rena
 		}
 		name := old
 		if reservedGatewayName(old) {
-			name = unique(old + "-gw")
+			base := old + "-gw"
+			if strings.HasPrefix(strings.ToLower(old), "aide-") {
+				base = "gw-" + old // old+"-gw" would still be reserved
+			}
+			name = unique(base)
 		}
 		served := gw.EffectiveHarnesses()
 		codexUsed := slices.Contains(gw.Harnesses, "codex") || slices.Contains(DefaultCredentialsForHarness(synth, "codex"), old)

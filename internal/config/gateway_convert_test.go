@@ -145,3 +145,67 @@ func TestLoadTranslatesLegacyGatewaysWithoutChangingWrites(t *testing.T) {
 		t.Errorf("legacy write changed:\n%s", out)
 	}
 }
+
+func TestConvertLegacyGatewaysAidePrefixRenamed(t *testing.T) {
+	for _, old := range []string{"aide-foo", "AIDE-foo"} {
+		got, renames := ConvertLegacyGateways(Context{Gateways: map[string]GatewayConfig{
+			old: {BaseURL: "https://gw.example.com", Harnesses: []string{"claude"}}}})
+		want := "gw-" + old
+		if _, ok := got[want]; !ok || len(got) != 1 || renames["claude"][old] != want {
+			t.Errorf("%s: got %v renames %v", old, got, renames)
+		}
+	}
+}
+
+func TestConvertLegacyGatewaysKeylessAndReservedCodex(t *testing.T) {
+	got, _ := ConvertLegacyGateways(Context{Gateways: map[string]GatewayConfig{
+		"a": {BaseURL: "http://127.0.0.1:11434"}}})
+	if !got["a"].NoAuth || !got["a-codex"].NoAuth {
+		t.Errorf("keyless: %+v", got)
+	}
+	got, renames := ConvertLegacyGateways(Context{Gateways: map[string]GatewayConfig{
+		"none": {BaseURL: "https://gw.example.com", Key: "k"}}})
+	if _, ok := got["none-gw-codex"]; !ok || renames["codex"]["none"] != "none-gw-codex" || renames["claude"]["none"] != "none-gw" {
+		t.Errorf("got %v renames %v", got, renames)
+	}
+}
+
+const choiceProfile = `profiles:
+  work:
+    agent: claude
+    config_dir_name: work
+    gateway_choice:
+      claude: none
+      codex: ghost
+    gateways:
+      a:
+        base_url: https://gw.example.com
+        store: s
+        key: k
+default_profile: work
+`
+
+func TestLoadDecodesGatewayChoiceAndWarnsStale(t *testing.T) {
+	var buf strings.Builder
+	old := loadWarnings
+	loadWarnings = &buf
+	t.Cleanup(func() { loadWarnings = old })
+	cfg, err := loadYAML(t, choiceProfile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	ctx := cfg.Contexts["work"]
+	if ctx.GatewayChoice["claude"] != "none" || len(ctx.ConvertedGateways) == 0 {
+		t.Errorf("ctx = %+v", ctx)
+	}
+	if !strings.Contains(buf.String(), `gateway_choice.codex: gateway "ghost" is not defined`) {
+		t.Errorf("warnings = %q", buf.String())
+	}
+}
+
+func TestLoadRejectsURLOnlyGateway(t *testing.T) {
+	body := strings.Replace(choiceProfile, "base_url:", "url:", 1)
+	if _, err := loadYAML(t, body); err == nil {
+		t.Fatal("Load() accepted a gateway with url and no base_url")
+	}
+}

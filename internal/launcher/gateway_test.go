@@ -76,14 +76,21 @@ default_profile: work
 // agent env and stderr.
 func launchGateway(t *testing.T, home, cfg, agent string, auth AuthMode, creds ...string) ([]string, string) {
 	t.Helper()
+	env, _, stderr := launchGatewayArgs(t, home, cfg, agent, auth, creds...)
+	return env, stderr
+}
+
+// launchGatewayArgs is launchGateway that also returns the agent's args.
+func launchGatewayArgs(t *testing.T, home, cfg, agent string, auth AuthMode, creds ...string) ([]string, []string, string) {
+	t.Helper()
 	t.Setenv("HOME", home)
 	configDir := t.TempDir()
 	writeMinimalConfig(t, configDir, cfg)
 	ctrl := gomock.NewController(t)
-	var env []string
+	var env, args []string
 	mockExec := mocks.NewMockExecer(ctrl)
 	mockExec.EXPECT().Exec(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ string, _ []string, e []string) error { env = e; return nil }).MaxTimes(1)
+		DoAndReturn(func(_ string, a []string, e []string) error { args, env = a, e; return nil }).MaxTimes(1)
 	var stderr bytes.Buffer
 	l := &Launcher{
 		Execer:    mockExec,
@@ -101,12 +108,17 @@ func launchGateway(t *testing.T, home, cfg, agent string, auth AuthMode, creds .
 	if strings.Contains(stderr.String(), gatewayTestToken) {
 		t.Error("stderr contains the gateway token")
 	}
-	return env, stderr.String()
+	return env, args, stderr.String()
 }
 
 func seedCache(t *testing.T, home, baseURL string, age time.Duration, ids ...string) {
 	t.Helper()
-	cat := &gateway.CachedCatalogue{Profile: "work", Gateway: "corp", BaseURL: baseURL, FetchedAt: time.Now().Add(-age)}
+	seedGatewayCache(t, home, "corp", baseURL, age, ids...)
+}
+
+func seedGatewayCache(t *testing.T, home, name, baseURL string, age time.Duration, ids ...string) {
+	t.Helper()
+	cat := &gateway.CachedCatalogue{Profile: "work", Gateway: name, BaseURL: baseURL, FetchedAt: time.Now().Add(-age)}
 	for _, id := range ids {
 		cat.Models = append(cat.Models, gateway.Model{ID: id, DisplayName: id})
 	}
@@ -181,8 +193,8 @@ func TestLauncher_GatewayWarmLaunchMakesNoRequest(t *testing.T) {
 
 	// First launch materializes Pi's file from the fresh cache.
 	env, stderr := launchGateway(t, home, gatewayConfig(gs.URL), "", "")
-	if got, _ := envValue(env, "CORP_TOKEN"); got != gatewayTestToken {
-		t.Errorf("CORP_TOKEN = %q, want the gateway token", got)
+	if got, _ := envValue(env, "AIDE_GW_CORP_KEY"); got != gatewayTestToken {
+		t.Errorf("AIDE_GW_CORP_KEY = %q, want the gateway token", got)
 	}
 	if !strings.Contains(stderr, `materialized 1 cached models for gateway "corp"`) {
 		t.Errorf("no materialize notice:\n%s", stderr)
@@ -206,6 +218,8 @@ func TestLauncher_GatewayHarnessSwitchMaterializes(t *testing.T) {
 	gs := newGatewayServer(t, `{"data":[]}`)
 	home := t.TempDir()
 	seedCache(t, home, gs.URL, time.Hour, "m1", "m2")
+	// Codex speaks the Responses API, so it gets its own split-off gateway.
+	seedGatewayCache(t, home, "corp-codex", gs.URL, time.Hour, "m1", "m2")
 
 	for _, agent := range []string{"pi", "opencode", "codex", "claude"} {
 		_, stderr := launchGateway(t, home, gatewayConfig(gs.URL), agent, "")
@@ -275,7 +289,7 @@ func TestLauncher_GatewayColdLaunchFailureStillLaunches(t *testing.T) {
 	if !strings.Contains(stderr, `aide: warning: could not fetch initial models for gateway "corp"`) {
 		t.Errorf("no cold-launch warning:\n%s", stderr)
 	}
-	if got, _ := envValue(env, "CORP_TOKEN"); got != gatewayTestToken {
+	if got, _ := envValue(env, "AIDE_GW_CORP_KEY"); got != gatewayTestToken {
 		t.Error("launch without a catalogue dropped the token")
 	}
 }
@@ -339,8 +353,8 @@ func TestLauncher_GatewayIgnoresProfileEndpointForOtherHarnesses(t *testing.T) {
 	cfg := strings.Replace(gatewayConfig(gs.URL), "    config_dir_name: work\n",
 		"    config_dir_name: work\n    env:\n      ANTHROPIC_BASE_URL: https://proxy.example.com\n", 1)
 	env, _ := launchGateway(t, home, cfg, "pi", "")
-	if got, _ := envValue(env, "CORP_TOKEN"); got != gatewayTestToken {
-		t.Errorf("CORP_TOKEN = %q", got)
+	if got, _ := envValue(env, "AIDE_GW_CORP_KEY"); got != gatewayTestToken {
+		t.Errorf("AIDE_GW_CORP_KEY = %q", got)
 	}
 }
 

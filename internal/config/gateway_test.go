@@ -220,8 +220,8 @@ func TestGateway_SynthesizeCredentials(t *testing.T) {
 	}
 	for _, h := range []string{"pi", "opencode", "codex"} {
 		r, ok := b.Route("corp", h)
-		if !ok || !slices.Equal(r.Env, []string{"CORP_TOKEN"}) || len(r.Set) != 0 {
-			t.Errorf("%s route = %+v, %v; want env [CORP_TOKEN]", h, r, ok)
+		if !ok || !slices.Equal(r.Env, []string{"AIDE_GW_CORP_KEY"}) || len(r.Set) != 0 {
+			t.Errorf("%s route = %+v, %v; want env [AIDE_GW_CORP_KEY]", h, r, ok)
 		}
 	}
 	if _, ok := b.Route("corp", "gemini"); ok {
@@ -229,9 +229,6 @@ func TestGateway_SynthesizeCredentials(t *testing.T) {
 	}
 	if !slices.Equal(got.DefaultCredentials, []string{"corp"}) {
 		t.Errorf("DefaultCredentials = %v, want [corp]", got.DefaultCredentials)
-	}
-	if err := validateBinding("corp", b); err != nil {
-		t.Errorf("synthesized binding fails validation: %v", err)
 	}
 }
 
@@ -331,8 +328,8 @@ func TestGatewayConfig_RequiresToken(t *testing.T) {
 
 func TestGateway_TokenEnvNoAuth(t *testing.T) {
 	gw := GatewayConfig{BaseURL: "http://127.0.0.1:11434"}
-	if gw.TokenEnv("claude") != "" || gw.TokenEnv("pi") != "" {
-		t.Fatalf("TokenEnv = claude %q pi %q", gw.TokenEnv("claude"), gw.TokenEnv("pi"))
+	if gw.TokenEnv("local", "claude") != "" || gw.TokenEnv("local", "pi") != "" {
+		t.Fatalf("TokenEnv = claude %q pi %q", gw.TokenEnv("local", "claude"), gw.TokenEnv("local", "pi"))
 	}
 }
 
@@ -420,7 +417,7 @@ func TestGateway_CredentialScrubNames(t *testing.T) {
 	}
 	got := cfg.CredentialScrubNames()
 	for _, want := range []string{
-		"CORP_TOKEN", "BETA_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+		"CORP_TOKEN", "AIDE_GW_CORP_KEY", "AIDE_GW_GW_BETA_KEY", "BETA_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
 		"ANTHROPIC_API_KEY", "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
 	} {
 		if !slices.Contains(got, want) {
@@ -482,9 +479,19 @@ func TestGateway_KeylessRemoteWarnsOnLoad(t *testing.T) {
 }
 
 func TestGateway_KeylessClaudeRouteSetsPlaceholder(t *testing.T) {
-	b := gatewayBinding(GatewayConfig{BaseURL: "http://127.0.0.1:11434", Harnesses: []string{"claude"}})
+	b := GatewayBinding("local", GatewayConfig{BaseURL: "http://127.0.0.1:11434", Harnesses: []string{"claude"}})
 	r := b.For["claude"]
 	if len(r.Env) != 0 || r.Set["ANTHROPIC_AUTH_TOKEN"] != KeylessPlaceholder || r.Set["ANTHROPIC_API_KEY"] != "" {
 		t.Errorf("route = %+v", r)
+	}
+}
+
+func TestGateway_TokenEnvIsPerGatewayKeyVar(t *testing.T) {
+	gw := GatewayConfig{BaseURL: "https://gw.example.com", Store: "s", Key: "corp_token"}
+	if got := gw.TokenEnv("my-corp", "pi"); got != "AIDE_GW_MY_CORP_KEY" {
+		t.Errorf("pi TokenEnv = %q, want AIDE_GW_MY_CORP_KEY", got)
+	}
+	if got := gw.TokenEnv("my-corp", "claude"); got != "ANTHROPIC_AUTH_TOKEN" {
+		t.Errorf("claude TokenEnv = %q, want Claude's fixed variable", got)
 	}
 }

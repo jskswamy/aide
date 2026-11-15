@@ -43,10 +43,10 @@ func detectAmbientProviderKeys(
 			excluded[e] = true
 		}
 	}
-	for _, gw := range ctx.Gateways {
+	for name, gw := range ctx.Gateways {
 		excluded[gw.EnvVarName()] = true
 		for _, h := range gw.EffectiveHarnesses() {
-			excluded[gw.TokenEnv(h)] = true
+			excluded[gw.TokenEnv(name, h)] = true
 		}
 	}
 
@@ -328,7 +328,7 @@ func (l *Launcher) handleAmbientProviderKeys(
 			return rc, false, fmt.Errorf("profile %q: %w", newRC.Name, err)
 		}
 		newRC.Context.Env = env
-		inputs.Saved.Credentials = nil
+		inputs.Saved.LegacyCredentials = nil
 		if err := resolveAmbientBoundCredentials(l.stderr(), cfg, newRC, inputs, sel, credPlan, credEnv, secretsDir, ambientKeys); err != nil {
 			return rc, false, err
 		}

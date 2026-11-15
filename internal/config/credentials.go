@@ -450,9 +450,11 @@ func (c *Config) CredentialScrubNames() []string {
 				seen[e] = true
 			}
 		}
-		for _, gw := range ctx.Gateways {
-			for _, e := range gatewayScrubNames(gw) {
-				seen[e] = true
+		for _, gws := range []map[string]GatewayConfig{ctx.Gateways, ctx.ConvertedGateways} {
+			for name, gw := range gws {
+				for _, e := range gatewayScrubNames(name, gw) {
+					seen[e] = true
+				}
 			}
 		}
 	}

@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/pkg/seatbelt"
@@ -51,6 +52,73 @@ type Descriptor struct {
 	YoloFlag string
 	// Icon is the default display icon.
 	Icon string
+	// Reach is how many gateways one session of the harness can use.
+	Reach Reach
+	// ManagementArgs are the first arguments of invocations that never
+	// start a session (login, help, version), so no gateway choice is
+	// delivered to them.
+	ManagementArgs []string
+	// ChoiceArgs returns the startup flags that select provider entry
+	// for model ("" when the gateway has none). Nil means the harness
+	// takes no startup flags.
+	ChoiceArgs func(entry, model string) []string
+}
+
+// Reach is how a harness uses gateways.
+type Reach string
+
+const (
+	// ReachNone harnesses take no gateway.
+	ReachNone Reach = ""
+	// ReachSlot harnesses use at most one gateway per session.
+	ReachSlot Reach = "slot"
+	// ReachMulti harnesses offer every marked gateway in one session
+	// and may start on one of them.
+	ReachMulti Reach = "multi"
+)
+
+// commonManagementArgs are the invocations every gateway harness
+// treats as management.
+var commonManagementArgs = []string{"login", "logout", "auth", "mcp", "completion", "help", "--help", "--version"}
+
+// userChoiceFlags are the flags with which a user picks a model or
+// provider; a launch that carries one keeps it over aide's choice.
+var userChoiceFlags = []string{"--model", "-m", "--provider"}
+
+// ApplyChoice returns args with the startup flags that select entry
+// (and model) prepended, the env to add to the launch, and a one-line
+// notice when it delivered nothing because the user's own flags win.
+// Management invocations get nothing. It runs before ApplyLaunchArgs.
+func (d Descriptor) ApplyChoice(args []string, entry, model string) ([]string, map[string]string, string) {
+	if entry == "" || d.ChoiceArgs == nil {
+		return args, nil, ""
+	}
+	if len(args) > 0 && slices.Contains(d.ManagementArgs, args[0]) {
+		return args, nil, ""
+	}
+	if f := userChoiceFlag(args); f != "" {
+		return args, nil, fmt.Sprintf("%s sets %s, so the gateway choice %q is not applied", d.Name, f, entry)
+	}
+	return append(d.ChoiceArgs(entry, model), args...), nil, ""
+}
+
+// userChoiceFlag returns the first model or provider flag in args,
+// as --flag val or --flag=val, or a codex -c model=/model_provider=
+// override.
+func userChoiceFlag(args []string) string {
+	for i, a := range args {
+		name, _, _ := strings.Cut(a, "=")
+		if slices.Contains(userChoiceFlags, name) {
+			return name
+		}
+		if a == "-c" && i+1 < len(args) {
+			a = "-c " + args[i+1]
+		}
+		if strings.HasPrefix(a, "-c model=") || strings.HasPrefix(a, "-c model_provider=") {
+			return "-c"
+		}
+	}
+	return ""
 }
 
 // Names returns the canonical name followed by the aliases.
@@ -222,6 +290,8 @@ var descriptors = []Descriptor{
 		YoloSupported:    true,
 		YoloFlag:         "--dangerously-skip-permissions",
 		Icon:             "🤖",
+		Reach:            ReachSlot,
+		ManagementArgs:   commonManagementArgs,
 	},
 	{
 		Name:             "codex",
@@ -233,6 +303,15 @@ var descriptors = []Descriptor{
 		YoloSupported:    true,
 		YoloFlag:         "--approve-for-me",
 		Icon:             "📝",
+		Reach:            ReachSlot,
+		ManagementArgs:   commonManagementArgs,
+		ChoiceArgs: func(entry, model string) []string {
+			args := []string{"-c", "model_provider=" + entry}
+			if model != "" {
+				args = append(args, "-c", "model="+model)
+			}
+			return args
+		},
 	},
 	{
 		Name:             "copilot",
@@ -296,10 +375,18 @@ var descriptors = []Descriptor{
 			"PI_PROFILE",
 			"PI_CONFIG_FILES",
 		},
-		Sandbox:       modules.OmpAgent,
-		YoloSupported: true,
-		YoloFlag:      "--auto-approve",
-		Icon:          "🧭",
+		Sandbox:        modules.OmpAgent,
+		YoloSupported:  true,
+		YoloFlag:       "--auto-approve",
+		Icon:           "🧭",
+		Reach:          ReachMulti,
+		ManagementArgs: commonManagementArgs,
+		ChoiceArgs: func(entry, model string) []string {
+			if model == "" {
+				return nil
+			}
+			return []string{"--model", entry + "/" + model}
+		},
 	},
 	{
 		Name:             "opencode",
@@ -311,6 +398,8 @@ var descriptors = []Descriptor{
 		YoloSupported:    true,
 		YoloFlag:         "--auto",
 		Icon:             "🔷",
+		Reach:            ReachMulti,
+		ManagementArgs:   commonManagementArgs,
 	},
 	{
 		// Pi's --approve trusts project-local files, a separate decision
@@ -326,6 +415,14 @@ var descriptors = []Descriptor{
 		Sandbox:          modules.PiAgent,
 		YoloSupported:    true,
 		Icon:             "🥧",
+		Reach:            ReachMulti,
+		ManagementArgs:   commonManagementArgs,
+		ChoiceArgs: func(entry, model string) []string {
+			if model == "" {
+				return nil
+			}
+			return []string{"--provider", entry, "--model", model}
+		},
 	},
 }
 
@@ -351,6 +448,7 @@ func All() []Descriptor {
 func (d Descriptor) clone() Descriptor {
 	d.Aliases = slices.Clone(d.Aliases)
 	d.ConfigEnvKeys = slices.Clone(d.ConfigEnvKeys)
+	d.ManagementArgs = slices.Clone(d.ManagementArgs)
 	return d
 }
 

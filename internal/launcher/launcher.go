@@ -298,7 +298,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// selection against the final harness, and decrypt only the selected
 	// bindings' stores, all before any side effect: a missing binding,
 	// store or key stops the launch here.
+	sel.prompt = l.choicePrompter(cwd, homeDir)
 	profileCtx, legacyCreds, credPlan, err := PlanProfileCredentials(cfg, rc, inputs, &sel)
+	for _, n := range sel.ChoiceNotices {
+		fmt.Fprintf(l.stderr(), "aide: note: %s\n", n)
+	}
 	if err != nil {
 		return err
 	}
@@ -333,12 +337,17 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		scrubNames = ScrubNames(cfg, homeDir)
 	}
 	if !ambientHandled {
-		credEnv, err = ResolveCredentialEnv(credPlan, loadStore)
+		var withheld map[string]error
+		credEnv, withheld, err = resolveCredentialEnv(credPlan, loadStore)
 		if err != nil {
 			return err
 		}
+		for _, name := range slices.Sorted(maps.Keys(withheld)) {
+			fmt.Fprintf(l.stderr(), "aide: warning: gateway %q is withheld for this launch: %v\n", name, withheld[name])
+		}
+		credPlan.Bindings = slices.DeleteFunc(credPlan.Bindings, func(b PlannedCredential) bool { return withheld[b.Name] != nil })
 	}
-	l.ensureGatewaySynced(rc, cfg.HarnessOf(agentName), homeDir, credPlan, credEnv)
+	l.ensureGatewaySynced(rc, cfg.HarnessOf(agentName), homeDir, sel.Gateway, credPlan, credEnv)
 
 	// 5b. Resolve effective auto-approve from config layers + CLI flags.
 	// Priority: --no-auto-approve/--no-yolo (highest) > --auto-approve/--yolo flag > project override > context > preferences
@@ -347,6 +356,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefYolo = cfg.Preferences.Yolo
 	}
 	effectiveYolo := l.resolveEffectiveYolo(prefYolo, rc.Context.Yolo, nil)
+	extraArgs = l.applyGatewayChoice(cfg.HarnessOf(agentName), rc.Context, sel.Gateway, extraArgs)
 	extraArgs = ApplyLaunchArgs(cfg.HarnessOf(agentName), extraArgs)
 	if effectiveYolo {
 		var err error

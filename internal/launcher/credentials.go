@@ -10,6 +10,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/envscrub"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/secrets"
 	"github.com/jskswamy/aide/internal/sliceutil"
 	"github.com/jskswamy/aide/internal/ui"
@@ -56,6 +57,9 @@ type PlannedCredential struct {
 	Store        string
 	Key          string
 	Capabilities []string
+	// Optional marks a gateway a multi harness merely offers: its
+	// store failing to open withholds it instead of stopping the launch.
+	Optional bool
 }
 
 // PlanCredentials checks selection (binding names, from whatever
@@ -158,22 +162,38 @@ type StoreLoader func(path string) (map[string]string, error)
 // returns the env vars to inject. A missing store or key fails without
 // returning any value.
 func ResolveCredentialEnv(plan CredentialPlan, load StoreLoader) (map[string]string, error) {
+	env, _, err := resolveCredentialEnv(plan, load)
+	return env, err
+}
+
+// resolveCredentialEnv is ResolveCredentialEnv, except that an Optional
+// binding whose store or key cannot be read is withheld (reported by
+// name in withheld) instead of failing.
+func resolveCredentialEnv(plan CredentialPlan, load StoreLoader) (env map[string]string, withheld map[string]error, err error) {
 	load = CachingStoreLoader(load)
-	env := map[string]string{}
+	env = map[string]string{}
 	for _, b := range plan.Bindings {
-		maps.Copy(env, b.Set)
 		if b.Store == "" {
+			maps.Copy(env, b.Set)
 			continue
 		}
 		v, err := ResolveStoreKey(load, fmt.Sprintf("credential %q", b.Name), b.Store, b.Key)
 		if err != nil {
-			return nil, err
+			if !b.Optional {
+				return nil, nil, err
+			}
+			if withheld == nil {
+				withheld = map[string]error{}
+			}
+			withheld[b.Name] = err
+			continue
 		}
+		maps.Copy(env, b.Set)
 		for _, e := range b.Env {
 			env[e] = v
 		}
 	}
-	return env, nil
+	return env, withheld, nil
 }
 
 // ResolveStoreKey decrypts store via load and returns the value of key.
@@ -212,8 +232,7 @@ func CachingStoreLoader(load StoreLoader) StoreLoader {
 var loadSecretStore StoreLoader = secrets.LoadSecretsMap
 
 // profileCredentials returns rc's profile with legacy provider
-// credential env: entries translated into implicit bindings and its
-// gateways synthesized into credential bindings. Legacy
+// credential env: entries translated into implicit bindings. Legacy
 // entries use the profile's own secret: store (.aide.yaml cannot set
 // one; the loader rejects it), and .aide.yaml may not set provider credentials,
 // selectors or endpoints at all (an endpoint could redirect the
@@ -238,10 +257,6 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 		}
 	}
 	ctx, legacy, err := config.TranslateLegacyCredentials(rc.Context, rc.Context.Secret)
-	if err != nil {
-		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
-	}
-	ctx, err = config.SynthesizeGatewayCredentials(ctx)
 	if err != nil {
 		return config.Context{}, nil, fmt.Errorf("%s: %w", label, err)
 	}
@@ -289,17 +304,51 @@ func (p CredentialPlan) storePaths() []string {
 
 // PlanProfileCredentials plans rc's credentials without decrypting
 // anything, for a launch and for which/status: it applies in's
-// credential precedence to sel. It returns the profile with legacy
+// credential precedence to sel, resolves the harness's gateway choice
+// into sel.Gateway (once per harness; asking through sel's prompter on
+// a launch, passively otherwise) and plans the gateways that choice
+// injects by the harness's reach. It returns the profile with legacy
 // env: credentials translated (so their values are not displayed as
-// env), the legacy credentials translated, and the plan.
+// env) and its gateways in the one-API-per-gateway form, the legacy
+// credentials translated, and the plan.
 func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in SelectionInputs, sel *Selection) (config.Context, []config.LegacyCredential, CredentialPlan, error) {
 	ctx, legacy, err := profileCredentials(cfg, rc)
 	if err != nil {
 		return rc.Context, nil, CredentialPlan{}, err
 	}
 	harnessName := cfg.HarnessOf(ctx.Agent)
-	sel.SelectCredentials(in, ctx.DefaultCredentials)
-	plan, err := sel.PlanCredentials(rc.Name, ctx, harnessName, in.Auth)
+	if sel.gatewayFor != harnessName {
+		if sel.Gateway, sel.ChoiceNotices, err = ResolveChoice(cfg, rc.Name, ctx, harnessName, in, sel.prompt); err != nil {
+			return ctx, legacy, CredentialPlan{}, err
+		}
+		sel.gatewayFor = harnessName
+	}
+	// Credentials that are not gateways follow today's default rule,
+	// which weighs gateways against provider credentials, so it runs on
+	// the profile with its gateways as bindings (S8 removes this).
+	synth, err := config.SynthesizeGatewayCredentials(ctx)
+	if err != nil {
+		return ctx, legacy, CredentialPlan{}, fmt.Errorf("%s: %w", profileLabel(cfg, rc.Name), err)
+	}
+	sel.SelectCredentials(in, synth.DefaultCredentials)
+	sel.dropGatewayNames(ctx, synth)
+	plan, err := sel.PlanCredentials(rc.Name, synth, harnessName, in.Auth)
+	plan.Bindings = slices.DeleteFunc(plan.Bindings, func(b PlannedCredential) bool { _, isGateway := ctx.Gateways[b.Name]; return isGateway })
+	if err != nil {
+		return ctx, legacy, plan, err
+	}
+	ctx.Gateways = launchGateways(ctx)
+	ctx.Credentials = maps.Clone(ctx.Credentials)
+	if ctx.Credentials == nil {
+		ctx.Credentials = map[string]config.CredentialBinding{}
+	}
+	for name, gw := range ctx.Gateways {
+		ctx.Credentials[name] = config.GatewayBinding(name, gw)
+	}
+	if in.Auth != AuthLogin {
+		plan.Bindings = append(plan.Bindings, gatewayBindings(ctx, harnessName, sel.Gateway)...)
+		err = checkKeyStaysWithEndpoint(rc.Name, plan.Bindings)
+	}
 	if err == nil {
 		err = checkEndpointsRouted(profileLabel(cfg, rc.Name), ctx, harnessName, plan, legacy)
 	}
@@ -369,4 +418,45 @@ func SetBannerCredentials(data *ui.BannerData, plan CredentialPlan) {
 			Key:   b.Key,
 		})
 	}
+}
+
+// launchGateways returns ctx's converted gateways in the form key
+// routes and harness-file writers read, with the endpoint in BaseURL.
+func launchGateways(ctx config.Context) map[string]config.GatewayConfig {
+	out := make(map[string]config.GatewayConfig, len(ctx.ConvertedGateways))
+	for name, gw := range ctx.ConvertedGateways {
+		if gw.URL != "" {
+			gw.BaseURL = gw.URL
+		}
+		out[name] = gw
+	}
+	return out
+}
+
+// gatewayBindings plans the gateways harnessName injects: a slot
+// harness the chosen one, a multi harness every gateway marked for it
+// (the chosen one required, the others Optional). ctx is the profile
+// with its gateways in launch form.
+func gatewayBindings(ctx config.Context, harnessName string, choice Choice) []PlannedCredential {
+	d, _ := harness.Lookup(harnessName)
+	var names []string
+	switch {
+	case d.Reach == harness.ReachMulti:
+		names = ctx.GatewayCandidates(harnessName)
+	case d.Reach == harness.ReachSlot && choice.Value != "" && choice.Value != gatewayNone:
+		names = []string{choice.Value}
+	}
+	var out []PlannedCredential
+	for _, name := range names {
+		gw := ctx.Gateways[name]
+		route, ok := config.GatewayBinding(name, gw).Route(name, harnessName)
+		if !ok {
+			continue
+		}
+		out = append(out, PlannedCredential{
+			Name: name, Env: route.Env, Set: route.Set, Store: gw.Store, Key: gw.Key,
+			Optional: d.Reach == harness.ReachMulti && name != choice.Value,
+		})
+	}
+	return out
 }

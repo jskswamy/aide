@@ -86,7 +86,7 @@ func TestSelectHarness_UnknownSavedHarnessFails(t *testing.T) {
 }
 
 func TestSelectCredentials_Precedence(t *testing.T) {
-	saved := prefs.Preference{Credentials: prefs.Selection("openrouter")}
+	saved := prefs.Preference{LegacyCredentials: prefs.Selection("openrouter")}
 	defaults := []string{"anthropic"}
 	tests := []struct {
 		name       string
@@ -98,7 +98,7 @@ func TestSelectCredentials_Precedence(t *testing.T) {
 		{"explicit empty flag", SelectionInputs{CredentialsSet: true, Saved: saved}, []string{}, SourceFlag},
 		{"login injects nothing", SelectionInputs{Auth: AuthLogin, Saved: saved}, []string{}, SourceAuthLogin},
 		{"saved replaces default", SelectionInputs{Saved: saved}, []string{"openrouter"}, SourcePreference},
-		{"saved explicit empty", SelectionInputs{Saved: prefs.Preference{Credentials: prefs.Selection()}}, []string{}, SourcePreference},
+		{"saved explicit empty", SelectionInputs{Saved: prefs.Preference{LegacyCredentials: prefs.Selection()}}, []string{}, SourcePreference},
 		{"profile default", SelectionInputs{}, []string{"anthropic"}, SourceProfile},
 	}
 	for _, tt := range tests {
@@ -315,7 +315,7 @@ default_profile: work
 `, store)
 
 	// Saved selection replaces the profile default.
-	savePreference(t, prefsPath, key, prefs.Preference{Credentials: prefs.Selection("openai")})
+	savePreference(t, prefsPath, key, prefs.Preference{LegacyCredentials: prefs.Selection("openai")})
 	env, _, err := selectionLaunch(t, cfg, cwd, &Launcher{PrefsPath: prefsPath}, "")
 	if err != nil {
 		t.Fatalf("Launch() error = %v", err)
@@ -340,7 +340,7 @@ default_profile: work
 	}
 
 	// An explicitly empty saved selection injects nothing.
-	savePreference(t, prefsPath, key, prefs.Preference{Credentials: prefs.Selection()})
+	savePreference(t, prefsPath, key, prefs.Preference{LegacyCredentials: prefs.Selection()})
 	env, _, err = selectionLaunch(t, cfg, cwd, &Launcher{PrefsPath: prefsPath}, "")
 	if err != nil {
 		t.Fatalf("Launch() error = %v", err)

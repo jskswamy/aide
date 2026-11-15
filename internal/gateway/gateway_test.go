@@ -525,7 +525,7 @@ func TestMaterialize_Pi(t *testing.T) {
 	if err := json.Unmarshal(doc.Providers["aide-corp"], &corp); err != nil {
 		t.Fatal(err)
 	}
-	if corp["baseUrl"] != "https://gw.example.com" || corp["apiKey"] != "$CORP_TOKEN" ||
+	if corp["baseUrl"] != "https://gw.example.com" || corp["apiKey"] != "$AIDE_GW_CORP_KEY" ||
 		corp["authHeader"] != true || corp["api"] != "anthropic-messages" {
 		t.Errorf("providers.aide-corp = %v", corp)
 	}
@@ -578,7 +578,7 @@ func TestMaterialize_OMP(t *testing.T) {
 		t.Errorf("sibling provider lost: %+v", doc.Providers)
 	}
 	corp := doc.Providers["aide-corp"]
-	if corp.BaseURL != "https://gw.example.com" || corp.APIKey != "CORP_TOKEN" ||
+	if corp.BaseURL != "https://gw.example.com" || corp.APIKey != "AIDE_GW_CORP_KEY" ||
 		!corp.AuthHeader || corp.API != "anthropic-messages" || corp.Auth != "" {
 		t.Errorf("providers.corp = %+v", corp)
 	}
@@ -737,9 +737,9 @@ func TestMaterialize_OpenCode(t *testing.T) {
 	headers := obj(t, corp["headers"])
 	env, _ := corp["env"].([]any)
 	if corp["package"] != "@ai-sdk/anthropic" || corp["name"] != "aide-corp" ||
-		len(env) != 1 || env[0] != "CORP_TOKEN" ||
-		settings["baseURL"] != "https://gw.example.com/v1" || settings["apiKey"] != "{env:CORP_TOKEN}" ||
-		headers["Authorization"] != "Bearer {env:CORP_TOKEN}" {
+		len(env) != 1 || env[0] != "AIDE_GW_CORP_KEY" ||
+		settings["baseURL"] != "https://gw.example.com/v1" || settings["apiKey"] != "{env:AIDE_GW_CORP_KEY}" ||
+		headers["Authorization"] != "Bearer {env:AIDE_GW_CORP_KEY}" {
 		t.Errorf("providers.aide-corp = %v", corp)
 	}
 	models := obj(t, corp["models"])
@@ -783,7 +783,7 @@ func TestMaterialize_Codex(t *testing.T) {
 		t.Errorf("sibling tables lost: %v", doc)
 	}
 	corp := obj(t, obj(t, doc["model_providers"])["aide-corp"])
-	if corp["name"] != "aide-corp" || corp["base_url"] != "https://gw.example.com/v1" || corp["env_key"] != "CORP_TOKEN" || corp["wire_api"] != "responses" {
+	if corp["name"] != "aide-corp" || corp["base_url"] != "https://gw.example.com/v1" || corp["env_key"] != "AIDE_GW_CORP_KEY" || corp["wire_api"] != "responses" {
 		t.Errorf("model_providers.corp = %v", corp)
 	}
 	if doc["model_provider"] != "aide-corp" {

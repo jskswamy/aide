@@ -22,7 +22,7 @@ func TestSaveLoad_RoundTripSurvivesRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "preferences.json")
 	key := Key{Profile: "work", Remote: "github.com/o/r"}
 	f, _ := Load(path)
-	f.Set(key, Preference{Harness: "pi", Credentials: Selection("openrouter")})
+	f.Set(key, Preference{Harness: "pi", LegacyCredentials: Selection("openrouter")})
 	if err := Save(path, f); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -32,7 +32,7 @@ func TestSaveLoad_RoundTripSurvivesRestart(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	got, ok := again.Get(key)
-	if !ok || got.Harness != "pi" || got.Credentials == nil || strings.Join(*got.Credentials, ",") != "openrouter" {
+	if !ok || got.Harness != "pi" || got.LegacyCredentials == nil || strings.Join(*got.LegacyCredentials, ",") != "openrouter" {
 		t.Errorf("Get() = %+v, %v; want harness pi, credentials [openrouter]", got, ok)
 	}
 	info, err := os.Stat(path)
@@ -48,7 +48,7 @@ func TestPreference_EmptySelectionDistinctFromUnset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "preferences.json")
 	key := Key{Profile: "work", Remote: "github.com/o/r"}
 	f, _ := Load(path)
-	f.Set(key, Preference{Credentials: Selection()})
+	f.Set(key, Preference{LegacyCredentials: Selection()})
 	if err := Save(path, f); err != nil {
 		t.Fatal(err)
 	}
@@ -57,8 +57,8 @@ func TestPreference_EmptySelectionDistinctFromUnset(t *testing.T) {
 	if !ok {
 		t.Fatal("explicit empty selection was dropped")
 	}
-	if got.Credentials == nil || len(*got.Credentials) != 0 {
-		t.Errorf("Credentials = %v, want explicit empty selection", got.Credentials)
+	if got.LegacyCredentials == nil || len(*got.LegacyCredentials) != 0 {
+		t.Errorf("Credentials = %v, want explicit empty selection", got.LegacyCredentials)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestUpdate_WritesVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
-	if !strings.Contains(string(data), `"version": 1`) {
+	if !strings.Contains(string(data), `"version": 2`) {
 		t.Errorf("file lacks version:\n%s", data)
 	}
 }
@@ -204,5 +204,41 @@ func TestUpdate_UnchangedWritesNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("Update() wrote the file although nothing changed")
+	}
+}
+
+func TestLoad_Version1KeepsCredentialsAndSavesVersion2(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	v1 := `{"version": 1, "profiles": {"work": {"github.com/o/r": {"harness": "pi", "credentials": ["corp"]}}}}`
+	if err := os.WriteFile(path, []byte(v1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	key := Key{Profile: "work", Remote: "github.com/o/r"}
+	p, _ := f.Get(key)
+	if p.LegacyCredentials == nil || (*p.LegacyCredentials)[0] != "corp" || len(p.Gateway) != 0 {
+		t.Fatalf("v1 record = %+v, want credentials [corp] and no gateway choice", p)
+	}
+	p.Gateway = map[string]string{"codex": "none"}
+	f.Set(key, p)
+	if err := Save(path, f); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := again.Get(key)
+	if again.Version != 2 || got.Gateway["codex"] != "none" || got.LegacyCredentials == nil {
+		t.Errorf("after Save: version %d, %+v; want v2 with gateway and untranslated credentials", again.Version, got)
+	}
+}
+
+func TestPreference_GatewayChoiceIsNotZero(t *testing.T) {
+	if (Preference{Gateway: map[string]string{"claude": "none"}}).IsZero() {
+		t.Error("a preference with a gateway choice must not be zero")
 	}
 }

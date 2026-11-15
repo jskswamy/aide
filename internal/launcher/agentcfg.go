@@ -39,6 +39,18 @@ func ApplyLaunchArgs(agentName string, extraArgs []string) []string {
 	return extraArgs
 }
 
+// ApplyChoice returns extraArgs with the startup flags that select the
+// provider entry for the agent's gateway choice (see
+// harness.Descriptor.ApplyChoice), the env to add, and a notice when
+// the user's own flags kept the choice from applying. It runs before
+// ApplyLaunchArgs.
+func ApplyChoice(agentName string, extraArgs []string, entry, model string) ([]string, map[string]string, string) {
+	if d, ok := launchableHarness(agentName); ok {
+		return d.ApplyChoice(extraArgs, entry, model)
+	}
+	return extraArgs, nil, ""
+}
+
 // SandboxAgentEnv returns the env overrides the named agent's sandbox
 // module injects at launch (e.g. Claude's CLAUDE_CONFIG_DIR redirect to
 // ~/.config/aide/claude on Linux). Provisioning that runs outside a

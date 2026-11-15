@@ -1,6 +1,8 @@
 package launcher
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -9,11 +11,14 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
+	"github.com/jskswamy/aide/internal/gatewaymigrate"
+	"github.com/jskswamy/aide/internal/gatewaypreset"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/provision"
 	"github.com/jskswamy/aide/internal/ui"
+	"github.com/jskswamy/aide/internal/usage"
 )
 
 // Harness and credential selection sources, reported as
@@ -26,6 +31,39 @@ const (
 	SourceRepository = "repository"       // trusted .aide.yaml agent:
 	SourceProfile    = "profile"          // the profile's agent: / default_credentials:
 )
+
+// Gateway choice sources, reported as Choice.Source. A flag choice is
+// SourceFlag and a profile one SourceProfile.
+const (
+	SourceRepo         = "repo"          // saved with aide project set
+	SourcePicker       = "picker"        // picked at this launch
+	SourceNoCandidates = "no-candidates" // no gateway is marked for the harness
+	SourceUnset        = "unset"         // marked gateways exist, none chosen
+)
+
+// exitConfig is EX_CONFIG: the launch cannot proceed without a choice
+// the user has not made.
+const exitConfig = 78
+
+// ErrNoTerminal is what a ChoicePrompter returns when there is nobody
+// to ask.
+var ErrNoTerminal = errors.New("no terminal to ask on")
+
+// Choice is the gateway a harness launches with. Value is "" (unset),
+// "none" (the harness's own login) or a gateway name.
+type Choice struct {
+	Value, Source string
+	// Saved is where a picked choice was remembered: "repo", "profile"
+	// or "" for this launch only.
+	Saved ui.Remember
+	// Derived is a choice the legacy default rule made for a profile
+	// that never recorded one.
+	Derived bool
+}
+
+// ChoicePrompter asks which of options harness should use in profile,
+// and reports how long the answer was remembered.
+type ChoicePrompter func(harness, profile string, options []ui.PickerOption) (string, ui.Remember, error)
 
 // SelectionInputs are the inputs to harness and credential selection
 // besides the profile itself: one-time launch flags and the
@@ -49,6 +87,16 @@ type Selection struct {
 	CredentialSource string
 	// requested is the selection before --auth login displaced it.
 	requested []string
+	// Gateway is the harness's gateway choice, set by
+	// PlanProfileCredentials; ChoiceNotices are what resolving it
+	// reported.
+	Gateway       Choice
+	ChoiceNotices []string
+	// prompt, when set, lets an unset slot choice ask (a launch); nil
+	// resolves in passive preview mode.
+	prompt ChoicePrompter
+	// gatewayFor is the harness Gateway was resolved for.
+	gatewayFor string
 }
 
 // Resolution is what a launch from a directory selects before it
@@ -187,6 +235,116 @@ func SelectHarness(cfg *config.Config, rc *aidectx.ResolvedContext, in Selection
 	return sel, notice, nil
 }
 
+// ResolveChoice decides which gateway harnessName launches with, by
+// precedence: --gateway (or --auth login, which is --gateway none),
+// the repository preference, the profile's gateway_choice (or, for
+// legacy gateways, the choice today's default rule makes), no
+// candidates, then asking. ctx is the profile with its legacy
+// credentials translated. Harnesses without a gateway reach resolve to
+// the zero Choice. A stored choice naming a gateway that is not marked
+// for harnessName is reported in notices and treated as unset. When
+// choices are unset, a multi harness starts on its own default; a slot
+// harness asks through ask, or exits 78 when ask reports ErrNoTerminal;
+// with a nil ask (which, status, prompt: passive preview) it stays
+// unset and never asks or fails.
+func ResolveChoice(cfg *config.Config, profile string, ctx config.Context, harnessName string, in SelectionInputs, ask ChoicePrompter) (Choice, []string, error) {
+	d, ok := harness.Lookup(harnessName)
+	if !ok || d.Reach == harness.ReachNone {
+		return Choice{}, nil, nil
+	}
+	candidates := ctx.GatewayCandidates(harnessName)
+	allRenames := cfg.LegacyRenames[profile]
+	var notices []string
+	// stored reports whether a saved choice v applies; a stale one is
+	// noted and skipped.
+	stored := func(v, where string) bool {
+		if v == "" {
+			return false
+		}
+		if v == gatewayNone || slices.Contains(candidates, v) {
+			return true
+		}
+		notices = append(notices, fmt.Sprintf("%s names gateway %q, which is not marked for %s; treating the choice as unset", where, v, harnessName))
+		return false
+	}
+
+	if in.Auth == AuthLogin {
+		return Choice{Value: gatewayNone, Source: SourceFlag}, nil, nil
+	}
+	if in.CredentialsSet {
+		v, err := flagChoice(ctx, harnessName, in.Credentials, allRenames[harnessName], candidates)
+		if err != nil {
+			return Choice{}, nil, err
+		}
+		return Choice{Value: v, Source: SourceFlag}, nil, nil
+	}
+	rec, translated := gatewaymigrate.TranslatePreference(in.Saved, ctx, allRenames)
+	notices = append(notices, translated...)
+	if v := rec.Gateway[harnessName]; stored(v, "the saved repository preference") {
+		return Choice{Value: v, Source: SourceRepo}, notices, nil
+	}
+	if v := ctx.GatewayChoice[harnessName]; stored(v, fmt.Sprintf("profile %q gateway_choice", profile)) {
+		return Choice{Value: v, Source: SourceProfile}, notices, nil
+	}
+	if v := config.LegacyGatewayChoice(ctx, harnessName, allRenames); v != "" {
+		return Choice{Value: v, Source: SourceProfile, Derived: true}, notices, nil
+	}
+	if len(candidates) == 0 {
+		return Choice{Value: gatewayNone, Source: SourceNoCandidates}, notices, nil
+	}
+	unset := Choice{Source: SourceUnset}
+	if d.Reach == harness.ReachMulti || ask == nil {
+		return unset, notices, nil
+	}
+	options := make([]ui.PickerOption, len(candidates))
+	for i, name := range candidates {
+		gw := ctx.ConvertedGateways[name]
+		options[i] = ui.PickerOption{Name: name, URL: cmp.Or(gw.URL, gw.BaseURL), Store: gw.Store, Key: gw.Key}
+	}
+	v, saved, err := ask(harnessName, profile, options)
+	if errors.Is(err, ErrNoTerminal) || errors.Is(err, ui.ErrPickerAborted) {
+		return unset, notices, fmt.Errorf("%s has gateways marked in profile %q (%s) but none chosen; choose one with: "+
+			"aide gateway use <name|none> --harness %s, or pass --gateway <name|none>: %w",
+			harnessName, profile, strings.Join(candidates, ", "), harnessName, &usage.ExitError{Code: exitConfig})
+	}
+	if err != nil {
+		return unset, notices, err
+	}
+	return Choice{Value: v, Source: SourcePicker, Saved: saved}, notices, nil
+}
+
+// gatewayNone is the choice that leaves the harness on its own login.
+const gatewayNone = "none"
+
+// flagChoice reads the gateway out of a --gateway selection: "none", or
+// a gateway (renamed for the harness through renames, old name to
+// new) that serves it. Names of ordinary credentials are not gateways
+// and are left to credential planning; a selection with no gateway in
+// it replaces the defaults with none.
+func flagChoice(ctx config.Context, harnessName string, names []string, renames map[string]string, candidates []string) (string, error) {
+	for _, n := range names {
+		if n == gatewayNone {
+			return gatewayNone, nil
+		}
+		if to, ok := renames[n]; ok {
+			n = to
+		}
+		if slices.Contains(candidates, n) {
+			return n, nil
+		}
+		if _, known := ctx.ConvertedGateways[n]; known {
+			return "", fmt.Errorf("%w: gateway %q does not serve %s (marked for: %s)", ErrCredentialIncompatible, n, harnessName,
+				strings.Join(ctx.ConvertedGateways[n].EffectiveHarnesses(), ", "))
+		}
+		if _, isCredential := ctx.Credentials[n]; !isCredential {
+			if _, isPreset := gatewaypreset.Lookup(n); isPreset {
+				return "", fmt.Errorf("%w: unknown gateway %q; add it with: aide gateway add %s", ErrCredentialNotFound, n, n)
+			}
+		}
+	}
+	return gatewayNone, nil
+}
+
 // SelectCredentials sets the credential selection by precedence:
 // --credential, then the saved repository selection, then
 // profileDefault. A selection replaces the lower ones; it never unions
@@ -196,8 +354,8 @@ func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []strin
 	switch {
 	case in.CredentialsSet:
 		s.requested, s.CredentialSource = in.Credentials, SourceFlag
-	case in.Saved.Credentials != nil:
-		s.requested, s.CredentialSource = *in.Saved.Credentials, SourcePreference
+	case in.Saved.LegacyCredentials != nil:
+		s.requested, s.CredentialSource = *in.Saved.LegacyCredentials, SourcePreference
 	default:
 		s.requested, s.CredentialSource = profileDefault, SourceProfile
 	}
@@ -205,6 +363,21 @@ func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []strin
 	s.Credentials = s.requested
 	if in.Auth == AuthLogin {
 		s.Credentials, s.CredentialSource = []string{}, SourceAuthLogin
+	}
+}
+
+// dropGatewayNames removes from the credential selection the names that
+// choose a gateway instead ("none", and gateways that exist only in
+// their converted form, such as a split-off <gw>-codex); the gateway
+// choice carries them.
+func (s *Selection) dropGatewayNames(ctx, synth config.Context) {
+	s.requested = slices.DeleteFunc(s.requested, func(name string) bool {
+		_, converted := ctx.ConvertedGateways[name]
+		_, bound := synth.Credentials[name]
+		return name == gatewayNone || converted && !bound
+	})
+	if s.CredentialSource != SourceAuthLogin {
+		s.Credentials = slices.Clone(s.requested)
 	}
 }
 

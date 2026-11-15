@@ -27,7 +27,7 @@ credentials:
 default_credentials: [anthropic]
 ```
 
-Each profile contains: `agent`, `secret`, `env`, `match`, `sandbox`, `capabilities`, and optionally `yolo`, `config_dir_name`, `config_dir`, `config_dirs`, `credentials` and `default_credentials` (see [Configuration](configuration.md)).
+Each profile contains: `agent`, `secret`, `env`, `match`, `sandbox`, `capabilities`, and optionally `yolo`, `config_dir_name`, `config_dir`, `config_dirs`, `gateways`, `gateway_choice`, and `credentials` (plain environment-variable secrets; see [Configuration](configuration.md) and [Gateways](configuration.md#gateways)).
 
 ## Match Rules
 
@@ -274,6 +274,8 @@ To install skills and other Skillshare resources into each profile's
 own config dirs, see [Skillshare](skillshare.md).
 
 ## Migrating from contexts and monolithic config.yaml
+
+Upgrading also migrates legacy gateways (`base_url:`) and the gateway names in `default_credentials:` to `gateways:` plus `gateway_choice:` on the first launch or config write, with backups under `~/.local/state/aide/migrations/`; `aide config migrate` previews it. See [Gateways](configuration.md#upgrading-from-earlier-gateways).
 
 `aide config migrate` previews splitting a single-file `config.yaml` (upgrading `contexts:` to `profiles:` if needed) into the modular file layout (`config.yaml`, `sandbox.yaml`, `provisioning.yaml`, and `profiles/<name>.yaml`) without writing anything; `aide config migrate --write` writes the split files and keeps the original as `config.yaml.bak`.
 

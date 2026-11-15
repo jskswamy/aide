@@ -4,6 +4,11 @@
 *   **Status:** Reviewed
 *   **Date:** 2026-10-28
 
+> **Superseded in part:** the gateway choice (which gateway a launch uses),
+> entry naming (`aide-<name>`), and default-writing sections of this design are
+> superseded by [`gateway-redesign.md`](../gateway-redesign.md). The rest still
+> describes model discovery and catalogue writing.
+
 ---
 
 ## Overview

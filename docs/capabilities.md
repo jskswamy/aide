@@ -42,6 +42,10 @@ network access.
 | `digitalocean` | DigitalOcean CLI | `~/.config/doctl/` | `DIGITALOCEAN_ACCESS_TOKEN` |
 | `oci` | Oracle Cloud CLI | `~/.oci/` | `OCI_CLI_CONFIG_FILE` |
 
+The `bedrock` and `vertex` [gateways](configuration.md#gateways) open `aws`
+and `gcp` for the launch that selects them, and only that launch. Adding
+one warns that this grants the whole capability.
+
 ### Containers and Orchestration
 
 | Capability | What it unlocks | Paths | Key env vars |

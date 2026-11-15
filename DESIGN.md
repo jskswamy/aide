@@ -102,6 +102,14 @@ Design principles:
 - **One directory to track.** Everything lives under `$XDG_CONFIG_HOME/aide/`
   so you can `git init` the whole thing.
 
+**LLM gateways.** A profile's `gateways:` names the LLM endpoints
+(hosted services, company proxies, local servers, Bedrock and Vertex
+switches) each harness may use, and `gateway_choice:` records the one it
+does use, or `none` for the harness's own login. aide never selects a
+gateway on its own; an unset choice opens a picker on a terminal and
+exits `78` in a script. Keys stay in the age store. See
+[docs/configuration.md](docs/configuration.md#gateways).
+
 ## Pillar 1: Sandbox
 
 The sandbox exists to enable full agent autonomy, not to restrict

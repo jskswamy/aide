@@ -155,6 +155,16 @@ that launch.
 > [Multi-Account Setups](profiles.md#multi-account-setups) in the
 > profiles doc for the worked example.
 
+## Gateway keys
+
+`aide gateway add` stores a gateway's key in the profile's secret store
+(`<name>_token` by default) and creates a default age identity first when
+none exists and you are on a terminal (`--generate-age-key` elsewhere).
+The key reaches a harness as `AIDE_GW_<NAME>_KEY`, never in a harness
+config file. `aide status` counts keys by reading key names from the
+store without decrypting, so it does not need your age key. See
+[Gateways](configuration.md#gateways).
+
 ## Age Key Discovery
 
 aide tries the following sources in order and uses the first one it finds:

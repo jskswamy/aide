@@ -31,7 +31,7 @@ func ConvertLegacyGateways(ctx Context) (gateways map[string]GatewayConfig, rena
 		}
 		renames[h][from] = to
 	}
-	synth, err := SynthesizeGatewayCredentials(ctx)
+	synth, err := synthesizeGatewayCredentials(ctx)
 	if err != nil {
 		synth = ctx
 	}
@@ -53,7 +53,7 @@ func ConvertLegacyGateways(ctx Context) (gateways map[string]GatewayConfig, rena
 	}
 	for _, old := range slices.Sorted(maps.Keys(ctx.Gateways)) {
 		gw := ctx.Gateways[old]
-		if gw.BaseURL == "" {
+		if !gw.IsLegacy() {
 			gateways[old] = gw
 			continue
 		}
@@ -135,7 +135,7 @@ func (c Context) GatewayCandidates(h string) []string {
 // Config.LegacyRenames for the profile.
 func LegacyGatewayChoice(ctx Context, h string, renames map[string]map[string]string) string {
 	candidates := ctx.GatewayCandidates(h)
-	synth, err := SynthesizeGatewayCredentials(ctx)
+	synth, err := synthesizeGatewayCredentials(ctx)
 	if err != nil || !slices.ContainsFunc(candidates, func(n string) bool {
 		_, legacy := ctx.Gateways[n]
 		return legacy || renamedFrom(renames[h], n) != ""
@@ -191,6 +191,9 @@ func ValidateGatewayChoices(ctx Context) []string {
 // and the config's LegacyRenames. Nothing it sets is serialized.
 func (c *Config) translateLegacyGateways() {
 	for name, ctx := range c.Contexts {
+		for _, gw := range ctx.Gateways {
+			c.NeedsGatewayMigration = c.NeedsGatewayMigration || gw.IsLegacy()
+		}
 		var renames map[string]map[string]string
 		ctx.ConvertedGateways, renames = ConvertLegacyGateways(ctx)
 		c.Contexts[name] = ctx

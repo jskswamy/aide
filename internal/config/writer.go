@@ -14,6 +14,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ErrNeedsGatewayMigration reports a write of a config whose gateways
+// are still in the legacy form; gatewaymigrate.Apply upgrades it with
+// backups.
+var ErrNeedsGatewayMigration = errors.New("refusing to write config: its gateways must be migrated first (run 'aide config migrate --write')")
+
 // ErrConfigNotLoaded reports a write attempted with the placeholder
 // Config that stands in for a config that failed to load. Writing it
 // would replace the user's file with an empty config.
@@ -41,6 +46,9 @@ func WriteConfig(cfg *Config) error {
 func WriteConfigTo(cfg *Config, path string) error {
 	if cfg.LegacyMonolithic {
 		return ErrLegacyMonolithicConfig
+	}
+	if cfg.NeedsGatewayMigration {
+		return ErrNeedsGatewayMigration
 	}
 
 	home, _ := userHome()

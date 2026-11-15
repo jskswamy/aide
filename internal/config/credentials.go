@@ -257,7 +257,7 @@ func (c *Config) validateCredentials() error {
 			return err
 		}
 		orig := c.Contexts[name]
-		ctx, err := SynthesizeGatewayCredentials(orig)
+		ctx, err := synthesizeGatewayCredentials(orig)
 		if err != nil {
 			return err
 		}

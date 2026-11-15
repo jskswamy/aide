@@ -100,3 +100,16 @@ func IsExpired(cat *CachedCatalogue, ttl time.Duration, now time.Time) bool {
 func MatchesBaseURL(cat *CachedCatalogue, baseURL string) bool {
 	return cat != nil && NormalizeBaseURL(cat.BaseURL) == NormalizeBaseURL(baseURL)
 }
+
+// CacheModels reads cached catalogues under a home directory to pick
+// the model a gateway starts on (see gatewaymigrate.CacheReader).
+type CacheModels string
+
+// DefaultModel is DefaultModelID of the cached catalogue, or "".
+func (h CacheModels) DefaultModel(profile, gatewayName string) string {
+	cat, err := ReadCache(string(h), profile, gatewayName)
+	if err != nil || cat == nil {
+		return ""
+	}
+	return DefaultModelID(cat.Models)
+}

@@ -127,3 +127,14 @@ func clonePreset(p Preset) Preset {
 	}
 	return p
 }
+
+// ByShellVar returns the first preset, in catalog order, whose key
+// commonly lives in the shell variable envName.
+func ByShellVar(envName string) (Preset, bool) {
+	for _, p := range presets {
+		if slices.Contains(p.ShellVars, envName) {
+			return clonePreset(p), true
+		}
+	}
+	return Preset{}, false
+}

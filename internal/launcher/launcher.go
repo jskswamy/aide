@@ -23,6 +23,8 @@ import (
 	"github.com/jskswamy/aide/internal/diag"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/envscrub"
+	"github.com/jskswamy/aide/internal/gateway"
+	"github.com/jskswamy/aide/internal/gatewaymigrate"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/prefs"
@@ -228,6 +230,23 @@ func (l *Launcher) configDir() string {
 	return config.Dir()
 }
 
+// migrateGateways upgrades the legacy gateways of cfg on disk, with
+// backups, printing the summary. A failure never stops the launch:
+// aide runs from the in-memory translation and says so.
+func (l *Launcher) migrateGateways(cfg *config.Config) {
+	home, err := os.UserHomeDir()
+	if err != nil || cfg.LegacyMonolithic { // a single-file config is split first, by aide config migrate --write
+		return
+	}
+	res, err := gatewaymigrate.Migrate(cfg, gateway.CacheModels(home), l.configDir(), filepath.Dir(l.prefsPath(home)))
+	switch {
+	case err != nil:
+		fmt.Fprintf(l.stderr(), "aide: warning: could not migrate gateway config (%v); running from its in-memory translation. Retry with: aide config migrate --write\n", err)
+	case res.Summary != "":
+		fmt.Fprint(l.stderr(), res.Summary)
+	}
+}
+
 // Launch resolves context, decrypts secrets, resolves templates, creates
 // a runtime directory, applies sandbox policy, and execs the agent binary.
 func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, cleanEnv bool, resolve bool, withCaps []string, withoutCaps []string) error {
@@ -235,6 +254,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	cfg, err := config.Load(l.configDir(), cwd)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+	if cfg.NeedsGatewayMigration {
+		l.migrateGateways(cfg)
 	}
 	if err := l.ensureDefaultProfileOnDisk(cfg, agentOverride); err != nil {
 		return err
@@ -326,29 +348,19 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		fmt.Fprintf(l.stderr(), "aide: note: native login: not injecting credentials %s\n", strings.Join(credPlan.Ignored, ", "))
 	}
 	loadStore := CachingStoreLoader(loadStoreFrom(filepath.Join(l.configDir(), "secrets")))
-	credEnv := map[string]string{}
-	var ambientHandled bool
 	if len(credPlan.Bindings) == 0 && credPlan.Auth != AuthLogin && !l.CredentialsSet {
-		rc, ambientHandled, err = l.handleAmbientProviderKeys(cfg, rc, cwd, homeDir, inputs, &sel, &credPlan, credEnv, nil)
-		if err != nil {
-			return err
-		}
-		agentName = rc.Context.Agent
-		scrubNames = ScrubNames(cfg, homeDir)
+		l.noteAmbientProviderKeys(cfg, rc, nil)
 	}
 	var withheldNotes []string
-	if !ambientHandled {
-		var withheld map[string]error
-		credEnv, withheld, err = resolveCredentialEnv(credPlan, loadStore)
-		if err != nil {
-			return err
-		}
-		for _, name := range slices.Sorted(maps.Keys(withheld)) {
-			fmt.Fprintf(l.stderr(), "aide: warning: gateway %q is withheld for this launch: %v\n", name, withheld[name])
-			withheldNotes = append(withheldNotes, fmt.Sprintf("gateway %q is withheld for this launch: %v", name, withheld[name]))
-		}
-		credPlan.Bindings = slices.DeleteFunc(credPlan.Bindings, func(b PlannedCredential) bool { return withheld[b.Name] != nil })
+	credEnv, withheld, err := resolveCredentialEnv(credPlan, loadStore)
+	if err != nil {
+		return err
 	}
+	for _, name := range slices.Sorted(maps.Keys(withheld)) {
+		fmt.Fprintf(l.stderr(), "aide: warning: gateway %q is withheld for this launch: %v\n", name, withheld[name])
+		withheldNotes = append(withheldNotes, fmt.Sprintf("gateway %q is withheld for this launch: %v", name, withheld[name]))
+	}
+	credPlan.Bindings = slices.DeleteFunc(credPlan.Bindings, func(b PlannedCredential) bool { return withheld[b.Name] != nil })
 	l.ensureGatewaySynced(rc, cfg.HarnessOf(agentName), homeDir, sel.Gateway, credPlan, credEnv)
 
 	// 5b. Resolve effective auto-approve from config layers + CLI flags.

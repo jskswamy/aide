@@ -317,13 +317,6 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 		return rc.Context, nil, CredentialPlan{}, err
 	}
 	harnessName := cfg.HarnessOf(ctx.Agent)
-	// Credentials that are not gateways follow today's default rule,
-	// which weighs gateways against provider credentials, so it runs on
-	// the profile with its gateways as bindings (S8 removes this).
-	synth, err := config.SynthesizeGatewayCredentials(ctx)
-	if err != nil {
-		return ctx, legacy, CredentialPlan{}, fmt.Errorf("%s: %w", profileLabel(cfg, rc.Name), err)
-	}
 	if sel.gatewayFor != harnessName {
 		if sel.Gateway, sel.ChoiceNotices, err = ResolveChoice(cfg, rc.Name, ctx, harnessName, in, sel.prompt); err != nil {
 			return ctx, legacy, CredentialPlan{}, err
@@ -332,10 +325,9 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 		sel.Choices = passiveChoices(cfg, rc.Name, ctx, in)
 		sel.Choices[harnessName] = ResolvedChoice{sel.Gateway, sel.ChoiceNotices}
 	}
-	sel.SelectCredentials(in, synth.DefaultCredentials)
-	sel.dropGatewayNames(ctx, synth)
-	plan, err := sel.PlanCredentials(rc.Name, synth, harnessName, in.Auth)
-	plan.Bindings = slices.DeleteFunc(plan.Bindings, func(b PlannedCredential) bool { _, isGateway := ctx.Gateways[b.Name]; return isGateway })
+	sel.SelectCredentials(in, ctx.DefaultCredentials)
+	sel.dropGatewayNames(ctx)
+	plan, err := sel.PlanCredentials(rc.Name, ctx, harnessName, in.Auth)
 	if err != nil {
 		return ctx, legacy, plan, err
 	}

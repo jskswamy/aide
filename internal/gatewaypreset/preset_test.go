@@ -122,3 +122,12 @@ func TestPresets_SwitchCloudVarsAllowedByCapability(t *testing.T) {
 		}
 	}
 }
+
+func TestByShellVar(t *testing.T) {
+	if p, ok := ByShellVar("OPENROUTER_API_KEY"); !ok || p.Name != "openrouter" {
+		t.Errorf("ByShellVar(OPENROUTER_API_KEY) = %q, %v; want openrouter", p.Name, ok)
+	}
+	if _, ok := ByShellVar("GITHUB_TOKEN"); ok {
+		t.Error("ByShellVar(GITHUB_TOKEN) found a preset")
+	}
+}

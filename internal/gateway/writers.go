@@ -31,11 +31,16 @@ type harnessFile interface {
 	// holds only one gateway's models at a time (rather than named
 	// provider entries).
 	singleGatewayPerDir() bool
-	write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, isDefault bool) error
+	write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error
 	// mismatch describes how the file differs from cat, or "" when it
 	// carries the catalogue.
 	mismatch(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) (string, error)
 	remove(path, gwName string, gw config.GatewayConfig) (bool, error)
+	// prune drops the aide-<x> entries whose x is not in keep, the
+	// legacy bare entry of every gateway in gws (when it points at that
+	// gateway's URL), and the startup pin aide wrote (a model or
+	// provider naming an aide-<x> entry or a gateway of gws).
+	prune(path string, gws map[string]config.GatewayConfig, keep map[string]bool) (bool, error)
 }
 
 var harnessFiles = map[string]harnessFile{
@@ -122,7 +127,7 @@ func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConf
 		}
 	}
 	harnessWrites.Lock()
-	err = hf.write(path, gwName, gw, cat, IsDefaultGateway(ctx, gwName, harnessName))
+	err = hf.write(path, gwName, gw, cat)
 	harnessWrites.Unlock()
 	if err != nil {
 		return st, err
@@ -196,58 +201,57 @@ func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfi
 	return hf.remove(path, gwName, gw)
 }
 
-// IsDefaultGateway reports whether gwName is a default credential of
-// ctx for harnessName, synthesizing gateway credentials unless ctx
-// already carries them (as a launch's profile does). A context that
-// does not declare gwName, such as a single gateway passed on its own,
-// counts as its default.
-func IsDefaultGateway(ctx config.Context, gwName, harnessName string) bool {
-	_, inGW := ctx.Gateways[gwName]
-	_, inCred := ctx.Credentials[gwName]
-	if !inGW && !inCred {
-		return true
+// Prune cleans harnessName's config file after a gateway change: it
+// removes aide-<gw> entries of gateways not in configured, the legacy
+// bare <gw> entries of ctx's gateways that point at their URL, and the
+// top-level model (OpenCode) or model_provider (Codex) aide used to
+// pin. A pin it did not write stays. It reports whether the file
+// changed; a missing file is not an error.
+func Prune(ctx config.Context, harnessName, home string, configured []string) (bool, error) {
+	hf, _, path, err := harnessTarget(ctx, harnessName, home)
+	if err != nil {
+		return false, err
 	}
-	for g := range ctx.Gateways {
-		if _, synthesized := ctx.Credentials[g]; !synthesized {
-			var err error
-			if ctx, err = config.SynthesizeGatewayCredentials(ctx); err != nil {
-				return false
-			}
-			break
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	harnessWrites.Lock()
+	defer harnessWrites.Unlock()
+	return hf.prune(path, ctx.Gateways, setOf(configured))
+}
+
+func setOf(names []string) map[string]bool {
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}
+
+// staleAide reports an aide-<x> entry name whose gateway x is not kept.
+func staleAide(name string, keep map[string]bool) bool {
+	gw, ok := strings.CutPrefix(name, "aide-")
+	return ok && !keep[gw]
+}
+
+// jsonEntryNames lists the entry names under doc[section].
+func jsonEntryNames(doc map[string]json.RawMessage, section string) ([]string, error) {
+	entries := map[string]json.RawMessage{}
+	if raw, ok := doc[section]; ok {
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return nil, fmt.Errorf("%s: %w", section, err)
 		}
 	}
-	if harnessName == "" {
-		return slices.Contains(ctx.DefaultCredentials, gwName)
-	}
-	return slices.Contains(config.DefaultCredentialsForHarness(ctx, harnessName), gwName)
+	return slices.Sorted(maps.Keys(entries)), nil
 }
 
 // CanSyncHarness reports whether background sync or gateway add may
 // write gwName's catalogue to harnessName's config file. For harnesses
 // with named provider entries (pi, omp, opencode, codex), it is always
-// true. For single-gateway-per-dir harnesses (claude), it is true when
-// gwName is Claude's default gateway, or when no custom gateway in
-// ctx.Gateways is Claude's default and gwName is the first custom
-// gateway in sorted order that serves claude.
+// true. A single-gateway-per-dir harness (claude) holds only the
+// profile's saved gateway_choice for it.
 func CanSyncHarness(ctx config.Context, gwName, harnessName string) bool {
-	if !SingleGatewayPerDir(harnessName) {
-		return true
-	}
-	if IsDefaultGateway(ctx, gwName, harnessName) {
-		return true
-	}
-	names := slices.Sorted(maps.Keys(ctx.Gateways))
-	for _, name := range names {
-		if IsDefaultGateway(ctx, name, harnessName) {
-			return false
-		}
-	}
-	for _, name := range names {
-		if slices.Contains(ctx.Gateways[name].EffectiveHarnesses(), harnessName) {
-			return name == gwName
-		}
-	}
-	return false
+	return !SingleGatewayPerDir(harnessName) || ctx.GatewayChoice[harnessName] == gwName
 }
 
 func dirExists(dir string) bool {
@@ -353,6 +357,11 @@ func (claudeFile) path(_ config.Context, dir, _ string) string {
 
 func (claudeFile) singleGatewayPerDir() bool { return true }
 
+// prune has nothing to do: the cache file holds one gateway's models.
+func (claudeFile) prune(string, map[string]config.GatewayConfig, map[string]bool) (bool, error) {
+	return false, nil
+}
+
 func claudeModels(gwName string, models []Model) []claudeModel {
 	out := make([]claudeModel, len(models))
 	for i, m := range models {
@@ -361,7 +370,7 @@ func claudeModels(gwName string, models []Model) []claudeModel {
 	return out
 }
 
-func (claudeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
+func (claudeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
 	doc := claudeDoc{
 		BaseURL:   NormalizeBaseURL(gw.BaseURL),
 		FetchedAt: cat.FetchedAt.UnixMilli(),
@@ -470,7 +479,7 @@ func isLiteralPiPlaceholder(s string) bool {
 	return s != "" && !strings.HasPrefix(s, "!") && !strings.Contains(s, "$")
 }
 
-func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
+func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
 	p := piProvider{
 		BaseURL:    NormalizeBaseURL(gw.BaseURL),
 		AuthHeader: gw.RequiresToken(),
@@ -532,6 +541,35 @@ func (piFile) removeEntry(path, name string, gw config.GatewayConfig) (bool, err
 		return false, err
 	}
 	return updateJSONEntry(path, "providers", name, nil)
+}
+
+func (f piFile) prune(path string, gws map[string]config.GatewayConfig, keep map[string]bool) (bool, error) {
+	changed := false
+	for _, name := range slices.Sorted(maps.Keys(gws)) {
+		ok, err := f.removeEntry(path, name, gws[name])
+		if err != nil {
+			return changed, err
+		}
+		changed = changed || ok
+	}
+	doc, err := fsutil.ReadJSONCRawMap(path)
+	if err != nil {
+		return changed, err
+	}
+	names, err := jsonEntryNames(doc, "providers")
+	if err != nil {
+		return changed, fmt.Errorf("%s: %w", path, err)
+	}
+	for _, name := range names {
+		if !staleAide(name, keep) {
+			continue
+		}
+		if _, err := updateJSONEntry(path, "providers", name, nil); err != nil {
+			return changed, err
+		}
+		changed = true
+	}
+	return changed, nil
 }
 
 // ompFile is Oh My Pi's <omp-dir>/models.yml (or existing models.yaml);
@@ -659,7 +697,7 @@ func ompModels(models []Model) []ompModel {
 	return out
 }
 
-func (ompFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, _ bool) error {
+func (ompFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
 	p := ompProvider{
 		BaseURL: NormalizeBaseURL(gw.BaseURL),
 		API:     "anthropic-messages",
@@ -725,6 +763,37 @@ func (ompFile) removeEntry(path, name string, gw config.GatewayConfig) (bool, er
 	return updateOMPProviderEntry(path, name, nil)
 }
 
+func (f ompFile) prune(path string, gws map[string]config.GatewayConfig, keep map[string]bool) (bool, error) {
+	changed := false
+	for _, name := range slices.Sorted(maps.Keys(gws)) {
+		ok, err := f.removeEntry(path, name, gws[name])
+		if err != nil {
+			return changed, err
+		}
+		changed = changed || ok
+	}
+	_, doc, err := readOMPModelsDoc(path)
+	if err != nil {
+		return changed, err
+	}
+	entries := map[string]yaml.Node{}
+	if raw, ok := doc["providers"]; ok && raw.Tag != "!!null" {
+		if err := raw.Decode(&entries); err != nil {
+			return changed, fmt.Errorf("%s: providers: %w", path, err)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(entries)) {
+		if !staleAide(name, keep) {
+			continue
+		}
+		if _, err := updateOMPProviderEntry(path, name, nil); err != nil {
+			return changed, err
+		}
+		changed = true
+	}
+	return changed, nil
+}
+
 // openCodeFile is OpenCode's <opencode-dir>/opencode.jsonc (or
 // $OPENCODE_CONFIG when set); a gateway is providers.<name>. Comments
 // are accepted on read but not preserved on write, as with aide's MCP
@@ -776,17 +845,19 @@ func openCodeAuthHeader(gwName string) string {
 	return "Bearer " + openCodeAPIKey(gwName)
 }
 
-func defaultOpenCodeModelID(models []Model) string {
+// DefaultModelID is the model a harness starts on when a gateway names
+// none: the last Sonnet in models, else the first, "" when empty.
+func DefaultModelID(models []Model) string {
 	var best string
 	for _, m := range models {
 		if strings.Contains(strings.ToLower(m.ID), "sonnet") {
 			best = m.ID
 		}
 	}
-	if best != "" {
-		return best
+	if best == "" && len(models) > 0 {
+		best = models[0].ID
 	}
-	return models[0].ID
+	return best
 }
 
 func openCodeModels(models []Model) map[string]openCodeModel {
@@ -811,7 +882,7 @@ func openCodeModelEqual(a, b openCodeModel) bool {
 	return a.Limit == nil || *a.Limit == *b.Limit
 }
 
-func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, isDefault bool) error {
+func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
 	doc, err := fsutil.ReadJSONCRawMap(path)
 	if err != nil {
 		return err
@@ -833,43 +904,8 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 	}
 	// Clean up any legacy V1 "provider.<gwName>" entry in the same file.
 	_, _ = setJSONEntry(doc, "provider", gwName, nil)
-	// A pin aide wrote at the bare entry follows it to aide-<gw>.
-	legacy, err := dropOpenCodeEntry(doc, "providers", gwName, p.Settings.BaseURL)
-	if err != nil {
+	if _, err := dropOpenCodeEntry(doc, "providers", gwName, p.Settings.BaseURL); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
-	}
-	if legacy {
-		var pin string
-		if raw, ok := doc["model"]; ok && json.Unmarshal(raw, &pin) == nil {
-			if prov, modID, _ := strings.Cut(pin, "/"); prov == gwName {
-				doc["model"], _ = json.Marshal(id + "/" + modID)
-			}
-		}
-	}
-
-	if isDefault && len(cat.Models) > 0 {
-		var curModel string
-		if raw, ok := doc["model"]; ok {
-			_ = json.Unmarshal(raw, &curModel)
-		}
-		curProv, curModID, hasSlash := strings.Cut(curModel, "/")
-		shouldSet := curModel == ""
-		if !shouldSet && hasSlash {
-			if curProv == id {
-				_, exists := p.Models[curModID]
-				shouldSet = !exists
-			} else {
-				var existing json.RawMessage
-				if ok, err := jsonEntry(doc, "providers", curProv, &existing); err == nil && ok {
-					shouldSet = true
-				}
-			}
-		}
-		if shouldSet {
-			if raw, err := json.Marshal(id + "/" + defaultOpenCodeModelID(cat.Models)); err == nil {
-				doc["model"] = raw
-			}
-		}
 	}
 	return fsutil.WriteJSON(path, doc)
 }
@@ -912,6 +948,50 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 		return "model list differs", nil
 	}
 	return "", nil
+}
+
+func (openCodeFile) prune(path string, gws map[string]config.GatewayConfig, keep map[string]bool) (bool, error) {
+	doc, err := fsutil.ReadJSONCRawMap(path)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+	for _, name := range slices.Sorted(maps.Keys(gws)) {
+		wantURL := NormalizeBaseURL(gws[name].BaseURL) + "/v1"
+		for _, section := range []string{"providers", "provider"} {
+			ok, err := dropOpenCodeEntry(doc, section, name, wantURL)
+			if err != nil {
+				return false, fmt.Errorf("%s: %w", path, err)
+			}
+			changed = changed || ok
+		}
+	}
+	names, err := jsonEntryNames(doc, "providers")
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	for _, name := range names {
+		if staleAide(name, keep) {
+			_, _ = setJSONEntry(doc, "providers", name, nil)
+			changed = true
+		}
+	}
+	var pin string
+	if raw, ok := doc["model"]; ok && json.Unmarshal(raw, &pin) == nil {
+		if prov, _, ok := strings.Cut(pin, "/"); ok && (strings.HasPrefix(prov, "aide-") || hasGateway(gws, prov)) {
+			delete(doc, "model")
+			changed = true
+		}
+	}
+	if !changed {
+		return false, nil
+	}
+	return true, fsutil.WriteJSON(path, doc)
+}
+
+func hasGateway(gws map[string]config.GatewayConfig, name string) bool {
+	_, ok := gws[name]
+	return ok
 }
 
 // dropOpenCodeEntry deletes section's name entry when it points at
@@ -985,7 +1065,7 @@ func codexProviders(doc map[string]any) map[string]any {
 	return providers
 }
 
-func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *CachedCatalogue, isDefault bool) error {
+func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *CachedCatalogue) error {
 	doc, err := fsutil.ReadTOML(path)
 	if err != nil {
 		return err
@@ -1005,17 +1085,8 @@ func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *Cached
 	}
 	providers[id] = entry
 	doc["model_providers"] = providers
-	// A pin aide wrote at the bare entry follows it to aide-<gw>.
-	cur, _ := doc["model_provider"].(string)
 	for _, old := range codexLegacyNames(gwName) {
-		if dropCodexEntry(providers, old, entry["base_url"]) && cur == old {
-			doc["model_provider"], cur = id, id
-		}
-	}
-	if isDefault {
-		if _, managed := providers[cur]; cur == "" || managed {
-			doc["model_provider"] = id
-		}
+		dropCodexEntry(providers, old, entry["base_url"])
 	}
 	return fsutil.WriteTOML(path, doc)
 }
@@ -1039,6 +1110,40 @@ func dropCodexEntry(providers map[string]any, name string, baseURL any) bool {
 	}
 	delete(providers, name)
 	return true
+}
+
+func (codexFile) prune(path string, gws map[string]config.GatewayConfig, keep map[string]bool) (bool, error) {
+	doc, err := fsutil.ReadTOML(path)
+	if err != nil {
+		return false, err
+	}
+	providers := codexProviders(doc)
+	changed := false
+	for _, name := range slices.Sorted(maps.Keys(gws)) {
+		baseURL := NormalizeBaseURL(gws[name].BaseURL) + "/v1"
+		for _, old := range codexLegacyNames(name) {
+			changed = dropCodexEntry(providers, old, baseURL) || changed
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(providers)) {
+		if staleAide(name, keep) {
+			delete(providers, name)
+			changed = true
+		}
+	}
+	if cur, _ := doc["model_provider"].(string); strings.HasPrefix(cur, "aide-") || slices.ContainsFunc(slices.Collect(maps.Keys(gws)), func(n string) bool {
+		return slices.Contains(codexLegacyNames(n), cur)
+	}) {
+		delete(doc, "model_provider")
+		changed = true
+	}
+	if !changed {
+		return false, nil
+	}
+	if len(providers) == 0 {
+		delete(doc, "model_providers")
+	}
+	return true, fsutil.WriteTOML(path, doc)
 }
 
 func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *CachedCatalogue) (string, error) {

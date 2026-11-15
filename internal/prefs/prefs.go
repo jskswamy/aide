@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jskswamy/aide/internal/fsutil"
@@ -140,8 +141,25 @@ func Load(path string) (*File, error) {
 	return &f, nil
 }
 
-// Save writes f to path atomically.
+// Save writes f to path atomically. A version 1 file it replaces is
+// first backed up under <dir of path>/migrations/<UTC timestamp>/.
 func Save(path string, f *File) error {
+	return SaveBackingUpTo(path, f, filepath.Join(filepath.Dir(path), "migrations", time.Now().UTC().Format("20060102T150405Z")))
+}
+
+// SaveBackingUpTo is Save with the folder a replaced version 1 file is
+// backed up into.
+func SaveBackingUpTo(path string, f *File, backupRoot string) error {
+	if raw, err := os.ReadFile(path); err == nil { // #nosec G304 -- path is aide's own state file
+		var v struct {
+			Version int `json:"version"`
+		}
+		if json.Unmarshal(raw, &v) == nil && v.Version == 1 {
+			if _, err := fsutil.BackupToDir(path, backupRoot, filepath.Base(path)); err != nil {
+				return err
+			}
+		}
+	}
 	f.Version = Version
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {

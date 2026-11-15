@@ -242,3 +242,32 @@ func TestPreference_GatewayChoiceIsNotZero(t *testing.T) {
 		t.Error("a preference with a gateway choice must not be zero")
 	}
 }
+
+func TestSaveBacksUpVersion1FileOnce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preferences.json")
+	if err := os.WriteFile(path, []byte(`{"version":1,"profiles":{"work":{"github.com/a/b":{"credentials":[]}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(dir, "backup")
+	if err := SaveBackingUpTo(path, f, root); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "preferences.json.bak"))
+	if err != nil || !strings.Contains(string(b), `"version":1`) {
+		t.Fatalf("backup = %q, %v", b, err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveBackingUpTo(path, f, root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(root); err == nil {
+		t.Fatal("a version 2 file must not be backed up again")
+	}
+}

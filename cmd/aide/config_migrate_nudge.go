@@ -13,6 +13,9 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/gateway"
+	"github.com/jskswamy/aide/internal/gatewaymigrate"
+	"github.com/jskswamy/aide/internal/prefs"
 	"github.com/jskswamy/aide/internal/provision"
 )
 
@@ -34,14 +37,12 @@ func shouldNudgeForCmd(cmd *cobra.Command) bool {
 	return true
 }
 
-// saveConfigWithMigrationPrompt saves cfg using the modular split layout.
+// saveConfigWithMigrationPrompt saves cfg using the modular split layout,
+// first upgrading legacy gateways (see gatewaymigrate.Apply).
 // When cfg was loaded from a legacy single-file config.yaml, an interactive
 // terminal prompts the user to migrate first (saving config.yaml.bak);
 // declining or running non-interactively returns config.ErrLegacyMonolithicConfig.
 func saveConfigWithMigrationPrompt(cmd *cobra.Command, cfg *config.Config) error {
-	if cfg == nil || !cfg.LegacyMonolithic {
-		return config.WriteConfig(cfg)
-	}
 	home, _ := os.UserHomeDir()
 	in := io.Reader(os.Stdin)
 	errOut := io.Writer(os.Stderr)
@@ -53,8 +54,22 @@ func saveConfigWithMigrationPrompt(cmd *cobra.Command, cfg *config.Config) error
 	return saveConfigWithMigrationPromptIO(cfg, config.FilePath(), home, in, errOut, interactive)
 }
 
+// migrateGatewaysBeforeSave upgrades cfg's legacy gateways, with backups,
+// so the write that follows does not hit config.ErrNeedsGatewayMigration.
+func migrateGatewaysBeforeSave(cfg *config.Config, cfgPath, home string, errOut io.Writer) error {
+	if cfg == nil || !cfg.NeedsGatewayMigration {
+		return nil
+	}
+	res, err := gatewaymigrate.Migrate(cfg, gateway.CacheModels(home), filepath.Dir(cfgPath), filepath.Dir(prefs.DefaultPath(home)))
+	fmt.Fprint(errOut, res.Summary)
+	return err
+}
+
 func saveConfigWithMigrationPromptIO(cfg *config.Config, cfgPath, home string, in io.Reader, errOut io.Writer, interactive bool) error {
 	if cfg == nil || !cfg.LegacyMonolithic {
+		if err := migrateGatewaysBeforeSave(cfg, cfgPath, home, errOut); err != nil {
+			return err
+		}
 		return config.WriteConfigTo(cfg, cfgPath)
 	}
 	if !interactive {
@@ -100,9 +115,16 @@ func saveConfigWithMigrationPromptIO(cfg *config.Config, cfgPath, home string, i
 	oldHash, _ := provision.ConfigHash(cfgPath)
 
 	if m, merr := config.MigrateProfiles(origData, config.MigrateOptions{Home: home}); merr == nil && m.SplitErr == nil && m.SplitLayout {
-		_ = config.ApplyMigrationSplit(filepath.Dir(cfgPath), m)
+		if err := config.ApplyMigrationSplit(filepath.Dir(cfgPath), m); err != nil {
+			cfg.LegacyMonolithic = true
+			return fmt.Errorf("writing the split config files: %w", err)
+		}
 	}
 
+	if err := migrateGatewaysBeforeSave(cfg, cfgPath, home, errOut); err != nil {
+		cfg.LegacyMonolithic = true
+		return err
+	}
 	if err := config.WriteConfigTo(cfg, cfgPath); err != nil {
 		cfg.LegacyMonolithic = true
 		return err

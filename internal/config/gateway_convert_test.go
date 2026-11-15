@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -121,7 +123,7 @@ func TestGatewayChoiceHelpersAndValidation(t *testing.T) {
 	}
 }
 
-func TestLoadTranslatesLegacyGatewaysWithoutChangingWrites(t *testing.T) {
+func TestLoadTranslatesLegacyGatewaysAndWritesNewForm(t *testing.T) {
 	cfg := &Config{}
 	src := "gateways:\n  a:\n    base_url: https://gw.example.com\n    store: s\n    key: k\n"
 	var ctx Context
@@ -130,6 +132,12 @@ func TestLoadTranslatesLegacyGatewaysWithoutChangingWrites(t *testing.T) {
 	}
 	cfg.Contexts = map[string]Context{"work": ctx}
 	cfg.translateLegacyGateways()
+	if !cfg.NeedsGatewayMigration {
+		t.Error("a legacy gateway must flag NeedsGatewayMigration")
+	}
+	if err := WriteConfigTo(cfg, filepath.Join(t.TempDir(), "config.yaml")); !errors.Is(err, ErrNeedsGatewayMigration) {
+		t.Errorf("WriteConfigTo() = %v, want ErrNeedsGatewayMigration", err)
+	}
 	got := cfg.Contexts["work"]
 	if _, ok := got.ConvertedGateways["a-codex"]; !ok {
 		t.Errorf("converted = %v", got.ConvertedGateways)
@@ -141,8 +149,9 @@ func TestLoadTranslatesLegacyGatewaysWithoutChangingWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(out), "a-codex") || strings.Contains(string(out), "api:") || !strings.Contains(string(out), "base_url") {
-		t.Errorf("legacy write changed:\n%s", out)
+	if strings.Contains(string(out), "a-codex") || strings.Contains(string(out), "base_url") ||
+		!strings.Contains(string(out), "url: https://gw.example.com") || !strings.Contains(string(out), "api: anthropic-messages") {
+		t.Errorf("gateway must be written in the new form:\n%s", out)
 	}
 }
 
@@ -203,10 +212,14 @@ func TestLoadDecodesGatewayChoiceAndWarnsStale(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsURLOnlyGateway(t *testing.T) {
+func TestLoadAcceptsNewFormGatewayWithoutMigration(t *testing.T) {
 	body := strings.Replace(choiceProfile, "base_url:", "url:", 1)
-	if _, err := loadYAML(t, body); err == nil {
-		t.Fatal("Load() accepted a gateway with url and no base_url")
+	cfg, err := loadYAML(t, body)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	if cfg.NeedsGatewayMigration {
+		t.Error("a gateway in the new form needs no migration")
 	}
 }
 

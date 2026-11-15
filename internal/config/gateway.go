@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -12,12 +13,13 @@ import (
 	"time"
 
 	"github.com/jskswamy/aide/internal/envscrub"
+	"gopkg.in/yaml.v3"
 )
 
 // GatewayConfig is a custom LLM gateway on a profile: where it is,
 // which secret holds its bearer token, and which harnesses use it.
-// Launches inject it through a credential binding synthesized in memory
-// (SynthesizeGatewayCredentials); nothing is duplicated on disk.
+// Launches inject its key through the harness's gateway choice
+// (gateway_choice:); nothing is duplicated on disk.
 type GatewayConfig struct {
 	// BaseURL is the legacy single URL; URL and API replace it, and
 	// the loader translates one into the other in memory (see
@@ -35,6 +37,47 @@ type GatewayConfig struct {
 	Key        string   `yaml:"key,omitempty" json:"key,omitempty"`
 	Harnesses  []string `yaml:"harnesses,omitempty" json:"harnesses,omitempty"`
 }
+
+// UnmarshalYAML decodes a gateway and mirrors a new-form url: into
+// BaseURL, the field launch code and validation read; a legacy entry
+// has base_url: and no url:.
+func (gw *GatewayConfig) UnmarshalYAML(node *yaml.Node) error {
+	type plain GatewayConfig
+	if err := node.Decode((*plain)(gw)); err != nil {
+		return err
+	}
+	if gw.URL != "" && gw.BaseURL == "" {
+		gw.BaseURL = gw.URL
+	}
+	return nil
+}
+
+// WithBaseURL returns gw with its url: mirrored into BaseURL, the form
+// launch code and validation read.
+func (gw GatewayConfig) WithBaseURL() GatewayConfig {
+	if gw.BaseURL == "" {
+		gw.BaseURL = gw.URL
+	}
+	return gw
+}
+
+// MarshalYAML always writes the new form: url: and api:, never
+// base_url:. BaseURL, which edits change, wins over a stale URL; a
+// gateway still in its legacy form is written as an Anthropic Messages
+// gateway.
+func (gw GatewayConfig) MarshalYAML() (any, error) {
+	type plain GatewayConfig
+	gw.URL = cmp.Or(gw.BaseURL, gw.URL)
+	if gw.URL != "" && gw.API == "" {
+		gw.API = apiAnthropicMessages
+	}
+	gw.BaseURL = ""
+	return plain(gw), nil
+}
+
+// IsLegacy reports whether gw is in the legacy single-URL form that
+// ConvertLegacyGateways translates.
+func (gw GatewayConfig) IsLegacy() bool { return gw.BaseURL != "" && gw.URL == "" }
 
 // DefaultGatewayHarnesses are the harnesses a gateway serves when its
 // harnesses: list is omitted: the profile-capable harnesses that accept
@@ -328,7 +371,8 @@ func GatewayBinding(name string, gw GatewayConfig) CredentialBinding {
 	return b
 }
 
-// SynthesizeGatewayCredentials returns ctx with a credential binding
+// synthesizeGatewayCredentials, used only to translate a legacy profile in
+// memory, returns ctx with a credential binding
 // per gateway, named after the gateway. A gateway is appended to
 // DefaultCredentials whenever at least one of its target harnesses is
 // not already claimed by an earlier default credential (or earlier
@@ -336,7 +380,7 @@ func GatewayBinding(name string, gw GatewayConfig) CredentialBinding {
 // effective default list per harness.
 // ctx is not modified and nothing is written, so the bindings never
 // reach config.yaml.
-func SynthesizeGatewayCredentials(ctx Context) (Context, error) {
+func synthesizeGatewayCredentials(ctx Context) (Context, error) {
 	if len(ctx.Gateways) == 0 {
 		return ctx, nil
 	}

@@ -329,7 +329,7 @@ func newFixture(t *testing.T) fixture {
 	t.Setenv("XDG_STATE_HOME", "")
 	return fixture{
 		home: home,
-		ctx:  config.Context{Agent: "claude", Profile: "work"},
+		ctx:  config.Context{Agent: "claude", Profile: "work", GatewayChoice: map[string]string{"claude": "corp"}},
 		gw:   config.GatewayConfig{BaseURL: "https://gw.example.com/v1", Store: "work", Key: "corp_token"},
 		cat: &CachedCatalogue{Profile: "work", Gateway: "corp", BaseURL: "https://gw.example.com", FetchedAt: time.Now(),
 			Models: []Model{
@@ -466,8 +466,8 @@ func TestMaterialize_Claude(t *testing.T) {
 	if removed, err := RemoveFromHarness(f.ctx, "other", other, "claude", f.home); err != nil || removed {
 		t.Errorf("RemoveFromHarness(other) = %v, %v; want false", removed, err)
 	}
-	if got := InspectHarness(f.ctx, "other", other, f.cat, "claude", f.home); got.State != StateStale {
-		t.Errorf("InspectHarness(other) = %+v, want stale", got)
+	if got := InspectHarness(f.ctx, "other", other, f.cat, "claude", f.home); got.State != StatePending {
+		t.Errorf("InspectHarness(other) = %+v, want pending: it is not claude's chosen gateway", got)
 	}
 	if removed, err := RemoveFromHarness(f.ctx, "corp", f.gw, "claude", f.home); err != nil || !removed {
 		t.Errorf("RemoveFromHarness() = %v, %v", removed, err)
@@ -729,8 +729,8 @@ func TestMaterialize_OpenCode(t *testing.T) {
 	if doc["provider"] != nil {
 		t.Errorf("legacy V1 provider section survived migration: %v", doc["provider"])
 	}
-	if doc["model"] != "aide-corp/claude-sonnet-4-5" {
-		t.Errorf("model = %v, want aide-corp/claude-sonnet-4-5", doc["model"])
+	if doc["model"] != nil {
+		t.Errorf("model = %v; aide must not pin OpenCode's startup model", doc["model"])
 	}
 	corp := obj(t, obj(t, doc["providers"])["aide-corp"])
 	settings := obj(t, corp["settings"])
@@ -786,8 +786,8 @@ func TestMaterialize_Codex(t *testing.T) {
 	if corp["name"] != "aide-corp" || corp["base_url"] != "https://gw.example.com/v1" || corp["env_key"] != "AIDE_GW_CORP_KEY" || corp["wire_api"] != "responses" {
 		t.Errorf("model_providers.corp = %v", corp)
 	}
-	if doc["model_provider"] != "aide-corp" {
-		t.Errorf("model_provider = %v, want aide-corp (the codex default gateway)", doc["model_provider"])
+	if doc["model_provider"] != nil {
+		t.Errorf("model_provider = %v; aide must not pin Codex's startup provider", doc["model_provider"])
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home); got.State != StateSynced {
 		t.Errorf("InspectHarness() = %+v, want synced", got)
@@ -1108,59 +1108,17 @@ func TestMaterializeHarness_OpenCodeHonorsOPENCODE_CONFIG(t *testing.T) {
 	}
 }
 
-func TestCanSyncHarness_WithBuiltinAnthropicDefault(t *testing.T) {
-	ctx := config.Context{
-		Profile: "work",
-		Credentials: map[string]config.CredentialBinding{
-			"anthropic": {Backend: config.CredentialBackendAge, Store: "work", Key: "anthropic_api_key"},
-		},
-		DefaultCredentials: []string{"anthropic"},
-		Gateways: map[string]config.GatewayConfig{
-			"alpha": {BaseURL: "https://alpha.example.com", Store: "work", Key: "alpha_token"},
-			"beta":  {BaseURL: "https://beta.example.com", Store: "work", Key: "beta_token"},
-		},
+func TestCanSyncHarness_FollowsClaudeChoice(t *testing.T) {
+	ctx := config.Context{Profile: "work", GatewayChoice: map[string]string{"claude": "beta"}}
+	if CanSyncHarness(ctx, "alpha", "claude") || !CanSyncHarness(ctx, "beta", "claude") {
+		t.Error("claude's gateway file belongs to the chosen gateway only")
 	}
-	if !CanSyncHarness(ctx, "alpha", "claude") {
-		t.Error("CanSyncHarness(alpha, claude) = false; want true for first custom gateway when anthropic is default")
-	}
-	if CanSyncHarness(ctx, "beta", "claude") {
-		t.Error("CanSyncHarness(beta, claude) = true; want false for second non-default gateway")
-	}
-	ctx.DefaultCredentials = []string{"beta"}
-	if !CanSyncHarness(ctx, "beta", "claude") {
-		t.Error("CanSyncHarness(beta, claude) = false when beta is explicit default")
-	}
+	ctx.GatewayChoice = nil
 	if CanSyncHarness(ctx, "alpha", "claude") {
-		t.Error("CanSyncHarness(alpha, claude) = true when beta is explicit default")
+		t.Error("an unset choice owns no claude gateway file")
 	}
-}
-
-func TestMaterialize_CodexUpdatesManagedModelProvider(t *testing.T) {
-	f := newFixture(t)
-	f.mkdirs(t, "codex")
-	alpha := config.GatewayConfig{BaseURL: "https://alpha.example.com", Store: "work", Key: "alpha_token"}
-	beta := config.GatewayConfig{BaseURL: "https://beta.example.com", Store: "work", Key: "beta_token"}
-	f.ctx.Gateways = map[string]config.GatewayConfig{"alpha": alpha, "beta": beta}
-	f.ctx.DefaultCredentials = []string{"alpha"}
-
-	if _, err := MaterializeHarness(f.ctx, "alpha", alpha, f.cat, "codex", f.home, false); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := MaterializeHarness(f.ctx, "beta", beta, f.cat, "codex", f.home, false); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(f.dir("codex"), "config.toml")
-	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'aide-alpha'") {
-		t.Fatalf("expected model_provider = aide-alpha:\n%s", body)
-	}
-
-	// Switch default to beta: re-materializing beta updates model_provider.
-	f.ctx.DefaultCredentials = []string{"beta"}
-	if _, err := MaterializeHarness(f.ctx, "beta", beta, f.cat, "codex", f.home, false); err != nil {
-		t.Fatal(err)
-	}
-	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'aide-beta'") {
-		t.Fatalf("expected model_provider = aide-beta after switching default:\n%s", body)
+	if !CanSyncHarness(ctx, "alpha", "pi") {
+		t.Error("named-entry harnesses take every gateway")
 	}
 }
 
@@ -1198,15 +1156,16 @@ func TestMatchesBaseURL_AndInspectHarnessURLMismatch(t *testing.T) {
 	}
 	// SingleGatewayPerDir standby branch must also not report synced when cat.BaseURL mismatches gw.BaseURL.
 	standbyCtx := f.ctx
-	standbyCtx.DefaultCredentials = []string{"other"}
+	standbyCtx.GatewayChoice = map[string]string{"claude": "other"}
 	stClaude := InspectHarness(standbyCtx, "corp", f.gw, f.cat, "claude", f.home)
 	if stClaude.State == StateSynced {
 		t.Fatalf("InspectHarness(claude standby) = %+v, should not be synced on URL mismatch", stClaude)
 	}
 }
 
-// Entries and pins an earlier aide wrote under the bare gateway name
-// move to aide-<gw>; an entry at another URL is the user's and stays.
+// Entries an earlier aide wrote under the bare gateway name are
+// removed, and so are the pins it wrote; an entry at another URL is the
+// user's and stays.
 func TestMaterialize_RemovesLegacyBareEntries(t *testing.T) {
 	f := newFixture(t)
 	url := "https://gw.example.com"
@@ -1220,14 +1179,18 @@ func TestMaterialize_RemovesLegacyBareEntries(t *testing.T) {
 	cxPath := filepath.Join(f.dir("codex"), "config.toml")
 	writeFile(t, cxPath, "model_provider = 'corp'\n[model_providers.corp]\nbase_url = '"+url+"/v1'\nwire_api = 'chat'\n")
 
+	f.ctx.Gateways = map[string]config.GatewayConfig{"corp": f.gw}
 	for _, h := range []string{"opencode", "pi", "omp", "codex"} {
 		if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, h, f.home, false); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := Prune(f.ctx, h, f.home, []string{"corp"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for path, want := range map[string]string{ocPath: `"model": "aide-corp/plain"`, cxPath: "model_provider = 'aide-corp'"} {
-		if body := readFile(t, path); !strings.Contains(body, want) {
-			t.Errorf("%s lacks %s:\n%s", path, want, body)
+	for path, gone := range map[string]string{ocPath: `"model"`, cxPath: "model_provider ="} {
+		if body := readFile(t, path); strings.Contains(body, gone) {
+			t.Errorf("%s still has the pin aide wrote (%s):\n%s", path, gone, body)
 		}
 	}
 	for _, path := range []string{ocPath, piPath, ompPath} {
@@ -1244,16 +1207,56 @@ func TestMaterialize_RemovesLegacyBareEntries(t *testing.T) {
 	}
 }
 
-// A split-off <gw>-codex takes over the pin aide wrote for <gw>.
-func TestMaterialize_CodexSplitTakesPin(t *testing.T) {
+// A split-off <gw>-codex leaves no pin behind for the bare <gw> entry.
+func TestPrune_CodexSplitDropsBareEntryAndPin(t *testing.T) {
 	f := newFixture(t)
 	path := filepath.Join(f.dir("codex"), "config.toml")
 	writeFile(t, path, "model_provider = 'corp'\n[model_providers.corp]\nbase_url = 'https://gw.example.com/v1'\n")
+	f.ctx.Gateways = map[string]config.GatewayConfig{"corp-codex": f.gw}
 	if _, err := MaterializeHarness(f.ctx, "corp-codex", f.gw, f.cat, "codex", f.home, false); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := Prune(f.ctx, "codex", f.home, []string{"corp-codex"}); err != nil {
+		t.Fatal(err)
+	}
 	body := readFile(t, path)
-	if !strings.Contains(body, "model_provider = 'aide-corp-codex'") || strings.Contains(body, "model_providers.corp]") {
+	if strings.Contains(body, "model_provider =") || strings.Contains(body, "model_providers.corp]") || !strings.Contains(body, "aide-corp-codex") {
 		t.Errorf("config.toml:\n%s", body)
+	}
+}
+
+// Prune drops aide-<gw> entries of gateways that are no longer
+// configured, and the pins aide wrote, but keeps what the user set.
+func TestPrune_StaleEntriesAndUserPins(t *testing.T) {
+	f := newFixture(t)
+	f.ctx.Gateways = map[string]config.GatewayConfig{"corp": f.gw}
+	ocPath := filepath.Join(f.dir("opencode"), "opencode.jsonc")
+	writeFile(t, ocPath, `{"model":"anthropic/claude","providers":{"aide-gone":{"settings":{"baseURL":"https://x/v1"}},"aide-corp":{"settings":{"baseURL":"https://gw.example.com/v1"}}}}`)
+	piPath := filepath.Join(f.dir("pi"), "models.json")
+	writeFile(t, piPath, `{"providers":{"aide-gone":{"baseUrl":"https://x"},"aide-corp":{"baseUrl":"https://gw.example.com"}}}`)
+	ompPath := filepath.Join(f.dir("omp"), "models.yml")
+	writeFile(t, ompPath, "providers:\n  aide-gone:\n    baseUrl: https://x\n  aide-corp:\n    baseUrl: https://gw.example.com\n")
+	cxPath := filepath.Join(f.dir("codex"), "config.toml")
+	writeFile(t, cxPath, "model_provider = 'mine'\n[model_providers.aide-gone]\nbase_url = 'https://x/v1'\n[model_providers.aide-corp]\nbase_url = 'https://gw.example.com/v1'\n")
+	for _, h := range []string{"opencode", "pi", "omp", "codex"} {
+		changed, err := Prune(f.ctx, h, f.home, []string{"corp"})
+		if err != nil || !changed {
+			t.Fatalf("Prune(%s) = %v, %v; want changed", h, changed, err)
+		}
+	}
+	for _, path := range []string{ocPath, piPath, ompPath, cxPath} {
+		body := readFile(t, path)
+		if strings.Contains(body, "aide-gone") || !strings.Contains(body, "aide-corp") {
+			t.Errorf("%s:\n%s", path, body)
+		}
+	}
+	if !strings.Contains(readFile(t, ocPath), `"anthropic/claude"`) || !strings.Contains(readFile(t, cxPath), "model_provider = 'mine'") {
+		t.Error("a pin the user set was removed")
+	}
+	if changed, err := Prune(f.ctx, "pi", f.home, []string{"corp"}); err != nil || changed {
+		t.Errorf("a second Prune = %v, %v; want unchanged", changed, err)
+	}
+	if changed, err := Prune(f.ctx, "claude", f.home, nil); err != nil || changed {
+		t.Errorf("Prune(claude) = %v, %v", changed, err)
 	}
 }

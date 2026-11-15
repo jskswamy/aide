@@ -115,7 +115,7 @@ func seedCache(t *testing.T, home, baseURL string, age time.Duration, ids ...str
 	}
 }
 
-// piModelIDs reads providers.corp's model ids from Pi's models.json.
+// piModelIDs reads providers.aide-corp's model ids from Pi's models.json.
 func piModelIDs(t *testing.T, home string) []string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(home, ".pi-work", "models.json"))
@@ -136,7 +136,7 @@ func piModelIDs(t *testing.T, home string) []string {
 		t.Fatal(err)
 	}
 	var ids []string
-	for _, m := range doc.Providers["corp"].Models {
+	for _, m := range doc.Providers["aide-corp"].Models {
 		ids = append(ids, m.ID)
 	}
 	return ids

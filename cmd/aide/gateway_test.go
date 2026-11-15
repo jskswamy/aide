@@ -1045,14 +1045,14 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(piRaw), `"$API_TOKEN"`) || !strings.Contains(string(piRaw), `"acme"`) || !strings.Contains(string(piRaw), `"$ACME_TOKEN"`) {
+	if strings.Contains(string(piRaw), `"$API_TOKEN"`) || !strings.Contains(string(piRaw), `"aide-acme"`) || !strings.Contains(string(piRaw), `"$ACME_TOKEN"`) {
 		t.Errorf("pi models.json after rename:\n%s", piRaw)
 	}
 	codexRaw, err := os.ReadFile(filepath.Join(e.home, ".codex-work", "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(codexRaw), "[model_providers.api]") || strings.Contains(string(codexRaw), "API_TOKEN") || !strings.Contains(string(codexRaw), "model_provider = 'acme'") {
+	if strings.Contains(string(codexRaw), "[model_providers.api]") || strings.Contains(string(codexRaw), "API_TOKEN") || !strings.Contains(string(codexRaw), "model_provider = 'aide-acme'") {
 		t.Errorf("codex config.toml after rename:\n%s", codexRaw)
 	}
 

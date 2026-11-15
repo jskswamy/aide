@@ -174,12 +174,22 @@ Examples:
 			case len(args) == 1:
 				preset, isPreset = gatewaypreset.Lookup(args[0])
 			case fromEnv != "" && fromEnv != fromEnvAuto:
-				for _, p := range gatewaypreset.All() {
-					if slices.Contains(p.ShellVars, fromEnv) {
-						preset, isPreset, args = p, true, []string{p.Name}
-						break
-					}
+				if p, ok := gatewaypreset.ByShellVar(fromEnv); ok {
+					preset, isPreset, args = p, true, []string{p.Name}
 				}
+			}
+			isSwitch := preset.Switch != nil
+			if isPreset && api != "" && api != string(preset.API) {
+				return fmt.Errorf("--api is for custom gateways; preset %s speaks %s", preset.Name, preset.API)
+			}
+			if preset.Kind == gatewaypreset.KindKeylessLoopback && (tokenStdin || fromEnv != "" || key != "" || store != "") {
+				return fmt.Errorf("preset %s takes no key; drop --key-stdin, --from-env, --key and --secret-store", preset.Name)
+			}
+			if (region != "" || project != "") && !isSwitch {
+				return errors.New("--region and --project are only for the bedrock and vertex presets")
+			}
+			if isSwitch && project != "" && !preset.Switch.RequireProject && preset.Switch.ProjectEnv == "" {
+				return fmt.Errorf("preset %s takes no --project", preset.Name)
 			}
 			var presetHarnesses []string
 			if isPreset {
@@ -198,6 +208,10 @@ Examples:
 				rawURL, err = readGatewayURL(cmd, reader, rawURL, tokenStdin)
 				if err != nil {
 					return err
+				}
+				if api != "" && api != string(gatewaypreset.APIAnthropicMessages) {
+					// offer only the harnesses this wire protocol can serve; anthropic-messages keeps the codex split
+					presetHarnesses = config.GatewayConfig{URL: rawURL, API: api}.EffectiveHarnesses()
 				}
 			}
 			name := ""
@@ -223,6 +237,9 @@ Examples:
 				return err
 			}
 
+			if isSwitch {
+				ttl = "" // a switch has no models to refresh
+			}
 			gw := config.GatewayConfig{
 				BaseURL:    gateway.NormalizeBaseURL(rawURL),
 				Model:      model,
@@ -235,7 +252,6 @@ Examples:
 				Region:     region,
 				Project:    project,
 			}
-			isSwitch := preset.Switch != nil
 			// Anthropic Messages gateways take the legacy form, which splits Codex
 			// off; every other wire protocol is saved as url+api and keeps its exact url.
 			newForm := isSwitch || (api != "" && api != string(gatewaypreset.APIAnthropicMessages))
@@ -256,11 +272,14 @@ Examples:
 				gw.Key = defaultGatewayKey(name)
 			}
 			old, hadOld := ctx.Gateways[name]
-			if hadOld && !force && gateway.Endpoint(old).BaseURL != gateway.Endpoint(gw).BaseURL {
+			if hadOld && !force && (!isSwitch || old.SwitchSpec() == nil) && gateway.Endpoint(old).BaseURL != gateway.Endpoint(gw).BaseURL {
 				return fmt.Errorf("profile %q already has gateway %q for %s; pass --force to replace it (and its token), or give this one another name",
 					profileName, name, old.BaseURL)
 			}
 
+			if isSwitch {
+				fmt.Fprintf(cmd.ErrOrStderr(), "! Choosing %s opens the %s capability (full cloud credentials) for that launch\n", name, preset.Switch.Capability)
+			}
 			ctx.Gateways = maps.Clone(ctx.Gateways)
 			if ctx.Gateways == nil {
 				ctx.Gateways = map[string]config.GatewayConfig{}
@@ -283,6 +302,10 @@ Examples:
 			cancel()
 			if err != nil {
 				return err
+			}
+			if newForm && !isSwitch && !isPreset && token == "" && gw.Key == "" {
+				gw.NoAuth = true // conversion, which sets it for the legacy form, is skipped
+				ctx.Gateways[name] = gw
 			}
 			if token != "" {
 				if gw.Store == "" {

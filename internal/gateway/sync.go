@@ -47,6 +47,9 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 		ctx, cancel = context.WithTimeout(ctx, DefaultFetchTimeout)
 		defer cancel()
 	}
+	if Endpoint(opts.Gateway).Switch != nil {
+		return &SyncResult{}, nil // nothing to fetch or write for a provider switch
+	}
 	progress := opts.Progress
 	if progress == nil {
 		progress = io.Discard

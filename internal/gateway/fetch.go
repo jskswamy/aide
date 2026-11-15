@@ -56,6 +56,9 @@ func NormalizeBaseURL(raw string) string {
 // token only ever goes where base_url says, even with a caller-supplied
 // client. The result is deduplicated, sanitized and sorted by ID.
 func FetchModels(ctx context.Context, client *http.Client, ep EndpointSpec, token string) ([]Model, error) {
+	if ep.Switch != nil {
+		return nil, errors.New("a provider-switch gateway has no model endpoint")
+	}
 	c := http.Client{}
 	if client != nil {
 		c = *client
@@ -68,7 +71,7 @@ func FetchModels(ctx context.Context, client *http.Client, ep EndpointSpec, toke
 		return nil, fmt.Errorf("building request for %s: %w", endpoint, err)
 	}
 	switch {
-	case token == "":
+	case token == "" || ep.Keyless:
 	case ep.Header == gatewaypreset.HeaderXAPIKey:
 		req.Header.Set("x-api-key", token)
 	default:

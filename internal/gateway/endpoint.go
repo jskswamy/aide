@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"cmp"
 	"regexp"
 	"strings"
 
@@ -12,20 +13,38 @@ import (
 // Every caller that needs a gateway's URL, wire protocol or auth header
 // takes it from Endpoint, so none builds them on its own.
 type EndpointSpec struct {
-	// BaseURL is exact: a path such as /v1 or /api/paas/v4 is kept.
+	// BaseURL is exact: a path such as /v1 or /api/paas/v4 is kept
+	// (anthropic-messages alone drops a trailing /v1, as it always has).
 	BaseURL string
 	API     gatewaypreset.API
 	Header  gatewaypreset.Header
+	// Keyless means no key is sent: a keyless-loopback preset or no_auth.
+	Keyless bool
+	// Switch is set for a provider-switch preset, which has no URL.
+	Switch *gatewaypreset.SwitchSpec
 }
 
-// Endpoint resolves gw. Today's gateways are Anthropic Messages proxies
-// taking a Bearer token, with a base URL normalized to drop /v1.
+// Endpoint resolves gw: a preset gives its URL, wire protocol and key
+// header, a custom gateway its url and api with a Bearer key (api
+// defaults to anthropic-messages).
 func Endpoint(gw config.GatewayConfig) EndpointSpec {
-	return EndpointSpec{
-		BaseURL: NormalizeBaseURL(gw.BaseURL),
-		API:     gatewaypreset.APIAnthropicMessages,
+	ep := EndpointSpec{
+		BaseURL: cmp.Or(gw.BaseURL, gw.URL),
+		API:     gatewaypreset.API(cmp.Or(gw.API, string(gatewaypreset.APIAnthropicMessages))),
 		Header:  gatewaypreset.HeaderBearer,
+		Keyless: gw.NoAuth,
 	}
+	if p, ok := gatewaypreset.Lookup(gw.Preset); ok {
+		if p.Kind == gatewaypreset.KindProviderSwitch {
+			return EndpointSpec{Switch: p.Switch}
+		}
+		ep.BaseURL, ep.API, ep.Header = p.BaseURL, p.API, p.Header
+		ep.Keyless = ep.Keyless || p.Kind == gatewaypreset.KindKeylessLoopback
+	}
+	if ep.API == gatewaypreset.APIAnthropicMessages {
+		ep.BaseURL = NormalizeBaseURL(ep.BaseURL)
+	}
+	return ep
 }
 
 var versionSegment = regexp.MustCompile(`/v[0-9]+$`)

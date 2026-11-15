@@ -137,14 +137,16 @@ func (c Context) GatewayCandidates(h string) []string {
 func LegacyGatewayChoice(ctx Context, h string, renames map[string]map[string]string) string {
 	candidates := ctx.GatewayCandidates(h)
 	synth, err := synthesizeGatewayCredentials(ctx)
+	// Only legacy gateways derive a choice: a new-form or preset gateway
+	// is chosen explicitly, so leaving it unset must prompt or exit 78.
+	isLegacy := func(n string) bool { gw, ok := ctx.Gateways[n]; return ok && gw.IsLegacy() }
 	if err != nil || !slices.ContainsFunc(candidates, func(n string) bool {
-		_, legacy := ctx.Gateways[n]
-		return legacy || renamedFrom(renames[h], n) != ""
+		return isLegacy(n) || renamedFrom(renames[h], n) != ""
 	}) {
 		return ""
 	}
 	for _, name := range DefaultCredentialsForHarness(synth, h) {
-		if _, legacy := ctx.Gateways[name]; !legacy {
+		if !isLegacy(name) {
 			continue
 		}
 		if to, ok := renames[h][name]; ok {

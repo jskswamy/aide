@@ -244,6 +244,17 @@ func TestLegacyGatewayChoice(t *testing.T) {
 			t.Errorf("choice = %q, want a-codex", got)
 		}
 	})
+	t.Run("new-form and preset gateways derive nothing", func(t *testing.T) {
+		ctx, renames := convert(Context{Gateways: map[string]GatewayConfig{
+			"corp":   {URL: "https://gw.example.com", BaseURL: "https://gw.example.com", API: "anthropic-messages", Store: "s", Key: "k", Harnesses: []string{"claude", "pi"}},
+			"ollama": {Preset: "ollama", Harnesses: []string{"pi"}},
+		}})
+		for _, h := range []string{"claude", "pi"} {
+			if got := LegacyGatewayChoice(ctx, h, renames); got != "" {
+				t.Errorf("%s choice = %q, want unset", h, got)
+			}
+		}
+	})
 	t.Run("no marked gateway leaves it unset", func(t *testing.T) {
 		ctx, renames := convert(Context{Gateways: map[string]GatewayConfig{"a": legacy("claude")}})
 		if got := LegacyGatewayChoice(ctx, "pi", renames); got != "" {

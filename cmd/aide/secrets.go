@@ -54,7 +54,7 @@ func secretsCreateCmd() *cobra.Command {
 			name := args[0]
 			secretsDir := config.SecretsDir()
 			runtimeDir := os.TempDir()
-			recipient, err := secrets.ResolveRecipient(ageKey, bufio.NewReader(cmd.InOrStdin()), cmd.OutOrStdout(), isInputTTY(cmd))
+			recipient, err := secrets.ResolveRecipient(ageKey, bufio.NewReader(cmd.InOrStdin()), cmd.OutOrStdout(), isInputTTY(cmd), false)
 			if err != nil {
 				return err
 			}

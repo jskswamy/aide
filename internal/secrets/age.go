@@ -360,8 +360,9 @@ func promptCustomRecipient(in *bufio.Reader, out io.Writer) (string, error) {
 
 // ResolveRecipient resolves an age1... public key from an explicit flag,
 // discovered keys (auto-selecting 1 or prompting on TTY for 2+), or interactive
-// key generation when 0 keys exist on a TTY.
-func ResolveRecipient(explicitPubKey string, in *bufio.Reader, out io.Writer, isTTY bool) (string, error) {
+// key generation when 0 keys exist on a TTY. allowGenerate also generates a
+// key when 0 keys exist off a terminal (--generate-age-key).
+func ResolveRecipient(explicitPubKey string, in *bufio.Reader, out io.Writer, isTTY, allowGenerate bool) (string, error) {
 	if out == nil {
 		out = io.Discard
 	}
@@ -411,11 +412,27 @@ func ResolveRecipient(explicitPubKey string, in *bufio.Reader, out io.Writer, is
 	}
 
 	// len(candidates) == 0
+	for _, v := range []string{"SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE"} {
+		if strings.TrimSpace(os.Getenv(v)) != "" {
+			return "", fmt.Errorf("%s is set but holds no usable age identity; fix it or pass --age-key <age1...>", v)
+		}
+	}
+	if _, err := exec.LookPath("age-plugin-yubikey"); err == nil && (!isTTY || in == nil) {
+		return "", fmt.Errorf("a YubiKey age identity cannot supply a recipient here; pass --age-key <age1...>")
+	}
+	if allowGenerate {
+		rec, err := GenerateDefaultAgeKey(defaultKeyPath())
+		if err != nil {
+			return "", err
+		}
+		_, _ = fmt.Fprintf(out, "✓ Generated age key at %s (public key: %s)\n", rec.Source, rec.PublicKey)
+		return rec.PublicKey, nil
+	}
 	if !isTTY || in == nil {
 		if _, err := DiscoverAgeKey(); err != nil {
 			return "", err
 		}
-		return "", fmt.Errorf("no age encryption key found; pass --age-key <age1...>")
+		return "", fmt.Errorf("no age encryption key found; pass --age-key <age1...> or --generate-age-key")
 	}
 
 	defPath := defaultKeyPath()

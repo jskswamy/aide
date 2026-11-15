@@ -1760,10 +1760,10 @@ func TestGatewayCmd_AddFromEnvErrors(t *testing.T) {
 	}{
 		"bare from-env on a custom gateway": {[]string{"add", "corp", "--url", e.srv.URL, "--from-env"}, "--from-env=VAR"},
 		"preset key not exported":           {[]string{"add", "openrouter-anthropic", "--from-env"}, "OPENROUTER_API_KEY"},
-		"preset aide cannot deliver":        {[]string{"add", "openai", "--from-env=OPENAI_API_KEY"}, "cannot yet write"},
 		"no-auth with a key name":           {[]string{"add", "corp", "--url", e.srv.URL, "--no-auth", "--key", "k"}, "--no-auth takes no key"},
 		"no-auth off loopback":              {[]string{"add", "corp", "--url", "https://llm.example.com", "--no-auth"}, "loopback"},
-		"other wire protocol":               {[]string{"add", "corp", "--url", e.srv.URL, "--api", "openai-chat"}, "cannot yet write"},
+		"unknown wire protocol":             {[]string{"add", "corp", "--url", e.srv.URL, "--api", "grpc"}, "is not anthropic-messages"},
+		"key for a provider switch":         {[]string{"add", "bedrock", "--region", "us-east-1", "--key-stdin"}, "takes no key"},
 		"key and env together":              {[]string{"add", "corp", "--url", e.srv.URL, "--key-stdin", "--from-env=X"}, "mutually exclusive"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1808,25 +1808,49 @@ func TestGatewayCmd_AddPresetFromEnvVar(t *testing.T) {
 	e := newGatewayEnv(t)
 	routeToTestServer(t, e.srv)
 	t.Setenv("OPENROUTER_API_KEY", gwCmdToken)
-	// openrouter shares the variable but is not deliverable; the deliverable
-	// openrouter-anthropic is found instead.
+	// openrouter and openrouter-anthropic share the variable; the first in
+	// catalogue order is found.
 	if out, err := runGateway(t, "", "add", "--from-env=OPENROUTER_API_KEY", "--profile", "work"); err != nil {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
-	gw := loadedGateway(t, e, "openrouter-anthropic")
-	if gw.Preset != "openrouter-anthropic" || gw.API != "anthropic-messages" || gw.URL != "" && gw.URL != "https://openrouter.ai/api" ||
-		strings.Join(gw.Harnesses, ",") != "claude,pi,omp,opencode" {
+	gw := loadedGateway(t, e, "openrouter")
+	if gw.Preset != "openrouter" || gw.API != "openai-chat" || gw.URL != "https://openrouter.ai/api/v1" ||
+		strings.Join(gw.Harnesses, ",") != "pi,omp,opencode" {
 		t.Errorf("gateway = %+v", gw)
 	}
-	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "none" {
-		t.Errorf("GatewayChoice = %v, want claude=none", got)
-	}
-	if got := e.store(t, "work"); got["openrouter_anthropic_token"] != gwCmdToken {
+	if got := e.store(t, "work"); got["openrouter_token"] != gwCmdToken {
 		t.Errorf("secret store = %v", got)
+	}
+}
+
+func TestGatewayCmd_AddAnthropicPresetKeepsXAPIKey(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-api-key") != gwCmdToken {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"m1"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	routeToTestServer(t, srv)
+	if out, err := runGateway(t, gwCmdToken+"\n", "add", "anthropic", "--key-stdin", "--profile", "work"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	gw := loadedGateway(t, e, "anthropic")
+	if gw.Preset != "anthropic" || gw.API != "anthropic-messages" || gw.URL != "https://api.anthropic.com" || gw.Store == "" || gw.Key == "" {
+		t.Errorf("gateway = %+v", gw)
+	}
+}
+
+func TestGatewayCmd_AddProviderSwitchSavesNoKey(t *testing.T) {
+	e := newGatewayEnv(t)
+	if out, err := runGateway(t, "", "add", "bedrock", "--region", "us-east-1", "--profile", "work"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	gw := loadedGateway(t, e, "bedrock")
+	if gw.Preset != "bedrock" || gw.Region != "us-east-1" || gw.URL != "" || gw.BaseURL != "" || gw.Store != "" || gw.Key != "" {
+		t.Errorf("gateway = %+v", gw)
 	}
 }
 

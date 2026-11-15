@@ -628,10 +628,9 @@ capability for that launch only, which grants the full capability
 (`~/.aws` and `AWS_*` variables, or the gcloud equivalent). Two regions
 are two named gateways.
 
-The main entry `aide gateway add` writes serves only the Anthropic
-Messages API with a bearer key (custom `--url` gateways and
-`openrouter-anthropic`); other presets are in the catalog and in the
-schema above but `add` refuses them until aide can write them.
+`aide gateway add` takes any preset and any `--api` (`anthropic-messages`,
+`openai-chat`, `openai-responses`). A provider switch takes `--region`
+(and `--project` for `vertex`) and no key.
 
 When `codex` is among the harnesses (the default), `add` also creates
 `<name>-codex`, a Responses API gateway (`api: openai-responses`) at

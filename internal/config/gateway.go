@@ -122,17 +122,25 @@ var gatewayDangerousEnv = []string{
 	"BASH_ENV", "ENV", "GIT_SSH_COMMAND",
 }
 
-// EffectiveHarnesses returns the harnesses gw serves: Harnesses, or
-// DefaultGatewayHarnesses when omitted (a provider switch serves only
-// Claude Code).
+// EffectiveHarnesses returns the harnesses gw serves: Harnesses, or when
+// omitted the preset's, or for a custom url the defaults its wire
+// protocol can serve. A legacy base_url gateway keeps all of the
+// defaults: its conversion splits Codex off.
 func (gw GatewayConfig) EffectiveHarnesses() []string {
 	if len(gw.Harnesses) > 0 {
 		return slices.Clone(gw.Harnesses)
 	}
-	if gw.SwitchSpec() != nil {
-		return []string{"claude"}
+	if p, ok := gw.ResolvedPreset(); ok {
+		return slices.Clone(p.Harnesses)
 	}
-	return slices.Clone(DefaultGatewayHarnesses)
+	if gw.URL == "" {
+		return slices.Clone(DefaultGatewayHarnesses)
+	}
+	api := gatewaypreset.API(cmp.Or(gw.API, apiAnthropicMessages))
+	return slices.DeleteFunc(slices.Clone(DefaultGatewayHarnesses), func(h string) bool {
+		want, ok := harnessAPI[h]
+		return ok && want != api
+	})
 }
 
 // EffectiveTTL returns RefreshTTL parsed, or DefaultGatewayRefreshTTL
@@ -164,9 +172,18 @@ func (gw GatewayConfig) TTL() time.Duration {
 // RequiresToken reports whether gw stores a bearer secret.
 func (gw GatewayConfig) RequiresToken() bool { return gw.Key != "" }
 
-// IsLoopback reports whether gw.BaseURL is localhost, 127.0.0.1, or ::1.
+// endpointURL is gw's url, or its preset's when it sets none.
+func (gw GatewayConfig) endpointURL() string {
+	u := cmp.Or(gw.BaseURL, gw.URL)
+	if p, ok := gw.ResolvedPreset(); ok {
+		u = cmp.Or(u, p.BaseURL)
+	}
+	return u
+}
+
+// IsLoopback reports whether gw's url is localhost, 127.0.0.1, or ::1.
 func (gw GatewayConfig) IsLoopback() bool {
-	u, err := url.Parse(gw.BaseURL)
+	u, err := url.Parse(gw.endpointURL())
 	if err != nil {
 		return false
 	}
@@ -307,11 +324,7 @@ func validateGateway(name string, gw GatewayConfig, ctx Context, neverAllowEnv [
 // validateEndpointAuth checks the url of a gateway that is not a
 // provider switch, and that its store and key are given together.
 func validateEndpointAuth(gw GatewayConfig, neverAllowEnv []string) error {
-	u := cmp.Or(gw.BaseURL, gw.URL)
-	if p, ok := gw.ResolvedPreset(); ok {
-		u = cmp.Or(u, p.BaseURL)
-	}
-	if err := checkGatewayURL(u); err != nil {
+	if err := checkGatewayURL(gw.endpointURL()); err != nil {
 		return err
 	}
 	switch {
@@ -334,8 +347,8 @@ func validateEndpointAuth(gw GatewayConfig, neverAllowEnv []string) error {
 // (and project) its preset needs and no key or url of its own.
 func validateSwitch(gw GatewayConfig, preset string, sw *gatewaypreset.SwitchSpec) error {
 	switch {
-	case gw.Store != "" || gw.Key != "" || gw.NoAuth:
-		return fmt.Errorf("preset %s is a provider switch: it takes no store, key or no_auth (cloud credentials come from the %s capability)", preset, sw.Capability)
+	case gw.Store != "" || gw.Key != "" || gw.NoAuth || gw.URL != "" || gw.BaseURL != "":
+		return fmt.Errorf("preset %s is a provider switch: it takes no store, key, url or no_auth (cloud credentials come from the %s capability)", preset, sw.Capability)
 	case sw.RequireRegion && gw.Region == "":
 		return fmt.Errorf("region: is required for preset %s", preset)
 	case sw.RequireProject && gw.Project == "":
@@ -368,7 +381,7 @@ func checkHarnessAPI(gw GatewayConfig, isPreset bool) error {
 	if gw.URL == "" && !isPreset {
 		return nil
 	}
-	for _, h := range gw.Harnesses {
+	for _, h := range gw.EffectiveHarnesses() {
 		if want, ok := harnessAPI[h]; ok && want != api {
 			return fmt.Errorf("harnesses: %q speaks %s but this gateway's api is %s", h, want, api)
 		}

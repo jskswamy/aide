@@ -105,6 +105,7 @@ func TestValidateGateways_Kinds(t *testing.T) {
 		"vertex without project":          {gw: GatewayConfig{Preset: "vertex", Region: "us-east5"}, want: "project"},
 		"switch with a key":               {gw: GatewayConfig{Preset: "bedrock", Region: "r", Store: "s", Key: "k"}, want: "switch"},
 		"switch with no_auth":             {gw: GatewayConfig{Preset: "bedrock", Region: "r", NoAuth: true}, want: "no_auth"},
+		"switch with a url":               {gw: GatewayConfig{Preset: "bedrock", Region: "r", URL: "https://evil.example.com"}, want: "url"},
 		"switch marked for pi":            {gw: GatewayConfig{Preset: "bedrock", Region: "r", Harnesses: []string{"pi"}}, want: "bedrock"},
 		"legacy gateway keeps every mark": {gw: GatewayConfig{BaseURL: "https://gw.example.com", Harnesses: []string{"claude", "codex"}}},
 	}
@@ -118,6 +119,31 @@ func TestValidateGateways_Kinds(t *testing.T) {
 				t.Errorf("error = %v, want it to mention %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestEffectiveHarnesses_FollowThePresetAndWireProtocol(t *testing.T) {
+	cases := map[string]struct {
+		gw   GatewayConfig
+		want []string
+	}{
+		"openai preset":    {GatewayConfig{Preset: "openai"}, []string{"pi", "omp", "opencode", "codex"}},
+		"switch":           {GatewayConfig{Preset: "bedrock", Region: "r"}, []string{"claude"}},
+		"custom chat":      {GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-chat"}, []string{"pi", "omp", "opencode"}},
+		"custom responses": {GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-responses"}, []string{"pi", "omp", "opencode", "codex"}},
+		"custom messages":  {GatewayConfig{URL: "https://gw.example.com"}, []string{"claude", "pi", "omp", "opencode"}},
+		"legacy base_url":  {GatewayConfig{BaseURL: "https://gw.example.com"}, DefaultGatewayHarnesses},
+	}
+	for name, c := range cases {
+		if got := c.gw.EffectiveHarnesses(); !slices.Equal(got, c.want) {
+			t.Errorf("%s: EffectiveHarnesses() = %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+func TestIsLoopback_UsesThePresetURL(t *testing.T) {
+	if !(GatewayConfig{Preset: "ollama"}).IsLoopback() || (GatewayConfig{Preset: "anthropic"}).IsLoopback() {
+		t.Error("IsLoopback() must read the preset's url")
 	}
 }
 

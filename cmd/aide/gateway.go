@@ -107,9 +107,9 @@ only name the variable aide injects it as.`,
 
 func gatewayAddCmd(profile *string) *cobra.Command {
 	var (
-		rawURL, ttl, harnesses, store, key, ageKey, fromEnv, model, api string
-		defaultFor                                                      []string
-		tokenStdin, force, makeDefault, noAuth, generateAgeKey          bool
+		rawURL, ttl, harnesses, store, key, ageKey, fromEnv, model, api, region, project string
+		defaultFor                                                                       []string
+		tokenStdin, force, makeDefault, noAuth, generateAgeKey                           bool
 	)
 	cmd := &cobra.Command{
 		Use:   "add [<preset>|<name>]",
@@ -145,8 +145,8 @@ Examples:
 			if noAuth && (key != "" || store != "") {
 				return errors.New("--no-auth takes no key; drop --key and --secret-store")
 			}
-			if api != "" && api != string(gatewaypreset.APIAnthropicMessages) {
-				return fmt.Errorf("--api %s: %w", api, errWireNotDelivered)
+			if api != "" && !slices.Contains([]string{string(gatewaypreset.APIAnthropicMessages), string(gatewaypreset.APIOpenAIChat), string(gatewaypreset.APIOpenAIResponses)}, api) {
+				return fmt.Errorf("--api %q is not anthropic-messages, openai-chat or openai-responses", api)
 			}
 			for _, h := range defaultFor {
 				if !slices.Contains(config.DefaultGatewayHarnesses, h) {
@@ -175,7 +175,7 @@ Examples:
 				preset, isPreset = gatewaypreset.Lookup(args[0])
 			case fromEnv != "" && fromEnv != fromEnvAuto:
 				for _, p := range gatewaypreset.All() {
-					if slices.Contains(p.ShellVars, fromEnv) && presetDeliverable(p) == nil {
+					if slices.Contains(p.ShellVars, fromEnv) {
 						preset, isPreset, args = p, true, []string{p.Name}
 						break
 					}
@@ -183,9 +183,6 @@ Examples:
 			}
 			var presetHarnesses []string
 			if isPreset {
-				if err := presetDeliverable(preset); err != nil {
-					return err
-				}
 				rawURL, presetHarnesses = preset.BaseURL, preset.Harnesses
 				if api == "" {
 					api = string(preset.API)
@@ -235,6 +232,19 @@ Examples:
 				Store:      store,
 				Key:        key,
 				Harnesses:  resolvedHarnesses,
+				Region:     region,
+				Project:    project,
+			}
+			isSwitch := preset.Switch != nil
+			// Anthropic Messages gateways take the legacy form, which splits Codex
+			// off; every other wire protocol is saved as url+api and keeps its exact url.
+			newForm := isSwitch || (api != "" && api != string(gatewaypreset.APIAnthropicMessages))
+			if newForm && !isSwitch {
+				gw.BaseURL = strings.TrimRight(strings.TrimSpace(rawURL), "/")
+				gw.URL = gw.BaseURL
+			}
+			if isSwitch && (tokenStdin || fromEnv != "" || noAuth) {
+				return fmt.Errorf("preset %s is a provider switch: it takes no key; drop --key-stdin, --from-env and --no-auth", preset.Name)
 			}
 			if gw.Key != "" && gw.Store == "" {
 				gw.Store = ctx.Secret
@@ -246,7 +256,7 @@ Examples:
 				gw.Key = defaultGatewayKey(name)
 			}
 			old, hadOld := ctx.Gateways[name]
-			if hadOld && !force && gateway.NormalizeBaseURL(old.BaseURL) != gw.BaseURL {
+			if hadOld && !force && gateway.Endpoint(old).BaseURL != gateway.Endpoint(gw).BaseURL {
 				return fmt.Errorf("profile %q already has gateway %q for %s; pass --force to replace it (and its token), or give this one another name",
 					profileName, name, old.BaseURL)
 			}
@@ -265,7 +275,11 @@ Examples:
 				cancel()
 				return errors.New("--no-auth is only for loopback URLs (localhost, 127.0.0.1 or ::1)")
 			}
-			token, models, err := resolveGatewayAddAuth(fctx, cmd, reader, gw, tokenStdin, tokenEnv, noAuth)
+			var token string
+			var models []gateway.Model
+			if !isSwitch { // a provider switch has no endpoint to fetch from
+				token, models, err = resolveGatewayAddAuth(fctx, cmd, reader, gw, tokenStdin, tokenEnv, noAuth)
+			}
 			cancel()
 			if err != nil {
 				return err
@@ -297,6 +311,9 @@ Examples:
 			// The new gateway is written in its one-API-per-gateway form: one
 			// that serves Codex gets a Responses sibling.
 			converted, _ := config.ConvertLegacyGateways(config.Context{Gateways: ctx.Gateways, DefaultCredentials: []string{name}})
+			if newForm {
+				converted = map[string]config.GatewayConfig{name: gw}
+			}
 			var added []string
 			for _, k := range slices.Sorted(maps.Keys(converted)) {
 				if _, saved := cfg.Contexts[profileName].Gateways[k]; k == name || !saved {
@@ -372,7 +389,9 @@ Examples:
 		},
 	}
 	cmd.Flags().StringVar(&rawURL, "url", "", "Gateway base URL (https://, or http:// for localhost only)")
-	cmd.Flags().StringVar(&api, "api", "", "Wire protocol of a custom gateway (anthropic-messages)")
+	cmd.Flags().StringVar(&api, "api", "", "Wire protocol of a custom gateway (anthropic-messages, openai-chat or openai-responses)")
+	cmd.Flags().StringVar(&region, "region", "", "Cloud region of a provider switch (bedrock, vertex)")
+	cmd.Flags().StringVar(&project, "project", "", "Cloud project of a provider switch (vertex)")
 	cmd.Flags().BoolVar(&noAuth, "no-auth", false, "The gateway takes no key (loopback URLs only)")
 	cmd.Flags().BoolVar(&tokenStdin, "key-stdin", false, "Read the key from stdin")
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "Deprecated: use --key-stdin")
@@ -399,19 +418,6 @@ Examples:
 
 // fromEnvAuto is --from-env given without a variable name.
 const fromEnvAuto = "\x00auto"
-
-// errWireNotDelivered is why a wire protocol other than Anthropic
-// Messages is refused: the harness writers only emit that one.
-var errWireNotDelivered = errors.New("aide cannot yet write this wire protocol into harness files; only anthropic-messages gateways with a Bearer key are supported")
-
-// presetDeliverable refuses a preset whose wire protocol, key header or
-// kind the harness writers cannot deliver yet.
-func presetDeliverable(p gatewaypreset.Preset) error {
-	if p.Kind != gatewaypreset.KindStaticKey || p.API != gatewaypreset.APIAnthropicMessages || p.Header != gatewaypreset.HeaderBearer {
-		return fmt.Errorf("preset %s (%s, %s): %w", p.Name, p.Kind, cmp.Or(string(p.API), "no wire protocol"), errWireNotDelivered)
-	}
-	return nil
-}
 
 // presetShellVar resolves a bare --from-env: the first of the preset's
 // usual variables that is set.
@@ -1890,16 +1896,18 @@ func gatewayListEntry(profile string, ctx config.Context, name, home string, wit
 	gw := ctx.Gateways[name]
 	ttl := gw.TTL()
 	e := GatewayListEntry{
-		Profile: profile, Gateway: name, Kind: "gateway", BaseURL: gw.BaseURL, Store: gw.Store, Key: gw.Key,
+		Profile: profile, Gateway: name, Kind: "gateway", BaseURL: gateway.Endpoint(gw).BaseURL, Store: gw.Store, Key: gw.Key,
 		RefreshTTL: cmp.Or(gw.RefreshTTL, "24h"), DefaultFor: []string{},
 	}
 	e.CachePath, _ = gateway.CachePath(home, profile, name)
 	cat, _ := gateway.ReadCache(home, profile, name)
 	e.ttl = ttl
-	switch {
+	switch sw := gw.SwitchSpec(); {
+	case sw != nil:
+		e.Kind, e.BaseURL = "switch", fmt.Sprintf("cloud credentials (%s capability)", sw.Capability)
 	case cat == nil:
 		e.Expired = true
-	case !gateway.MatchesBaseURL(cat, gw.BaseURL):
+	case !gateway.MatchesBaseURL(cat, e.BaseURL):
 		e.URLMismatch = true
 		e.Expired = true
 	default:
@@ -1957,7 +1965,7 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			}
 			fmt.Fprintf(w, "    Chosen for:   %s\n", strings.Join(parts, ", "))
 		}
-		if e.Kind != "credential" {
+		if e.Kind != "credential" && e.Kind != "switch" {
 			fmt.Fprintf(w, "    Refresh TTL:  %s\n", e.RefreshTTL)
 			fmt.Fprintf(w, "    Cache:        %s\n", cacheSummary(e))
 			fmt.Fprintf(w, "                  %s\n", homepath.Tilde(e.CachePath, home))
@@ -1982,7 +1990,7 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			fmt.Fprintf(tw, "      %s\t%s\t%s\t%s\n", st.Harness, envVar, targetFile, status)
 		}
 		_ = tw.Flush()
-		if withModels && e.Kind != "credential" {
+		if withModels && e.Kind != "credential" && e.Kind != "switch" {
 			fmt.Fprintf(w, "    Models (%d):\n", len(e.Models))
 			tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(tw, "      ID\tDISPLAY NAME\tPROVIDER\tCONTEXT\tMAX OUTPUT")

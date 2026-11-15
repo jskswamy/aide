@@ -39,7 +39,17 @@ func TestGatewayLines_Cases(t *testing.T) {
 			ContextName: "work", Harness: "opencode",
 			GatewayChoices: []CredentialInfo{{Harness: "opencode", Choice: "unset", Source: "unset", Others: 2, Warnings: []string{"stale"}}},
 			Credentials:    []CredentialInfo{corp, ollama},
-		}, "Gateways  ", []string{"unset — opencode starts on its own default   (unset)", "in /model: corp", "⚠ stale"}, nil},
+		}, "Gateways  ", []string{"unset (starts on opencode default)   (unset)", "in /model: corp", "⚠ stale"}, nil},
+		{"slot unset", BannerData{
+			ContextName: "work", Harness: "claude",
+			GatewayChoices: []CredentialInfo{{Harness: "claude", Choice: "unset", Source: "unset"}},
+			Credentials:    []CredentialInfo{corp},
+		}, "Gateway   ", []string{"unset (would prompt on a terminal, exit 78 in scripts)   (unset)"}, []string{"starts on"}},
+		{"file without sync", BannerData{
+			ContextName: "work", Harness: "pi",
+			GatewayChoices: []CredentialInfo{{Harness: "pi", Choice: "corp", Source: "profile", Kind: "gateway", Name: "corp", Startup: true}},
+			Credentials:    []CredentialInfo{{Name: "corp", IsGateway: true, TargetFile: "/x/models.json"}},
+		}, "Gateways  ", []string{"file: /x/models.json"}, []string{"()"}},
 		{"keyless claude", BannerData{
 			ContextName: "work", Harness: "claude",
 			GatewayChoices: []CredentialInfo{{Harness: "claude", Choice: "ollama", Source: "flag", Kind: "keyless", Name: "ollama", URL: "http://127.0.0.1:11434"}},
@@ -98,13 +108,15 @@ func TestGatewaySummary(t *testing.T) {
 		{Harness: "codex", Choice: "none", Source: "no-candidates"},
 		{Harness: "pi", Choice: "opencode-go", Source: "profile", Kind: "gateway", Store: "work", Key: "opencode-go", KeyEnv: "AIDE_GW_OPENCODE_GO_KEY", Others: 2},
 		{Harness: "opencode", Choice: "unset", Source: "unset", Others: 3},
+		{Harness: "codex2", Choice: "unset", Source: "unset"},
 	}
 	got := strings.Join(GatewaySummary("work", views), "\n")
 	want := `Gateways (profile work)
   claude    corp         repo preference     work/corp → ANTHROPIC_AUTH_TOKEN
   codex     —            no gateways marked
   pi        opencode-go  profile work        work/opencode-go → AIDE_GW_OPENCODE_GO_KEY  +2 in /model
-  opencode  unset        unset               starts on opencode default · 3 in /model`
+  opencode  unset        unset               unset (starts on opencode default) · 3 in /model
+  codex2    unset        unset               unset (would prompt on a terminal, exit 78 in scripts)`
 	if got != want {
 		t.Errorf("summary:\n%s\nwant:\n%s", got, want)
 	}

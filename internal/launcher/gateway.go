@@ -34,7 +34,7 @@ func (l *Launcher) applyGatewayChoice(harnessName string, ctx config.Context, ch
 	}
 	entry, model := gateway.ProviderID(choice.Value), ctx.Gateways[choice.Value].Model
 	if d, ok := launchableHarness(harnessName); ok && model == "" && !choice.Derived &&
-		(d.ChoiceEnv != nil || d.ChoiceArgs != nil && d.ChoiceArgs(entry, "") == nil) {
+		(d.ChoiceEnv != nil && d.ChoiceEnv(args, entry, "x") != nil || d.ChoiceArgs != nil && d.ChoiceArgs(entry, "") == nil) {
 		fmt.Fprintf(l.stderr(), "aide: note: gateway %q has no model, so %s starts on its own default; set one with: "+
 			"aide gateway edit %s --model <id>, or switch with /model\n", choice.Value, harnessName, choice.Value)
 	}

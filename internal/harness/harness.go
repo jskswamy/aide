@@ -123,13 +123,16 @@ func opencodeChoiceEnv(args []string, entry, model string) map[string]string {
 	if model == "" || (len(args) > 0 && args[0] != "run" && opencodeSubcommands[args[0]]) {
 		return nil
 	}
-	for _, a := range args {
-		if name, _, _ := strings.Cut(a, "="); name == "--server" {
-			return nil
-		}
+	if hasServerFlag(args) {
+		return nil
 	}
 	b, _ := json.Marshal(map[string]string{"model": entry + "/" + model})
 	return map[string]string{"OPENCODE_CONFIG_CONTENT": string(b)}
+}
+
+// hasServerFlag reports --server or --server=URL in args.
+func hasServerFlag(args []string) bool {
+	return slices.ContainsFunc(args, func(a string) bool { name, _, _ := strings.Cut(a, "="); return name == "--server" })
 }
 
 // userChoiceFlag returns the first model or provider flag in args,
@@ -267,7 +270,7 @@ var opencodeStandaloneLeaves = map[string][]string{
 // for other subcommands, and is prepended for root invocations. An
 // explicit --standalone or --server wins.
 func (d Descriptor) ApplyLaunchArgs(args []string) []string {
-	if d.Name != "opencode" || slices.Contains(args, "--standalone") || slices.Contains(args, "--server") {
+	if d.Name != "opencode" || slices.Contains(args, "--standalone") || hasServerFlag(args) {
 		return args
 	}
 	if len(args) == 0 || !opencodeSubcommands[args[0]] {

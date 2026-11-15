@@ -355,6 +355,9 @@ default_profile: work
 	if got, _ := envValue(env, "OPENCODE_CONFIG_CONTENT"); got != `{"model":"aide-alpha/alpha-model"}` {
 		t.Errorf("OPENCODE_CONFIG_CONTENT = %q; stderr:\n%s", got, stderr)
 	}
+	if !slices.Contains(args, "--standalone") {
+		t.Errorf("opencode args = %v, want --standalone so the choice env reaches the session", args)
+	}
 	if slices.Contains(args, "aide-alpha") {
 		t.Errorf("opencode args = %v, want no startup flags", args)
 	}

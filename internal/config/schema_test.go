@@ -963,7 +963,8 @@ func TestResolvePreferences_ProjectOverridesInfoDetail(t *testing.T) {
 
 func TestResolvePreferences_ProjectOnlyNoGlobal(t *testing.T) {
 	f := false
-	project := &config.Preferences{ShowInfo: &f, InfoStyle: "clean", InfoDetail: "minimal"}
+	tr := true
+	project := &config.Preferences{ShowInfo: &f, InfoStyle: "clean", InfoDetail: "minimal", PromptGateway: &tr}
 	result := config.ResolvePreferences(nil, project)
 	if result.ShowInfo == nil || *result.ShowInfo {
 		t.Errorf("ShowInfo = %v, want false", result.ShowInfo)
@@ -973,6 +974,23 @@ func TestResolvePreferences_ProjectOnlyNoGlobal(t *testing.T) {
 	}
 	if result.InfoDetail != "minimal" {
 		t.Errorf("InfoDetail = %q, want %q", result.InfoDetail, "minimal")
+	}
+	if result.PromptGateway == nil || !*result.PromptGateway {
+		t.Errorf("PromptGateway = %v, want true", result.PromptGateway)
+	}
+}
+
+func TestResolvePreferences_PromptGatewayMerge(t *testing.T) {
+	tr := true
+	f := false
+	if def := config.ResolvePreferences(nil, nil); def.PromptGateway != nil {
+		t.Errorf("default PromptGateway = %v, want nil", def.PromptGateway)
+	}
+	if g := config.ResolvePreferences(&config.Preferences{PromptGateway: &tr}, nil); g.PromptGateway == nil || !*g.PromptGateway {
+		t.Errorf("global PromptGateway = %v, want true", g.PromptGateway)
+	}
+	if p := config.ResolvePreferences(&config.Preferences{PromptGateway: &tr}, &config.Preferences{PromptGateway: &f}); p.PromptGateway == nil || *p.PromptGateway {
+		t.Errorf("project override PromptGateway = %v, want false", p.PromptGateway)
 	}
 }
 

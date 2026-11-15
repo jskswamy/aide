@@ -263,17 +263,19 @@ aide project show [--profile <name>] [--format json]
 ## aide prompt
 
 ```
-aide prompt [--starship-config]
+aide prompt [--starship-config] [--compact] [--gateway]
 ```
 
 Output a compact profile line for shell prompt integration.
 
 **Flags:**
 - `--starship-config`: Print a ready-to-use `starship.toml` snippet to stdout
+- `--compact`: Remove spaces between prompt segments
+- `--gateway`: Include the active harness's gateway choice segment (`⇄<gw>`, `⇄login`, or `⇄?`, omitted on harnesses without gateway support; also enabled by `preferences.prompt_gateway: true`)
 
 **Output format:**
 ```
-profile [profile-icon] [agent-icon] [status]
+profile [profile-icon] [agent-icon] [⇄<gw>|⇄login|⇄?] [status]
 ```
 
 Status indicators:
@@ -1387,7 +1389,7 @@ agent, otherwise `claude`.
 | Flag | Description |
 |------|-------------|
 | `--agent <name>` | Coding agent to render for (default: auto-detected) |
-| `--module <name>` | Render only this module; repeatable (`--module sandbox --module network`). Valid names: `sandbox`, `network`, `caps`, `trust`, `context` (the profile name), `auto_approve`. An unrecognized name is an error, not a silently blank widget. |
+| `--module <name>` | Render only this module; repeatable (`--module sandbox --module network`). Valid names: `sandbox`, `network`, `caps`, `trust`, `context` (the profile name), `gateway` (opt-in gateway choice `⇄<gw>`, `⇄login`, `⇄?`), `auto_approve`. An unrecognized name is an error, not a silently blank widget. |
 | `--install` | Patch the target profile's `settings.json` to set `statusLine.command` |
 | `--remove` | Clear the `statusLine` key from the target profile's `settings.json` |
 | `--profile <name>` | For `--install`/`--remove`: target a specific aide profile (default: matched by CWD), resolving the correct `CLAUDE_CONFIG_DIR` for profiles with their own config dir automatically. For render mode: preview that profile's simulated session instead of the CWD-matched one, in both TTY and piped mode. |

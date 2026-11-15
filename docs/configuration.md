@@ -165,11 +165,14 @@ statusline:
     untrusted: "⚠️"  # only shown when .aide.yaml is untrusted
   context:            # the matched profile's name
     icon: "📁"
+  gateway:            # opt-in gateway choice (⇄<gw>, ⇄login, ⇄?); disabled by default
+    disabled: true
+    icon: "⇄"
   auto_approve:
     value: "🚨"       # always shown when active; disabled: true has no effect
 ```
 
-Setting any state value to `""` hides that state silently (e.g. `sandbox.off: ""` hides the module when sandbox is disabled). Each module also accepts `disabled: true` to remove it from output. The `agent` key is accepted but ignored by the renderer (reserved for a future module).
+Setting any state value to `""` hides that state silently (e.g. `sandbox.off: ""` hides the module when sandbox is disabled). Each module also accepts `disabled: true` to remove it from output. The `gateway` module is disabled by default and is enabled when `statusline.gateway.disabled: false`, when `"gateway"` is listed in `statusline.order`, or when requested via `aide statusline --module gateway`. The `agent` key is accepted but ignored by the renderer (reserved for a future module).
 
 The `sandbox`/`network` modules also accept an `unmanaged:` value, rendered
 when the corresponding `AIDE_SANDBOX`/`AIDE_NETWORK_MODE` env var is absent
@@ -811,6 +814,7 @@ The top-level `preferences:` block controls the startup display.
 - `info_style:` (`compact` | `boxed` | `clean`, default `compact`). Banner style.
 - `info_detail:` (`normal` | `detailed`, default `normal`). Banner verbosity.
 - `yolo:` (bool, optional). Global default for yolo mode. Profile-level and project-level `yolo:` override this.
+- `prompt_gateway:` (bool, default `false`). Include the active harness's gateway choice (`⇄<gw>`, `⇄login`, or `⇄?` when unset; omitted on harnesses without gateway support) in `aide prompt`. Computed passively from config and repository preferences without decrypting secret stores or writing to disk.
 
 Override any of these per-project in `.aide.yaml` under a `preferences:` key.
 

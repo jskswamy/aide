@@ -29,6 +29,7 @@ type promptResult struct {
 func promptCmd() *cobra.Command {
 	var printStarshipConfig bool
 	var compact bool
+	var showGateway bool
 
 	cmd := &cobra.Command{
 		Use:           "prompt",
@@ -70,7 +71,14 @@ func promptCmd() *cobra.Command {
 			}
 			agentIcon := launcher.ResolveAgentIcon(resolved.Context.Agent, agentDef)
 
-			result := promptResult{Line: formatPromptLine(resolved.Name, ctxIcon, agentIcon, sbDisabled, trustStatus, compact)}
+			var gatewaySeg string
+			if showGateway || (resolved.Preferences.PromptGateway != nil && *resolved.Preferences.PromptGateway) {
+				if seg := res.PassiveChoice().Segment(); seg != "" {
+					gatewaySeg = "⇄" + seg
+				}
+			}
+
+			result := promptResult{Line: formatPromptLine(resolved.Name, ctxIcon, agentIcon, gatewaySeg, sbDisabled, trustStatus, compact)}
 
 			format, ferr := output.FromCmd(cmd)
 			if ferr != nil {
@@ -85,13 +93,14 @@ func promptCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&printStarshipConfig, "starship-config", false, "Print Starship configuration snippet")
 	cmd.Flags().BoolVar(&compact, "compact", false, "Remove spaces between prompt segments")
+	cmd.Flags().BoolVar(&showGateway, "gateway", false, "Include gateway choice segment (⇄<gw>, ⇄login, ⇄?)")
 
 	return cmd
 }
 
-// formatPromptLine builds a prompt line from context, icons, and trust status.
+// formatPromptLine builds a prompt line from context, icons, gateway, and trust status.
 // When ctxIcon is set it replaces the name; otherwise the name is shown.
-func formatPromptLine(ctx, ctxIcon, agentIcon string, sbDisabled bool, trustStatus string, compact bool) string {
+func formatPromptLine(ctx, ctxIcon, agentIcon, gateway string, sbDisabled bool, trustStatus string, compact bool) string {
 	var parts []string
 
 	if s := ui.SanitizeIcon(ctxIcon); s != "" {
@@ -102,6 +111,10 @@ func formatPromptLine(ctx, ctxIcon, agentIcon string, sbDisabled bool, trustStat
 
 	if s := ui.SanitizeIcon(agentIcon); s != "" {
 		parts = append(parts, s)
+	}
+
+	if gateway != "" {
+		parts = append(parts, gateway)
 	}
 
 	// Append trust/sandbox icons based on trust status

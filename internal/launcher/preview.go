@@ -33,6 +33,11 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 		return nil, err
 	}
 	ctx, name := res.RC.Context, res.RC.Name
+	if plannedCtx, _, planErr := PlanProfileCredentials(cfg, res.RC, res.Inputs, &res.Sel); planErr == nil {
+		ctx = plannedCtx
+	} else if res.Sel.Gateway == (Choice{}) {
+		res.Sel.Gateway = res.PassiveChoice()
+	}
 	var disabledCaps []string
 	if cfg.ProjectOverride != nil {
 		disabledCaps = cfg.ProjectOverride.DisabledCapabilities
@@ -56,7 +61,7 @@ func PreviewSessionEnv(cfg *config.Config, cwd, contextName, homeDir, agent stri
 	}
 	autoApprove := config.ResolveYolo(prefYolo, ctx.Yolo, nil)
 
-	envSlice := injectAideSessionEnv(nil, sbDisabled, sandboxCfg, autoApprove, caps, name, ctx.Agent, res.Gate.Primary())
+	envSlice := injectAideSessionEnv(nil, sbDisabled, sandboxCfg, autoApprove, caps, name, ctx.Agent, res.Gate.Primary(), res.Sel.Gateway.Segment())
 	return envSliceToMap(envSlice), nil
 }
 

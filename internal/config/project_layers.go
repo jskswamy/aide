@@ -227,6 +227,7 @@ func mergePreferences(base, top *Preferences) *Preferences {
 		}
 		out.ShowInfo = firstNonNil(p.ShowInfo, out.ShowInfo)
 		out.Yolo = firstNonNil(p.Yolo, out.Yolo)
+		out.PromptGateway = firstNonNil(p.PromptGateway, out.PromptGateway)
 		out.InfoStyle = firstNonEmpty(p.InfoStyle, out.InfoStyle)
 		out.InfoDetail = firstNonEmpty(p.InfoDetail, out.InfoDetail)
 	}

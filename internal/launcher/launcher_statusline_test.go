@@ -20,21 +20,21 @@ func envMap(env []string) map[string]string {
 }
 
 func TestInjectAideSessionEnv_SandboxOn(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, ""))
 	if result["AIDE_SANDBOX"] != "on" {
 		t.Errorf("AIDE_SANDBOX = %q, want on", result["AIDE_SANDBOX"])
 	}
 }
 
 func TestInjectAideSessionEnv_SandboxOff(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, true, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, true, nil, false, nil, "", "claude", nil, ""))
 	if result["AIDE_SANDBOX"] != "off" {
 		t.Errorf("AIDE_SANDBOX = %q, want off", result["AIDE_SANDBOX"])
 	}
 }
 
 func TestInjectAideSessionEnv_NetworkOutbound(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, ""))
 	if result["AIDE_NETWORK_MODE"] != "outbound" {
 		t.Errorf("AIDE_NETWORK_MODE = %q, want outbound", result["AIDE_NETWORK_MODE"])
 	}
@@ -42,7 +42,7 @@ func TestInjectAideSessionEnv_NetworkOutbound(t *testing.T) {
 
 func TestInjectAideSessionEnv_NetworkUnrestricted(t *testing.T) {
 	cfg := &config.SandboxPolicy{Network: &config.NetworkPolicy{Mode: "unrestricted"}}
-	result := envMap(injectAideSessionEnv(nil, false, cfg, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, cfg, false, nil, "", "claude", nil, ""))
 	if result["AIDE_NETWORK_MODE"] != "unrestricted" {
 		t.Errorf("AIDE_NETWORK_MODE = %q, want unrestricted", result["AIDE_NETWORK_MODE"])
 	}
@@ -55,21 +55,21 @@ func TestInjectAideSessionEnv_CapsJoined(t *testing.T) {
 			{Name: "docker"},
 		},
 	}
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, caps, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, caps, "", "claude", nil, ""))
 	if result["AIDE_CAPS"] != "k8s,docker" {
 		t.Errorf("AIDE_CAPS = %q, want k8s,docker", result["AIDE_CAPS"])
 	}
 }
 
 func TestInjectAideSessionEnv_NilCapsMeansEmpty(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, ""))
 	if result["AIDE_CAPS"] != "" {
 		t.Errorf("AIDE_CAPS = %q, want empty", result["AIDE_CAPS"])
 	}
 }
 
 func TestInjectAideSessionEnv_TrustNilMeansTrusted(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, ""))
 	if result["AIDE_TRUST"] != "trusted" {
 		t.Errorf("AIDE_TRUST = %q, want trusted", result["AIDE_TRUST"])
 	}
@@ -77,28 +77,28 @@ func TestInjectAideSessionEnv_TrustNilMeansTrusted(t *testing.T) {
 
 func TestInjectAideSessionEnv_TrustUntrusted(t *testing.T) {
 	ti := &ui.TrustInfo{Status: "untrusted"}
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", ti))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", ti, ""))
 	if result["AIDE_TRUST"] != "untrusted" {
 		t.Errorf("AIDE_TRUST = %q, want untrusted", result["AIDE_TRUST"])
 	}
 }
 
 func TestInjectAideSessionEnv_AutoApprove(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, true, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, true, nil, "", "claude", nil, ""))
 	if result["AIDE_AUTO_APPROVE"] != "1" {
 		t.Errorf("AIDE_AUTO_APPROVE = %q, want 1", result["AIDE_AUTO_APPROVE"])
 	}
 }
 
 func TestInjectAideSessionEnv_NoAutoApproveWhenFalse(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, ""))
 	if _, ok := result["AIDE_AUTO_APPROVE"]; ok {
 		t.Error("AIDE_AUTO_APPROVE should be absent when not active")
 	}
 }
 
 func TestInjectAideSessionEnv_ContextName(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "my-proj", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "my-proj", "claude", nil, ""))
 	if result["AIDE_CONTEXT"] != "my-proj" {
 		t.Errorf("AIDE_CONTEXT = %q, want my-proj", result["AIDE_CONTEXT"])
 	}
@@ -108,7 +108,7 @@ func TestInjectAideSessionEnv_ContextName(t *testing.T) {
 }
 
 func TestInjectAideSessionEnv_NoProfileVarsWithoutName(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, ""))
 	for _, k := range []string{"AIDE_CONTEXT", "AIDE_PROFILE"} {
 		if _, ok := result[k]; ok {
 			t.Errorf("%s should be absent when no profile is resolved", k)
@@ -117,19 +117,110 @@ func TestInjectAideSessionEnv_NoProfileVarsWithoutName(t *testing.T) {
 }
 
 func TestInjectAideSessionEnv_AgentName(t *testing.T) {
-	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, ""))
 	if result["AIDE_AGENT"] != "claude" {
 		t.Errorf("AIDE_AGENT = %q, want claude", result["AIDE_AGENT"])
 	}
 }
 
+func TestInjectAideSessionEnv_Gateway(t *testing.T) {
+	result := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "claude", nil, "corp"))
+	if result["AIDE_GATEWAY"] != "corp" {
+		t.Errorf("AIDE_GATEWAY = %q, want corp", result["AIDE_GATEWAY"])
+	}
+	empty := envMap(injectAideSessionEnv(nil, false, nil, false, nil, "", "gemini", nil, ""))
+	if v, ok := empty["AIDE_GATEWAY"]; !ok || v != "" {
+		t.Errorf("AIDE_GATEWAY = %q (ok=%v), want present empty string", v, ok)
+	}
+}
+
 func TestInjectAideSessionEnv_MergesWithExistingEnv(t *testing.T) {
 	base := []string{"PATH=/usr/bin", "HOME=/home/user"}
-	result := envMap(injectAideSessionEnv(base, false, nil, false, nil, "", "claude", nil))
+	result := envMap(injectAideSessionEnv(base, false, nil, false, nil, "", "claude", nil, "login"))
 	if result["PATH"] != "/usr/bin" {
 		t.Error("existing PATH was lost")
 	}
 	if result["AIDE_SANDBOX"] == "" {
 		t.Error("AIDE_SANDBOX was not injected")
+	}
+	if result["AIDE_GATEWAY"] != "login" {
+		t.Errorf("AIDE_GATEWAY = %q, want login", result["AIDE_GATEWAY"])
+	}
+}
+
+func TestPreviewSessionEnv_GatewayStatesAndSwitchCap(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cwd := t.TempDir()
+	configDir := t.TempDir()
+
+	writeMinimalConfig(t, configDir, `
+agents:
+  my-claude:
+    binary: claude
+contexts:
+  chosen:
+    agent: my-claude
+    gateways:
+      corp:
+        url: https://gw.example.com/v1
+        api: anthropic-messages
+        store: work
+        key: k
+      bedrock:
+        preset: bedrock
+        region: us-east-1
+    gateway_choice:
+      claude: corp
+  unset:
+    agent: claude
+    gateways:
+      corp:
+        url: https://gw.example.com/v1
+        api: anthropic-messages
+        store: work
+        key: k
+  login:
+    agent: claude
+  switch:
+    agent: claude
+    gateways:
+      bedrock:
+        preset: bedrock
+        region: us-east-1
+    gateway_choice:
+      claude: bedrock
+  reachnone:
+    agent: gemini
+default_context: chosen
+`)
+	cfg, err := config.Load(configDir, cwd)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+
+	for _, tc := range []struct {
+		profile  string
+		wantGW   string
+		wantCaps string
+	}{
+		{profile: "chosen", wantGW: "corp"},
+		{profile: "unset", wantGW: "?"},
+		{profile: "login", wantGW: "login"},
+		{profile: "switch", wantGW: "bedrock", wantCaps: "aws"},
+		{profile: "reachnone", wantGW: ""},
+	} {
+		t.Run(tc.profile, func(t *testing.T) {
+			env, err := PreviewSessionEnv(cfg, cwd, tc.profile, home, "")
+			if err != nil {
+				t.Fatalf("PreviewSessionEnv(%s): %v", tc.profile, err)
+			}
+			if got := env["AIDE_GATEWAY"]; got != tc.wantGW {
+				t.Errorf("AIDE_GATEWAY = %q, want %q", got, tc.wantGW)
+			}
+			if tc.wantCaps != "" && !strings.Contains(env["AIDE_CAPS"], tc.wantCaps) {
+				t.Errorf("AIDE_CAPS = %q, want to contain %q", env["AIDE_CAPS"], tc.wantCaps)
+			}
+		})
 	}
 }

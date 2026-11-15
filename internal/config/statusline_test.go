@@ -34,6 +34,12 @@ func TestResolveStatusline_NilInputsGivesDefaults(t *testing.T) {
 	if got.AutoApprove == nil || got.AutoApprove.Value != "🚨" {
 		t.Errorf("AutoApprove.Value = %q, want 🚨", got.AutoApprove.Value)
 	}
+	if got.Gateway == nil || got.Gateway.Icon != "⇄" {
+		t.Errorf("Gateway.Icon = %v, want ⇄", got.Gateway)
+	}
+	if got.Gateway == nil || got.Gateway.Disabled == nil || !*got.Gateway.Disabled {
+		t.Errorf("Gateway.Disabled = %v, want true by default", got.Gateway)
+	}
 }
 
 func TestResolveStatusline_ProjectOverridesModuleField(t *testing.T) {
@@ -117,5 +123,39 @@ func TestResolveStatusline_ProjectOverridesUnmanaged(t *testing.T) {
 	}
 	if got.Sandbox.On != "🔒" {
 		t.Errorf("Sandbox.On = %q, want default 🔒 (unchanged)", got.Sandbox.On)
+	}
+}
+
+func TestResolveStatusline_GatewayEnablementAndOrder(t *testing.T) {
+	// 1. Enabling gateway via gateway.disabled: false appends "gateway" to Order.
+	got := ResolveStatusline(&StatuslineConfig{
+		Gateway: &ModuleConfig{Disabled: boolPtrSL(false)},
+	}, nil)
+	if got.Gateway == nil || got.Gateway.Disabled == nil || *got.Gateway.Disabled {
+		t.Fatalf("Gateway.Disabled = %v, want false", got.Gateway)
+	}
+	wantOrder := []string{"sandbox", "network", "caps", "trust", "context", "gateway"}
+	if !reflect.DeepEqual(got.Order, wantOrder) {
+		t.Errorf("Order = %v, want %v", got.Order, wantOrder)
+	}
+
+	// 2. Listing "gateway" in statusline.order implicitly enables it when gateway.disabled is unset.
+	gotOrder := ResolveStatusline(&StatuslineConfig{
+		Order: []string{"context", "gateway"},
+	}, nil)
+	if gotOrder.Gateway == nil || gotOrder.Gateway.Disabled == nil || *gotOrder.Gateway.Disabled {
+		t.Fatalf("Gateway.Disabled = %v, want false when listed in order", gotOrder.Gateway)
+	}
+	if !reflect.DeepEqual(gotOrder.Order, []string{"context", "gateway"}) {
+		t.Errorf("Order = %v, want [context gateway]", gotOrder.Order)
+	}
+
+	// 3. Project layer can still explicitly disable gateway even if global order listed it.
+	gotProjectOff := ResolveStatusline(
+		&StatuslineConfig{Order: []string{"context", "gateway"}},
+		&StatuslineConfig{Gateway: &ModuleConfig{Disabled: boolPtrSL(true)}},
+	)
+	if gotProjectOff.Gateway == nil || gotProjectOff.Gateway.Disabled == nil || !*gotProjectOff.Gateway.Disabled {
+		t.Fatalf("Gateway.Disabled = %v, want true when project disables it", gotProjectOff.Gateway)
 	}
 }

@@ -219,20 +219,23 @@ func TestMergeProjectOverrides_SandboxOneSided(t *testing.T) {
 func TestMergeProjectOverrides_PreferencesAndStatusline(t *testing.T) {
 	yes, no := boolPtr(true), boolPtr(false)
 	base := &ProjectOverride{
-		Preferences: &Preferences{ShowInfo: yes, InfoStyle: "compact", Yolo: yes},
+		Preferences: &Preferences{ShowInfo: yes, InfoStyle: "compact", Yolo: yes, PromptGateway: yes},
 		Statusline:  &StatuslineConfig{Order: []string{"sandbox"}},
 	}
 	top := &ProjectOverride{
-		Preferences: &Preferences{ShowInfo: no, InfoDetail: "full"},
-		Statusline:  &StatuslineConfig{Order: []string{"caps", "sandbox"}},
+		Preferences: &Preferences{ShowInfo: no, InfoDetail: "full", PromptGateway: no},
+		Statusline:  &StatuslineConfig{Order: []string{"caps", "sandbox", "gateway"}},
 	}
 	got := MergeProjectOverrides(base, top)
 	p := got.Preferences
-	if p.ShowInfo == nil || *p.ShowInfo || p.InfoStyle != "compact" || p.InfoDetail != "full" || p.Yolo == nil || !*p.Yolo {
+	if p.ShowInfo == nil || *p.ShowInfo || p.InfoStyle != "compact" || p.InfoDetail != "full" || p.Yolo == nil || !*p.Yolo || p.PromptGateway == nil || *p.PromptGateway {
 		t.Errorf("Preferences = %+v", p)
 	}
-	if !reflect.DeepEqual(got.Statusline.Order, []string{"caps", "sandbox"}) {
+	if !reflect.DeepEqual(got.Statusline.Order, []string{"caps", "sandbox", "gateway"}) {
 		t.Errorf("Statusline.Order = %v, want the local order", got.Statusline.Order)
+	}
+	if got.Statusline.Gateway == nil || got.Statusline.Gateway.Disabled == nil || *got.Statusline.Gateway.Disabled {
+		t.Errorf("Statusline.Gateway = %+v, want Disabled=false when listed in local order", got.Statusline.Gateway)
 	}
 	// A side with neither set stays unset.
 	if m := MergeProjectOverrides(&ProjectOverride{}, &ProjectOverride{}); m.Preferences != nil || m.Statusline != nil {

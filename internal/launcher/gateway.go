@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -23,23 +24,59 @@ import (
 )
 
 // applyGatewayChoice prepends the startup flags that put harnessName on
-// the chosen gateway, printing why when the user's own flags win or the
+// the chosen gateway and returns the env that does so for harnesses that
+// start from env, printing why when the user's own flags win or the
 // gateway has no model to start on. ctx is the profile with its
 // gateways in launch form.
-func (l *Launcher) applyGatewayChoice(harnessName string, ctx config.Context, choice Choice, args []string) []string {
+func (l *Launcher) applyGatewayChoice(harnessName string, ctx config.Context, choice Choice, args []string) ([]string, map[string]string) {
 	if choice.Value == "" || choice.Value == gatewayNone {
-		return args
+		return args, nil
 	}
 	entry, model := gateway.ProviderID(choice.Value), ctx.Gateways[choice.Value].Model
-	if d, ok := launchableHarness(harnessName); ok && model == "" && !choice.Derived && d.ChoiceArgs != nil && d.ChoiceArgs(entry, "") == nil {
+	if d, ok := launchableHarness(harnessName); ok && model == "" && !choice.Derived &&
+		(d.ChoiceEnv != nil || d.ChoiceArgs != nil && d.ChoiceArgs(entry, "") == nil) {
 		fmt.Fprintf(l.stderr(), "aide: note: gateway %q has no model, so %s starts on its own default; set one with: "+
 			"aide gateway edit %s --model <id>, or switch with /model\n", choice.Value, harnessName, choice.Value)
 	}
-	args, _, notice := ApplyChoice(harnessName, args, entry, model)
+	args, env, notice := ApplyChoice(harnessName, args, entry, model)
 	if notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
-	return args
+	return args, env
+}
+
+// mergeChoiceEnv adds the startup env a harness needs for the chosen
+// gateway on top of env, after never_allow_env filtering (blocked). A
+// user's own OPENCODE_CONFIG_CONTENT stays: an explicit choice (the
+// --gateway flag) replaces only its model key, a saved one yields, and
+// a value that is not a JSON object is left alone with a warning.
+func (l *Launcher) mergeChoiceEnv(env []string, choiceEnv map[string]string, explicit bool, blocked []string) []string {
+	for k, v := range choiceEnv {
+		cur, set := envSliceToMap(env)[k]
+		switch {
+		case slices.Contains(blocked, k):
+			fmt.Fprintf(l.stderr(), "aide: warning: never_allow_env blocks %s, so the gateway choice is not preselected\n", k)
+			continue
+		case !set || cur == "":
+		default:
+			var user, ours map[string]json.RawMessage
+			if json.Unmarshal([]byte(cur), &user) != nil || user == nil {
+				fmt.Fprintf(l.stderr(), "aide: warning: %s is not a JSON object, so the gateway choice is not preselected\n", k)
+				continue
+			}
+			if !explicit {
+				fmt.Fprintf(l.stderr(), "aide: note: %s sets its own config, so it keeps its startup model over the saved gateway choice\n", k)
+				continue
+			}
+			_ = json.Unmarshal([]byte(v), &ours)
+			user["model"] = ours["model"]
+			b, _ := json.Marshal(user)
+			v = string(b)
+			fmt.Fprintf(l.stderr(), "aide: note: --gateway replaces the model in %s\n", k)
+		}
+		env = mergeEnv(env, map[string]string{k: v})
+	}
+	return env
 }
 
 // choicePrompter is the ChoicePrompter of a launch from cwd: the

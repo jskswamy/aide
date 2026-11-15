@@ -358,6 +358,44 @@ func TestApplyChoice(t *testing.T) {
 	}
 }
 
+func TestApplyChoice_OpenCodeEnv(t *testing.T) {
+	const want = `{"model":"aide-corp/m1"}`
+	tests := []struct {
+		name  string
+		args  []string
+		model string
+		env   bool
+		note  bool
+	}{
+		{"root launch", nil, "m1", true, false},
+		{"root launch with flags", []string{"--port", "1"}, "m1", true, false},
+		{"run", []string{"run", "hi"}, "m1", true, false},
+		{"no model", nil, "", false, false},
+		{"other subcommand", []string{"serve"}, "m1", false, false},
+		{"management subcommand", []string{"auth", "login"}, "m1", false, false},
+		{"attach", []string{"attach", "http://x"}, "m1", false, false},
+		{"--server", []string{"--server", "http://x"}, "m1", false, false},
+		{"--server=", []string{"--server=http://x"}, "m1", false, false},
+		{"user -m", []string{"run", "-m", "x"}, "m1", false, true},
+		{"user --model=", []string{"--model=x"}, "m1", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, _ := harness.Lookup("opencode")
+			args, env, notice := d.ApplyChoice(tt.args, "aide-corp", tt.model)
+			if !slices.Equal(args, tt.args) {
+				t.Errorf("args = %v, want unchanged %v", args, tt.args)
+			}
+			if got := env["OPENCODE_CONFIG_CONTENT"]; tt.env != (got == want) || (!tt.env && env != nil) {
+				t.Errorf("env = %v, want content %q: %v", env, want, tt.env)
+			}
+			if (notice != "") != tt.note {
+				t.Errorf("notice = %q, want notice %v", notice, tt.note)
+			}
+		})
+	}
+}
+
 func TestReach(t *testing.T) {
 	for name, want := range map[string]harness.Reach{"claude": harness.ReachSlot, "codex": harness.ReachSlot, "pi": harness.ReachMulti, "omp": harness.ReachMulti, "opencode": harness.ReachMulti, "gemini": harness.ReachNone} {
 		if d, _ := harness.Lookup(name); d.Reach != want {

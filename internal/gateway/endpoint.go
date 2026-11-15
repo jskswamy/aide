@@ -39,3 +39,8 @@ func (e EndpointSpec) ModelsURL() string {
 	}
 	return base + "/v1/models"
 }
+
+// ProviderID is the entry name harness files carry for gateway gwName.
+// The prefix keeps aide's entries apart from a user's own and from a
+// built-in provider of the same name.
+func ProviderID(gwName string) string { return "aide-" + gwName }

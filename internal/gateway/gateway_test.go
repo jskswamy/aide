@@ -522,12 +522,12 @@ func TestMaterialize_Pi(t *testing.T) {
 		t.Errorf("sibling settings lost: %+v", doc)
 	}
 	var corp map[string]any
-	if err := json.Unmarshal(doc.Providers["corp"], &corp); err != nil {
+	if err := json.Unmarshal(doc.Providers["aide-corp"], &corp); err != nil {
 		t.Fatal(err)
 	}
 	if corp["baseUrl"] != "https://gw.example.com" || corp["apiKey"] != "$CORP_TOKEN" ||
 		corp["authHeader"] != true || corp["api"] != "anthropic-messages" {
-		t.Errorf("providers.corp = %v", corp)
+		t.Errorf("providers.aide-corp = %v", corp)
 	}
 	models, _ := corp["models"].([]any)
 	if len(models) != 2 {
@@ -577,7 +577,7 @@ func TestMaterialize_OMP(t *testing.T) {
 	if doc.Providers["ollama"].BaseURL != "http://localhost:11434" {
 		t.Errorf("sibling provider lost: %+v", doc.Providers)
 	}
-	corp := doc.Providers["corp"]
+	corp := doc.Providers["aide-corp"]
 	if corp.BaseURL != "https://gw.example.com" || corp.APIKey != "CORP_TOKEN" ||
 		!corp.AuthHeader || corp.API != "anthropic-messages" || corp.Auth != "" {
 		t.Errorf("providers.corp = %+v", corp)
@@ -620,7 +620,7 @@ func TestMaterialize_OMPNoAuthAndExistingModelsYAML(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(readFile(t, altPath)), &doc); err != nil {
 		t.Fatal(err)
 	}
-	corp := doc.Providers["corp"]
+	corp := doc.Providers["aide-corp"]
 	if corp.Auth != "none" || corp.APIKey != "" || corp.AuthHeader {
 		t.Errorf("no-auth providers.corp = %+v, want auth=none without apiKey/authHeader", corp)
 	}
@@ -654,7 +654,7 @@ func TestMaterialize_NoAuthPiOpenCodeCodex(t *testing.T) {
 	if err := json.Unmarshal([]byte(readFile(t, piPath)), &piDoc); err != nil {
 		t.Fatal(err)
 	}
-	corp := piDoc.Providers["corp"]
+	corp := piDoc.Providers["aide-corp"]
 	if corp["apiKey"] != "corp" || corp["authHeader"] != false {
 		t.Errorf("pi provider = %v, want apiKey=corp authHeader=false", corp)
 	}
@@ -685,7 +685,7 @@ func TestMaterialize_NoAuthPiOpenCodeCodex(t *testing.T) {
 	if err := json.Unmarshal(std, &oc); err != nil {
 		t.Fatal(err)
 	}
-	p := obj(t, obj(t, oc["providers"])["corp"])
+	p := obj(t, obj(t, oc["providers"])["aide-corp"])
 	settings := obj(t, p["settings"])
 	headers, _ := p["headers"].(map[string]any)
 	if p["env"] != nil || settings["apiKey"] != nil || (headers != nil && headers["Authorization"] != nil) {
@@ -696,7 +696,7 @@ func TestMaterialize_NoAuthPiOpenCodeCodex(t *testing.T) {
 	if err := toml.Unmarshal([]byte(readFile(t, filepath.Join(f.dir("codex"), "config.toml"))), &tomlDoc); err != nil {
 		t.Fatal(err)
 	}
-	cp := obj(t, obj(t, tomlDoc["model_providers"])["corp"])
+	cp := obj(t, obj(t, tomlDoc["model_providers"])["aide-corp"])
 	if _, ok := cp["env_key"]; ok {
 		t.Errorf("codex env_key present: %v", cp)
 	}
@@ -729,18 +729,18 @@ func TestMaterialize_OpenCode(t *testing.T) {
 	if doc["provider"] != nil {
 		t.Errorf("legacy V1 provider section survived migration: %v", doc["provider"])
 	}
-	if doc["model"] != "corp/claude-sonnet-4-5" {
-		t.Errorf("model = %v, want corp/claude-sonnet-4-5", doc["model"])
+	if doc["model"] != "aide-corp/claude-sonnet-4-5" {
+		t.Errorf("model = %v, want aide-corp/claude-sonnet-4-5", doc["model"])
 	}
-	corp := obj(t, obj(t, doc["providers"])["corp"])
+	corp := obj(t, obj(t, doc["providers"])["aide-corp"])
 	settings := obj(t, corp["settings"])
 	headers := obj(t, corp["headers"])
 	env, _ := corp["env"].([]any)
-	if corp["package"] != "@ai-sdk/anthropic" || corp["name"] != "corp" ||
+	if corp["package"] != "@ai-sdk/anthropic" || corp["name"] != "aide-corp" ||
 		len(env) != 1 || env[0] != "CORP_TOKEN" ||
 		settings["baseURL"] != "https://gw.example.com/v1" || settings["apiKey"] != "{env:CORP_TOKEN}" ||
 		headers["Authorization"] != "Bearer {env:CORP_TOKEN}" {
-		t.Errorf("providers.corp = %v", corp)
+		t.Errorf("providers.aide-corp = %v", corp)
 	}
 	models := obj(t, corp["models"])
 	sonnet := obj(t, models["claude-sonnet-4-5"])
@@ -782,12 +782,12 @@ func TestMaterialize_Codex(t *testing.T) {
 	if doc["model"] != "gpt-5" || doc["mcp_servers"] == nil {
 		t.Errorf("sibling tables lost: %v", doc)
 	}
-	corp := obj(t, obj(t, doc["model_providers"])["corp"])
-	if corp["name"] != "corp" || corp["base_url"] != "https://gw.example.com/v1" || corp["env_key"] != "CORP_TOKEN" || corp["wire_api"] != "responses" {
+	corp := obj(t, obj(t, doc["model_providers"])["aide-corp"])
+	if corp["name"] != "aide-corp" || corp["base_url"] != "https://gw.example.com/v1" || corp["env_key"] != "CORP_TOKEN" || corp["wire_api"] != "responses" {
 		t.Errorf("model_providers.corp = %v", corp)
 	}
-	if doc["model_provider"] != "corp" {
-		t.Errorf("model_provider = %v, want corp (the codex default gateway)", doc["model_provider"])
+	if doc["model_provider"] != "aide-corp" {
+		t.Errorf("model_provider = %v, want aide-corp (the codex default gateway)", doc["model_provider"])
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "codex", f.home); got.State != StateSynced {
 		t.Errorf("InspectHarness() = %+v, want synced", got)
@@ -1150,8 +1150,8 @@ func TestMaterialize_CodexUpdatesManagedModelProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(f.dir("codex"), "config.toml")
-	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'alpha'") && !strings.Contains(body, `model_provider = "alpha"`) {
-		t.Fatalf("expected model_provider = alpha:\n%s", body)
+	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'aide-alpha'") {
+		t.Fatalf("expected model_provider = aide-alpha:\n%s", body)
 	}
 
 	// Switch default to beta: re-materializing beta updates model_provider.
@@ -1159,8 +1159,8 @@ func TestMaterialize_CodexUpdatesManagedModelProvider(t *testing.T) {
 	if _, err := MaterializeHarness(f.ctx, "beta", beta, f.cat, "codex", f.home, false); err != nil {
 		t.Fatal(err)
 	}
-	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'beta'") && !strings.Contains(body, `model_provider = "beta"`) {
-		t.Fatalf("expected model_provider = beta after switching default:\n%s", body)
+	if body := readFile(t, path); !strings.Contains(body, "model_provider = 'aide-beta'") {
+		t.Fatalf("expected model_provider = aide-beta after switching default:\n%s", body)
 	}
 }
 
@@ -1202,5 +1202,58 @@ func TestMatchesBaseURL_AndInspectHarnessURLMismatch(t *testing.T) {
 	stClaude := InspectHarness(standbyCtx, "corp", f.gw, f.cat, "claude", f.home)
 	if stClaude.State == StateSynced {
 		t.Fatalf("InspectHarness(claude standby) = %+v, should not be synced on URL mismatch", stClaude)
+	}
+}
+
+// Entries and pins an earlier aide wrote under the bare gateway name
+// move to aide-<gw>; an entry at another URL is the user's and stays.
+func TestMaterialize_RemovesLegacyBareEntries(t *testing.T) {
+	f := newFixture(t)
+	url := "https://gw.example.com"
+
+	ocPath := filepath.Join(f.dir("opencode"), "opencode.jsonc")
+	writeFile(t, ocPath, `{"model":"corp/plain","providers":{"corp":{"settings":{"baseURL":"`+url+`/v1"}},"mine":{"settings":{"baseURL":"https://x"}}}}`)
+	piPath := filepath.Join(f.dir("pi"), "models.json")
+	writeFile(t, piPath, `{"providers":{"corp":{"baseUrl":"`+url+`"}}}`)
+	ompPath := filepath.Join(f.dir("omp"), "models.yml")
+	writeFile(t, ompPath, "providers:\n  corp:\n    baseUrl: "+url+"\n")
+	cxPath := filepath.Join(f.dir("codex"), "config.toml")
+	writeFile(t, cxPath, "model_provider = 'corp'\n[model_providers.corp]\nbase_url = '"+url+"/v1'\nwire_api = 'chat'\n")
+
+	for _, h := range []string{"opencode", "pi", "omp", "codex"} {
+		if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, h, f.home, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, want := range map[string]string{ocPath: `"model": "aide-corp/plain"`, cxPath: "model_provider = 'aide-corp'"} {
+		if body := readFile(t, path); !strings.Contains(body, want) {
+			t.Errorf("%s lacks %s:\n%s", path, want, body)
+		}
+	}
+	for _, path := range []string{ocPath, piPath, ompPath} {
+		body := readFile(t, path)
+		if strings.Contains(body, `"corp"`) || strings.Contains(body, "  corp:") || !strings.Contains(body, "aide-corp") {
+			t.Errorf("%s still has a bare corp entry:\n%s", path, body)
+		}
+	}
+	if body := readFile(t, ocPath); !strings.Contains(body, `"mine"`) {
+		t.Errorf("user's opencode provider lost:\n%s", body)
+	}
+	if body := readFile(t, cxPath); strings.Contains(body, "model_providers.corp]") || strings.Contains(body, "chat") {
+		t.Errorf("legacy codex entry survived:\n%s", body)
+	}
+}
+
+// A split-off <gw>-codex takes over the pin aide wrote for <gw>.
+func TestMaterialize_CodexSplitTakesPin(t *testing.T) {
+	f := newFixture(t)
+	path := filepath.Join(f.dir("codex"), "config.toml")
+	writeFile(t, path, "model_provider = 'corp'\n[model_providers.corp]\nbase_url = 'https://gw.example.com/v1'\n")
+	if _, err := MaterializeHarness(f.ctx, "corp-codex", f.gw, f.cat, "codex", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	body := readFile(t, path)
+	if !strings.Contains(body, "model_provider = 'aide-corp-codex'") || strings.Contains(body, "model_providers.corp]") {
+		t.Errorf("config.toml:\n%s", body)
 	}
 }

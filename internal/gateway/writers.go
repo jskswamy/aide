@@ -246,6 +246,17 @@ func dirExists(dir string) bool {
 	return err == nil && info.IsDir()
 }
 
+// removeBoth removes gwName's aide-<gw> entry and its legacy bare
+// <gw> entry with rm, reporting whether either existed.
+func removeBoth(path, gwName string, gw config.GatewayConfig, rm func(path, name string, gw config.GatewayConfig) (bool, error)) (bool, error) {
+	a, err := rm(path, ProviderID(gwName), gw)
+	if err != nil {
+		return a, err
+	}
+	b, err := rm(path, gwName, gw)
+	return a || b, err
+}
+
 // jsonEntry reads doc[section][name] into v, reporting whether the
 // entry exists.
 func jsonEntry(doc map[string]json.RawMessage, section, name string, v any) (bool, error) {
@@ -462,7 +473,10 @@ func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCat
 	} else {
 		p.APIKey = cmp.Or(gwName, "none")
 	}
-	_, err := updateJSONEntry(path, "providers", gwName, p)
+	if _, err := updateJSONEntry(path, "providers", ProviderID(gwName), p); err != nil {
+		return err
+	}
+	_, err := piFile{}.removeEntry(path, gwName, gw)
 	return err
 }
 
@@ -472,12 +486,12 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 		return "", err
 	}
 	var p piProvider
-	ok, err := jsonEntry(doc, "providers", gwName, &p)
+	ok, err := jsonEntry(doc, "providers", ProviderID(gwName), &p)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s: %w", path, err)
 	case !ok:
-		return fmt.Sprintf("provider %q missing", gwName), nil
+		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
 	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
 		return "baseUrl differs", nil
 	case gw.RequiresToken() && (p.APIKey != "$"+gw.EnvVarName() || !p.AuthHeader):
@@ -491,18 +505,24 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 	return "", nil
 }
 
-// remove leaves an entry pointing at another URL: it belongs to
+// remove drops gwName's aide-<gw> entry and the bare <gw> entry an
+// earlier aide wrote.
+func (f piFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error) {
+	return removeBoth(path, gwName, gw, f.removeEntry)
+}
+
+// removeEntry leaves an entry pointing at another URL: it belongs to
 // another profile's gateway or to the user.
-func (piFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error) {
+func (piFile) removeEntry(path, name string, gw config.GatewayConfig) (bool, error) {
 	doc, err := fsutil.ReadJSONCRawMap(path)
 	if err != nil {
 		return false, err
 	}
 	var p piProvider
-	if ok, err := jsonEntry(doc, "providers", gwName, &p); err != nil || !ok || p.BaseURL != NormalizeBaseURL(gw.BaseURL) {
+	if ok, err := jsonEntry(doc, "providers", name, &p); err != nil || !ok || p.BaseURL != NormalizeBaseURL(gw.BaseURL) {
 		return false, err
 	}
-	return updateJSONEntry(path, "providers", gwName, nil)
+	return updateJSONEntry(path, "providers", name, nil)
 }
 
 // ompFile is Oh My Pi's <omp-dir>/models.yml (or existing models.yaml);
@@ -642,7 +662,10 @@ func (ompFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCa
 	} else {
 		p.Auth = "none"
 	}
-	_, err := updateOMPProviderEntry(path, gwName, p)
+	if _, err := updateOMPProviderEntry(path, ProviderID(gwName), p); err != nil {
+		return err
+	}
+	_, err := ompFile{}.removeEntry(path, gwName, gw)
 	return err
 }
 
@@ -652,12 +675,12 @@ func (ompFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cache
 		return "", err
 	}
 	var p ompProvider
-	ok, err := ompProviderEntry(doc, gwName, &p)
+	ok, err := ompProviderEntry(doc, ProviderID(gwName), &p)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s: %w", path, err)
 	case !ok:
-		return fmt.Sprintf("provider %q missing", gwName), nil
+		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
 	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
 		return "baseUrl differs", nil
 	case p.API != "anthropic-messages":
@@ -673,18 +696,24 @@ func (ompFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cache
 	return "", nil
 }
 
-// remove leaves an entry pointing at another URL: it belongs to
+// remove drops gwName's aide-<gw> entry and the bare <gw> entry an
+// earlier aide wrote.
+func (f ompFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error) {
+	return removeBoth(path, gwName, gw, f.removeEntry)
+}
+
+// removeEntry leaves an entry pointing at another URL: it belongs to
 // another profile's gateway or to the user.
-func (ompFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error) {
+func (ompFile) removeEntry(path, name string, gw config.GatewayConfig) (bool, error) {
 	_, doc, err := readOMPModelsDoc(path)
 	if err != nil {
 		return false, err
 	}
 	var p ompProvider
-	if ok, err := ompProviderEntry(doc, gwName, &p); err != nil || !ok || p.BaseURL != NormalizeBaseURL(gw.BaseURL) {
+	if ok, err := ompProviderEntry(doc, name, &p); err != nil || !ok || p.BaseURL != NormalizeBaseURL(gw.BaseURL) {
 		return false, err
 	}
-	return updateOMPProviderEntry(path, gwName, nil)
+	return updateOMPProviderEntry(path, name, nil)
 }
 
 // openCodeFile is OpenCode's <opencode-dir>/opencode.jsonc (or
@@ -778,9 +807,10 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 	if err != nil {
 		return err
 	}
+	id := ProviderID(gwName)
 	p := openCodeProvider{
 		Package:  "@ai-sdk/anthropic",
-		Name:     gwName,
+		Name:     id,
 		Settings: openCodeSettings{BaseURL: NormalizeBaseURL(gw.BaseURL) + "/v1"},
 		Models:   openCodeModels(cat.Models),
 	}
@@ -789,11 +819,24 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 		p.Settings.APIKey = openCodeAPIKey(gw)
 		p.Headers = map[string]string{"Authorization": openCodeAuthHeader(gw)}
 	}
-	if _, err := setJSONEntry(doc, "providers", gwName, p); err != nil {
+	if _, err := setJSONEntry(doc, "providers", id, p); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	// Clean up any legacy V1 "provider.<gwName>" entry in the same file.
 	_, _ = setJSONEntry(doc, "provider", gwName, nil)
+	// A pin aide wrote at the bare entry follows it to aide-<gw>.
+	legacy, err := dropOpenCodeEntry(doc, "providers", gwName, p.Settings.BaseURL)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if legacy {
+		var pin string
+		if raw, ok := doc["model"]; ok && json.Unmarshal(raw, &pin) == nil {
+			if prov, modID, _ := strings.Cut(pin, "/"); prov == gwName {
+				doc["model"], _ = json.Marshal(id + "/" + modID)
+			}
+		}
+	}
 
 	if isDefault && len(cat.Models) > 0 {
 		var curModel string
@@ -803,7 +846,7 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 		curProv, curModID, hasSlash := strings.Cut(curModel, "/")
 		shouldSet := curModel == ""
 		if !shouldSet && hasSlash {
-			if curProv == gwName {
+			if curProv == id {
 				_, exists := p.Models[curModID]
 				shouldSet = !exists
 			} else {
@@ -814,7 +857,7 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 			}
 		}
 		if shouldSet {
-			if raw, err := json.Marshal(gwName + "/" + defaultOpenCodeModelID(cat.Models)); err == nil {
+			if raw, err := json.Marshal(id + "/" + defaultOpenCodeModelID(cat.Models)); err == nil {
 				doc["model"] = raw
 			}
 		}
@@ -828,12 +871,12 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 		return "", err
 	}
 	var p openCodeProvider
-	ok, err := jsonEntry(doc, "providers", gwName, &p)
+	ok, err := jsonEntry(doc, "providers", ProviderID(gwName), &p)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s: %w", path, err)
 	case !ok:
-		return fmt.Sprintf("provider %q missing", gwName), nil
+		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
 	case p.Package != "@ai-sdk/anthropic":
 		return "package differs", nil
 	case gw.RequiresToken() && !slices.Equal(p.Env, []string{gw.EnvVarName()}):
@@ -862,41 +905,51 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 	return "", nil
 }
 
-// remove leaves an entry pointing at another URL: it belongs to
-// another profile's gateway or to the user.
+// dropOpenCodeEntry deletes section's name entry when it points at
+// wantURL (an entry at another URL belongs to another profile's gateway
+// or to the user) and reports whether it did. section is "providers",
+// or the legacy V1 "provider" whose URL sits under options.
+func dropOpenCodeEntry(doc map[string]json.RawMessage, section, name, wantURL string) (bool, error) {
+	var p struct {
+		Settings openCodeSettings `json:"settings"`
+		Options  openCodeSettings `json:"options"`
+	}
+	if ok, err := jsonEntry(doc, section, name, &p); err != nil || !ok {
+		return false, err
+	}
+	if p.Settings.BaseURL != wantURL && p.Options.BaseURL != wantURL {
+		return false, nil
+	}
+	return setJSONEntry(doc, section, name, nil)
+}
+
+// remove drops gwName's aide-<gw> entry and the bare <gw> entry (or
+// legacy V1 "provider.<gw>") an earlier aide wrote, with a top-level
+// model naming either.
 func (openCodeFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error) {
 	doc, err := fsutil.ReadJSONCRawMap(path)
 	if err != nil {
 		return false, err
 	}
 	wantURL := NormalizeBaseURL(gw.BaseURL) + "/v1"
-	var p openCodeProvider
-	ok, err := jsonEntry(doc, "providers", gwName, &p)
-	if err != nil {
-		return false, err
-	}
-	matched := ok && p.Settings.BaseURL == wantURL
-	if !matched {
-		// Also check legacy V1 "provider.<gwName>" entries.
-		var legacy struct {
-			Options openCodeSettings `json:"options"`
+	var removed bool
+	for _, e := range []struct{ section, name string }{
+		{"providers", ProviderID(gwName)}, {"providers", gwName}, {"provider", gwName},
+	} {
+		ok, err := dropOpenCodeEntry(doc, e.section, e.name, wantURL)
+		if err != nil {
+			return false, err
 		}
-		if legOK, legErr := jsonEntry(doc, "provider", gwName, &legacy); legErr != nil {
-			return false, legErr
-		} else if legOK && legacy.Options.BaseURL == wantURL {
-			matched = true
+		if ok {
+			removed = true
+			var curModel string
+			if raw, has := doc["model"]; has && json.Unmarshal(raw, &curModel) == nil && strings.HasPrefix(curModel, e.name+"/") {
+				delete(doc, "model")
+			}
 		}
 	}
-	if !matched {
+	if !removed {
 		return false, nil
-	}
-	_, _ = setJSONEntry(doc, "providers", gwName, nil)
-	_, _ = setJSONEntry(doc, "provider", gwName, nil)
-	var curModel string
-	if raw, hasModel := doc["model"]; hasModel && json.Unmarshal(raw, &curModel) == nil {
-		if strings.HasPrefix(curModel, gwName+"/") {
-			delete(doc, "model")
-		}
 	}
 	return true, fsutil.WriteJSON(path, doc)
 }
@@ -932,25 +985,51 @@ func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *Cached
 	if providers == nil {
 		providers = map[string]any{}
 	}
+	id := ProviderID(gwName)
 	entry := map[string]any{
-		"name":     gwName,
+		"name":     id,
 		"base_url": NormalizeBaseURL(gw.BaseURL) + "/v1",
 		"wire_api": codexWireAPI,
 	}
 	if gw.RequiresToken() {
 		entry["env_key"] = gw.EnvVarName()
 	}
-	providers[gwName] = entry
+	providers[id] = entry
 	doc["model_providers"] = providers
+	// A pin aide wrote at the bare entry follows it to aide-<gw>.
+	cur, _ := doc["model_provider"].(string)
+	for _, old := range codexLegacyNames(gwName) {
+		if dropCodexEntry(providers, old, entry["base_url"]) && cur == old {
+			doc["model_provider"], cur = id, id
+		}
+	}
 	if isDefault {
-		cur, _ := doc["model_provider"].(string)
-		if cur == "" {
-			doc["model_provider"] = gwName
-		} else if _, managed := providers[cur]; managed {
-			doc["model_provider"] = gwName
+		if _, managed := providers[cur]; cur == "" || managed {
+			doc["model_provider"] = id
 		}
 	}
 	return fsutil.WriteTOML(path, doc)
+}
+
+// codexLegacyNames are the bare provider names an earlier aide may have
+// written for gwName: its own, and for a split-off <gw>-codex, <gw>.
+func codexLegacyNames(gwName string) []string {
+	names := []string{gwName}
+	if base, ok := strings.CutSuffix(gwName, "-codex"); ok {
+		names = append(names, base)
+	}
+	return names
+}
+
+// dropCodexEntry deletes providers[name] when it points at baseURL (one
+// at another URL belongs to another profile's gateway or to the user).
+func dropCodexEntry(providers map[string]any, name string, baseURL any) bool {
+	p, ok := providers[name].(map[string]any)
+	if !ok || p["base_url"] != baseURL {
+		return false
+	}
+	delete(providers, name)
+	return true
 }
 
 func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *CachedCatalogue) (string, error) {
@@ -958,10 +1037,10 @@ func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *Cac
 	if err != nil {
 		return "", err
 	}
-	p, ok := codexProviders(doc)[gwName].(map[string]any)
+	p, ok := codexProviders(doc)[ProviderID(gwName)].(map[string]any)
 	switch {
 	case !ok:
-		return fmt.Sprintf("model provider %q missing", gwName), nil
+		return fmt.Sprintf("model provider %q missing", ProviderID(gwName)), nil
 	case p["base_url"] != NormalizeBaseURL(gw.BaseURL)+"/v1":
 		return "base_url differs", nil
 	case p["wire_api"] != codexWireAPI:
@@ -976,24 +1055,30 @@ func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *Cac
 	return "", nil
 }
 
-// remove leaves an entry pointing at another URL: it belongs to
-// another profile's gateway or to the user.
+// remove drops gwName's aide-<gw> entry and the bare entry an earlier
+// aide wrote, with a model_provider naming either. An entry at another
+// URL belongs to another profile's gateway or to the user.
 func (c codexFile) remove(path, gwName string, gw config.GatewayConfig) (bool, error) {
 	doc, err := fsutil.ReadTOML(path)
 	if err != nil {
 		return false, err
 	}
 	providers := codexProviders(doc)
-	p, ok := providers[gwName].(map[string]any)
-	if !ok || p["base_url"] != NormalizeBaseURL(gw.BaseURL)+"/v1" {
+	baseURL := NormalizeBaseURL(gw.BaseURL) + "/v1"
+	var removed bool
+	for _, name := range append([]string{ProviderID(gwName)}, codexLegacyNames(gwName)...) {
+		if dropCodexEntry(providers, name, baseURL) {
+			removed = true
+			if doc["model_provider"] == name {
+				delete(doc, "model_provider")
+			}
+		}
+	}
+	if !removed {
 		return false, nil
 	}
-	delete(providers, gwName)
 	if len(providers) == 0 {
 		delete(doc, "model_providers")
-	}
-	if doc["model_provider"] == gwName {
-		delete(doc, "model_provider")
 	}
 	return true, fsutil.WriteTOML(path, doc)
 }

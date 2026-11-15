@@ -261,3 +261,13 @@ func TestLegacyGatewayChoice(t *testing.T) {
 		}
 	})
 }
+
+func TestConvertLegacyGatewaysSiblingHasNoPreset(t *testing.T) {
+	got, _ := ConvertLegacyGateways(Context{Gateways: map[string]GatewayConfig{"a": {
+		BaseURL: "https://openrouter.ai/api", Preset: "openrouter-anthropic", Key: "k", Harnesses: []string{"claude", "codex"},
+	}}})
+	sib := got["a-codex"]
+	if sib.Preset != "" || got["a"].Preset != "" || sib.API != apiOpenAIResponses || sib.URL != "https://openrouter.ai/api/v1" {
+		t.Errorf("sibling = %+v, a = %+v", sib, got["a"])
+	}
+}

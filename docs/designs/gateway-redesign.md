@@ -581,8 +581,8 @@ test), and scrubs any inherited `AIDE_GW_*` variable from the parent shell.
 ### Endpoint Resolver & Per-Harness Writer Serialization
 
 Every component that needs a gateway's URL, wire format, auth header, or key
-reference calls `gateway.Endpoint(gwName string, gw config.GatewayConfig,
-harness string) EndpointSpec`:
+reference calls `gateway.Endpoint(gw config.GatewayConfig) EndpointSpec` (`gwName` and
+`harness` arrive with the writer step):
 
 | Target | `API` Mapping | Auth / Header Mapping (Keyed) | Keyless Loopback Representation |
 | --- | --- | --- | --- |
@@ -1323,8 +1323,8 @@ migration guard and backups.
 *   **Type / Scope**: Endpoint resolver, model fetcher, and per-harness writers.
 *   **Proposed Changes**:
     *   Create `internal/gateway/endpoint.go` implementing
-        `Endpoint(gwName string, gw config.GatewayConfig, harness string) EndpointSpec`
-        returning exact `BaseURL` (preserving preset/explicit paths without blind
+        `Endpoint(gw config.GatewayConfig) EndpointSpec` (`gwName` and `harness`
+        arrive with the writer step) returning exact `BaseURL` (preserving preset/explicit paths without blind
         `/v1` mangling), `API`, `Header`, `KeyVar` (`AIDE_GW_<NAME>_KEY`),
         per-harness `KeyRef`, keyless auth representation, and `SwitchSpec`.
     *   Update [`FetchModels`](../../internal/gateway/fetch.go#L53-L73) to accept
@@ -1921,3 +1921,4 @@ migration guard and backups.
 *   Documentation (S11): `docs/configuration.md` replaces "Custom gateways" with a "Gateways" section (choice order, picker, exit 78, presets, migration, changes for existing users) and `docs/cli-reference.md` gains an `aide gateway` section, because the code, not the earlier prose, is the source of truth. Docs say that `gateway add` writes only Anthropic Messages gateways with a bearer key today, and that provider `credentials:` and `default_credentials:` keep working until the credential migration, matching the deferred notes above.
 *   Documentation (S11): `docs/profiles-verification.md`, `docs/skillshare.md` and `docs/capabilities.md` get one short note each rather than rewrites, since they cover gateways only at the edges (own login as `none`, key stays in the age store, switches opening `aws`/`gcp`).
 *   Endpoint resolver (S10): `gateway.Endpoint` keeps its one-value signature, so every caller is unchanged; `EndpointSpec` gains `Keyless` and `Switch` (a provider-switch preset returns the `SwitchSpec` and no URL), a preset wins over `url`, and `KeyVar` is not added because no writer reads it until the serialization step. anthropic-messages keeps the `/v1`-stripped URL (presets included), other APIs use the exact URL; `Sync` on a switch returns an empty result and `FetchModels` refuses one. `presetDeliverable` stays until the writers emit each wire protocol.
+*   Endpoint review fix (S10): a preset applies only when the gateway has no url or its url matches the preset's (after normalising); any other url resolves as custom url+api, so `gateway edit --url` never sends a key to the preset host. `ConvertLegacyGateways` clears `Preset` on converted gateways and the `-codex` sibling.

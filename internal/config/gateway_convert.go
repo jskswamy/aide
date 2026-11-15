@@ -69,7 +69,7 @@ func ConvertLegacyGateways(ctx Context) (gateways map[string]GatewayConfig, rena
 		codexUsed := slices.Contains(gw.Harnesses, "codex") || slices.Contains(DefaultCredentialsForHarness(synth, "codex"), old)
 		conv := gw
 		conv.BaseURL, conv.URL, conv.NoAuth = "", gw.BaseURL, gw.Key == ""
-		conv.API = apiAnthropicMessages
+		conv.API, conv.Preset = apiAnthropicMessages, "" // converted gateways are custom url+api
 		codexOnly := codexUsed && slices.Equal(gw.Harnesses, []string{"codex"})
 		codexURL := NormalizeGatewayBaseURL(gw.BaseURL) + "/v1"
 		switch {

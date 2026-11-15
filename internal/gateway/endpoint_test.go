@@ -74,8 +74,10 @@ func TestEndpoint_ResolvesPresetAndCustom(t *testing.T) {
 	}{
 		{"preset openai exact url", config.GatewayConfig{Preset: "openai"},
 			EndpointSpec{BaseURL: "https://api.openai.com/v1", API: gatewaypreset.APIOpenAIResponses, Header: gatewaypreset.HeaderBearer}},
-		{"preset anthropic x-api-key", config.GatewayConfig{Preset: "anthropic", URL: "https://ignored"},
+		{"preset anthropic x-api-key", config.GatewayConfig{Preset: "anthropic", URL: "https://api.anthropic.com/"},
 			EndpointSpec{BaseURL: "https://api.anthropic.com", API: gatewaypreset.APIAnthropicMessages, Header: gatewaypreset.HeaderXAPIKey}},
+		{"preset with other url is custom", config.GatewayConfig{Preset: "openrouter-anthropic", BaseURL: "https://proxy.example.com"},
+			EndpointSpec{BaseURL: "https://proxy.example.com", API: gatewaypreset.APIAnthropicMessages, Header: gatewaypreset.HeaderBearer}},
 		{"preset zai keeps path", config.GatewayConfig{Preset: "zai"},
 			EndpointSpec{BaseURL: "https://api.z.ai/api/paas/v4", API: gatewaypreset.APIOpenAIChat, Header: gatewaypreset.HeaderBearer}},
 		{"preset keyless", config.GatewayConfig{Preset: "ollama"},

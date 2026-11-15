@@ -73,21 +73,26 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 	}
 }
 
-func TestProjectSet_NoCredentialsSavesExplicitEmptySelection(t *testing.T) {
+func TestProjectSet_GatewayNoneSavesPerHarnessChoice(t *testing.T) {
 	path := selectionEnv(t, selectionTestConfig)
-	if out, err := runProject(t, "set", "--no-credentials"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "none", "--harness", "pi"); err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, ok := savedFor(t, path, "work")
-	if !ok || p.LegacyCredentials == nil || len(*p.LegacyCredentials) != 0 {
-		t.Errorf("saved = %+v, want explicit empty selection", p)
+	if !ok || p.Gateway["pi"] != "none" || p.LegacyCredentials != nil {
+		t.Errorf("saved = %+v, want gateway pi=none", p)
 	}
-	got := runSelectionJSON(t, whichCmd())
-	if got["credential_source"] != "preference" {
-		t.Errorf("credential_source = %v, want preference", got["credential_source"])
+	if out, err := runProject(t, "set", "--auth", "login", "--harness", "claude"); err != nil {
+		t.Fatalf("project set --auth login: %v\n%s", err, out)
 	}
-	if _, ok := got["credential_selection"]; ok {
-		t.Errorf("explicit empty selection still selected %v", got["credential_selection"])
+	if p, _ = savedFor(t, path, "work"); p.Gateway["claude"] != "none" || p.Gateway["pi"] != "none" {
+		t.Errorf("--auth login saved = %+v, want claude=none kept beside pi=none", p)
+	}
+	if out, err := runProject(t, "clear", "--gateway", "--harness", "pi"); err != nil {
+		t.Fatalf("project clear: %v\n%s", err, out)
+	}
+	if p, _ = savedFor(t, path, "work"); p.Gateway["pi"] != "" || p.Gateway["claude"] != "none" {
+		t.Errorf("after clear --harness pi = %+v", p)
 	}
 }
 
@@ -111,7 +116,9 @@ func TestProjectSet_RejectsInvalidSelections(t *testing.T) {
 		"unknown credential": {"set", "--gateway", "nope"},
 		"other profile's":    {"set", "--profile", "personal", "--gateway", "anthropic"},
 		"unknown harness":    {"set", "--agent", "no-such-harness-xyz"},
-		"conflicting":        {"set", "--gateway", "openai", "--no-credentials"},
+		"conflicting":        {"set", "--gateway", "openai", "--auth", "login"},
+		"no harness":         {"set", "--gateway", "none"},
+		"not a gateway":      {"set", "--gateway", "ghost", "--harness", "pi"},
 		"unknown profile":    {"set", "--profile", "ghost", "--agent", "pi"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -162,7 +169,7 @@ func TestProjectClear_ClearsFieldsIndependently(t *testing.T) {
 
 func TestProjectShow_JSON(t *testing.T) {
 	selectionEnv(t, selectionTestConfig)
-	if out, err := runProject(t, "set", "--agent", "pi", "--no-credentials"); err != nil {
+	if out, err := runProject(t, "set", "--agent", "pi", "--gateway", "none"); err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	out, err := runProject(t, "show", "--format", "json")
@@ -176,8 +183,8 @@ func TestProjectShow_JSON(t *testing.T) {
 	if got["profile"] != "work" || got["repository"] != "github.com/org/repo" || got["harness"] != "pi" {
 		t.Errorf("show = %v", got)
 	}
-	if creds, ok := got["credentials"].([]any); !ok || len(creds) != 0 {
-		t.Errorf("credentials = %#v, want explicit []", got["credentials"])
+	if gw, ok := got["gateway"].(map[string]any); !ok || gw["pi"] != "none" {
+		t.Errorf("gateway = %#v, want pi=none", got["gateway"])
 	}
 
 	if _, err := runProject(t, "clear", "--gateway"); err != nil {

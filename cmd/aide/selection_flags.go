@@ -16,18 +16,18 @@ import (
 
 const (
 	profileFlagUsage = "Use this profile instead of the one matched for this directory"
-	gatewayFlagUsage = "Use this gateway or credential binding (repeatable); replaces the saved and default selection for this run"
-	authFlagUsage    = "Authentication: api (inject selected credentials) or login (native login, inject none)"
+	gatewayFlagUsage = "Use this gateway (or none for the harness's own login) for this run; replaces the saved and default choice"
+	authFlagUsage    = "Deprecated: use --gateway none instead of --auth login"
 )
 
 // selectionFlags are the one-time launch selections: --profile,
 // --agent, --gateway and --auth. They never change saved
 // preferences.
 type selectionFlags struct {
-	profile     string
-	agent       string
-	credentials []string
-	auth        string
+	profile string
+	agent   string
+	gateway string
+	auth    string
 	// credentialsSet reports --gateway was given; filled by inputs.
 	credentialsSet bool
 }
@@ -37,7 +37,7 @@ type selectionFlags struct {
 func (f *selectionFlags) register(cmd *cobra.Command, agentUsage string) {
 	cmd.Flags().StringVar(&f.profile, "profile", "", profileFlagUsage)
 	cmd.Flags().StringVar(&f.agent, "agent", "", agentUsage)
-	cmd.Flags().StringArrayVar(&f.credentials, "gateway", nil, gatewayFlagUsage)
+	cmd.Flags().StringVar(&f.gateway, "gateway", "", gatewayFlagUsage)
 	cmd.Flags().StringVar(&f.auth, "auth", "", authFlagUsage)
 	registerSelectionCompletions(cmd)
 }
@@ -49,9 +49,15 @@ func (f *selectionFlags) inputs(cmd *cobra.Command) (launcher.SelectionInputs, e
 		return launcher.SelectionInputs{}, err
 	}
 	f.credentialsSet = cmd.Flags().Changed("gateway")
+	if auth == launcher.AuthLogin {
+		if f.gateway != "" && f.gateway != "none" {
+			return launcher.SelectionInputs{}, fmt.Errorf("--auth login means --gateway none; it conflicts with --gateway %s", f.gateway)
+		}
+		fmt.Fprintln(cmd.ErrOrStderr(), "--auth login is deprecated; use --gateway none")
+	}
 	return launcher.SelectionInputs{
 		Agent:          f.agent,
-		Credentials:    nonEmpty(f.credentials),
+		Credentials:    nonEmpty([]string{f.gateway}),
 		CredentialsSet: f.credentialsSet,
 		Auth:           auth,
 	}, nil

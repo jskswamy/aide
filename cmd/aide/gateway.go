@@ -24,6 +24,7 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/gateway"
+	"github.com/jskswamy/aide/internal/gatewaypreset"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
@@ -99,7 +100,6 @@ only name the variable aide injects it as.`,
 	cmd.AddCommand(gatewayListCmd(&profile))
 	cmd.AddCommand(gatewayUseCmd(&profile))
 	cmd.AddCommand(gatewayEditCmd(&profile))
-	cmd.AddCommand(gatewayRenameCmd(&profile))
 	cmd.AddCommand(gatewaySyncCmd(&profile))
 	cmd.AddCommand(gatewayRemoveCmd(&profile))
 	return cmd
@@ -107,29 +107,48 @@ only name the variable aide injects it as.`,
 
 func gatewayAddCmd(profile *string) *cobra.Command {
 	var (
-		rawURL, ttl, harnesses, store, key, ageKey, tokenEnv string
-		tokenStdin, force, makeDefault                       bool
+		rawURL, ttl, harnesses, store, key, ageKey, fromEnv, model, api string
+		defaultFor                                                      []string
+		tokenStdin, force, makeDefault, noAuth, generateAgeKey          bool
 	)
 	cmd := &cobra.Command{
-		Use:   "add [<name>]",
-		Short: "Register a custom gateway, encrypt its token, and sync models",
-		Long: `Register a custom gateway on a profile, encrypt its bearer token into
-the profile's secret store, and sync its models into harness configs.
+		Use:   "add [<preset>|<name>]",
+		Short: "Register a gateway or built-in preset, encrypt its key, and sync models",
+		Long: `Register a gateway on a profile, encrypt its key into the profile's
+secret store, and sync its models into harness configs.
 
-The base URL is read from --url or prompted on a terminal. The token is
-read from a hidden prompt, from stdin (--token-stdin) or from a named
-environment variable (--token-env); never from a flag value, which would
-land in shell history.
+A built-in preset (for example openrouter-anthropic) supplies the URL, wire
+protocol and compatible harnesses; a custom gateway takes --url. The key
+is read from a hidden prompt, from stdin (--key-stdin) or from an
+environment variable (--from-env, or --from-env=VAR); never from a flag
+value, which would land in shell history. A bare --from-env on a preset
+reads the first of the preset's usual variables that is set.
+
+For each marked claude or codex, --default-for <h> makes this gateway the
+profile's choice; otherwise an unset choice is saved as none, so launches
+keep using the harness's own login.
 
 Examples:
+  aide gateway add openrouter-anthropic --from-env --profile work
   aide gateway add corp --url https://gateway.example.com --profile work
-  op read op://Eng/Gateway/credential | aide gateway add corp --url https://gateway.example.com --token-stdin
-  aide gateway add corp --url https://gateway.example.com --token-env CORP_GATEWAY_TOKEN --harnesses claude,pi`,
+  op read op://Eng/Gateway/credential | aide gateway add corp --url https://gateway.example.com --key-stdin
+  aide gateway add corp --url https://gateway.example.com --from-env=CORP_GATEWAY_TOKEN --harnesses claude,pi --default-for claude`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if tokenStdin && tokenEnv != "" {
-				return errors.New("--token-stdin and --token-env are mutually exclusive")
+			if tokenStdin && fromEnv != "" {
+				return errors.New("--key-stdin and --from-env are mutually exclusive")
+			}
+			if noAuth && (tokenStdin || fromEnv != "") {
+				return errors.New("--no-auth takes no key; drop --key-stdin and --from-env")
+			}
+			if api != "" && api != string(gatewaypreset.APIAnthropicMessages) {
+				return fmt.Errorf("--api %s: %w", api, errWireNotDelivered)
+			}
+			for _, h := range defaultFor {
+				if !slices.Contains(config.DefaultGatewayHarnesses, h) {
+					return fmt.Errorf("--default-for %q is not a gateway harness (use %s)", h, strings.Join(config.DefaultGatewayHarnesses, ", "))
+				}
 			}
 			out := cmd.OutOrStdout()
 			reader := bufio.NewReader(cmd.InOrStdin())
@@ -145,9 +164,38 @@ Examples:
 			if err != nil {
 				return err
 			}
-			rawURL, err = readGatewayURL(cmd, reader, rawURL, tokenStdin)
-			if err != nil {
-				return err
+			var preset gatewaypreset.Preset
+			var isPreset bool
+			switch {
+			case rawURL != "":
+			case len(args) == 1:
+				preset, isPreset = gatewaypreset.Lookup(args[0])
+			case fromEnv != "" && fromEnv != fromEnvAuto:
+				if preset, isPreset = gatewaypreset.ByShellVar(fromEnv); isPreset {
+					args = []string{preset.Name}
+				}
+			}
+			var presetHarnesses []string
+			if isPreset {
+				if err := presetDeliverable(preset); err != nil {
+					return err
+				}
+				rawURL, presetHarnesses = preset.BaseURL, preset.Harnesses
+				if api == "" {
+					api = string(preset.API)
+				}
+			}
+			if fromEnv == fromEnvAuto {
+				if fromEnv, err = presetShellVar(preset, isPreset); err != nil {
+					return err
+				}
+			}
+			tokenEnv := fromEnv
+			if !isPreset {
+				rawURL, err = readGatewayURL(cmd, reader, rawURL, tokenStdin)
+				if err != nil {
+					return err
+				}
 			}
 			name := ""
 			if len(args) == 1 {
@@ -167,13 +215,16 @@ Examples:
 				}
 			}
 
-			resolvedHarnesses, err := resolveGatewayAddHarnesses(cmd, reader, harnesses, cmd.Flags().Changed("harnesses"), tokenStdin)
+			resolvedHarnesses, err := resolveGatewayAddHarnesses(cmd, reader, harnesses, cmd.Flags().Changed("harnesses"), tokenStdin, presetHarnesses)
 			if err != nil {
 				return err
 			}
 
 			gw := config.GatewayConfig{
 				BaseURL:    gateway.NormalizeBaseURL(rawURL),
+				Model:      model,
+				Preset:     preset.Name,
+				API:        api,
 				RefreshTTL: ttl,
 				Store:      store,
 				Key:        key,
@@ -204,7 +255,11 @@ Examples:
 			}
 
 			fctx, cancel := context.WithTimeout(context.Background(), gateway.DefaultFetchTimeout)
-			token, models, err := resolveGatewayAddAuth(fctx, cmd, reader, gw, tokenStdin, tokenEnv)
+			if noAuth && !gw.IsLoopback() {
+				cancel()
+				return errors.New("--no-auth is only for loopback URLs (localhost, 127.0.0.1 or ::1)")
+			}
+			token, models, err := resolveGatewayAddAuth(fctx, cmd, reader, gw, tokenStdin, tokenEnv, noAuth)
 			cancel()
 			if err != nil {
 				return err
@@ -244,21 +299,30 @@ Examples:
 				}
 			}
 			gw = ctx.Gateways[name]
-			onlyUnclaimed := true
-			existing := collidingDefaultForGateway(ctx, name, gw)
-			switch {
-			case cmd.Flags().Changed("default"):
-				onlyUnclaimed = !makeDefault
-			case existing != "" && !tokenStdin && stdinIsTTY():
-				onlyUnclaimed = !promptMakeDefault(cmd, reader, profileName, existing, name)
+			interactive := !tokenStdin && stdinIsTTY()
+			wantDefault := func(k, h string) bool {
+				switch {
+				case makeDefault || slices.Contains(defaultFor, h):
+					return true
+				case cmd.Flags().Changed("default") || cmd.Flags().Changed("default-for") || !interactive || !isSlotHarness(h):
+					return false
+				}
+				return promptDefaultFor(cmd, reader, k, h, profileName)
 			}
 			for _, k := range added {
-				ctx = setProfileDefault(ctx, k, onlyUnclaimed)
+				ctx = setGatewayDefaults(ctx, k, wantDefault)
 			}
 
 			home := userHomeDir()
 			secretsDir := config.SecretsDir()
 			restoreSecret := func() error { return nil }
+			if token != "" && ageKey == "" {
+				if _, statErr := os.Stat(config.ResolveSecretPath(gw.Store)); errors.Is(statErr, os.ErrNotExist) {
+					if ageKey, err = secrets.ResolveRecipient("", reader, cmd.ErrOrStderr(), interactive, generateAgeKey); err != nil {
+						return err
+					}
+				}
+			}
 			if token != "" {
 				restore, err := secrets.NewManager(secretsDir, "").ReplaceKey(gw.Store, secretsDir, gw.Key, token, ageKey)
 				if err != nil {
@@ -291,16 +355,93 @@ Examples:
 		},
 	}
 	cmd.Flags().StringVar(&rawURL, "url", "", "Gateway base URL (https://, or http:// for localhost only)")
-	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "Read the bearer token from stdin")
-	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "Read the bearer token from this environment variable")
-	cmd.Flags().StringVar(&ttl, "ttl", "24h", "Launch-time model refresh interval (e.g. 12h, 24h, 168h)")
-	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure (default: claude,pi,omp,opencode,codex)")
-	cmd.Flags().StringVar(&store, "store", "", "Secret store for the token (default: the profile's secret store, else the profile name)")
-	cmd.Flags().StringVar(&key, "key", "", "Key for the token inside the store (default: <name>_token)")
+	cmd.Flags().StringVar(&api, "api", "", "Wire protocol of a custom gateway (anthropic-messages)")
+	cmd.Flags().BoolVar(&noAuth, "no-auth", false, "The gateway takes no key (loopback URLs only)")
+	cmd.Flags().BoolVar(&tokenStdin, "key-stdin", false, "Read the key from stdin")
+	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "Deprecated: use --key-stdin")
+	cmd.Flags().StringVar(&fromEnv, "from-env", "", "Read the key from this environment variable (bare: the preset's usual variable)")
+	cmd.Flags().Lookup("from-env").NoOptDefVal = fromEnvAuto
+	cmd.Flags().StringVar(&fromEnv, "token-env", "", "Deprecated: use --from-env=VAR")
+	cmd.Flags().StringVar(&ttl, "refresh-ttl", "24h", "Launch-time model refresh interval (e.g. 12h, 24h, 168h)")
+	cmd.Flags().StringVar(&ttl, "ttl", "24h", "Deprecated: use --refresh-ttl")
+	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure (default: the preset's, else claude,pi,omp,opencode,codex)")
+	cmd.Flags().StringVar(&model, "model", "", "Model the harnesses start on (default: none)")
+	cmd.Flags().StringVar(&store, "secret-store", "", "Secret store for the key (default: the profile's secret store, else the profile name)")
+	cmd.Flags().StringVar(&store, "store", "", "Deprecated: use --secret-store")
+	cmd.Flags().StringVar(&key, "key", "", "Key inside the store (default: <name>_token)")
 	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient for a new secret store (default: the discovered age identity)")
-	cmd.Flags().BoolVar(&makeDefault, "default", false, "Make this gateway the profile default across its harnesses")
+	cmd.Flags().BoolVar(&generateAgeKey, "generate-age-key", false, "Create an age identity when none exists, even without a terminal")
+	cmd.Flags().StringSliceVar(&defaultFor, "default-for", nil, "Make this gateway the choice for these harnesses (repeatable)")
+	cmd.Flags().BoolVar(&makeDefault, "default", false, "Make this gateway the choice for every harness it serves")
 	cmd.Flags().BoolVar(&force, "force", false, "Replace a gateway of the same name with another URL, or overwrite an existing secret key")
+	for old, use := range map[string]string{"token-stdin": "--key-stdin", "token-env": "--from-env=VAR", "ttl": "--refresh-ttl", "store": "--secret-store"} {
+		_ = cmd.Flags().MarkDeprecated(old, "use "+use)
+	}
 	return cmd
+}
+
+// fromEnvAuto is --from-env given without a variable name.
+const fromEnvAuto = "\x00auto"
+
+// errWireNotDelivered is why a wire protocol other than Anthropic
+// Messages is refused: the harness writers only emit that one.
+var errWireNotDelivered = errors.New("aide cannot yet write this wire protocol into harness files; only anthropic-messages gateways with a Bearer key are supported")
+
+// presetDeliverable refuses a preset whose wire protocol, key header or
+// kind the harness writers cannot deliver yet.
+func presetDeliverable(p gatewaypreset.Preset) error {
+	if p.Kind != gatewaypreset.KindStaticKey || p.API != gatewaypreset.APIAnthropicMessages || p.Header != gatewaypreset.HeaderBearer {
+		return fmt.Errorf("preset %s (%s, %s): %w", p.Name, p.Kind, cmp.Or(string(p.API), "no wire protocol"), errWireNotDelivered)
+	}
+	return nil
+}
+
+// presetShellVar resolves a bare --from-env: the first of the preset's
+// usual variables that is set.
+func presetShellVar(p gatewaypreset.Preset, isPreset bool) (string, error) {
+	if !isPreset {
+		return "", errors.New("--from-env needs a variable name for a custom gateway: --from-env=VAR")
+	}
+	for _, v := range p.ShellVars {
+		if os.Getenv(v) != "" {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("none of %s is set; export the key or use --from-env=VAR", strings.Join(p.ShellVars, ", "))
+}
+
+func isSlotHarness(h string) bool {
+	d, ok := harness.Lookup(h)
+	return ok && d.Reach == harness.ReachSlot
+}
+
+func promptDefaultFor(cmd *cobra.Command, reader *bufio.Reader, name, h, profileName string) bool {
+	fmt.Fprintf(cmd.ErrOrStderr(), "Make %s the default for %s in profile %s? [y/N]: ", name, h, profileName)
+	line, _ := reader.ReadString('\n')
+	ans := strings.ToLower(strings.TrimSpace(line))
+	return ans == "y" || ans == "yes"
+}
+
+// setGatewayDefaults records gateway_choice for the harnesses name
+// serves: name where want says so; otherwise none for a claude or
+// codex whose choice is unset and not already covered by a provider
+// credential default, so launches stay on the harness's own login.
+// Multi harnesses and existing choices are left alone.
+func setGatewayDefaults(ctx config.Context, name string, want func(name, h string) bool) config.Context {
+	choice := maps.Clone(ctx.GatewayChoice)
+	if choice == nil {
+		choice = map[string]string{}
+	}
+	for _, h := range ctx.Gateways[name].EffectiveHarnesses() {
+		switch {
+		case want(name, h):
+			choice[h] = name
+		case isSlotHarness(h) && choice[h] == "" && !slices.ContainsFunc(config.DefaultCredentialsForHarness(ctx, h), func(d string) bool { return ctx.Credentials[d].IsLLMProvider(d) }):
+			choice[h] = "none"
+		}
+	}
+	ctx.GatewayChoice = choice
+	return ctx
 }
 
 func gatewayListCmd(profile *string) *cobra.Command {
@@ -381,60 +522,33 @@ func gatewayListCmd(profile *string) *cobra.Command {
 	return cmd
 }
 
-type selectableGateway struct {
-	name       string
-	kind       string
-	url        string
-	defaultFor []string
-}
-
 var gatewayCredentialHarnesses = []string{"claude", "pi", "omp", "opencode", "codex", "gemini"}
 
-func selectableGateways(ctx config.Context) []selectableGateway {
-	var list []selectableGateway
-	for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
-		b := ctx.Credentials[name]
-		if !b.IsLLMProvider(name) {
-			continue
-		}
-		u := b.EndpointURL(name, "")
-		if config.IsBuiltinCredential(name) && u != "" {
-			u += " (built-in)"
-		}
-		var defs []string
-		for _, h := range gatewayCredentialHarnesses {
-			if isDefaultFor(ctx, name, h) {
-				defs = append(defs, h)
-			}
-		}
-		list = append(list, selectableGateway{name: name, kind: "credential", url: u, defaultFor: defs})
-	}
-	for _, name := range slices.Sorted(maps.Keys(ctx.Gateways)) {
-		gw := ctx.Gateways[name]
-		var defs []string
-		for _, h := range gw.EffectiveHarnesses() {
-			if isDefaultFor(ctx, name, h) {
-				defs = append(defs, h)
-			}
-		}
-		list = append(list, selectableGateway{name: name, kind: "gateway", url: gw.BaseURL, defaultFor: defs})
-	}
-	return list
-}
-
 func gatewayUseCmd(profile *string) *cobra.Command {
+	var harnessName string
+	var repo, unset bool
 	cmd := &cobra.Command{
-		Use:   "use [<name>]",
-		Short: "Set the profile's default gateway or built-in credential",
-		Long: `Switch a profile's default gateway or built-in provider credential.
+		Use:   "use [<name|none>] --harness <h> [--repo] [--unset]",
+		Short: "Choose the gateway a harness uses",
+		Long: `Set which gateway a harness uses: a gateway marked for it, or none for the
+harness's own login. The choice is saved in the profile's gateway_choice,
+or with --repo for this repository only. --unset removes the saved choice.
 
-Without <name> on a terminal, lists the profile's configured gateways and
-built-in provider credentials and prompts for a selection.`,
+Without <name> on a terminal, lists the gateways marked for the harness
+and prompts, with nothing preselected.`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if harnessName == "" {
+				return errors.New("--harness is required (one of " + strings.Join(config.DefaultGatewayHarnesses, ", ") + ")")
+			}
+			if !slices.Contains(config.DefaultGatewayHarnesses, harnessName) {
+				return fmt.Errorf("--harness %q is not a gateway harness (use %s)", harnessName, strings.Join(config.DefaultGatewayHarnesses, ", "))
+			}
+			if unset && len(args) == 1 {
+				return errors.New("--unset takes no gateway name")
+			}
 			out := cmd.OutOrStdout()
-			reader := bufio.NewReader(cmd.InOrStdin())
 			env, err := cmdEnv(cmd)
 			if err != nil {
 				return err
@@ -447,75 +561,52 @@ built-in provider credentials and prompts for a selection.`,
 			if err != nil {
 				return err
 			}
-			choices := selectableGateways(ctx)
-			if len(choices) == 0 {
-				return fmt.Errorf("profile %q has no gateways or provider credentials configured; add one with: aide gateway add", profileName)
+			var candidates []string
+			for _, name := range slices.Sorted(maps.Keys(ctx.Gateways)) {
+				if slices.Contains(ctx.Gateways[name].EffectiveHarnesses(), harnessName) {
+					candidates = append(candidates, name)
+				}
 			}
 			name := ""
-			if len(args) == 1 {
+			switch {
+			case unset:
+			case len(args) == 1:
 				name = args[0]
+			case !stdinIsTTY():
+				return errors.New("gateway name (or none) is required when stdin is not a terminal")
+			default:
+				if name, err = promptGatewayUse(cmd, bufio.NewReader(cmd.InOrStdin()), profileName, harnessName, candidates); err != nil {
+					return err
+				}
+			}
+			if name != "" && name != "none" && !slices.Contains(candidates, name) {
+				return fmt.Errorf("profile %q has no gateway %q marked for %s (marked: %s)",
+					profileName, name, harnessName, strings.Join(append(candidates, "none"), ", "))
+			}
+
+			if repo {
+				return saveRepoGatewayChoice(cmd, profileName, env.CWD(), harnessName, name)
+			}
+			ctx.GatewayChoice = maps.Clone(ctx.GatewayChoice)
+			if name == "" {
+				delete(ctx.GatewayChoice, harnessName)
 			} else {
-				if !stdinIsTTY() {
-					return errors.New("gateway or credential name is required when stdin is not a terminal")
+				if ctx.GatewayChoice == nil {
+					ctx.GatewayChoice = map[string]string{}
 				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "Gateways on profile %q:\n", profileName)
-				tw := tabwriter.NewWriter(cmd.ErrOrStderr(), 0, 0, 2, ' ', 0)
-				for i, c := range choices {
-					status := "[standby]"
-					if len(c.defaultFor) > 0 {
-						status = "[default: " + strings.Join(c.defaultFor, ", ") + "]"
-					}
-					fmt.Fprintf(tw, "  [%d] %s\t%s\t%s\n", i+1, c.name, c.url, status)
-				}
-				_ = tw.Flush()
-				fmt.Fprint(cmd.ErrOrStderr(), "Select default [1]: ")
-				line, err := reader.ReadString('\n')
-				if err != nil && !errors.Is(err, io.EOF) {
-					return fmt.Errorf("reading selection: %w", err)
-				}
-				ans := strings.TrimSpace(line)
-				if ans == "" {
-					name = choices[0].name
-				} else if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(choices) {
-					name = choices[idx-1].name
-				} else {
-					name = ans
-				}
+				ctx.GatewayChoice[harnessName] = name
 			}
-
-			found := false
-			for _, c := range choices {
-				if c.name == name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				var names []string
-				for _, c := range choices {
-					names = append(names, c.name)
-				}
-				return fmt.Errorf("profile %q has no gateway or provider credential %q (defined: %s)",
-					profileName, name, strings.Join(names, ", "))
-			}
-
-			ctx = setProfileDefault(ctx, name, false)
 			cfg.Contexts[profileName] = ctx
 			if err := saveConfigWithMigrationPrompt(cmd, cfg); err != nil {
 				return fmt.Errorf("writing config: %w", err)
 			}
-
-			var activeOn []string
-			for _, h := range gatewayCredentialHarnesses {
-				if isDefaultFor(ctx, name, h) {
-					activeOn = append(activeOn, h)
-				}
+			if name == "" {
+				fmt.Fprintf(out, "✓ Unset the gateway choice for %s on profile %q\n", harnessName, profileName)
+				return nil
 			}
-			fmt.Fprintf(out, "✓ Set default gateway for profile %q to %q (%s)\n",
-				profileName, name, strings.Join(activeOn, ", "))
-
-			home := userHomeDir()
+			fmt.Fprintf(out, "✓ Set the gateway for %s on profile %q to %q\n", harnessName, profileName, name)
 			if gw, isGw := ctx.Gateways[name]; isGw {
+				home := userHomeDir()
 				if cat, err := gateway.ReadCache(home, profileName, name); err == nil && gateway.MatchesBaseURL(cat, gw.BaseURL) {
 					materializeGatewayFromCache(out, ctx, name, gw, cat, home)
 				}
@@ -523,7 +614,66 @@ built-in provider credentials and prompts for a selection.`,
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&harnessName, "harness", "", "Harness the choice is for (claude, codex, pi, omp or opencode)")
+	cmd.Flags().BoolVar(&repo, "repo", false, "Save for this repository only, not in the profile")
+	cmd.Flags().BoolVar(&unset, "unset", false, "Remove the saved choice")
 	return cmd
+}
+
+// promptGatewayUse asks which of candidates (or none) harnessName
+// should use. Nothing is preselected: an empty answer is an error.
+func promptGatewayUse(cmd *cobra.Command, reader *bufio.Reader, profileName, harnessName string, candidates []string) (string, error) {
+	options := append(slices.Clone(candidates), "none")
+	fmt.Fprintf(cmd.ErrOrStderr(), "Gateways for %s on profile %q:\n", harnessName, profileName)
+	for i, o := range options {
+		fmt.Fprintf(cmd.ErrOrStderr(), "  [%d] %s\n", i+1, o)
+	}
+	fmt.Fprint(cmd.ErrOrStderr(), "Select: ")
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("reading selection: %w", err)
+	}
+	ans := strings.TrimSpace(line)
+	if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(options) {
+		return options[idx-1], nil
+	}
+	if ans == "" {
+		return "", errors.New("no gateway selected")
+	}
+	return ans, nil
+}
+
+// saveRepoGatewayChoice saves (or, for an empty name, removes) the
+// repository's gateway choice for harnessName.
+func saveRepoGatewayChoice(cmd *cobra.Command, profileName, cwd, harnessName, name string) error {
+	key := launcher.PreferenceKey(profileName, aidectx.GitRemotes(cwd))
+	if err := key.Validate(); err != nil {
+		return fmt.Errorf("cannot save repository preferences: %w", err)
+	}
+	path := prefs.DefaultPath(userHomeDir())
+	err := prefs.Update(path, func(f *prefs.File) error {
+		p, _ := f.Get(key)
+		p.Gateway = maps.Clone(p.Gateway)
+		if name == "" {
+			delete(p.Gateway, harnessName)
+		} else {
+			if p.Gateway == nil {
+				p.Gateway = map[string]string{}
+			}
+			p.Gateway[harnessName] = name
+		}
+		f.Set(key, p)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ Unset the repository's gateway choice for %s under profile %q\n", harnessName, profileName)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ Set the repository's gateway for %s under profile %q to %q\n", harnessName, profileName, name)
+	return nil
 }
 
 func gatewayEditCmd(profile *string) *cobra.Command {
@@ -680,71 +830,6 @@ value as the default.`,
 	cmd.Flags().StringVar(&key, "key", "", "Secret key name inside the store")
 	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient for a new secret store")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing unclaimed secret key in the target store")
-	return cmd
-}
-
-func gatewayRenameCmd(profile *string) *cobra.Command {
-	var (
-		ageKey string
-		force  bool
-	)
-	cmd := &cobra.Command{
-		Use:   "rename <old-name> [<new-name>]",
-		Short: "Rename a gateway and migrate its secret key, cache, and harness configs",
-		Long: `Rename an existing custom gateway on a profile, automatically migrating its
-encrypted secret key (<old>_token -> <new>_token), default_credentials entry,
-repository preferences, cached model catalogue, and harness provider entries.`,
-		Args:         cobra.RangeArgs(1, 2),
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			out := cmd.OutOrStdout()
-			reader := bufio.NewReader(cmd.InOrStdin())
-			env, err := cmdEnv(cmd)
-			if err != nil {
-				return err
-			}
-			cfg, err := env.MigratedConfig()
-			if err != nil {
-				return err
-			}
-			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
-			if err != nil {
-				return err
-			}
-			oldName := args[0]
-			oldGW, ok := ctx.Gateways[oldName]
-			if !ok {
-				return fmt.Errorf("profile %q has no gateway %q (defined: %s)", profileName, oldName, definedGateways(ctx))
-			}
-			newName := ""
-			if len(args) == 2 {
-				newName = strings.TrimSpace(args[1])
-			} else {
-				if !stdinIsTTY() {
-					return errors.New("new gateway name is required when stdin is not a terminal")
-				}
-				fmt.Fprint(cmd.ErrOrStderr(), "New gateway name: ")
-				line, err := reader.ReadString('\n')
-				if err != nil && !errors.Is(err, io.EOF) {
-					return fmt.Errorf("reading the new gateway name: %w", err)
-				}
-				newName = strings.TrimSpace(line)
-			}
-			if newName == "" {
-				return errors.New("the new gateway name is empty")
-			}
-			if newName == oldName {
-				return fmt.Errorf("gateway %q already has that name", oldName)
-			}
-			newGW := oldGW
-			if oldGW.Key == defaultGatewayKey(oldName) {
-				newGW.Key = defaultGatewayKey(newName)
-			}
-			return applyGatewayEdit(cmd.Context(), out, cmd.ErrOrStderr(), cfg, profileName, oldName, newName, oldGW, newGW, "", ageKey, false, force)
-		},
-	}
-	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient if migrating to a new secret store")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing unclaimed secret key in the secret store")
 	return cmd
 }
 
@@ -1474,20 +1559,27 @@ func readGatewayURL(cmd *cobra.Command, reader *bufio.Reader, rawURL string, tok
 // --harnesses wins with no I/O. A TTY (except --token-stdin) prompts with
 // the default set in brackets. Otherwise the default is printed and nil
 // (all harnesses) is returned.
-func resolveGatewayAddHarnesses(cmd *cobra.Command, reader *bufio.Reader, flagValue string, flagSet, tokenStdin bool) ([]string, error) {
+func resolveGatewayAddHarnesses(cmd *cobra.Command, reader *bufio.Reader, flagValue string, flagSet, tokenStdin bool, presetDefault []string) ([]string, error) {
 	if flagSet {
 		return parseGatewayHarnesses(flagValue), nil
 	}
+	shown := presetDefault
+	if len(shown) == 0 {
+		shown = config.DefaultGatewayHarnesses
+	}
 	if !tokenStdin && stdinIsTTY() {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses [%s]: ", strings.Join(config.DefaultGatewayHarnesses, ","))
+		fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses [%s]: ", strings.Join(shown, ","))
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("reading the harnesses: %w", err)
 		}
-		return parseGatewayHarnesses(line), nil
+		if picked := parseGatewayHarnesses(line); len(picked) > 0 {
+			return picked, nil
+		}
+		return presetDefault, nil
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses: %s  (pass --harnesses to change)\n", strings.Join(config.DefaultGatewayHarnesses, ", "))
-	return nil, nil
+	fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses: %s  (pass --harnesses to change)\n", strings.Join(shown, ", "))
+	return presetDefault, nil
 }
 
 // readGatewayName prompts for the gateway name on an interactive TTY,
@@ -1526,7 +1618,11 @@ func gatewayNameFromURL(rawURL string) (string, error) {
 
 var errGatewayAddAborted = errors.New("aborted")
 
-func resolveGatewayAddAuth(ctx context.Context, cmd *cobra.Command, reader *bufio.Reader, gw config.GatewayConfig, tokenStdin bool, tokenEnv string) (token string, models []gateway.Model, err error) {
+func resolveGatewayAddAuth(ctx context.Context, cmd *cobra.Command, reader *bufio.Reader, gw config.GatewayConfig, tokenStdin bool, tokenEnv string, noAuth bool) (token string, models []gateway.Model, err error) {
+	if noAuth {
+		models, err = gateway.FetchModels(ctx, nil, gateway.Endpoint(gw), "")
+		return "", models, err
+	}
 	if tokenStdin || tokenEnv != "" {
 		token, err = readGatewayToken(cmd, reader, tokenStdin, tokenEnv, false)
 		if err != nil {
@@ -1620,23 +1716,6 @@ func readGatewayToken(cmd *cobra.Command, reader *bufio.Reader, fromStdin bool, 
 	return token, nil
 }
 
-// collidingDefaultForGateway returns the existing gateway choice or
-// default credential that claims any of gw's harnesses ahead of name,
-// or "" when none does.
-func collidingDefaultForGateway(ctx config.Context, name string, gw config.GatewayConfig) string {
-	for _, h := range gw.EffectiveHarnesses() {
-		if c := ctx.GatewayChoice[h]; c != "" && c != "none" && c != name {
-			return c
-		}
-		for _, d := range config.DefaultCredentialsForHarness(ctx, h) {
-			if ctx.Credentials[d].IsLLMProvider(d) {
-				return d
-			}
-		}
-	}
-	return ""
-}
-
 // isDefaultFor reports whether name is what harness h uses by default:
 // the profile's gateway choice for a gateway, the default credential
 // rule for a provider credential.
@@ -1644,81 +1723,11 @@ func isDefaultFor(ctx config.Context, name, h string) bool {
 	if _, isGateway := ctx.Gateways[name]; isGateway {
 		return ctx.GatewayChoice[h] == name
 	}
-	return slices.Contains(config.DefaultCredentialsForHarness(ctx, h), name)
-}
-
-func promptMakeDefault(cmd *cobra.Command, reader *bufio.Reader, profileName, existing, name string) bool {
-	fmt.Fprintf(cmd.ErrOrStderr(), "Profile %q currently uses %q by default. Make %q the default instead? [Y/n]: ",
-		profileName, existing, name)
-	line, err := reader.ReadString('\n')
-	if err != nil && errors.Is(err, io.EOF) && line == "" {
+	// An explicit gateway choice displaces a provider credential default.
+	if ctx.GatewayChoice[h] != "" && ctx.Credentials[name].IsLLMProvider(name) {
 		return false
 	}
-	ans := strings.ToLower(strings.TrimSpace(line))
-	return ans == "" || ans == "y" || ans == "yes"
-}
-
-// setProfileDefault makes name what its harnesses use by default. A
-// gateway becomes the gateway choice of each harness it serves (only
-// those nothing claims yet when onlyUnclaimed) and displaces provider
-// credentials that overlap it; a provider credential goes first in
-// default_credentials, displacing overlapping ones, and replaces the
-// gateway choice of the harnesses it covers with none. Unrelated
-// bindings stay.
-func setProfileDefault(ctx config.Context, name string, onlyUnclaimed bool) config.Context {
-	choice := maps.Clone(ctx.GatewayChoice)
-	if choice == nil {
-		choice = map[string]string{}
-	}
-	llmDefault := func(h string) bool {
-		return slices.ContainsFunc(config.DefaultCredentialsForHarness(ctx, h), func(d string) bool { return ctx.Credentials[d].IsLLMProvider(d) })
-	}
-	if gw, isGateway := ctx.Gateways[name]; isGateway {
-		served := gw.EffectiveHarnesses()
-		for _, h := range served {
-			if !onlyUnclaimed || choice[h] == "" && !llmDefault(h) {
-				choice[h] = name
-			}
-		}
-		ctx.DefaultCredentials = slices.DeleteFunc(slices.Clone(ctx.DefaultCredentials), func(c string) bool {
-			cb := ctx.Credentials[c]
-			return cb.IsLLMProvider(c) && slices.ContainsFunc(served, func(h string) bool { return choice[h] == name && cb.DefaultAllowsHarness(c, h) })
-		})
-	} else {
-		nameB := ctx.Credentials[name]
-		for _, h := range gatewayCredentialHarnesses {
-			if nameB.DefaultAllowsHarness(name, h) && gatewayServes(ctx, h) {
-				choice[h] = "none"
-			}
-		}
-		out := []string{name}
-		for _, c := range ctx.DefaultCredentials {
-			cb, ok := ctx.Credentials[c]
-			if c == name || !ok || nameB.IsLLMProvider(name) && cb.IsLLMProvider(c) && bindingsOverlapHarnesses(name, nameB, c, cb) {
-				continue
-			}
-			out = append(out, c)
-		}
-		ctx.DefaultCredentials = out
-	}
-	ctx.GatewayChoice = choice
-	return ctx
-}
-
-// gatewayServes reports whether any gateway of ctx is marked for harness h.
-func gatewayServes(ctx config.Context, h string) bool {
-	return slices.ContainsFunc(slices.Collect(maps.Values(ctx.Gateways)), func(gw config.GatewayConfig) bool {
-		return slices.Contains(gw.EffectiveHarnesses(), h)
-	})
-}
-
-func bindingsOverlapHarnesses(nameA string, a config.CredentialBinding, nameB string, b config.CredentialBinding) bool {
-	for _, h := range gatewayCredentialHarnesses {
-		if a.DefaultAllowsHarness(nameA, h) && b.DefaultAllowsHarness(nameB, h) {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(config.DefaultCredentialsForHarness(ctx, h), name)
 }
 
 // checkKeyUnclaimed refuses a key that already holds a value in store
@@ -1902,13 +1911,13 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 		}
 		if len(e.DefaultFor) > 0 {
 			defaults := "default for: " + strings.Join(e.DefaultFor, ", ")
-			if len(e.DefaultFor) < len(e.Harnesses) {
-				defaults += fmt.Sprintf("; switch all: aide gateway use %s --profile %s", e.Gateway, e.Profile)
-			}
 			fmt.Fprintf(w, "  ● GATEWAY: %s  [ACTIVE — %s]\n", e.Gateway, defaults)
 		} else {
-			fmt.Fprintf(w, "  ○ GATEWAY: %s  [standby — switch: aide gateway use %s --profile %s, or launch: aide --gateway %s]\n",
-				e.Gateway, e.Gateway, e.Profile, e.Gateway)
+			switchHint := ""
+			if e.Kind != "credential" {
+				switchHint = fmt.Sprintf("switch: aide gateway use %s --harness <h> --profile %s, or ", e.Gateway, e.Profile)
+			}
+			fmt.Fprintf(w, "  ○ GATEWAY: %s  [standby — %slaunch: aide --gateway %s]\n", e.Gateway, switchHint, e.Gateway)
 		}
 		urlDisplay := e.BaseURL
 		if e.Kind == "credential" && config.IsBuiltinCredential(e.Gateway) && urlDisplay != "" {

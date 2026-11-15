@@ -124,8 +124,8 @@ func TestWhich_HonorsSavedPreferenceAndFlags(t *testing.T) {
 
 func TestStatus_ReportsSelectionSources(t *testing.T) {
 	selectionEnv(t, selectionTestConfig)
-	got := runSelectionJSON(t, statusCmd(), "--profile", "work", "--auth", "login")
-	if got["profile_source"] != "flag" || got["harness_source"] != "profile" || got["credential_source"] != "auth" {
+	got := runSelectionJSON(t, statusCmd(), "--profile", "work", "--gateway", "none")
+	if got["profile_source"] != "flag" || got["harness_source"] != "profile" || got["credential_source"] != "flag" {
 		t.Errorf("sources = %v/%v/%v", got["profile_source"], got["harness_source"], got["credential_source"])
 	}
 	if _, ok := got["credential_selection"]; ok {

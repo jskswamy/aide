@@ -40,6 +40,9 @@ type LegacyConversion struct {
 	// Credentials and Env are the credentials: and env: entries that
 	// became gateways and leave the profile.
 	Credentials, Env []string
+	// Moved are the env: provider keys that stay keys: they move into
+	// credentials: and keep being injected.
+	Moved []LegacyCredential
 	// Converted has one line per credential or env: entry converted.
 	Converted []string
 	// CodexLost are credentials that served Codex and no longer do.
@@ -52,7 +55,7 @@ type CodexLoss struct{ Name, URL, Store, Key string }
 
 // NeedsMigration reports whether the profile has anything to convert.
 func (c LegacyConversion) NeedsMigration() bool {
-	return c.Legacy || len(c.Credentials) > 0 || len(c.Env) > 0
+	return c.Legacy || len(c.Credentials) > 0 || len(c.Env) > 0 || len(c.Moved) > 0
 }
 
 // Apply returns ctx with the derived fields the loader and launch read:
@@ -60,15 +63,16 @@ func (c LegacyConversion) NeedsMigration() bool {
 // left credentials: and env:. Nothing it sets is serialized.
 func (c LegacyConversion) Apply(ctx Context) Context {
 	ctx.ConvertedGateways, ctx.DerivedChoice = c.Gateways, c.Choice
-	ctx.ConvertedCredentials, ctx.ConvertedEnv = c.Credentials, c.Env
+	ctx.ConvertedCredentials, ctx.ConvertedEnv, ctx.MovedCredentials = c.Credentials, c.Env, c.Moved
 	return ctx
 }
 
 // Residual returns ctx without what became a gateway: the converted
 // credentials, their default_credentials: names and the converted env:
-// keys, which launch must not inject a second time.
+// keys, which launch must not inject a second time. The env: keys that
+// stay keys move into credentials:, selected by default.
 func (c Context) Residual() Context {
-	if len(c.ConvertedCredentials) == 0 && len(c.ConvertedEnv) == 0 {
+	if len(c.ConvertedCredentials) == 0 && len(c.ConvertedEnv) == 0 && len(c.MovedCredentials) == 0 {
 		return c
 	}
 	gone := func(n string) bool { return slices.Contains(c.ConvertedCredentials, n) }
@@ -78,6 +82,16 @@ func (c Context) Residual() Context {
 	c.Env = maps.Clone(c.Env)
 	for _, k := range c.ConvertedEnv {
 		delete(c.Env, k)
+	}
+	for _, l := range c.MovedCredentials {
+		delete(c.Env, l.EnvVar)
+		if c.Credentials == nil {
+			c.Credentials = map[string]CredentialBinding{}
+		}
+		c.Credentials[l.Name] = l.Binding
+		if !slices.Contains(c.DefaultCredentials, l.Name) {
+			c.DefaultCredentials = append(c.DefaultCredentials, l.Name)
+		}
 	}
 	return c
 }
@@ -107,6 +121,7 @@ func ConvertLegacy(ctx Context) LegacyConversion {
 	cv.envSwitch()
 	cv.envEndpoint()
 	cv.credentials()
+	cv.moveKeys()
 	cv.choices()
 	return cv.LegacyConversion
 }
@@ -177,7 +192,7 @@ func (cv *converter) gateways() {
 		}
 		cv.made = append(cv.made, name)
 		served := gw.EffectiveHarnesses()
-		codexUsed := slices.Contains(gw.Harnesses, "codex") || slices.Contains(defaultCredentialsForHarness(cv.synth, "codex"), old)
+		codexUsed := slices.Contains(gw.Harnesses, "codex") || slices.Contains(DefaultCredentialsForHarness(cv.synth, "codex"), old)
 		conv := gw
 		conv.BaseURL, conv.URL, conv.NoAuth = "", gw.BaseURL, gw.Key == ""
 		conv.API, conv.Preset = apiAnthropicMessages, "" // converted gateways are custom url+api

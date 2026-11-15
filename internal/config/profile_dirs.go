@@ -152,7 +152,7 @@ func (c *Config) validateProfileDirs(home string) error {
 		for _, name := range names {
 			ctx := c.Contexts[name]
 			if d.DefaultConfigDir != "" && (pinsGlobalDir(ctx, d, home) || envPinsGlobalDir(ctx, d, home)) {
-				return fmt.Errorf("%w: profile %q cannot use %s's global default config dir %s; use an isolated per-profile directory (e.g. ~/.%s-%s) instead",
+				return fmt.Errorf("%w: profile %q cannot use %s's global default config dir %s; use an isolated per-profile directory (e.g. ~/.%s-%s) instead; move the path of any other harness dir variable from env: into config_dirs: by hand, then set config_dir_name",
 					ErrProfileDirAlias, name, h, homepath.Tilde(d.DefaultDir(home), home), h, configDirName(name))
 			}
 			dir, global := ctx.NativeConfigDir(h, home), false
@@ -191,6 +191,7 @@ func (c *Config) ApplyDefaultProfileDir(name string, ctx *Context) {
 
 func (c *Config) applyDefaultProfileDirs() {
 	for name, ctx := range c.Contexts {
+		ctx.Name = name
 		applyDefaultProfileDir(name, &ctx, c.HarnessOf)
 		c.Contexts[name] = ctx
 	}
@@ -218,6 +219,71 @@ func applyDefaultProfileDir(name string, ctx *Context, harnessOf func(string) st
 		return
 	}
 	ctx.Profile = configDirName(name)
+}
+
+// isolateNativeDirs gives a named profile that selects no config dir
+// but sets a harness dir variable in env: its own dirs: a pin to the
+// native dir is dropped, a custom in-home path moves to config_dirs and
+// config_dir_name is the profile name, so no named profile shares the
+// native dirs. A profile with a dir variable that cannot move (templated,
+// relative or outside $HOME) is left as it is, so nothing is isolated
+// in memory that the migration could not persist; a pin to the native
+// dir then fails validateProfileDirs, asking for a hand edit. It marks
+// the config for migration, which writes the result.
+func (c *Config) isolateNativeDirs(home string) {
+	for name, ctx := range c.Contexts {
+		if IsDefaultProfile(name) || name == "" || ctx.SelectsConfigDir() || !hasExplicitProfileEnv(ctx) {
+			continue
+		}
+		if d, ok := harness.Lookup(c.HarnessOf(ctx.Agent)); ctx.Agent != "" && (!ok || !d.SupportsProfiles()) {
+			continue // as applyDefaultProfileDir: a harness without profile dirs has none to isolate
+		}
+		moved, dropped, stuck := map[string]string{}, []string(nil), false
+		// pi and omp share one variable: it is global when it names either default.
+		for _, key := range slices.Sorted(maps.Keys(ctx.Env)) {
+			v := ctx.Env[key]
+			dir := homepath.Expand(v, home)
+			var users []harness.Descriptor
+			global := false
+			for _, d := range harness.All() {
+				if d.ProfileEnvKey == key && d.SupportsProfiles() {
+					users = append(users, d)
+					global = global || sameDirPath(dir, d.DefaultDir(home))
+				}
+			}
+			custom := filepath.IsAbs(dir) && fsutil.IsUnderDir(dir, home) && filepath.Clean(dir) != filepath.Clean(home) && !strings.Contains(v, "{{")
+			switch {
+			case len(users) == 0:
+			case global:
+				dropped = append(dropped, key)
+			case custom:
+				for _, d := range users {
+					moved[d.Name] = v
+				}
+				dropped = append(dropped, key)
+			default:
+				stuck = true
+			}
+		}
+		if stuck || len(dropped) == 0 {
+			continue
+		}
+		ctx.Env, ctx.ConfigDirs = maps.Clone(ctx.Env), maps.Clone(ctx.ConfigDirs)
+		for _, key := range dropped {
+			delete(ctx.Env, key)
+		}
+		if len(moved) > 0 && ctx.ConfigDirs == nil {
+			ctx.ConfigDirs = map[string]string{}
+		}
+		maps.Copy(ctx.ConfigDirs, moved)
+		ctx.IsolatedEnv = dropped
+		if len(ctx.Env) == 0 {
+			ctx.Env = nil
+		}
+		ctx.Profile = configDirName(name)
+		c.Contexts[name] = ctx
+		c.NeedsGatewayMigration = true
+	}
 }
 
 func stripDefaultConfigDirOverrides(ctx *Context) bool {

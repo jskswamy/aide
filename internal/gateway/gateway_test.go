@@ -20,6 +20,7 @@ import (
 	"github.com/tailscale/hujson"
 
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/harness"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1296,5 +1297,60 @@ func TestCacheModels_PinnedModel(t *testing.T) {
 	}
 	if got := h.PinnedModel(ctx, "other"); got != "" {
 		t.Errorf("PinnedModel(other) = %q, want empty", got)
+	}
+}
+
+// A named profile that selects no config dir would run from the native
+// dir, which other profiles share: no writer touches it.
+func TestWriters_RefuseSharedNativeDirForNamedProfile(t *testing.T) {
+	f := newFixture(t)
+	pi, _ := harness.Lookup("pi")
+	native := pi.DefaultDir(f.home)
+	// An env: pin of the native dir keeps a named profile on it.
+	f.ctx = config.Context{Agent: "pi", Name: "work", Env: map[string]string{"PI_CODING_AGENT_DIR": native}, GatewayChoice: map[string]string{}}
+	if err := os.MkdirAll(native, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home, true); !errors.Is(err, ErrSharedNativeDir) {
+		t.Errorf("MaterializeHarness() = %v, want ErrSharedNativeDir", err)
+	}
+	if _, err := Prune(f.ctx, "pi", f.home, nil); !errors.Is(err, ErrSharedNativeDir) {
+		t.Errorf("Prune() = %v, want ErrSharedNativeDir", err)
+	}
+	if _, err := RemoveFromHarness(f.ctx, "corp", f.gw, "pi", f.home); !errors.Is(err, ErrSharedNativeDir) {
+		t.Errorf("RemoveFromHarness() = %v, want ErrSharedNativeDir", err)
+	}
+	if st := InspectHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home); st.State != StateStale {
+		t.Errorf("InspectHarness() = %+v, want stale", st)
+	}
+	// The built-in default profile owns the native dir.
+	f.ctx.Name = "default"
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home, true); err != nil {
+		t.Errorf("default profile: %v", err)
+	}
+	// A context built outside Load has no name and no guard to apply.
+	f.ctx.Name = ""
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home, true); err != nil {
+		t.Errorf("unnamed context: %v", err)
+	}
+}
+
+// A named profile with its own dir for pi (derived or pinned in
+// config_dirs) writes there, never to the native dir.
+func TestWriters_NamedProfileWithOwnDirWrites(t *testing.T) {
+	for name, ctx := range map[string]config.Context{
+		"derived": {Agent: "claude", Name: "work", Profile: "work"},
+		"pinned":  {Agent: "claude", Name: "work", Profile: "work", ConfigDirs: map[string]string{"claude": "~/claude-work"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			f.ctx = ctx
+			if err := os.MkdirAll(filepath.Join(f.home, ".pi-work"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "pi", f.home, true); errors.Is(err, ErrSharedNativeDir) {
+				t.Errorf("MaterializeHarness() = %v, want a write under ~/.pi-work", err)
+			}
+		})
 	}
 }

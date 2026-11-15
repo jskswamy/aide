@@ -23,9 +23,10 @@ import (
 // credential it could not translate. A selection with no gateway for
 // claude or codex becomes "none" for it; a credential that is (or became, through
 // renames: harness, then old name, to new name) a gateway serving a
-// harness becomes that harness's choice. Anything else is dropped. A
-// choice rec already holds wins. It translates in memory only; rec's
-// own list is cleared in the result, never in the caller's copy.
+// harness becomes that harness's choice. A plain credential of ctx stays
+// in the list (an explicitly empty one too: nothing is injected there);
+// anything else is dropped. A choice rec already holds wins. It
+// translates in memory only, never in the caller's copy.
 func TranslatePreference(rec prefs.Preference, ctx config.Context, renames map[string]map[string]string) (prefs.Preference, []string) {
 	if rec.LegacyCredentials == nil {
 		return rec, nil
@@ -37,6 +38,9 @@ func TranslatePreference(rec prefs.Preference, ctx config.Context, renames map[s
 	}
 	out := rec
 	out.LegacyCredentials = nil
+	if kept := slices.DeleteFunc(slices.Clone(creds), func(c string) bool { _, plain := ctx.Credentials[c]; return !plain }); len(kept) > 0 || len(creds) == 0 {
+		out.LegacyCredentials = &kept
+	}
 	out.Gateway = map[string]string{}
 	for h, v := range rec.Gateway {
 		out.Gateway[h] = v
@@ -119,8 +123,9 @@ type Result struct {
 // inherited from the sorted gateway order, not named in
 // default_credentials:), drops what became a gateway from
 // credentials:, env: and default_credentials: and backfills a missing
-// model from caches. It reads cfg and caches only. Plain credentials:,
-// gemini and everything else stay as they are.
+// model from caches. Env: provider keys no gateway can carry move into
+// credentials: (selected by default). It reads cfg and caches only.
+// Plain credentials: and everything else stay as they are.
 func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) {
 	out := *cfg
 	out.Contexts = maps.Clone(cfg.Contexts)
@@ -130,7 +135,8 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
 		ctx := cfg.Contexts[name]
 		conv := config.ConvertLegacy(ctx)
-		if !conv.NeedsMigration() {
+		isolated := ctx.IsolatedEnv
+		if !conv.NeedsMigration() && len(isolated) == 0 {
 			continue
 		}
 		renames := conv.Renames
@@ -150,8 +156,12 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 			}
 			migrated.Gateways[gwName] = gw
 		}
-		migrated.ConvertedGateways = migrated.Gateways
-		migrated.DerivedChoice, migrated.ConvertedCredentials, migrated.ConvertedEnv = nil, nil, nil
+		migrated.ConvertedGateways, migrated.IsolatedEnv = migrated.Gateways, nil
+		if len(isolated) > 0 {
+			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: %s no longer pins a native harness dir in env:; the profile now has its own dirs "+
+				"(config_dir_name %q, custom paths in config_dirs); a login in the native dir stays there", name, strings.Join(isolated, ", "), migrated.Profile))
+		}
+		migrated.DerivedChoice, migrated.ConvertedCredentials, migrated.ConvertedEnv, migrated.MovedCredentials = nil, nil, nil, nil
 		migrated.GatewayChoice = maps.Clone(ctx.GatewayChoice)
 		if migrated.GatewayChoice == nil {
 			migrated.GatewayChoice = map[string]string{}
@@ -167,7 +177,11 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 					"change it with: aide gateway use <name|none> --harness %s --profile %s", name, h, v, h, name))
 			}
 		}
-		migrated.DefaultCredentials = nil // read only to derive gateway_choice; no longer written
+		// Plain credentials stay opt-in: default_credentials keeps the kept names, the choice carries the gateways.
+		migrated.DefaultCredentials = slices.DeleteFunc(slices.Clone(migrated.DefaultCredentials), func(n string) bool {
+			_, kept := migrated.Credentials[n]
+			return !kept
+		})
 		for _, line := range conv.Converted {
 			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: %s", name, line))
 		}

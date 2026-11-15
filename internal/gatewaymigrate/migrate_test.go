@@ -1,6 +1,7 @@
 package gatewaymigrate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -56,8 +57,13 @@ func TestTranslatePreference(t *testing.T) {
 					t.Errorf("Gateway[%s] = %q, want %q", h, got.Gateway[h], v)
 				}
 			}
-			if tt.rec.LegacyCredentials != nil && got.LegacyCredentials != nil {
-				t.Errorf("LegacyCredentials = %v, want it consumed", *got.LegacyCredentials)
+			// Only plain credentials (and an explicit empty selection) stay saved.
+			if tt.rec.LegacyCredentials != nil {
+				wantKept := slices.DeleteFunc(slices.Clone(*tt.rec.LegacyCredentials), func(c string) bool { return c != "github" })
+				if keep := len(wantKept) > 0 || len(*tt.rec.LegacyCredentials) == 0; keep != (got.LegacyCredentials != nil) ||
+					keep && !slices.Equal(*got.LegacyCredentials, wantKept) {
+					t.Errorf("LegacyCredentials = %v, want only the plain %v", got.LegacyCredentials, wantKept)
+				}
 			}
 			if tt.wantNotice == "" && len(notices) != 0 || tt.wantNotice != "" && !slices.ContainsFunc(notices, func(n string) bool { return strings.Contains(n, tt.wantNotice) }) {
 				t.Errorf("notices = %q, want one containing %q", notices, tt.wantNotice)
@@ -92,6 +98,17 @@ func (f fakeCaches) PinnedModel(_ config.Context, gw string) string { return f["
 
 func loadLegacy(t *testing.T, body string) (cfgDir string, cfg *config.Config) {
 	t.Helper()
+	cfgDir = writeLegacy(t, body)
+	cfg, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfgDir, cfg
+}
+
+// writeLegacy writes body as the profile work under a fresh HOME.
+func writeLegacy(t *testing.T, body string) (cfgDir string) {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	cfgDir = t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o700); err != nil {
@@ -103,11 +120,7 @@ func loadLegacy(t *testing.T, body string) (cfgDir string, cfg *config.Config) {
 	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "work.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(cfgDir, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cfgDir, cfg
+	return cfgDir
 }
 
 func TestPlanGatewayMigration(t *testing.T) {
@@ -130,7 +143,7 @@ func TestPlanGatewayMigration(t *testing.T) {
 		t.Errorf("gateway_choice = %v", got.GatewayChoice)
 	}
 	if len(got.DefaultCredentials) != 0 || got.Credentials["github"].Key != "gh" {
-		t.Errorf("default_credentials = %v, credentials = %v; the gateway name goes, plain credentials stay", got.DefaultCredentials, got.Credentials)
+		t.Errorf("default_credentials = %v, credentials = %v; the gateway name goes, plain credentials stay opt-in", got.DefaultCredentials, got.Credentials)
 	}
 	if got.Gateways["corp"].API != "anthropic-messages" || got.Gateways["corp"].Model != "claude-sonnet-4-5" ||
 		got.Gateways["alpha-codex"].API != "openai-responses" || got.Gateways["alpha-codex"].URL != "https://alpha.example.com/v1" {
@@ -279,7 +292,7 @@ func TestPlanConvertsProviderCredentials(t *testing.T) {
 	if len(got.Credentials) != 2 || got.Credentials["gemini"].Key != "gemini_key" || got.Credentials["github"].Key != "gh" {
 		t.Errorf("credentials = %v, want gemini and github only", got.Credentials)
 	}
-	if len(got.DefaultCredentials) != 0 || len(got.Env) != 3 || got.Env["EDITOR"] != "vim" || got.Env["CLOUD_ML_REGION"] == "" {
+	if !slices.Equal(got.DefaultCredentials, []string{"gemini", "github"}) || len(got.Env) != 3 || got.Env["EDITOR"] != "vim" || got.Env["CLOUD_ML_REGION"] == "" {
 		t.Errorf("default_credentials = %v, env = %v", got.DefaultCredentials, got.Env)
 	}
 	// The vertex switch wins for claude, as it did; the rest follow default_credentials
@@ -330,5 +343,63 @@ func TestApplyPersistsProviderCredentialsOnce(t *testing.T) {
 	}
 	if res2, err := Migrate(loaded, nil, cfgDir, state); err != nil || res2.BackupDir != "" {
 		t.Errorf("second Migrate() = %+v, %v", res2, err)
+	}
+}
+
+func TestMigrateIsolatesEnvPinnedNativeDir(t *testing.T) {
+	cfgDir, cfg := loadLegacy(t, "agent: claude\nenv:\n  CLAUDE_CONFIG_DIR: ~/.claude\n  PI_CODING_AGENT_DIR: ~/custom-pi\n")
+	res, err := Migrate(cfg, nil, cfgDir, t.TempDir())
+	if err != nil || res.ReadOnly || res.BackupDir == "" {
+		t.Fatalf("Migrate() = %+v, %v", res, err)
+	}
+	if !strings.Contains(res.Summary, "profile \"work\": CLAUDE_CONFIG_DIR") {
+		t.Errorf("summary lacks the isolation note:\n%s", res.Summary)
+	}
+	body, _ := os.ReadFile(filepath.Join(cfgDir, "profiles", "work.yaml"))
+	if strings.Contains(string(body), "CLAUDE_CONFIG_DIR") || !strings.Contains(string(body), "omp: ~/custom-pi") {
+		t.Errorf("migrated profile:\n%s", body)
+	}
+	loaded, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatalf("the migrated config must load: %v", err)
+	}
+	got := loaded.Contexts["work"]
+	if loaded.NeedsGatewayMigration || got.Profile != "work" || got.ConfigDirs["omp"] != "~/custom-pi" || len(got.IsolatedEnv) != 0 {
+		t.Errorf("reloaded = %+v (needs migration %v)", got, loaded.NeedsGatewayMigration)
+	}
+}
+
+// A named profile whose env: only pins a custom dir is isolated too, so
+// every harness it runs has its own dir; the migration persists the
+// same result the in-memory translation has.
+func TestMigrateIsolatesCustomEnvPin(t *testing.T) {
+	cfgDir, cfg := loadLegacy(t, "agent: claude\nenv:\n  CLAUDE_CONFIG_DIR: ~/claude-work\n")
+	home, _ := os.UserHomeDir()
+	before := cfg.Contexts["work"]
+	if dir := before.LaunchConfigDir("pi", home, nil); dir != filepath.Join(home, ".pi-work") {
+		t.Errorf("pi dir before migration = %q, want ~/.pi-work", dir)
+	}
+	if _, err := Migrate(cfg, nil, cfgDir, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatalf("the migrated config must load: %v", err)
+	}
+	got := loaded.Contexts["work"]
+	if loaded.NeedsGatewayMigration || got.Profile != "work" || got.ConfigDirs["claude"] != "~/claude-work" || len(got.Env) != 0 ||
+		got.LaunchConfigDir("pi", home, nil) != filepath.Join(home, ".pi-work") {
+		t.Errorf("reloaded = %+v (needs migration %v)", got, loaded.NeedsGatewayMigration)
+	}
+}
+
+// A dir variable that cannot move into config_dirs (outside $HOME here)
+// isolates nothing: the native pin keeps failing the load with the hand
+// edit to make, rather than migrating to a config that is not isolated.
+func TestUnmovableDirVariableIsNotIsolated(t *testing.T) {
+	cfgDir := writeLegacy(t, "agent: claude\nenv:\n  CLAUDE_CONFIG_DIR: ~/.claude\n  CODEX_HOME: /data/codex\n")
+	_, err := config.Load(cfgDir, "")
+	if !errors.Is(err, config.ErrProfileDirAlias) || !strings.Contains(err.Error(), "config_dirs") {
+		t.Fatalf("Load() error = %v, want ErrProfileDirAlias asking for a hand edit into config_dirs", err)
 	}
 }

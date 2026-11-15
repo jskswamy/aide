@@ -58,11 +58,11 @@ One-time flags never change saved preferences. Precedence:
   marked for it. `claude` and `codex` with gateways marked and no choice
   open a picker on a terminal and exit `78` otherwise. aide never picks a
   gateway on its own. See [Gateways](configuration.md#gateways).
-- Credentials: every `credentials:` binding is injected into the
-  harnesses it serves, skipping bindings restricted to other agents;
-  `--credential` names replace that selection (`--credential=` injects
-  none). `default_credentials:` is gone and a saved version 1 credential
-  selection is only read to migrate it.
+- Credentials: the `default_credentials:` bindings (or a saved
+  repository selection) are injected into the harnesses they serve,
+  skipping bindings restricted to other agents; `--credential` names
+  replace that selection (`--credential=` injects none). Bindings outside
+  it are not injected.
 
 **Exit codes:** `78` (`EX_CONFIG`) when a `claude` or `codex` gateway
 choice is unset in a script; stderr names the gateways and the command

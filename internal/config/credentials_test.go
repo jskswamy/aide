@@ -54,8 +54,8 @@ func TestLoad_CredentialBindings(t *testing.T) {
 	if err := yaml.Unmarshal(out, &back); err != nil {
 		t.Fatalf("re-reading output: %v\n%s", err, out)
 	}
-	if got := back.Contexts["work"]; len(got.Credentials) != 2 || len(got.DefaultCredentials) != 0 {
-		t.Errorf("round trip lost credentials or wrote default_credentials:\n%s", out)
+	if got := back.Contexts["work"]; len(got.Credentials) != 2 || len(got.DefaultCredentials) != 1 {
+		t.Errorf("round trip lost credentials or default_credentials:\n%s", out)
 	}
 }
 
@@ -240,8 +240,10 @@ func TestImplicitCredentials_UntranslatableStops(t *testing.T) {
 }
 
 // What the conversion cannot turn into a gateway must not carry a
-// provider endpoint, switch or key: only a hand edit leaves one.
-func TestLoad_ProviderSettingsOutsideGatewaysFail(t *testing.T) {
+// provider endpoint, switch or key: only a hand edit leaves one. The
+// config still loads; CheckNoProviderSettings fails that profile's
+// launch.
+func TestCheckNoProviderSettings_AfterLoad(t *testing.T) {
 	cases := map[string]struct{ entry, want string }{
 		"env endpoint without a key": {"env: {ANTHROPIC_BASE_URL: \"https://proxy.example.com\"}", "ANTHROPIC_BASE_URL"},
 		"env switch alone":           {"env: {CLAUDE_CODE_USE_FOUNDRY: \"1\"}", "CLAUDE_CODE_USE_FOUNDRY"},
@@ -252,12 +254,13 @@ func TestLoad_ProviderSettingsOutsideGatewaysFail(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := loadYAML(t, "profiles:\n  work:\n    agent: claude\n    secret: work\n    "+tc.entry+"\n")
-			if !errors.Is(err, ErrInvalidCredentials) {
-				t.Fatalf("Load() error = %v, want ErrInvalidCredentials", err)
+			cfg, err := loadYAML(t, "profiles:\n  work:\n    agent: claude\n    secret: work\n    "+tc.entry+"\n")
+			if err != nil {
+				t.Fatalf("Load() error = %v, want the config to load", err)
 			}
-			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "aide gateway add") {
-				t.Errorf("error %q should name %s and point to aide gateway add", err, tc.want)
+			err = CheckNoProviderSettings(cfg.Contexts["work"].Residual())
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("CheckNoProviderSettings() error = %v, want one naming %s", err, tc.want)
 			}
 			if strings.Contains(err.Error(), "sk-literal") {
 				t.Errorf("error printed the key: %s", err)
@@ -345,7 +348,7 @@ func TestLoad_InvalidCredentialRoutesFail(t *testing.T) {
 		"set bad name":       {"credentials: {anthropic: {backend: age, store: w, key: k, for: {claude: {set: {\"BAD-N\": x}}}}}", "BAD-N"},
 		"set secret value":   {"credentials: {bedrock: {capabilities: [aws], for: {claude: {set: {ANTHROPIC_API_KEY: sk}}}}}", "ANTHROPIC_API_KEY"},
 		"routes collide": {"credentials: {a: {backend: age, store: w, key: k, env: [TEAM_TOKEN], harnesses: [pi]}, " +
-			"b: {backend: age, store: w, key: k2, env: [TEAM_TOKEN], harnesses: [pi]}}", "TEAM_TOKEN"},
+			"b: {backend: age, store: w, key: k2, env: [TEAM_TOKEN], harnesses: [pi]}}\n    default_credentials: [a, b]", "TEAM_TOKEN"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

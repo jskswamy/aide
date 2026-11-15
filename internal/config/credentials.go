@@ -237,9 +237,8 @@ var ErrInvalidCredentials = errors.New("invalid credentials")
 
 var envNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// validateCredentials checks every profile's credential bindings, and
-// that what the legacy conversion leaves in credentials: and env: sets
-// no provider endpoint, switch or key.
+// validateCredentials checks every profile's credential bindings and
+// that the default selection has no clash.
 func (c *Config) validateCredentials() error {
 	section := "profiles"
 	if !c.ProfileSchema {
@@ -256,12 +255,11 @@ func (c *Config) validateCredentials() error {
 				return fmt.Errorf("%w: %s: credentials.%s: %s", ErrInvalidCredentials, at, cred, err)
 			}
 		}
-		// What became a gateway is checked as one; the rest must be plain.
-		rest := ConvertLegacy(orig).Apply(orig).Residual()
-		if err := checkNoProviderSettings(rest); err != nil {
-			return fmt.Errorf("%w: %s: %s", ErrInvalidCredentials, at, err)
-		}
-		if err := checkRouteClashes(rest); err != nil {
+		// What became a gateway is checked as one; the credentials a
+		// launch injects by default must not clash. Provider settings the
+		// conversion left (CheckNoProviderSettings) fail only that
+		// profile's launch, so the config still loads and migrates.
+		if err := checkRouteClashes(ConvertLegacy(orig).Apply(orig).Residual()); err != nil {
 			return fmt.Errorf("%w: %s: %s", ErrInvalidCredentials, at, err)
 		}
 	}
@@ -278,19 +276,18 @@ func ProviderSettingError(name string) error {
 	return nil
 }
 
-// checkNoProviderSettings rejects a provider endpoint, switch or key
-// that ctx's credentials: or env: still carry: after migration only a
-// hand edit leaves one.
-func checkNoProviderSettings(ctx Context) error {
+// CheckNoProviderSettings rejects a provider endpoint, switch or key
+// that ctx (a profile after Residual) still carries in credentials: or
+// env: because no gateway could express it. A hand edit of the profile
+// leaves it; the launch of that profile alone fails.
+func CheckNoProviderSettings(ctx Context) error {
 	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
 		if err := ProviderSettingError(k); err != nil {
 			return fmt.Errorf("env: %w", err)
 		}
-	}
-	for _, k := range slices.Sorted(maps.Keys(ctx.Env)) {
 		if envscrub.IsProviderSecretName(k) {
-			return fmt.Errorf("env: %s holds a provider key, which aide does not pass through env:; store it in a secret store "+
-				"and add a gateway for it with: aide gateway add", k)
+			return fmt.Errorf("env: %s holds a provider key, which aide does not pass through env:; edit the profile by hand: "+
+				"remove env.%s and put the key in a secret store, as credentials: with env: [%s] and harnesses: [<harness>]", k, k, k)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
@@ -308,23 +305,24 @@ func checkNoProviderSettings(ctx Context) error {
 	return nil
 }
 
-// checkRouteClashes fails when two credentials serving the same
-// harness set the same variable, so a launch never has to choose.
+// checkRouteClashes fails when two default credentials serving the
+// same harness set the same variable, so switching harness never needs
+// a --credential to resolve a clash.
 func checkRouteClashes(ctx Context) error {
 	for _, d := range harness.All() {
 		if !d.Launchable() {
 			continue
 		}
 		setBy := map[string]string{}
-		for _, name := range slices.Sorted(maps.Keys(ctx.Credentials)) {
+		for _, name := range slices.Compact(slices.Clone(ctx.DefaultCredentials)) {
 			r, ok := ctx.Credentials[name].Route(name, d.Name)
 			if !ok {
 				continue
 			}
 			for _, e := range append(r.Env, slices.Sorted(maps.Keys(r.Set))...) {
 				if other, dup := setBy[e]; dup && other != name {
-					return fmt.Errorf("credentials %q and %q both set %s for %s; "+
-						"route them to different harnesses (harnesses: or for:)", other, name, e, d.Name)
+					return fmt.Errorf("default_credentials %q and %q both set %s for %s; "+
+						"keep one in default_credentials: or route them to different harnesses with for", other, name, e, d.Name)
 				}
 				setBy[e] = name
 			}

@@ -345,8 +345,9 @@ harnesses (`gemini`, `aider`, `goose`, `amp`) and for the built-in
 (and skipped there while a gateway is chosen for that harness).
 Provider credentials written the old way are migrated to gateways (see
 [Upgrading from earlier gateways](#upgrading-from-earlier-gateways)).
-There is no `default_credentials:`: every binding is injected into the
-harnesses it serves. Each binding refers to one key in an
+`default_credentials:` names the bindings a launch injects when nothing
+else selects (`--credential` replaces it); a binding it leaves out is
+never decrypted or injected. Each binding refers to one key in an
 age-encrypted secret store (the same stores `secret:` names; see
 `aide secrets`).
 
@@ -624,15 +625,17 @@ migrates a legacy profile: `base_url:` gateways, LLM provider
 ones that set `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL`), keyless
 `bedrock`/`vertex` bindings, `env:` provider switches, an `env:`
 `ANTHROPIC_BASE_URL` with its key, and `default_credentials:` become
-`gateways:` entries plus an explicit `gateway_choice:` (and
-`default_credentials:` is no longer written), so the launch
-uses the same endpoint and key as before. `gemini` and credentials for
-other tools (`GITHUB_TOKEN`) stay under `credentials:`. What a gateway
+`gateways:` entries plus an explicit `gateway_choice:` (`default_credentials:`
+keeps the plain credentials that stay), so the launch
+uses the same endpoint and key as before. `gemini`, an `env:` key no
+gateway preset serves (it moves under `credentials:`, still injected by
+default) and credentials for other tools (`GITHUB_TOKEN`) stay under
+`credentials:`. What a gateway
 cannot express exactly (a route that sets another variable beside the
-endpoint, a keyless Claude endpoint, an `env:` provider endpoint with no
-key, an `OPENAI_BASE_URL` in `env:`) is not converted and is refused when the config
-loads, with a pointer to `aide gateway add`: add the gateway by hand and
-remove the old entry. It
+endpoint, a remote keyless Claude endpoint, an `env:` provider endpoint
+with no key, an `OPENAI_BASE_URL` in `env:`) is not converted: the config
+still loads, but launching that profile fails with a hint to edit it by
+hand (`aide gateway add` for the gateway, then remove the old entry). It
 backs up the YAML and `preferences.json` under
 `~/.local/state/aide/migrations/<UTC-timestamp>/` first and prints a
 one-time summary, highlighting any choice inherited from the old

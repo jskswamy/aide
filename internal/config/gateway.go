@@ -507,7 +507,7 @@ func GatewayBinding(name string, gw GatewayConfig) CredentialBinding {
 // per gateway, named after the gateway. A gateway is appended to
 // DefaultCredentials whenever at least one of its target harnesses is
 // not already claimed by an earlier default credential (or earlier
-// gateway in sorted order). defaultCredentialsForHarness resolves the
+// gateway in sorted order). DefaultCredentialsForHarness resolves the
 // effective default list per harness.
 // ctx is not modified and nothing is written, so the bindings never
 // reach config.yaml.
@@ -535,7 +535,7 @@ func synthesizeGatewayCredentials(ctx Context) (Context, error) {
 		candidate.DefaultCredentials = append(slices.Clone(ctx.DefaultCredentials), name)
 		servesAny := false
 		for _, h := range ctx.Gateways[name].EffectiveHarnesses() {
-			if slices.Contains(defaultCredentialsForHarness(candidate, h), name) {
+			if slices.Contains(DefaultCredentialsForHarness(candidate, h), name) {
 				servesAny = true
 				break
 			}
@@ -547,12 +547,12 @@ func synthesizeGatewayCredentials(ctx Context) (Context, error) {
 	return ctx, nil
 }
 
-// defaultCredentialsForHarness returns the ordered slice of default
+// DefaultCredentialsForHarness returns the ordered slice of default
 // credential names from synthCtx.DefaultCredentials that apply to
 // harnessName, skipping any binding whose route variables on
 // harnessName collide with an earlier binding or that would claim a
 // second LLM provider/gateway slot on harnessName.
-func defaultCredentialsForHarness(synthCtx Context, harnessName string) []string {
+func DefaultCredentialsForHarness(synthCtx Context, harnessName string) []string {
 	if harnessName == "" {
 		return slices.Clone(synthCtx.DefaultCredentials)
 	}

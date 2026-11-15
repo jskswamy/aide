@@ -520,7 +520,11 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if cleanEnv {
 		baseEnv = filterEssentialEnv(baseEnv)
 	}
-	baseEnv = envscrub.ScrubCredentials(baseEnv, launchScrubRegistry(rc.Context, capOverrides.EnvAllow), scrubNames)
+	permitted := slices.Clone(capOverrides.EnvAllow)
+	for _, b := range credPlan.Bindings {
+		permitted = append(permitted, b.Permit...)
+	}
+	baseEnv = envscrub.ScrubCredentials(baseEnv, launchScrubRegistry(rc.Context, permitted), scrubNames)
 	env := mergeEnv(baseEnv, resolvedEnv)
 	// Selected credential bindings go on top of the general env.
 	env = mergeEnv(env, credEnv)

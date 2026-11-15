@@ -35,6 +35,9 @@ func SourceLabel(source, profile string) string {
 // keyLocation is where a gateway's key comes from and how it is
 // delivered, never the key.
 func keyLocation(c CredentialInfo) string {
+	if c.Kind == "switch" {
+		return c.URL
+	}
 	if c.Kind == "keyless" {
 		if u, err := url.Parse(c.URL); err == nil && u.Host != "" {
 			return "keyless, " + u.Host
@@ -106,15 +109,20 @@ func gatewayLines(data *BannerData) []string {
 			head += " (startup)"
 		}
 		lines = append(lines, fmt.Sprintf("%s → %s%s", head, ch.URL, src))
-		if ch.Kind == "keyless" && data.Harness == "claude" {
+		switch {
+		case ch.Kind == "switch": // the summary above is all there is
+		case ch.Kind == "keyless" && data.Harness == "claude":
 			lines = append(lines, "keyless (placeholder, login not sent)")
-		} else {
+		default:
 			lines = append(lines, "key: "+keyLocation(*ch))
 		}
 	}
 	var also []string
 	for _, c := range gws {
 		if c.Name == ch.Choice {
+			if c.Kind == "switch" {
+				continue
+			}
 			switch {
 			case c.ModelCount > 0 && c.ModelAge != "":
 				lines = append(lines, fmt.Sprintf("models: %d cached (%s ago)", c.ModelCount, c.ModelAge))

@@ -194,7 +194,7 @@ type CredentialInfo struct {
 	TargetSync string   `json:"target_sync,omitempty"`
 	// Gateway visibility: the harness this binding or choice is for,
 	// the choice ("<gw>", "none", "unset"), where it came from, the
-	// gateway kind ("gateway" or "keyless"), the variable that delivers
+	// gateway kind ("gateway", "keyless" or "switch"), the variable that delivers
 	// its key, whether a multi harness starts on it, how many more
 	// gateways are in /model, and what is wrong with it.
 	Harness  string   `json:"harness,omitempty"`

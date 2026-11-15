@@ -101,11 +101,14 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 }
 
 // unwritable says why harnessName gets no entry for gw, or "": a
-// provider switch has no URL, and Codex loads only the Responses API.
+// provider switch has no URL, Claude loads only Anthropic Messages and
+// Codex only the Responses API.
 func unwritable(harnessName string, gw config.GatewayConfig) string {
 	switch ep := Endpoint(gw); {
 	case ep.Switch != nil:
 		return "provider switch: nothing to write"
+	case harnessName == "claude" && ep.API != gatewaypreset.APIAnthropicMessages:
+		return "claude loads only anthropic-messages gateways"
 	case harnessName == "codex" && ep.API != gatewaypreset.APIOpenAIResponses:
 		return "codex loads only openai-responses gateways"
 	}
@@ -439,7 +442,7 @@ func (c claudeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 	if err != nil {
 		return "", err
 	}
-	if NormalizeBaseURL(doc.BaseURL) != Endpoint(gw).BaseURL {
+	if NormalizeBaseURL(doc.BaseURL) != NormalizeBaseURL(Endpoint(gw).BaseURL) {
 		return "points at another gateway", nil
 	}
 	if !slices.Equal(doc.Models, claudeModels(gwName, cat.Models)) {
@@ -453,7 +456,7 @@ func (c claudeFile) remove(path, _ string, gw config.GatewayConfig) (bool, error
 	if err != nil {
 		return false, err
 	}
-	if NormalizeBaseURL(doc.BaseURL) != Endpoint(gw).BaseURL {
+	if NormalizeBaseURL(doc.BaseURL) != NormalizeBaseURL(Endpoint(gw).BaseURL) {
 		return false, nil
 	}
 	return true, os.Remove(path)

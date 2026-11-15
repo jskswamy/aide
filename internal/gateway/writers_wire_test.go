@@ -80,13 +80,13 @@ func TestWriters_WireProtocols(t *testing.T) {
 // entry anywhere.
 func TestWriters_SkipWhatTheyCannotCarry(t *testing.T) {
 	f := newFixture(t)
-	f.mkdirs(t, "codex", "pi", "opencode", "omp")
+	f.mkdirs(t, "claude", "codex", "pi", "opencode", "omp")
 	chat := config.GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-chat", Key: "k"}
 	sw := config.GatewayConfig{Preset: "bedrock", Region: "us-east-1"}
 	for _, c := range []struct {
 		h  string
 		gw config.GatewayConfig
-	}{{"codex", f.gw}, {"codex", chat}, {"pi", sw}, {"omp", sw}, {"opencode", sw}, {"codex", sw}} {
+	}{{"codex", f.gw}, {"codex", chat}, {"claude", chat}, {"pi", sw}, {"omp", sw}, {"opencode", sw}, {"codex", sw}} {
 		if _, err := MaterializeHarness(f.ctx, "corp", c.gw, f.cat, c.h, f.home, false); err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestWriters_SkipWhatTheyCannotCarry(t *testing.T) {
 			t.Errorf("%s RemoveFromHarness() = %v, %v; want false", c.h, removed, err)
 		}
 	}
-	for _, h := range []string{"codex", "pi", "omp", "opencode"} {
+	for _, h := range []string{"claude", "codex", "pi", "omp", "opencode"} {
 		if matches, _ := filepath.Glob(filepath.Join(f.dir(h), "*")); len(matches) != 0 {
 			t.Errorf("%s wrote %v", h, matches)
 		}

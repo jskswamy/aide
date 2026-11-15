@@ -280,7 +280,7 @@ func gatewayInfo(name, harnessName string, gw config.GatewayConfig) ui.Credentia
 	}
 	return ui.CredentialInfo{
 		Name: name, IsGateway: true, Kind: kind,
-		URL:   gateway.NormalizeBaseURL(cmp.Or(gw.URL, gw.BaseURL)),
+		URL:   gateway.Endpoint(gw).BaseURL,
 		Store: gw.Store, Key: gw.Key,
 		KeyEnv: gw.TokenEnv(name, harnessName),
 	}

@@ -380,12 +380,13 @@ credentials:
 - A launch decrypts only the stores of the bindings it injects. Other
   profiles' bindings never are: a profile without a key does not
   borrow one from another profile.
-- `--credential` (and `--gateway`, for names that are not gateways)
-  replaces the whole selection with the names it lists, and stops the
-  launch when one is not defined in the profile, its store or key is
-  missing, or it is restricted to other agents. `--credential=` injects
-  none. `aide which --format json` shows the selection under
-  `credential_selection` and the injected bindings under `credentials`.
+- `--gateway <name>` for a name that is not a gateway replaces the whole
+  selection with that credential, and stops the launch when it is not
+  defined in the profile, its store or key is missing, or it is
+  restricted to other agents. `--gateway none` injects no
+  credential and uses the harness's own login. `aide which --format json`
+  shows the selection under `credential_selection` and the injected
+  bindings under `credentials`.
 - Bindings are set after the profile's `env:`, so they win over a
   general `env:` value; `never_allow_env:` still removes them.
 - The banner, `aide which` and `aide status` show binding names and
@@ -658,6 +659,11 @@ Things that change:
   summary prints the `aide gateway add <name>-codex ... --api
   openai-responses --harnesses codex` command for an endpoint that serves
   `/responses`.
+- A named profile never writes harness files into the harness's native
+  dir (`~/.claude`, `~/.codex`): a profile whose `env:` pinned a dir
+  variable to the native dir is moved to its own `config_dir_name`, and
+  a custom in-home path moves to `config_dirs:`. Gateway writers fail
+  with a shared-native-dir error rather than touch the native files.
 - `gateway remove` clears the profile and repository choices that named
   the gateway and says which.
 - A legacy gateway that reached Codex only through the omitted

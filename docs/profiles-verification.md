@@ -360,9 +360,9 @@ aide secrets edit verify        # add: anthropic_api_key: <key>
   verify-a:
     agent: claude
     config_dir_name: verify-a
-    credentials:
-      anthropic: {backend: age, store: verify, key: anthropic_api_key}
-    default_credentials: [anthropic]
+    gateways:
+      anthropic: {preset: anthropic, store: verify, key: anthropic_api_key}
+    gateway_choice: {claude: anthropic}
 ```
 
 Run each case, check `/status`, and check whether the key is present
@@ -375,8 +375,8 @@ inside the session without printing it:
 | Case | Command | Expected `/status` | Expected `wc -c` |
 | --- | --- | --- | --- |
 | a | `aide --profile verify-a` | API key in use (approve it when Claude asks), account A's login marked unused | more than 0 |
-| b | `aide --profile verify-a --auth login` | account A's claude.ai login | 0 |
-| c | `aide --profile verify-a --credential=` | account A's claude.ai login | 0 |
+| b | `aide --profile verify-a --gateway none` | account A's claude.ai login | 0 |
+| c | `aide --profile verify-a --auth login` (deprecated alias of `--gateway none`) | account A's claude.ai login | 0 |
 | d | `ANTHROPIC_API_KEY=sk-ant-not-real aide --profile verify-b` | account B's login | 0 |
 | e | `CLAUDE_CODE_OAUTH_TOKEN=not-real ANTHROPIC_AUTH_TOKEN=not-real aide --profile verify-b` | account B's login | `!printenv CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN \| wc -c` is 0 |
 

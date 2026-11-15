@@ -88,6 +88,8 @@ type fakeCaches map[string]string
 
 func (f fakeCaches) DefaultModel(profile, gw string) string { return f[profile+"/"+gw] }
 
+func (f fakeCaches) PinnedModel(_ config.Context, gw string) string { return f["pin/"+gw] }
+
 func loadLegacy(t *testing.T, body string) (cfgDir string, cfg *config.Config) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
@@ -207,14 +209,31 @@ func TestApplyReadOnlyConfigDirKeepsInMemoryTranslation(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chmod(d, 0o700) })
 	}
-	res, err := Migrate(cfg, nil, cfgDir, t.TempDir())
-	if err != nil || !res.ReadOnly || !strings.Contains(res.Summary, "aide config migrate") {
+	state := t.TempDir()
+	res, err := Migrate(cfg, nil, cfgDir, state)
+	if err != nil || !res.ReadOnly || !strings.Contains(res.Summary, "aide config migrate") || !strings.HasSuffix(res.Summary, "\n") {
 		t.Fatalf("Migrate() = %+v, %v; want a read-only result with the hint", res, err)
+	}
+	if _, err := os.Stat(filepath.Join(state, "migrations")); !os.IsNotExist(err) {
+		t.Errorf("a read-only dir left backups behind: %v", err)
 	}
 	if !cfg.NeedsGatewayMigration {
 		t.Error("cfg must stay as loaded when nothing was written")
 	}
 	if b, _ := os.ReadFile(filepath.Join(cfgDir, "profiles", "work.yaml")); !strings.Contains(string(b), "base_url") {
 		t.Error("the read-only config changed")
+	}
+}
+
+// The model OpenCode pins to a gateway becomes its model, ahead of the
+// catalogue default.
+func TestPlanGatewayMigration_PinnedModelWins(t *testing.T) {
+	_, cfg := loadLegacy(t, legacyProfile)
+	plan, err := PlanGatewayMigration(cfg, fakeCaches{"work/alpha": "claude-sonnet-4-5", "pin/alpha": "claude-opus-4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Config.Contexts["work"].Gateways["alpha"].Model; got != "claude-opus-4" {
+		t.Errorf("alpha model = %q, want the pinned claude-opus-4", got)
 	}
 }

@@ -65,7 +65,7 @@ func TestConfigMigratePreviewsThenWritesGateways(t *testing.T) {
 	if err := runConfigMigrate(&out, cfgPath, statePath, home, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "--write converts them") {
+	if !strings.Contains(out.String(), "--write converts them") || !strings.Contains(out.String(), "gateway_choice:") {
 		t.Errorf("preview = %q", out.String())
 	}
 	if b, _ := os.ReadFile(filepath.Join(cfgDir, "profiles", "work.yaml")); !strings.Contains(string(b), "base_url") {
@@ -81,4 +81,58 @@ func TestConfigMigratePreviewsThenWritesGateways(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(cfgDir, "profiles", "work.yaml")); strings.Contains(string(b), "base_url") {
 		t.Errorf("work.yaml still legacy:\n%s", b)
 	}
+}
+
+// Adding a gateway to a not-yet-migrated profile migrates it first, so
+// the existing choices and the single corp-codex survive.
+func TestGatewayAddMigratesLegacyProfileFirst(t *testing.T) {
+	e := newGatewayEnv(t)
+	cfgDir := filepath.Join(e.xdg, "aide")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := "agent: claude\nconfig_dir_name: work\ndefault_credentials: [corp]\ngateways:\n" +
+		"  corp: {base_url: http://127.0.0.1:1}\n  zeta: {base_url: http://127.0.0.1:2}\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "work.yaml"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runGateway(t, gwCmdToken+"\n", "add", "newgw", "--url", e.srv.URL, "--profile", "work", "--token-stdin")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	ctx := mustLoadProfile(t, cfgDir, "work")
+	for _, h := range []string{"claude", "pi", "omp", "opencode"} {
+		if ctx.GatewayChoice[h] != "corp" {
+			t.Errorf("gateway_choice.%s = %q, want corp", h, ctx.GatewayChoice[h])
+		}
+	}
+	if _, dup := ctx.Gateways["corp-codex-2"]; dup {
+		t.Error("duplicate corp-codex-2 gateway")
+	}
+	if _, ok := ctx.Gateways["corp-codex"]; !ok {
+		t.Error("corp-codex missing")
+	}
+}
+
+// A second gateway added with the default harnesses serves Codex too.
+func TestGatewayAddSecondGatewayGetsCodexSibling(t *testing.T) {
+	e := newGatewayEnv(t)
+	for _, n := range []string{"g1", "g2"} {
+		if out, err := runGateway(t, gwCmdToken+"\n", "add", n, "--url", e.srv.URL, "--profile", "work", "--token-stdin"); err != nil {
+			t.Fatalf("add %s: %v\n%s", n, err, out)
+		}
+	}
+	ctx := mustLoadProfile(t, filepath.Join(e.xdg, "aide"), "work")
+	if cx, ok := ctx.Gateways["g2-codex"]; !ok || strings.Join(cx.Harnesses, ",") != "codex" {
+		t.Errorf("g2-codex = %+v, %v", cx, ok)
+	}
+}
+
+func mustLoadProfile(t *testing.T, cfgDir, name string) config.Context {
+	t.Helper()
+	cfg, err := config.Load(cfgDir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Contexts[name]
 }

@@ -137,3 +137,19 @@ func saveConfigWithMigrationPromptIO(cfg *config.Config, cfgPath, home string, i
 	fmt.Fprintf(errOut, "Migrated %s to modular config layout (original kept as %s).\n", filepath.Base(cfgPath), backup)
 	return nil
 }
+
+// MigratedConfig returns the loaded config with its legacy gateways
+// already migrated (with backups), so a command's edit runs on explicit
+// gateway_choice: and converted gateways. A read-only config dir leaves
+// the in-memory translation, which saving then refuses.
+func (e *Env) MigratedConfig() (*config.Config, error) {
+	errOut := io.Writer(os.Stderr)
+	if e.cmd != nil {
+		errOut = e.cmd.ErrOrStderr()
+	}
+	home, _ := os.UserHomeDir()
+	if err := migrateGatewaysBeforeSave(e.cfg, config.FilePath(), home, errOut); err != nil {
+		return nil, err
+	}
+	return e.cfg, nil
+}

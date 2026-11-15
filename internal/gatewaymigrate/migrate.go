@@ -78,10 +78,12 @@ func TranslatePreference(rec prefs.Preference, ctx config.Context, renames map[s
 	return out, notices
 }
 
-// CacheReader gives the model a gateway of a profile should start on,
-// from its cached catalogue, or "" when there is none.
+// CacheReader gives the model a gateway of a profile should start on:
+// the one OpenCode pins to it (PinnedModel), else the cached
+// catalogue's default (DefaultModel); "" when there is none.
 type CacheReader interface {
 	DefaultModel(profile, gateway string) string
+	PinnedModel(ctx config.Context, gateway string) string
 }
 
 // Plan is a gateway migration of a loaded config: Config is the
@@ -136,7 +138,12 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 		for gwName, gw := range ctx.ConvertedGateways {
 			gw = gw.WithBaseURL()
 			if gw.Model == "" && caches != nil {
-				gw.Model = caches.DefaultModel(name, gwName)
+				if slices.Contains(gw.EffectiveHarnesses(), "opencode") {
+					gw.Model = caches.PinnedModel(ctx, gwName)
+				}
+				if gw.Model == "" {
+					gw.Model = caches.DefaultModel(name, gwName)
+				}
 			}
 			migrated.Gateways[gwName] = gw
 		}
@@ -230,6 +237,18 @@ func Apply(plan Plan, configDir, stateDir string) (Result, error) {
 	if plan.Empty() {
 		return Result{}, nil
 	}
+	readOnly := Result{ReadOnly: true, Summary: "aide: note: " + configDir + " is read-only, so aide runs from the translated gateway config; " +
+		"run `aide config migrate` to see what to change in your dotfiles\n"}
+	// Check before backing up, so a read-only dir leaves no backups behind.
+	probe, err := os.CreateTemp(configDir, ".aide-write-check-*")
+	if err != nil {
+		if errors.Is(err, syscall.EROFS) || errors.Is(err, os.ErrPermission) {
+			return readOnly, nil
+		}
+		return Result{}, err
+	}
+	_ = probe.Close()
+	_ = os.Remove(probe.Name())
 	backup := filepath.Join(stateDir, "migrations", time.Now().UTC().Format("20060102T150405Z"))
 	files := []string{filepath.Join(configDir, "config.yaml")}
 	for name := range plan.legacy {
@@ -249,8 +268,7 @@ func Apply(plan Plan, configDir, stateDir string) (Result, error) {
 	}
 	if err := config.WriteConfigTo(plan.Config, filepath.Join(configDir, "config.yaml")); err != nil {
 		if errors.Is(err, syscall.EROFS) || errors.Is(err, os.ErrPermission) {
-			return Result{ReadOnly: true, Summary: "aide: note: " + configDir + " is read-only, so aide runs from the translated gateway config; " +
-				"run `aide config migrate` to see what to change in your dotfiles"}, nil
+			return readOnly, nil
 		}
 		return Result{}, err
 	}

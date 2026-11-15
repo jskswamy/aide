@@ -113,3 +113,23 @@ func (h CacheModels) DefaultModel(profile, gatewayName string) string {
 	}
 	return DefaultModelID(cat.Models)
 }
+
+// PinnedModel is the model ctx's OpenCode config pins to gateway
+// gatewayName (as "<gw>/<model>" or "aide-<gw>/<model>"), or "".
+func (h CacheModels) PinnedModel(ctx config.Context, gatewayName string) string {
+	dir, err := HarnessConfigDir(ctx, "opencode", string(h))
+	if err != nil {
+		return ""
+	}
+	doc, err := fsutil.ReadJSONCRawMap(filepath.Join(dir, "opencode.jsonc"))
+	var pin string
+	if err != nil || json.Unmarshal(doc["model"], &pin) != nil {
+		return ""
+	}
+	for _, p := range []string{gatewayName + "/", "aide-" + gatewayName + "/"} {
+		if m, ok := strings.CutPrefix(pin, p); ok {
+			return m
+		}
+	}
+	return ""
+}

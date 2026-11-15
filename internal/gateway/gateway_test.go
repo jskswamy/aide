@@ -1260,3 +1260,34 @@ func TestPrune_StaleEntriesAndUserPins(t *testing.T) {
 		t.Errorf("Prune(claude) = %v, %v", changed, err)
 	}
 }
+
+// A profile that shares the native default dir with other profiles keeps
+// their aide-<gw> entries when it prunes, but still drops legacy bare
+// entries.
+func TestPrune_SharedDefaultDirKeepsOtherProfilesEntries(t *testing.T) {
+	f := newFixture(t)
+	f.ctx = config.Context{Agent: "opencode", Sandbox: &config.SandboxRef{Disabled: true}}
+	f.ctx.Gateways = map[string]config.GatewayConfig{"corp": f.gw}
+	path := filepath.Join(f.home, ".config", "opencode", "opencode.jsonc")
+	writeFile(t, path, `{"providers":{"aide-other":{"settings":{"baseURL":"https://x/v1"}},"corp":{"settings":{"baseURL":"https://gw.example.com/v1"}}}}`)
+	if _, err := Prune(f.ctx, "opencode", f.home, []string{"corp"}); err != nil {
+		t.Fatal(err)
+	}
+	body := readFile(t, path)
+	if !strings.Contains(body, "aide-other") || strings.Contains(body, `"corp"`) {
+		t.Errorf("opencode.jsonc:\n%s", body)
+	}
+}
+
+func TestCacheModels_PinnedModel(t *testing.T) {
+	home := t.TempDir()
+	ctx := config.Context{Agent: "opencode", Sandbox: &config.SandboxRef{Disabled: true}}
+	writeFile(t, filepath.Join(home, ".config", "opencode", "opencode.jsonc"), `{"model":"aide-corp/claude-opus-4"}`)
+	h := CacheModels(home)
+	if got := h.PinnedModel(ctx, "corp"); got != "claude-opus-4" {
+		t.Errorf("PinnedModel(corp) = %q", got)
+	}
+	if got := h.PinnedModel(ctx, "other"); got != "" {
+		t.Errorf("PinnedModel(other) = %q, want empty", got)
+	}
+}

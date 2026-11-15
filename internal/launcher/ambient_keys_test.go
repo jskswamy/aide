@@ -81,7 +81,7 @@ func TestAmbientKeys_NonInteractiveScrubNotice(t *testing.T) {
 	if _, ok := envValue(env, "ANTHROPIC_API_KEY"); ok {
 		t.Error("expected ANTHROPIC_API_KEY to be scrubbed in non-interactive launch")
 	}
-	wantNote := `aide: note: scrubbed ambient ANTHROPIC_API_KEY from the environment (profile "work" has no credential binding); to keep using it, save it as a gateway with: aide gateway add anthropic --from-env; pass --auth login to silence`
+	wantNote := `aide: note: scrubbed ambient ANTHROPIC_API_KEY from the environment (profile "work" has no credential binding); configure a gateway with aide gateway add <name> --url ... or pass --auth login to silence`
 	if !strings.Contains(stderr, wantNote) {
 		t.Errorf("stderr missing scrub notice:\ngot:  %s\nwant: %s", stderr, wantNote)
 	}
@@ -127,8 +127,8 @@ default_profile: work
 	}
 }
 
-// An interactive launch is not interrupted either: the note names the
-// command that saves the key as a gateway, and the key is still scrubbed.
+// An interactive launch is not interrupted either: the key is still
+// scrubbed.
 func TestAmbientKeys_InteractiveLaunchNeverPrompts(t *testing.T) {
 	clearAmbientProviderVars(t)
 	t.Setenv("HOME", t.TempDir())
@@ -142,8 +142,9 @@ func TestAmbientKeys_InteractiveLaunchNeverPrompts(t *testing.T) {
 	if _, ok := envValue(env, "OPENAI_API_KEY"); ok {
 		t.Error("OPENAI_API_KEY should be scrubbed")
 	}
-	if !strings.Contains(stderr, "aide gateway add openai --from-env") {
-		t.Errorf("stderr lacks the gateway add hint:\n%s", stderr)
+	// OpenAI keys are not for the claude harness this profile launches.
+	if strings.Contains(stderr, "scrubbed ambient") || strings.Contains(stderr, "--from-env") {
+		t.Errorf("stderr notes an irrelevant key or a flag that does not exist:\n%s", stderr)
 	}
 	if strings.Contains(stderr, "sk-openai-hint") || strings.Contains(stderr, "Select [") {
 		t.Errorf("stderr leaked the value or prompted:\n%s", stderr)

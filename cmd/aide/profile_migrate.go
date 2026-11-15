@@ -109,7 +109,10 @@ func runConfigMigrate(out io.Writer, cfgPath, statePath, home string, write bool
 // upgrade of legacy gateways to gateways: plus gateway_choice:.
 func runGatewayMigrate(out io.Writer, cfgPath, home string, write bool) error {
 	cfg, err := config.Load(filepath.Dir(cfgPath), "")
-	if err != nil || !cfg.NeedsGatewayMigration {
+	if err != nil {
+		return err
+	}
+	if !cfg.NeedsGatewayMigration {
 		return nil
 	}
 	caches := gateway.CacheModels(home)
@@ -119,6 +122,16 @@ func runGatewayMigrate(out io.Writer, cfgPath, home string, write bool) error {
 			return err
 		}
 		fmt.Fprintln(out, "Gateways still use the legacy form; --write converts them to gateways: with gateway_choice: (backups kept):")
+		for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
+			if !slices.ContainsFunc(slices.Collect(maps.Values(cfg.Contexts[name].Gateways)), config.GatewayConfig.IsLegacy) {
+				continue
+			}
+			body, err := config.EncodeProfileYAML(name, plan.Config.Contexts[name])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "\nprofiles/%s.yaml after migration:\n%s", name, body)
+		}
 		for _, n := range plan.Notes {
 			fmt.Fprintf(out, "  %s\n", n)
 		}
@@ -126,6 +139,9 @@ func runGatewayMigrate(out io.Writer, cfgPath, home string, write bool) error {
 	}
 	res, err := gatewaymigrate.Migrate(cfg, caches, filepath.Dir(cfgPath), filepath.Dir(prefs.DefaultPath(home)))
 	fmt.Fprint(out, res.Summary)
+	if err == nil && res.ReadOnly {
+		return errors.New("nothing was written: the config directory is read-only")
+	}
 	return err
 }
 

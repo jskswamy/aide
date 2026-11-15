@@ -137,7 +137,10 @@ Examples:
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err
@@ -232,7 +235,7 @@ Examples:
 
 			// The new gateway is written in its one-API-per-gateway form: one
 			// that serves Codex gets a Responses sibling.
-			converted, _ := config.ConvertLegacyGateways(config.Context{Gateways: ctx.Gateways})
+			converted, _ := config.ConvertLegacyGateways(config.Context{Gateways: ctx.Gateways, DefaultCredentials: []string{name}})
 			var added []string
 			for _, k := range slices.Sorted(maps.Keys(converted)) {
 				if _, saved := cfg.Contexts[profileName].Gateways[k]; k == name || !saved {
@@ -436,7 +439,10 @@ built-in provider credentials and prompts for a selection.`,
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err
@@ -546,7 +552,10 @@ value as the default.`,
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, oldName, ctx, err := resolveEditableGatewayTarget(cmd, reader, cfg, env.CWD(), *profile, args, tokenStdin)
 			if err != nil {
 				return err
@@ -694,7 +703,10 @@ repository preferences, cached model catalogue, and harness provider entries.`,
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err
@@ -817,7 +829,10 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg := env.Config()
+			cfg, err := env.MigratedConfig()
+			if err != nil {
+				return err
+			}
 			profileName, ctx, err := resolveGatewayProfile(cfg, env.CWD(), *profile)
 			if err != nil {
 				return err

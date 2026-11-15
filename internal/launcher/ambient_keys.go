@@ -10,7 +10,6 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/envscrub"
-	"github.com/jskswamy/aide/internal/gatewaypreset"
 )
 
 // detectAmbientProviderKeys inspects environ for non-empty provider secret
@@ -98,21 +97,13 @@ func loadStoreFrom(secretsDir string) StoreLoader {
 
 // noteAmbientProviderKeys tells the user about ambient provider API keys
 // the launch scrubs from the environment when the profile has no active
-// credential binding, and how to save each as a gateway. It never asks.
+// credential binding, and how to configure a gateway instead. It never asks.
 func (l *Launcher) noteAmbientProviderKeys(cfg *config.Config, rc *aidectx.ResolvedContext, permitted []string) {
-	keys := detectAmbientProviderKeys(os.Environ(), rc.Context, permitted, "", false)
+	keys := detectAmbientProviderKeys(os.Environ(), rc.Context, permitted, cfg.HarnessOf(rc.Context.Agent), true)
 	if len(keys) == 0 {
 		return
 	}
-	var hints []string
-	for _, k := range keys {
-		if p, ok := gatewaypreset.ByShellVar(k); ok {
-			hints = append(hints, fmt.Sprintf("aide gateway add %s --from-env", p.Name))
-		}
-	}
-	msg := fmt.Sprintf("aide: note: scrubbed ambient %s from the environment (%s has no credential binding)", strings.Join(keys, ", "), profileLabel(cfg, rc.Name))
-	if len(hints) > 0 {
-		msg += "; to keep using it, save it as a gateway with: " + strings.Join(hints, "; ")
-	}
-	fmt.Fprintln(l.stderr(), msg+"; pass --auth login to silence")
+	fmt.Fprintf(l.stderr(), "aide: note: scrubbed ambient %s from the environment (%s has no credential binding); "+
+		"configure a gateway with aide gateway add <name> --url ... or pass --auth login to silence\n",
+		strings.Join(keys, ", "), profileLabel(cfg, rc.Name))
 }

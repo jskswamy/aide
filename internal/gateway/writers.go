@@ -16,6 +16,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/config"
 	"github.com/jskswamy/aide/internal/fsutil"
+	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/yamlnode"
 	"gopkg.in/yaml.v3"
@@ -208,16 +209,22 @@ func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfi
 // pin. A pin it did not write stays. It reports whether the file
 // changed; a missing file is not an error.
 func Prune(ctx config.Context, harnessName, home string, configured []string) (bool, error) {
-	hf, _, path, err := harnessTarget(ctx, harnessName, home)
+	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
 	if err != nil {
 		return false, err
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
+	keep := setOf(configured)
+	// shortcut: the native default dir is shared with other profiles, whose
+	// aide-<gw> entries are not ours to drop; revisit with profile folder isolation.
+	if d, ok := harness.Lookup(harnessName); ok && d.DefaultDir(home) == dir {
+		keep = nil
+	}
 	harnessWrites.Lock()
 	defer harnessWrites.Unlock()
-	return hf.prune(path, ctx.Gateways, setOf(configured))
+	return hf.prune(path, ctx.Gateways, keep)
 }
 
 func setOf(names []string) map[string]bool {
@@ -228,10 +235,11 @@ func setOf(names []string) map[string]bool {
 	return m
 }
 
-// staleAide reports an aide-<x> entry name whose gateway x is not kept.
+// staleAide reports an aide-<x> entry name whose gateway x is not kept;
+// a nil keep (a dir shared with other profiles) keeps every entry.
 func staleAide(name string, keep map[string]bool) bool {
 	gw, ok := strings.CutPrefix(name, "aide-")
-	return ok && !keep[gw]
+	return ok && keep != nil && !keep[gw]
 }
 
 // jsonEntryNames lists the entry names under doc[section].

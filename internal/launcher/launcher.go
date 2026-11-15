@@ -1195,7 +1195,7 @@ func (l *Launcher) trustStore() *trust.Store {
 // when "default" is missing on disk (SynthesizedDefault or absent) and cfg is
 // not a legacy single-file config.
 func (l *Launcher) ensureDefaultProfileOnDisk(cfg *config.Config, agentOverride string) error {
-	if cfg.LegacyMonolithic {
+	if cfg.LegacyMonolithic || cfg.NeedsGatewayMigration { // a failed gateway migration must not stop the launch
 		return nil
 	}
 	if _, hasDefault := cfg.Contexts[config.DefaultProfileName]; hasDefault && !cfg.SynthesizedDefault {

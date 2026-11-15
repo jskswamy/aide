@@ -107,11 +107,13 @@ func (d Descriptor) ApplyChoice(args []string, entry, model string) ([]string, m
 // override.
 func userChoiceFlag(args []string) string {
 	for i, a := range args {
-		name, _, _ := strings.Cut(a, "=")
+		name, val, hasVal := strings.Cut(a, "=")
 		if slices.Contains(userChoiceFlags, name) {
 			return name
 		}
-		if a == "-c" && i+1 < len(args) {
+		if name == "--config" && hasVal {
+			a = "-c " + val
+		} else if (a == "-c" || a == "--config") && i+1 < len(args) {
 			a = "-c " + args[i+1]
 		}
 		if strings.HasPrefix(a, "-c model=") || strings.HasPrefix(a, "-c model_provider=") {

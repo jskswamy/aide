@@ -10,7 +10,7 @@ import (
 )
 
 func ctxWith(gws map[string]config.GatewayConfig) config.Context {
-	return config.Context{ConvertedGateways: gws}
+	return config.Context{ConvertedGateways: gws, Credentials: map[string]config.CredentialBinding{"github": {}}}
 }
 
 func TestTranslatePreference(t *testing.T) {
@@ -34,10 +34,12 @@ func TestTranslatePreference(t *testing.T) {
 			map[string]string{"claude": "corp", "pi": "corp", "codex": "corp-codex"}, ""},
 		{"record harness limits the translation", prefs.Preference{Harness: "codex", LegacyCredentials: prefs.Selection("corp")},
 			map[string]string{"codex": "corp-codex"}, ""},
-		{"unknown credential is dropped with a notice", prefs.Preference{Harness: "claude", LegacyCredentials: prefs.Selection("github")},
-			nil, `"github"`},
+		{"plain credential selection is none without a notice", prefs.Preference{Harness: "claude", LegacyCredentials: prefs.Selection("github")},
+			map[string]string{"claude": "none"}, ""},
+		{"unknown credential is none with a notice", prefs.Preference{Harness: "claude", LegacyCredentials: prefs.Selection("anthropic")},
+			map[string]string{"claude": "none"}, `"anthropic"`},
 		{"gateway that no longer serves the harness is dropped", prefs.Preference{Harness: "codex", LegacyCredentials: prefs.Selection("claude-gw")},
-			nil, "aide gateway add"},
+			map[string]string{"codex": "none"}, "aide gateway add"},
 		{"an existing choice wins", prefs.Preference{Harness: "claude", Gateway: map[string]string{"claude": "none"}, LegacyCredentials: prefs.Selection("corp")},
 			map[string]string{"claude": "none"}, ""},
 	}

@@ -13,8 +13,8 @@ import (
 
 // TranslatePreference returns rec with its version 1 credential
 // selection translated into gateway choices, and a notice for each
-// credential it could not translate. An empty selection becomes "none"
-// for claude and codex; a credential that is (or became, through
+// credential it could not translate. A selection with no gateway for
+// claude or codex becomes "none" for it; a credential that is (or became, through
 // renames: harness, then old name, to new name) a gateway serving a
 // harness becomes that harness's choice. Anything else is dropped. A
 // choice rec already holds wins. It translates in memory only; rec's
@@ -39,13 +39,7 @@ func TranslatePreference(rec prefs.Preference, ctx config.Context, renames map[s
 			out.Gateway[h] = v
 		}
 	}
-	if len(creds) == 0 {
-		for _, h := range scope {
-			if h == "claude" || h == "codex" {
-				set(h, "none")
-			}
-		}
-	}
+	chosen := map[string]bool{}
 	var notices []string
 	for _, c := range creds {
 		served := false
@@ -56,12 +50,19 @@ func TranslatePreference(rec prefs.Preference, ctx config.Context, renames map[s
 			}
 			if gw, ok := ctx.ConvertedGateways[name]; ok && slices.Contains(gw.EffectiveHarnesses(), h) {
 				set(h, name)
+				chosen[h] = true
 				served = true
 			}
 		}
-		if !served {
+		if _, plain := ctx.Credentials[c]; !served && !plain {
 			notices = append(notices, fmt.Sprintf("saved credential %q names no gateway that serves %s; dropped "+
 				"(add one with: aide gateway add %s --harnesses %s)", c, strings.Join(scope, ", "), c, scope[0]))
+		}
+	}
+	// A selection with no gateway for a slot harness means none, as the flags do.
+	for _, h := range scope {
+		if (h == "claude" || h == "codex") && !chosen[h] {
+			set(h, "none")
 		}
 	}
 	if len(out.Gateway) == 0 {

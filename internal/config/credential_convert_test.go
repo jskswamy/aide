@@ -202,7 +202,7 @@ env:
 `,
 			gateways: map[string]gw{"bedrock": {preset: "bedrock", region: "eu-west-1", harnesses: []string{"claude"}}},
 			choice:   map[string]string{"claude": "bedrock"},
-			env:      []string{"AWS_REGION", "CLAUDE_CODE_USE_BEDROCK"},
+			env:      []string{"CLAUDE_CODE_USE_BEDROCK"}, // the region stays for the other harnesses
 		},
 		{
 			name: "env endpoint with its key becomes a custom gateway",
@@ -210,11 +210,11 @@ env:
 secret: work
 env:
   ANTHROPIC_BASE_URL: https://proxy.corp
-  ANTHROPIC_API_KEY: "{{ .secrets.proxy_key }}"
+  ANTHROPIC_AUTH_TOKEN: "{{ .secrets.proxy_key }}"
 `,
-			gateways: map[string]gw{"anthropic": {url: "https://proxy.corp", api: "anthropic-messages", store: "work", key: "proxy_key", harnesses: []string{"claude", "pi", "omp", "opencode"}}},
-			choice:   map[string]string{"claude": "anthropic", "pi": "anthropic", "omp": "anthropic", "opencode": "anthropic"},
-			env:      []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"},
+			gateways: map[string]gw{"anthropic_auth_token": {url: "https://proxy.corp", api: "anthropic-messages", store: "work", key: "proxy_key", harnesses: []string{"claude", "pi", "omp", "opencode"}}},
+			choice:   map[string]string{"claude": "anthropic_auth_token", "pi": "anthropic_auth_token", "omp": "anthropic_auth_token", "opencode": "anthropic_auth_token"},
+			env:      []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"},
 		},
 		{
 			name: "env key alone becomes the preset",
@@ -226,6 +226,77 @@ env:
 			gateways: map[string]gw{"openai": {preset: "openai", store: "work", key: "oa", harnesses: []string{"pi", "omp", "opencode", "codex"}}},
 			choice:   map[string]string{"pi": "openai", "omp": "openai", "opencode": "openai", "codex": "openai"},
 			env:      []string{"OPENAI_API_KEY"},
+		},
+		{
+			name: "env OPENAI_BASE_URL keeps its key unconverted",
+			yaml: `
+secret: work
+env:
+  OPENAI_BASE_URL: https://llm.corp/v1
+  OPENAI_API_KEY: "{{ .secrets.oa }}"
+`,
+		},
+		{
+			name: "env templated ANTHROPIC_BASE_URL keeps its key unconverted",
+			yaml: `
+secret: work
+env:
+  ANTHROPIC_BASE_URL: "{{ .secrets.url }}"
+  ANTHROPIC_API_KEY: "{{ .secrets.k }}"
+`,
+		},
+		{
+			name: "env x-api-key to a custom endpoint stays",
+			yaml: `
+secret: work
+env:
+  ANTHROPIC_BASE_URL: https://proxy.corp
+  ANTHROPIC_API_KEY: "{{ .secrets.k }}"
+`,
+		},
+		{
+			name: "env x-api-key to the vendor URL becomes the anthropic preset",
+			yaml: `
+secret: work
+env:
+  ANTHROPIC_BASE_URL: https://api.anthropic.com/
+  ANTHROPIC_API_KEY: "{{ .secrets.k }}"
+`,
+			gateways: map[string]gw{"anthropic": {preset: "anthropic", store: "work", key: "k", harnesses: []string{"claude", "pi", "omp", "opencode"}}},
+			choice:   map[string]string{"claude": "anthropic", "pi": "anthropic", "omp": "anthropic", "opencode": "anthropic"},
+			env:      []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"},
+		},
+		{
+			name: "x-api-key route to a custom endpoint stays",
+			yaml: `
+credentials:
+  corp:
+    backend: age
+    store: work
+    key: k
+    for:
+      claude: {env: [ANTHROPIC_API_KEY], set: {ANTHROPIC_BASE_URL: "https://proxy.corp"}}
+`,
+		},
+		{
+			name: "keyless claude endpoint stays so Claude keeps its login",
+			yaml: `
+credentials:
+  local:
+    for:
+      claude: {set: {ANTHROPIC_BASE_URL: "http://127.0.0.1:4000"}}
+`,
+		},
+		{
+			name: "anthropic with codex loses codex without an add command",
+			yaml: `
+credentials:
+  anthropic: {backend: age, store: work, key: k, harnesses: [claude, codex]}
+`,
+			gateways: map[string]gw{"anthropic": {preset: "anthropic", store: "work", key: "k", harnesses: []string{"claude"}}},
+			choice:   map[string]string{"claude": "none"},
+			creds:    []string{"anthropic"},
+			lost:     []string{"anthropic"},
 		},
 		{
 			name: "gemini and non-LLM credentials stay",
@@ -338,7 +409,7 @@ default_credentials: [openai, gemini]
 	if _, ok := got.Credentials["openai"]; ok || got.Credentials["gemini"].Key != "g" {
 		t.Errorf("credentials = %v", got.Credentials)
 	}
-	if !slices.Equal(got.DefaultCredentials, []string{"gemini"}) || !reflect.DeepEqual(got.Env, map[string]string{"EDITOR": "vim"}) {
+	if !slices.Equal(got.DefaultCredentials, []string{"gemini"}) || !reflect.DeepEqual(got.Env, map[string]string{"EDITOR": "vim", "AWS_REGION": "us-east-1"}) {
 		t.Errorf("default_credentials = %v, env = %v", got.DefaultCredentials, got.Env)
 	}
 	if ctx.Env["AWS_REGION"] == "" || len(ctx.Credentials) != 2 {

@@ -279,7 +279,7 @@ func TestPlanConvertsProviderCredentials(t *testing.T) {
 	if len(got.Credentials) != 2 || got.Credentials["gemini"].Key != "gemini_key" || got.Credentials["github"].Key != "gh" {
 		t.Errorf("credentials = %v, want gemini and github only", got.Credentials)
 	}
-	if !slices.Equal(got.DefaultCredentials, []string{"gemini", "github"}) || len(got.Env) != 1 || got.Env["EDITOR"] != "vim" {
+	if !slices.Equal(got.DefaultCredentials, []string{"gemini", "github"}) || len(got.Env) != 3 || got.Env["EDITOR"] != "vim" || got.Env["CLOUD_ML_REGION"] == "" {
 		t.Errorf("default_credentials = %v, env = %v", got.DefaultCredentials, got.Env)
 	}
 	// The vertex switch wins for claude, as it did; the rest follow default_credentials
@@ -295,7 +295,7 @@ func TestPlanConvertsProviderCredentials(t *testing.T) {
 		`credential "anthropic" became gateway "anthropic"`,
 		`credential "openrouter" no longer serves codex`,
 		"aide gateway add openrouter-codex --url https://openrouter.ai/api/v1 --api openai-responses --secret-store work --key openrouter_api_key --harnesses codex",
-		`CLAUDE_CODE_USE_VERTEX, CLOUD_ML_REGION became gateway "vertex"`,
+		`env: CLAUDE_CODE_USE_VERTEX became gateway "vertex"`,
 	} {
 		if !strings.Contains(notes, w) {
 			t.Errorf("notes lack %q:\n%s", w, notes)

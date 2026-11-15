@@ -38,6 +38,11 @@ func detectAmbientProviderKeys(
 	}
 	for name, gw := range ctx.Gateways {
 		excluded[gw.EnvVarName()] = true
+		if p, ok := gw.ResolvedPreset(); ok {
+			for _, v := range p.ShellVars {
+				excluded[v] = true
+			}
+		}
 		for _, h := range gw.EffectiveHarnesses() {
 			excluded[gw.TokenEnv(name, h)] = true
 		}

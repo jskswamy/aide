@@ -327,6 +327,12 @@ func validateEndpointAuth(gw GatewayConfig, neverAllowEnv []string) error {
 	if err := checkGatewayURL(gw.endpointURL()); err != nil {
 		return err
 	}
+	if gw.Region != "" || gw.Project != "" {
+		return errors.New("region and project: are only for the bedrock and vertex presets")
+	}
+	if p, ok := gw.ResolvedPreset(); ok && p.Kind == gatewaypreset.KindKeylessLoopback && (gw.Store != "" || gw.Key != "") {
+		return fmt.Errorf("preset %s takes no store or key", p.Name)
+	}
 	switch {
 	case gw.Store == "" && gw.Key == "":
 		// no-auth

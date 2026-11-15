@@ -184,7 +184,7 @@ authoritative 5-hour/weekly percentages remain in the agent's own `/usage`.
 ## aide gateway
 
 ```
-aide gateway add [<preset>|<name>] [--url <url>] [--from-env[=VAR] | --key-stdin] [--harnesses <list>] [--default | --default-for <h>]... [--profile <name>]
+aide gateway add [<preset>|<name>] [--url <url>] [--api <protocol>] [--no-auth] [--region <r>] [--project <p>] [--from-env[=VAR] | --key-stdin] [--harnesses <list>] [--default | --default-for <h>]... [--profile <name>]
 aide gateway list [--all] [--models] [--format json]
 aide gateway use [<name|none>] --harness <h> [--repo] [--unset]
 aide gateway edit [<name>] [--name <new>] [--url <url>] [--harnesses <list>] [--rotate-token] [--profile <name>]

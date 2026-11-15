@@ -632,11 +632,12 @@ are two named gateways.
 `openai-chat`, `openai-responses`). A provider switch takes `--region`
 (and `--project` for `vertex`) and no key.
 
-When `codex` is among the harnesses (the default), `add` also creates
+When an `anthropic-messages` gateway serves `codex` (the default), `add` also creates
 `<name>-codex`, a Responses API gateway (`api: openai-responses`) at
 `<url>/v1` that serves `codex` only. Its `gateway_choice.codex` stays
 `none` unless you pass `--default` or `--default-for codex`. Pass
-`--harnesses` without `codex` to skip it.
+`--harnesses` without `codex` to skip it. An `openai-chat` or
+`openai-responses` gateway keeps its exact url and gets no sibling.
 
 | Flag of `gateway add` | Default | Meaning |
 | :--- | :--- | :--- |
@@ -645,7 +646,7 @@ When `codex` is among the harnesses (the default), `add` also creates
 | `--api` | the preset's | Wire protocol (`anthropic-messages`, `openai-chat`, `openai-responses`) |
 | `--no-auth` | off | Keyless loopback gateway |
 | `--key-stdin`, `--from-env[=VAR]` | hidden prompt | Where the key comes from |
-| `--harnesses` | the preset's, else `claude,pi,omp,opencode,codex` | Harnesses that may use it |
+| `--harnesses` | the preset's, else the defaults its `--api` can serve | Harnesses that may use it |
 | `--model` | none | Model the harnesses start on |
 | `--default`, `--default-for <h>` | off | Make it the choice for every harness it serves |
 | `--refresh-ttl` | `24h` | Launch-time model refresh interval |

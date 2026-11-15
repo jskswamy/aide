@@ -1764,6 +1764,11 @@ func TestGatewayCmd_AddFromEnvErrors(t *testing.T) {
 		"no-auth off loopback":              {[]string{"add", "corp", "--url", "https://llm.example.com", "--no-auth"}, "loopback"},
 		"unknown wire protocol":             {[]string{"add", "corp", "--url", e.srv.URL, "--api", "grpc"}, "is not anthropic-messages"},
 		"key for a provider switch":         {[]string{"add", "bedrock", "--region", "us-east-1", "--key-stdin"}, "takes no key"},
+		"region on a custom gateway":        {[]string{"add", "corp", "--url", e.srv.URL, "--api", "openai-chat", "--region", "us-east-1"}, "only for the bedrock and vertex"},
+		"project on bedrock":                {[]string{"add", "bedrock", "--region", "us-east-1", "--project", "p"}, "takes no --project"},
+		"vertex without a project":          {[]string{"add", "vertex", "--region", "us-east5"}, "project: is required"},
+		"key for ollama":                    {[]string{"add", "ollama", "--key-stdin"}, "takes no key"},
+		"api contradicting a preset":        {[]string{"add", "openrouter", "--api", "anthropic-messages"}, "--api is for custom gateways"},
 		"key and env together":              {[]string{"add", "corp", "--url", e.srv.URL, "--key-stdin", "--from-env=X"}, "mutually exclusive"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1817,6 +1822,9 @@ func TestGatewayCmd_AddPresetFromEnvVar(t *testing.T) {
 	if gw.Preset != "openrouter" || gw.API != "openai-chat" || gw.URL != "https://openrouter.ai/api/v1" ||
 		strings.Join(gw.Harnesses, ",") != "pi,omp,opencode" {
 		t.Errorf("gateway = %+v", gw)
+	}
+	if _, ok := loadedCtx(t, e).Gateways["openrouter-codex"]; ok {
+		t.Error("unexpected openrouter-codex sibling")
 	}
 	if got := e.store(t, "work"); got["openrouter_token"] != gwCmdToken {
 		t.Errorf("secret store = %v", got)
@@ -1925,4 +1933,87 @@ func TestGatewayCmd_UseRepoSetsAndUnsets(t *testing.T) {
 	if out, err := runGateway(t, "", "use", "--harness", "pi", "--repo", "--unset", "--profile", "work"); err != nil || got() != "" {
 		t.Fatalf("use --repo --unset: %v, pref = %q\n%s", err, got(), out)
 	}
+}
+
+func TestGatewayCmd_AddCustomOpenAIChat(t *testing.T) {
+	e := newGatewayEnv(t)
+	for _, api := range []string{"openai-chat", "openai-responses"} {
+		name := "loc-" + api
+		out, err := runGateway(t, gwCmdToken+"\n", "add", name, "--url", e.srv.URL+"/v1", "--api", api, "--key-stdin", "--profile", "work")
+		if err != nil {
+			t.Fatalf("add %s: %v\n%s", api, err, out)
+		}
+		wantH := "pi,omp,opencode"
+		if api == "openai-responses" {
+			wantH = "pi,omp,opencode,codex"
+		}
+		if !strings.Contains(out, "Harnesses: "+strings.ReplaceAll(wantH, ",", ", ")) {
+			t.Errorf("%s: harness notice missing %q:\n%s", api, wantH, out)
+		}
+		gw := loadedGateway(t, e, name)
+		if gw.URL != e.srv.URL+"/v1" || gw.API != api || strings.Join(gw.Harnesses, ",") != wantH {
+			t.Errorf("%s: gateway = %+v", api, gw)
+		}
+		if _, ok := loadedCtx(t, e).Gateways[name+"-codex"]; ok {
+			t.Errorf("%s: unexpected codex sibling", api)
+		}
+	}
+}
+
+func loadedCtx(t *testing.T, e *gatewayEnv) config.Context {
+	t.Helper()
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loaded.Contexts["work"]
+}
+
+func TestGatewayCmd_AddKeylessCustomSavesNoAuth(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+	if out, err := runGateway(t, "", "add", "loc", "--url", srv.URL+"/v1", "--api", "openai-chat", "--no-auth", "--profile", "work"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if gw := loadedGateway(t, e, "loc"); !gw.NoAuth || gw.Key != "" {
+		t.Errorf("gateway = %+v, want no_auth", gw)
+	}
+}
+
+func TestGatewayCmd_AddOllamaPresetTakesNoKey(t *testing.T) {
+	e := newGatewayEnv(t)
+	routeToTestServer(t, openAnonModels(t, `{"data":[{"id":"m1"}]}`))
+	if out, err := runGateway(t, "", "add", "ollama", "--profile", "work"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	gw := loadedGateway(t, e, "ollama")
+	if gw.Preset != "ollama" || gw.Store != "" || gw.Key != "" || gw.API != "openai-chat" {
+		t.Errorf("gateway = %+v", gw)
+	}
+	if got := e.store(t, "work"); got != nil {
+		t.Errorf("secret store = %v, want none", got)
+	}
+}
+
+func TestGatewayCmd_AddVertexSwitchAndSync(t *testing.T) {
+	e := newGatewayEnv(t)
+	out, err := runGateway(t, "", "add", "vertex", "--region", "us-east5", "--project", "p1", "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "opens the gcp capability") {
+		t.Errorf("no capability warning:\n%s", out)
+	}
+	if gw := loadedGateway(t, e, "vertex"); gw.Region != "us-east5" || gw.Project != "p1" || gw.RefreshTTL != "" {
+		t.Errorf("gateway = %+v", gw)
+	}
+	if out, err := runGateway(t, "", "sync", "vertex", "--profile", "work"); err != nil {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+	_ = filepath.WalkDir(e.home, func(p string, _ os.DirEntry, _ error) error {
+		if strings.Contains(filepath.Base(p), "vertex") {
+			t.Errorf("sync wrote %s", p)
+		}
+		return nil
+	})
 }

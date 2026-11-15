@@ -58,6 +58,11 @@ type Config struct {
 	// WriteConfig refuses LegacyMonolithic configs until migrated.
 	LegacyMonolithic bool `yaml:"-"`
 
+	// LegacyRenames records, per profile, harness then old name to the
+	// gateway that now serves it after ConvertLegacyGateways. Derived
+	// at load, never serialized.
+	LegacyRenames map[string]map[string]map[string]string `yaml:"-"`
+
 	// SynthesizedDefault is true when cfg.Contexts["default"] was synthesized
 	// in memory during Load because profiles/default.yaml did not exist on disk.
 	SynthesizedDefault bool `yaml:"-"`
@@ -126,6 +131,12 @@ type Context struct {
 	// credential binding of the same name synthesized at load time
 	// (see gateway.go), never written back as credentials:.
 	Gateways map[string]GatewayConfig `yaml:"gateways,omitempty"`
+	// GatewayChoice is the gateway each harness uses: "<gw>", "none",
+	// or absent for unset.
+	GatewayChoice map[string]string `yaml:"gateway_choice,omitempty"`
+	// ConvertedGateways is Gateways in the one-API-per-gateway form,
+	// derived at load and never serialized.
+	ConvertedGateways map[string]GatewayConfig `yaml:"-"`
 	// MCPServers retains the v1 list-of-names form for the per-context
 	// selection of which MCP servers (declared at the top level) are
 	// enabled in this context. The v2 ContextOverride[MCPServer]
@@ -186,6 +197,9 @@ func (c Context) MarshalYAML() (interface{}, error) {
 	}
 	if len(c.Gateways) > 0 {
 		out["gateways"] = c.Gateways
+	}
+	if len(c.GatewayChoice) > 0 {
+		out["gateway_choice"] = c.GatewayChoice
 	}
 	if c.Sandbox != nil {
 		out["sandbox"] = c.Sandbox

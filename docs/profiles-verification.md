@@ -466,77 +466,58 @@ Result (macOS): PASS / FAIL / N/A    Notes:
 Result (Linux): PASS / FAIL / N/A    Notes:
 ```
 
-### C8. Bedrock, Vertex and Foundry selectors in profile env:
+### C8. Bedrock and Vertex provider gateways
 
-Provider selectors are ordinary profile `env:` entries; shell copies
+Bedrock and Vertex are provider-switch gateways serving `claude`.
+Provider switches and endpoints (`CLAUDE_CODE_USE_*`, `AWS_REGION`
+beside them, `ANTHROPIC_VERTEX_PROJECT_ID`) in a profile's `env:` are
+refused at launch with a pointer to `aide gateway add`, and shell copies
 are scrubbed. Run the provider(s) you have; without an account, the
 selection check (`/status`) still applies, and requests are expected
 to fail.
 
-Use one of these as the verify-a entry at a time (each replaces the
-verify-a entry from S3).
+Use one of these on the verify-a entry from S3 at a time. Bedrock, with
+your AWS credentials (`~/.aws` and `AWS_PROFILE`, re-admitted by the
+`aws` capability):
 
-Bedrock, with your AWS credentials (`~/.aws` and `AWS_PROFILE`,
-re-admitted by the `aws` capability). aide prints a warning naming
-`AWS_REGION`, because it is a scrubbed cloud name set in `env:`; that
-is expected.
+```sh
+aide gateway add bedrock --region us-east-1 --profile verify-a
+aide gateway use bedrock --agent claude --profile verify-a
+```
+
+which is the same as this profile entry:
 
 ```yaml
   verify-a:
     agent: claude
     config_dir_name: verify-a
     capabilities: [aws]
-    env:
-      CLAUDE_CODE_USE_BEDROCK: "1"
-      AWS_REGION: us-east-1
+    gateways:
+      bedrock: {preset: bedrock, region: us-east-1}
+    gateway_choice: {claude: bedrock}
 ```
 
 Vertex, with gcloud application-default credentials (the `gcp`
 capability grants `~/.config/gcloud`):
 
-```yaml
-  verify-a:
-    agent: claude
-    config_dir_name: verify-a
-    capabilities: [gcp]
-    env:
-      CLAUDE_CODE_USE_VERTEX: "1"
-      ANTHROPIC_VERTEX_PROJECT_ID: <project>
-      CLOUD_ML_REGION: us-east5
+```sh
+aide gateway add vertex --region us-east5 --project <project> --profile verify-a
+aide gateway use vertex --agent claude --profile verify-a
 ```
 
-Foundry, signed in with `az login` (Microsoft Entra; the `azure`
-capability grants `~/.azure` and re-admits an exported service
-principal):
+(`gateways: {vertex: {preset: vertex, region: us-east5, project:
+<project>}}` and `gateway_choice: {claude: vertex}`, with
+`capabilities: [gcp]`.)
 
-```yaml
-  verify-a:
-    agent: claude
-    config_dir_name: verify-a
-    capabilities: [azure]
-    env:
-      CLAUDE_CODE_USE_FOUNDRY: "1"
-      ANTHROPIC_FOUNDRY_RESOURCE: <resource>
-```
+Foundry has no gateway preset. `CLAUDE_CODE_USE_FOUNDRY` and
+`ANTHROPIC_FOUNDRY_RESOURCE` are provider settings, so putting them in
+`env:` is refused at launch, and the Foundry API-key shape
+(`credentials: foundry` with `env: [ANTHROPIC_FOUNDRY_API_KEY]`) is
+valid by itself but only useful beside those settings. Mark both Foundry
+cases N/A; the refusal itself is the check:
 
-Foundry with an API key instead: put the key in the C5 store
-(`aide secrets edit verify`, add `foundry_api_key: <key>`) and use
-
-```yaml
-  verify-a:
-    agent: claude
-    config_dir_name: verify-a
-    credentials:
-      foundry:
-        backend: age
-        store: verify
-        key: foundry_api_key
-        env: [ANTHROPIC_FOUNDRY_API_KEY]
-        harnesses: [claude]
-    default_credentials: [foundry]
-    env:
-      CLAUDE_CODE_USE_FOUNDRY: "1"
-      ANTHROPIC_FOUNDRY_RESOURCE: <resource>
+```sh
+aide env set CLAUDE_CODE_USE_FOUNDRY 1 --profile verify-a   # expected: refused, points at aide gateway add
 ```
 
 Checks:
@@ -546,7 +527,7 @@ aide --profile verify-a                              # /status: the provider; a 
 CLAUDE_CODE_USE_BEDROCK=1 aide --profile verify-b    # /status: account B's login, not Bedrock
 ```
 
-Expected: verify-a uses the selected provider; verify-b keeps its
+Expected: verify-a uses the selected gateway; verify-b keeps its
 login, and `!printenv CLAUDE_CODE_USE_BEDROCK | wc -c` there is 0.
 Restore the plain verify-a entry from S3 afterwards.
 
@@ -817,28 +798,31 @@ aide secrets edit verify        # add: openai_api_key: <key>
   verify-a:
     agent: pi
     config_dir_name: verify-a
-    credentials:
-      openai: {backend: age, store: verify, key: openai_api_key}
-    default_credentials: [openai]
+    gateways:
+      openai: {preset: openai, store: verify, key: openai_api_key}
+    gateway_choice: {pi: openai}
 ```
 
+(or `aide gateway add openai --secret-store verify --key openai_api_key
+--profile verify-a` then `aide gateway use openai --agent pi`.)
+
 Now save a fake OpenAI key as a stored entry in verify-a: run
-`aide --profile verify-a --auth login`, then `/login`, choose OpenAI
+`aide --profile verify-a --gateway none`, then `/login`, choose OpenAI
 and enter `sk-not-real-stored-a` as the API key, then quit.
 
-Run each case. `print-api-key` prints the key Pi would use; the
-`grep -c` keeps your real key off the screen (1 means the stored fake
-key won, 0 means the bound key won):
+aide writes the gateway into Pi as the `aide-openai` provider, so a
+stored `openai` login neither replaces it nor is replaced by it, and
+aide no longer prints a stored-login note. Run each case:
 
-| Case | Command | Expected aide note | Expected `grep -c` |
-| --- | --- | --- | --- |
-| a | `aide --profile verify-a -- auth print-api-key --provider openai \| grep -c not-real-stored` | `<home>/.pi-verify-a/auth.json has a stored Pi login for openai: Pi uses it ahead of the selected API key ...` | 1 |
-| b | `aide --profile verify-a --auth login -- auth print-api-key --provider openai \| grep -c not-real-stored` | `native login: not injecting credentials openai`, no stored-login note | 1 |
-| c | in `aide --profile verify-a --auth login`, run `/logout` for OpenAI; then case a again | no stored-login note | 0 |
-| d | `OPENAI_API_KEY=sk-not-real-shell aide --profile verify-b --auth login -- auth print-api-key --provider openai` | none | Pi reports no OpenAI credential (the shell key was scrubbed) |
+| Case | Command | Expected |
+| --- | --- | --- |
+| a | `aide --profile verify-a` then `/model` | models listed under `aide-openai`, answered with the bound key (usage appears on the key's project) |
+| b | `aide --profile verify-a -- auth print-api-key --provider openai \| grep -c not-real-stored` | 1 (the stored login is untouched) |
+| c | `aide --profile verify-a --gateway none` | Pi's own login (the stored `openai` entry); no `aide-openai` models |
+| d | `OPENAI_API_KEY=sk-not-real-shell aide --profile verify-b --gateway none -- auth print-api-key --provider openai` | Pi reports no OpenAI credential (the shell key was scrubbed) |
 
-Expected also: the aide note names only the provider; it never shows
-`sk-not-real-stored-a` or your real key.
+Expected also: no aide output shows `sk-not-real-stored-a` or your real
+key.
 
 ```text
 Result (macOS): PASS / FAIL / N/A    Notes:
@@ -1203,12 +1187,15 @@ aide secrets edit verify        # add: openai_api_key: <key>
   verify-a:
     agent: codex
     config_dir_name: verify-a
-    credentials:
-      codex: {backend: age, store: verify, key: openai_api_key}
-    default_credentials: [codex]
+    gateways:
+      codex: {preset: codex, store: verify, key: openai_api_key}
+    gateway_choice: {codex: codex}
 ```
 
-The built-in `codex` binding injects `CODEX_API_KEY`. For each case,
+(or `aide gateway add codex --secret-store verify --key openai_api_key
+--profile verify-a` then `aide gateway use codex --agent codex`.)
+
+The `codex` gateway injects the key as `CODEX_API_KEY` for Codex. For each case,
 run `/status` in the session (or `aide ... -- exec "say hi"` and check
 your OpenAI usage page), and check the key inside the session without
 printing it by asking Codex to run `printenv CODEX_API_KEY | wc -c`:
@@ -1216,8 +1203,8 @@ printing it by asking Codex to run `printenv CODEX_API_KEY | wc -c`:
 | Case | Command | Expected auth | Expected `wc -c` |
 | --- | --- | --- | --- |
 | a | `aide --profile verify-a -- exec "say hi"` | API key (usage appears on the key's project) | more than 0 |
-| b | `aide --profile verify-a --auth login` | account A's ChatGPT login | 0 |
-| c | `aide --profile verify-a --credential=` | account A's ChatGPT login | 0 |
+| b | `aide --profile verify-a --auth login` (deprecated alias of `--gateway none`) | account A's ChatGPT login | 0 |
+| c | `aide --profile verify-a --gateway none` | account A's ChatGPT login | 0 |
 | d | `CODEX_API_KEY=sk-not-real OPENAI_API_KEY=sk-not-real aide --profile verify-b` | account B's ChatGPT login | 0 for both names |
 
 Also note whether interactive Codex (not `exec`) in case a uses the

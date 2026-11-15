@@ -218,8 +218,6 @@ func TestLauncher_GatewayHarnessSwitchMaterializes(t *testing.T) {
 	gs := newGatewayServer(t, `{"data":[]}`)
 	home := t.TempDir()
 	seedCache(t, home, gs.URL, time.Hour, "m1", "m2")
-	// Codex speaks the Responses API, so it gets its own split-off gateway.
-	seedGatewayCache(t, home, "corp-codex", gs.URL, time.Hour, "m1", "m2")
 
 	for _, agent := range []string{"pi", "opencode", "codex", "claude"} {
 		_, stderr := launchGateway(t, home, gatewayConfig(gs.URL), agent, "")
@@ -359,5 +357,22 @@ func TestEnrichBannerHarnessesAndGateways_OmitsMismatchedCacheBaseURL(t *testing
 	EnrichBannerHarnessesAndGateways(data, cfg, rc, "pi", home, nil, nil)
 	if data.Credentials[0].ModelCount != 0 || data.Credentials[0].ModelAge != "" {
 		t.Fatalf("banner credential = %+v, want ModelCount=0 and empty ModelAge on URL mismatch", data.Credentials[0])
+	}
+}
+
+// --gateway <gateway> chooses the gateway only; the profile's default
+// plain credentials are still injected.
+func TestLauncher_GatewayFlagKeepsDefaultCredentials(t *testing.T) {
+	fakeGatewayStore(t)
+	srv := newGatewayServer(t, `{"data":[{"id":"m1"}]}`)
+	cfg := gatewayConfig(srv.URL) + `
+`
+	cfg = strings.Replace(cfg, "    gateways:", `    credentials:
+      github: {backend: age, store: work, key: corp_token, env: [GITHUB_TOKEN], harnesses: [pi]}
+    default_credentials: [github]
+    gateways:`, 1)
+	env, _ := launchGateway(t, t.TempDir(), cfg, "", AuthAPI, "corp")
+	if got, _ := envValue(env, "GITHUB_TOKEN"); got != gatewayTestToken {
+		t.Errorf("GITHUB_TOKEN = %q, want the default credential kept under --gateway corp", got)
 	}
 }

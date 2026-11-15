@@ -88,7 +88,7 @@ Each is listed in the output with the reason:
   is reported for that harness; move the dir to `config_dirs:` to get a
   target.
 - **A harness's default dir**: a `config_dirs:` entry pointing at the
-  default dir (as `aide profile migrate --adopt` writes), same reason.
+  default dir, same reason.
 - **A dir two targets would share**: a `config_dir:` pin without
   `config_dirs:` runs every harness from one dir. Skillshare needs one
   dir per target, so give each harness its own `config_dirs:` entry.

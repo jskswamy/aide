@@ -42,9 +42,9 @@ const (
 	StatePending HarnessSyncState = "pending"
 )
 
-// HarnessFileStatus is one harness's config file and its state.
+// HarnessFileStatus is one agent's config file and its state.
 type HarnessFileStatus struct {
-	Harness  string           `json:"harness"`
+	Harness  string           `json:"agent"`
 	EnvVar   string           `json:"env_var,omitempty"`
 	FilePath string           `json:"file_path"`
 	State    HarnessSyncState `json:"state"`

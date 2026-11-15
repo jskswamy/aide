@@ -81,11 +81,15 @@ func names(v any) []string {
 }
 
 // choiceFor is the gateway choice which reports for harness h.
-func choiceFor(got map[string]any, h string) any {
+func choiceFor(got map[string]any, h string) any { return choiceField(got, h, "choice") }
+
+func choiceSourceFor(got map[string]any, h string) any { return choiceField(got, h, "source") }
+
+func choiceField(got map[string]any, h, field string) any {
 	views, _ := got["gateway_choices"].([]any)
 	for _, v := range views {
-		if m, _ := v.(map[string]any); m["harness"] == h {
-			return m["choice"]
+		if m, _ := v.(map[string]any); m["agent"] == h {
+			return m[field]
 		}
 	}
 	return nil
@@ -95,8 +99,8 @@ func TestWhich_ReportsSelectionSources(t *testing.T) {
 	selectionEnv(t, selectionTestConfig)
 	got := runSelectionJSON(t, whichCmd())
 	if got["context_name"] != "work" || got["profile_source"] != "default" ||
-		got["harness_source"] != "profile" || got["credential_source"] != "profile" {
-		t.Errorf("sources = %v/%v/%v for %v", got["profile_source"], got["harness_source"], got["credential_source"], got["context_name"])
+		got["agent_source"] != "profile" || got["credential_source"] != "profile" {
+		t.Errorf("sources = %v/%v/%v for %v", got["profile_source"], got["agent_source"], got["credential_source"], got["context_name"])
 	}
 	// The provider credentials are gateways: the default is Claude's choice.
 	if c := choiceFor(got, "claude"); c != "anthropic" {
@@ -118,29 +122,34 @@ func TestWhich_HonorsSavedPreferenceAndFlags(t *testing.T) {
 	}
 
 	got := runSelectionJSON(t, whichCmd())
-	if got["agent_name"] != "pi" || got["harness_source"] != "preference" || got["credential_source"] != "preference" {
-		t.Errorf("saved preference not applied: agent %v from %v, credentials from %v", got["agent_name"], got["harness_source"], got["credential_source"])
+	if got["agent_name"] != "pi" || got["agent_source"] != "preference" || got["credential_source"] != "preference" {
+		t.Errorf("saved preference not applied: agent %v from %v, credentials from %v", got["agent_name"], got["agent_source"], got["credential_source"])
 	}
 	if c := choiceFor(got, "pi"); c != "openai" {
 		t.Errorf("pi choice = %v, want the saved openai", c)
 	}
 
+	// --gateway <gw> sets the gateway choice only; plain credentials keep
+	// the saved selection.
 	got = runSelectionJSON(t, whichCmd(), "--agent", "claude", "--gateway", "anthropic")
-	if got["agent_name"] != "claude" || got["harness_source"] != "flag" || got["credential_source"] != "flag" {
-		t.Errorf("flags did not win: agent %v from %v, credentials from %v", got["agent_name"], got["harness_source"], got["credential_source"])
+	if got["agent_name"] != "claude" || got["agent_source"] != "flag" || got["credential_source"] != "preference" {
+		t.Errorf("flags did not win: agent %v from %v, credentials from %v", got["agent_name"], got["agent_source"], got["credential_source"])
+	}
+	if c, src := choiceFor(got, "claude"), choiceSourceFor(got, "claude"); c != "anthropic" || src != "flag" {
+		t.Errorf("claude choice = %v from %v, want anthropic from flag", c, src)
 	}
 
 	got = runSelectionJSON(t, whichCmd(), "--profile", "personal")
-	if got["context_name"] != "personal" || got["profile_source"] != "flag" || got["agent_name"] != "pi" || got["harness_source"] != "profile" {
-		t.Errorf("--profile personal: got %v from %v, agent %v from %v", got["context_name"], got["profile_source"], got["agent_name"], got["harness_source"])
+	if got["context_name"] != "personal" || got["profile_source"] != "flag" || got["agent_name"] != "pi" || got["agent_source"] != "profile" {
+		t.Errorf("--profile personal: got %v from %v, agent %v from %v", got["context_name"], got["profile_source"], got["agent_name"], got["agent_source"])
 	}
 }
 
 func TestStatus_ReportsSelectionSources(t *testing.T) {
 	selectionEnv(t, selectionTestConfig)
 	got := runSelectionJSON(t, statusCmd(), "--profile", "work", "--gateway", "none")
-	if got["profile_source"] != "flag" || got["harness_source"] != "profile" || got["credential_source"] != "flag" {
-		t.Errorf("sources = %v/%v/%v", got["profile_source"], got["harness_source"], got["credential_source"])
+	if got["profile_source"] != "flag" || got["agent_source"] != "profile" || got["credential_source"] != "flag" {
+		t.Errorf("sources = %v/%v/%v", got["profile_source"], got["agent_source"], got["credential_source"])
 	}
 	if _, ok := got["credential_selection"]; ok {
 		t.Errorf("login selects no credentials, got %v", got["credential_selection"])
@@ -157,7 +166,7 @@ func TestStatus_HumanSelectionLine(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "profile from flag, harness from profile, credentials from profile") {
+	if !strings.Contains(out.String(), "profile from flag, agent from profile, credentials from profile") {
 		t.Errorf("missing selection line:\n%s", out.String())
 	}
 }
@@ -299,8 +308,8 @@ func TestWhichStatus_UntrustedProjectConfigContributesNothing(t *testing.T) {
 		if agent == nil {
 			agent = got["agent"]
 		}
-		if agent != "claude" || got["harness_source"] != "profile" {
-			t.Errorf("%s: agent %v from %v, want claude from profile as at launch", name, agent, got["harness_source"])
+		if agent != "claude" || got["agent_source"] != "profile" {
+			t.Errorf("%s: agent %v from %v, want claude from profile as at launch", name, agent, got["agent_source"])
 		}
 		for _, key := range []string{"warnings", "notices"} {
 			for _, w := range names(got[key]) {
@@ -313,7 +322,7 @@ func TestWhichStatus_UntrustedProjectConfigContributesNothing(t *testing.T) {
 
 	// anthropic serves only claude: judged against the untrusted pi it
 	// would be refused.
-	if out, err := runProject(t, "set", "--gateway", "anthropic", "--harness", "claude"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "anthropic", "--agent", "claude"); err != nil {
 		t.Errorf("project set judged against the untrusted agent: %v\n%s", err, out)
 	}
 }

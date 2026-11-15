@@ -28,9 +28,9 @@ For a single profile setup, a flat `config.yaml` with no `agents:` key acts as a
 ```yaml
 # ~/.config/aide/config.yaml
 agent: claude
-env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
-secret: personal
+gateways:
+  anthropic: {preset: anthropic, store: personal, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 yolo: true          # optional: skip agent permission checks
 auto_approve: true  # alias for yolo
 ```
@@ -68,8 +68,9 @@ match:
 icon: "💼"
 agent: claude
 secret: work
-env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+gateways:
+  anthropic: {preset: anthropic, store: work, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 sandbox:
   network: outbound
   writable:
@@ -83,8 +84,9 @@ match:
 icon: "🏠"
 agent: claude
 secret: personal
-env:
-  ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
+gateways:
+  anthropic: {preset: anthropic, store: personal, key: anthropic_api_key}
+gateway_choice: {claude: anthropic}
 sandbox: false
 ```
 
@@ -94,8 +96,13 @@ match:
   - path: "~/oss/*"
 agent: aider
 secret: oss
-env:
-  OPENAI_API_KEY: "{{ .secrets.openai_api_key }}"
+credentials:
+  openai-key:
+    store: oss
+    key: openai_api_key
+    env: [OPENAI_API_KEY]
+    agents: [aider]
+default_credentials: [openai-key]
 sandbox: strict
 ```
 
@@ -322,7 +329,7 @@ unreadable or invalid file, the launch prints `aide: note:
 <dir>/config.toml is not valid TOML (line N): custom model provider
 keys it names are not scrubbed from the shell` and continues. To
 inject such a key, bind it with a custom `credentials:` entry
-(`env: [CORP_LLM_KEY]`, `harnesses: [codex]`). Limits: a project's
+(`env: [CORP_LLM_KEY]`, `agents: [codex]`). Limits: a project's
 `.codex/config.toml` and Codex homes outside these are not read; list
 names you always want removed in `scrub_env:`. MCP server tokens
 (`bearer_token_env_var`) are resource credentials and are left alone.
@@ -346,7 +353,7 @@ harnesses (`gemini`, `aider`, `goose`, `amp`) and for the built-in
 Provider credentials written the old way are migrated to gateways (see
 [Upgrading from earlier gateways](#upgrading-from-earlier-gateways)).
 `default_credentials:` names the bindings a launch injects when nothing
-else selects (`--credential` replaces it); a binding it leaves out is
+else selects (`--gateway <binding>` replaces it); a binding it leaves out is
 never decrypted or injected. Each binding refers to one key in an
 age-encrypted secret store (the same stores `secret:` names; see
 `aide secrets`).
@@ -360,7 +367,7 @@ credentials:
     store: work             # secret store, named like secret:
     key: github_token       # key inside that store
     env: [GITHUB_TOKEN]
-    harnesses: [claude]     # required for a custom name
+    agents: [claude]        # required for a custom name
   gemini:                   # built-in name: GEMINI_API_KEY
     backend: age
     store: work
@@ -371,9 +378,9 @@ credentials:
   (`GEMINI_API_KEY`) and, for a binding that is migrated rather than
   kept, `anthropic`, `openai`, `openrouter` and `codex`. `env:` on a
   built-in replaces its variable names.
-- Any other name is custom and must list `env:` and `harnesses:`.
-  `harnesses:` matches the agent an `agents:` entry runs (`my-claude`
-  with `binary: claude` is `claude`).
+- Any other name is custom and must list `env:` and `agents:` (`harnesses:`
+  is accepted as a legacy alias). `agents:` matches the agent an `agents:`
+  entry runs (`my-claude` with `binary: claude` is `claude`).
 - A binding cannot set `PATH`, `HOME` and other process essentials,
   `AIDE_*`, `SOPS_AGE_KEY*`, or an agent config-dir variable such as
   `CLAUDE_CONFIG_DIR`.
@@ -394,7 +401,7 @@ credentials:
   `env`, and `auth_mode`), never values.
 - Loading fails with `invalid credentials` when `backend:` is not
   `age`, `store:` or `key:` is missing, a custom name lacks `env:` or
-  `harnesses:`, an agent in `harnesses:` is unknown, or two bindings
+  `agents:`, an agent in `agents:` is unknown, or two bindings
   serving the same agent set the same variable.
 - A provider endpoint (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, ...) or
   switch (`CLAUDE_CODE_USE_BEDROCK`, ...) set in `credentials:` or in a
@@ -423,7 +430,7 @@ credentials:
 ```
 
 - The `for:` keys are the agents the binding serves. `for:` replaces
-  `env:` and `harnesses:` on that binding (those remain shorthand for
+  `env:` and `agents:` on that binding (those remain shorthand for
   the same `env:` on every listed agent).
 - A binding without `backend:`, `store:` and `key:` is keyless: it
   injects only `set:` values and adds its `capabilities:` to the
@@ -466,7 +473,7 @@ This prompts for the key (input hidden), then:
        api: anthropic-messages
        store: work
        key: corp_token
-       harnesses: [claude, pi]   # which harnesses may use it
+       agents: [claude, pi]      # which agents may use it
        model: claude-sonnet-4-5  # optional startup model
    gateway_choice:
      claude: none                # recorded by `add`; see below
@@ -490,31 +497,31 @@ launch uses a gateway only when you chose it:
 | Order | Source | Set with |
 | :--- | :--- | :--- |
 | 1 | `--gateway <name\|none>` for this run (`--auth login` means `none`) | the flag |
-| 2 | Repository preference | `aide gateway use <name\|none> --harness <h> --repo`, or `aide project set --gateway <name\|none> --harness <h>` |
-| 3 | The profile's `gateway_choice:` | `aide gateway use <name\|none> --harness <h>` |
-| 4 | No gateway marked for the harness | the harness's own login |
+| 2 | Repository preference | `aide gateway use <name\|none> --agent <a> --repo`, or `aide project set --gateway <name\|none> --agent <a>` |
+| 3 | The profile's `gateway_choice:` | `aide gateway use <name\|none> --agent <a>` |
+| 4 | No gateway marked for the agent | the agent's own login |
 | 5 | Gateways marked, choice unset | the picker on a terminal; exit `78` in a script |
 
-`none` means the harness's own login. `claude` and `codex` take exactly
+`none` means the agent's own login. `claude` and `codex` take exactly
 one endpoint, so they need a choice. `pi`, `omp` and `opencode` list
 every marked `aide-<name>` entry in `/model`; a choice only decides
 which one they start on. Unset gateways for them start on the
-harness's default.
+agent's default.
 
 `aide gateway add` never changes how existing launches authenticate:
 for each marked `claude` or `codex` whose choice was unset it records
-`none`, unless you pass `--default-for <harness>` (repeatable) or
+`none`, unless you pass `--default-for <agent>` (repeatable) or
 `--default` to make the new gateway the choice. On a terminal without
 those flags, `add` asks per `claude`/`codex` whether to make it the
 default, and records `none` on No or off a terminal. A stored choice that
-names a gateway no longer marked for the harness is reported on stderr
-and treated as unset. `aide gateway use --harness <h> --unset` clears one.
+names a gateway no longer marked for the agent is reported on stderr
+and treated as unset. `aide gateway use --agent <a> --unset` clears one.
 
 #### The picker
 
 With an unset `claude` or `codex` choice on a terminal, the launch
 lists the marked gateways (URL, store and key name, never a value) and
-`none (use <harness>'s own login)`, with nothing preselected and no
+`none (use <agent>'s own login)`, with nothing preselected and no
 secret decrypted. Then it asks whether to apply the choice "Just this
 once", "Always in this repo" (when the repository has an `origin`), or
 "Always in profile <name>". A read-only config directory falls back to
@@ -524,13 +531,13 @@ once", "Always in this repo" (when the repository has an `origin`), or
 
 When the choice is unset and stdin is not a terminal (or the picker is
 aborted), aide stops
-before starting the harness with exit code `78` (`EX_CONFIG`) and
+before starting the agent with exit code `78` (`EX_CONFIG`) and
 prints the candidate gateways and the commands to resolve it, along
 the lines of this example (not exact output):
 
 ```
 claude has gateways marked in profile "work" (corp, openrouter) but none chosen;
-choose one with: aide gateway use <name|none> --harness claude, or pass --gateway <name|none>
+choose one with: aide gateway use <name|none> --agent claude, or pass --gateway <name|none>
 ```
 
 Scripts and CI can test for `78` and fix the configuration; the same
@@ -569,12 +576,14 @@ are two named gateways.
 `openai-chat`, `openai-responses`). A provider switch takes `--region`
 (and `--project` for `vertex`) and no key.
 
-When an `anthropic-messages` gateway serves `codex` (the default), `add` also creates
-`<name>-codex`, a Responses API gateway (`api: openai-responses`) at
-`<url>/v1` that serves `codex` only. Its `gateway_choice.codex` stays
-`none` unless you pass `--default` or `--default-for codex`. Pass
-`--harnesses` without `codex` to skip it. An `openai-chat` or
-`openai-responses` gateway keeps its exact url and gets no sibling.
+When a custom `anthropic-messages` gateway (the default) serves `codex`,
+aide writes Codex's provider entry with `wire_api = "responses"` and
+`<url>/v1` automatically while keeping `<url>` and `anthropic-messages`
+for the other agents on the same gateway entry. Its
+`gateway_choice.codex` stays `none` unless you pass `--default` or
+`--default-for codex`. Pass `--agents` without `codex` to exclude
+Codex. An `openai-chat` or `openai-responses` gateway keeps its exact
+url.
 
 | Flag of `gateway add` | Default | Meaning |
 | :--- | :--- | :--- |
@@ -583,25 +592,25 @@ When an `anthropic-messages` gateway serves `codex` (the default), `add` also cr
 | `--api` | the preset's | Wire protocol (`anthropic-messages`, `openai-chat`, `openai-responses`) |
 | `--no-auth` | off | Keyless loopback gateway |
 | `--key-stdin`, `--from-env[=VAR]` | hidden prompt | Where the key comes from |
-| `--harnesses` | the preset's, else the defaults its `--api` can serve | Harnesses that may use it |
-| `--model` | none | Model the harnesses start on |
-| `--default`, `--default-for <h>` | off | Make it the choice for every harness it serves |
+| `--agents` | the preset's, else the defaults its `--api` can serve | Agents that may use it |
+| `--model` | none | Model the agents start on |
+| `--default`, `--default-for <a>` | off | Make it the choice for every agent it serves |
 | `--refresh-ttl` | `24h` | Launch-time model refresh interval |
 | `--secret-store` | the profile's `secret:` store, else the profile name | Store for the key |
 | `--key` | `<name>_token` | Key inside the store |
 | `--age-key`, `--generate-age-key` | the discovered identity | Recipient for a new store; create an identity without a terminal |
 | `--force` | off | Replace a same-name gateway with another URL, or overwrite a store key no gateway owns |
 
-`--token-stdin`, `--token-env`, `--ttl` and `--store` still work as
-deprecated aliases and print a notice. `--no-credentials` is removed.
-Running `add` again with the same name and URL replaces the key, which
-is how you rotate it.
+`--token-stdin`, `--token-env`, `--ttl`, `--store` and `--harnesses`
+still work as deprecated aliases and print a notice. `--no-credentials`
+is removed. Running `add` again with the same name and URL replaces the
+key, which is how you rotate it.
 
-### What each harness gets
+### What each agent gets
 
 Agent config files name the variable, never the key.
 
-| Harness | Variable injected | File written |
+| Agent | Variable injected | File written |
 | :--- | :--- | :--- |
 | `claude` | `ANTHROPIC_BASE_URL` and the key as `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` | `<dir>/cache/gateway-models.json`, only for the chosen gateway |
 | `pi` | `AIDE_GW_CORP_KEY` | `<dir>/models.json`, `providers.aide-corp` |
@@ -634,7 +643,9 @@ default) and credentials for other tools (`GITHUB_TOKEN`) stay under
 `credentials:`. What a gateway
 cannot express exactly (a route that sets another variable beside the
 endpoint, a remote keyless Claude endpoint, an `env:` provider endpoint
-with no key, an `OPENAI_BASE_URL` in `env:`) is not converted: the config
+with no key, an `OPENAI_BASE_URL` in `env:`, an `ANTHROPIC_API_KEY` sent to a custom
+URL: a gateway you add with `--url` sends its key as a bearer token, so
+such keys are not converted automatically) is not converted: the config
 still loads, but launching that profile fails with a hint to edit it by
 hand (`aide gateway add` for the gateway, then remove the old entry). It
 backs up the YAML and `preferences.json` under
@@ -655,10 +666,8 @@ Things that change:
   become the harness's `gateway_choice` and are removed; pins you set
   yourself are kept.
 - `openrouter` served Codex only through the built-in default set and
-  its preset speaks the OpenAI chat API, so it loses that mark; the
-  summary prints the `aide gateway add <name>-codex ... --api
-  openai-responses --harnesses codex` command for an endpoint that serves
-  `/responses`.
+  its preset speaks the OpenAI chat API, so it loses that mark and the
+  migration summary notes it.
 - A named profile never writes harness files into the harness's native
   dir (`~/.claude`, `~/.codex`): a profile whose `env:` pinned a dir
   variable to the native dir is moved to its own `config_dir_name`, and
@@ -667,30 +676,28 @@ Things that change:
 - `gateway remove` clears the profile and repository choices that named
   the gateway and says which.
 - A legacy gateway that reached Codex only through the omitted
-  `harnesses:` default loses that mark, since Codex needs the Responses
-  API; the summary prints the `aide gateway add` command for Codex.
-  Where Codex did use it, the migration splits off a `<name>-codex`
-  gateway.
+  `harnesses:` default while another gateway claimed Codex loses that
+  mark; where Codex did use it, `codex` stays on the same gateway and
+  aide routes Codex to `<url>/v1` with `wire_api = "responses"`. Any
+  already-split `<name>-codex` sibling sharing the same URL and secret
+  binding is collapsed back into `<name>`. A custom credential that set
+  `OPENAI_BASE_URL` for both `codex` and another harness becomes a
+  single `openai-responses` gateway.
 - `aide status` reads key names from the store without decrypting, so
   it no longer needs your age key.
 - `aide gateway rename` is not a command; use
   `aide gateway edit <name> --name <new>`.
 - A migrated credential keeps its name as the gateway name, so
-  `aide gateway use <name> --harness <h>` and `--gateway <name>` select
-  it. `openrouter` no longer serves Codex (the preset speaks Chat
-  Completions); the summary prints the `aide gateway add` command for
-  Codex. A custom credential that set `OPENAI_BASE_URL` for Codex becomes
-  a `<name>` Chat gateway plus a `<name>-codex`
-  Responses gateway. A key sent to a custom endpoint is delivered as a
-  bearer token.
+  `aide gateway use <name> --agent <a>` and `--gateway <name>` select
+  it.
 
 ### Refresh at launch
 
 When the cached models are older than `refresh_ttl`, a launch fetches
-them again before starting the harness and prints what it did. If the
+them again before starting the agent and prints what it did. If the
 gateway cannot be reached, the launch warns and uses the cached models;
 with no cache at all it launches without a model list. When the cache
-is fresh but the harness's file is missing or out of date, aide writes
+is fresh but the agent's file is missing or out of date, aide writes
 it from the cache with no network call. `--gateway none` launches skip
 all of this.
 
@@ -698,24 +705,23 @@ all of this.
 
 - `aide gateway list [--all] [--models] [--format json]`: each gateway
   with URL, secret store and key name (never the key), cache age,
-  per-harness file status (`synced`, `stale`, `pending`) and the
-  harnesses it is chosen for.
-- `aide gateway use [<name|none>] --harness <h> [--repo] [--unset]`:
-  set the harness's choice in the profile, or in this repository's
+  per-agent file status (`synced`, `stale`, `pending`) and the
+  agents it is chosen for.
+- `aide gateway use [<name|none>] --agent <a> [--repo] [--unset]`:
+  set the agent's choice in the profile, or in this repository's
   preferences with `--repo`. Without a name on a terminal it shows the
-  picker. `none` is the harness's own login.
+  picker. `none` is the agent's own login.
 - `aide gateway edit [<name>] [--name <new>] [--url <url>] [--ttl <ttl>]`:
   change a gateway in place (see `--help` for key rotation flags); a
   rename migrates its secret key, cache, choices, repository
-  preferences and harness entries.
+  preferences and agent entries.
 - `aide gateway sync [<name>]`: fetch now, whatever the TTL, and update
-  every harness file that exists.
+  every agent file that exists.
 - `aide gateway remove <name> [--keep-secret]`: delete the gateway, its
-  cache and its harness entries, and clear choices that named it (they
+  cache and its agent entries, and clear choices that named it (they
   become unset). The key is deleted too unless `--keep-secret` is
-  passed or another gateway, credential or template uses it. A
-  split-off `<name>-codex` is an ordinary gateway and stays.
-- `aide project set --gateway <name|none> [--harness <h>]`: save a
+  passed or another gateway, credential or template uses it.
+- `aide project set --gateway <name|none> [--agent <a>]`: save a
   repository's choice; see the [CLI reference](cli-reference.md#aide-project).
 
 ### Safety rules

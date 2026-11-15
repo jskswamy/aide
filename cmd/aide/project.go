@@ -26,8 +26,8 @@ import (
 func projectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "Save this repository's default harness and credentials (user-local)",
-		Long: `Save the harness and credential bindings aide uses for this repository
+		Short: "Save this repository's default agent and gateway choices (user-local)",
+		Long: `Save the default agent and gateway choices aide uses for this repository
 by default, under the current profile. Preferences live in aide's state
 directory, keyed by profile and the normalized origin remote, so every
 worktree and clone of the repository shares them under the same
@@ -91,10 +91,10 @@ func projectSetCmd() *cobra.Command {
 	var profile, agent, gw, harnessName, auth string
 	cmd := &cobra.Command{
 		Use:   "set",
-		Short: "Save the default harness and/or gateway for this repository",
+		Short: "Save the default agent and/or gateway for this repository",
 		Example: `  aide project set --agent pi
-  aide project set --gateway corp --harness claude
-  aide project set --gateway none --harness claude   # native login`,
+  aide project set --gateway corp --agent claude
+  aide project set --gateway none --agent claude   # native login`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -122,11 +122,11 @@ func projectSetCmd() *cobra.Command {
 			var p prefs.Preference
 			err = prefs.Update(t.path, func(f *prefs.File) error {
 				p, _ = f.Get(t.key)
-				if agent != "" {
+				if agent != "" && (!gwSet || p.Harness == "") {
 					p.Harness = agent
 				}
 				if gwSet {
-					if err := t.setGateway(&p, gw, cmp.Or(harnessName, agent)); err != nil {
+					if err := t.setGateway(&p, gw, cmp.Or(harnessName, agent, p.Harness)); err != nil {
 						return err
 					}
 				}
@@ -144,23 +144,24 @@ func projectSetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Save under this profile instead of the one matched here")
-	cmd.Flags().StringVar(&agent, "agent", "", "Default harness for this repository")
-	cmd.Flags().StringVar(&gw, "gateway", "", "Gateway to use by default, or none for the harness's own login")
-	cmd.Flags().StringVar(&harnessName, "harness", "", "Harness the gateway applies to (default: --agent)")
+	cmd.Flags().StringVar(&agent, "agent", "", "Default agent for this repository (or the agent --gateway applies to)")
+	cmd.Flags().StringVar(&gw, "gateway", "", "Gateway to use by default, or none for the agent's own login")
+	cmd.Flags().StringVar(&harnessName, "harness", "", "Deprecated: use --agent")
+	_ = cmd.Flags().MarkDeprecated("harness", "use --agent")
 	cmd.Flags().StringVar(&auth, "auth", "", "Deprecated: use --gateway none instead of --auth login")
 	registerSelectionCompletions(cmd)
 	return cmd
 }
 
-// setGateway saves gw as the repository's choice for harness h: a
+// setGateway saves gw as the repository's choice for agent h: a
 // gateway marked for h, or none.
 func (t *projectTarget) setGateway(p *prefs.Preference, gw, h string) error {
 	ctx := t.rc.Context
 	if h == "" {
-		return errors.New("--harness is required with --gateway (or pass --agent)")
+		return errors.New("--agent is required with --gateway")
 	}
 	if !slices.Contains(config.DefaultGatewayHarnesses, h) {
-		return fmt.Errorf("--harness %q is not a gateway harness (use %s)", h, strings.Join(config.DefaultGatewayHarnesses, ", "))
+		return fmt.Errorf("--agent %q is not a gateway agent (use %s)", h, strings.Join(config.DefaultGatewayHarnesses, ", "))
 	}
 	if candidates := ctx.GatewayCandidates(h); gw != "none" && !slices.Contains(candidates, gw) {
 		return fmt.Errorf("profile %q has no gateway %q marked for %s (marked: %s)", t.rc.Name, gw, h, strings.Join(append(candidates, "none"), ", "))
@@ -173,9 +174,9 @@ func (t *projectTarget) setGateway(p *prefs.Preference, gw, h string) error {
 	return nil
 }
 
-// check validates p the way a launch would use it: the harness must be
+// check validates p the way a launch would use it: the agent must be
 // launchable with the profile's config dir, and the credentials must
-// be bindings of the profile that allow that harness.
+// be bindings of the profile that allow that agent.
 func (t *projectTarget) check(p prefs.Preference) error {
 	rc := *t.rc
 	in := launcher.SelectionInputs{Agent: p.Harness}
@@ -190,25 +191,37 @@ func (t *projectTarget) check(p prefs.Preference) error {
 	return err
 }
 
+const clearDefaultAgent = "\x00clear"
+
 func projectClearCmd() *cobra.Command {
-	var profile, harnessName string
-	var clearAgent, clearCredentials, reset bool
+	var profile, agentVal, harnessName string
+	var clearCredentials, reset bool
 	cmd := &cobra.Command{
 		Use:   "clear",
 		Short: "Clear saved repository preferences (all, or the fields named)",
 		Long: `Clear what aide project set saved for this repository under the current
 profile. With --agent or --gateway only that field is cleared (--gateway
---harness <h> clears one harness's choice); with neither, both are. Cleared fields fall back to .aide.yaml and the
+--agent <a> clears one agent's choice); with neither, both are. Cleared fields fall back to .aide.yaml and the
 profile defaults.
 
 --reset moves the whole preferences file (every repository and
 profile) aside to <file>.corrupt-<timestamp> and starts empty; use it
 when the file cannot be read. Nothing is deleted.`,
-		Args:         cobra.NoArgs,
+		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if agentVal == clearDefaultAgent && len(args) == 1 {
+				agentVal = args[0]
+			} else if len(args) == 1 {
+				return fmt.Errorf("unexpected argument %q", args[0])
+			}
+			clearAgent := agentVal == clearDefaultAgent
+			targetAgent := cmp.Or(harnessName, "")
+			if agentVal != "" && agentVal != clearDefaultAgent {
+				targetAgent = agentVal
+			}
 			if reset {
-				if clearAgent || clearCredentials || profile != "" {
+				if clearAgent || targetAgent != "" || clearCredentials || profile != "" {
 					return errors.New("--reset clears the whole preferences file; it takes no --agent, --gateway or --profile")
 				}
 				return runProjectReset(cmd)
@@ -220,8 +233,8 @@ when the file cannot be read. Nothing is deleted.`,
 			if err := t.key.Validate(); err != nil {
 				return fmt.Errorf("cannot clear repository preferences: %w", err)
 			}
-			if harnessName != "" && !clearCredentials {
-				return errors.New("--harness goes with --gateway")
+			if targetAgent != "" && !clearCredentials {
+				return errors.New("--agent <name> goes with --gateway")
 			}
 			all := !clearAgent && !clearCredentials
 			out := cmd.OutOrStdout()
@@ -236,13 +249,13 @@ when the file cannot be read. Nothing is deleted.`,
 					p.Harness = ""
 				}
 				if all || clearCredentials {
-					if harnessName == "" {
+					if targetAgent == "" {
 						cleared = cleared || p.LegacyCredentials != nil || len(p.Gateway) > 0
 						p.LegacyCredentials, p.Gateway = nil, nil
-					} else if _, ok := p.Gateway[harnessName]; ok {
+					} else if _, ok := p.Gateway[targetAgent]; ok {
 						cleared = true
 						p.Gateway = maps.Clone(p.Gateway)
-						delete(p.Gateway, harnessName)
+						delete(p.Gateway, targetAgent)
 					}
 				}
 				if !cleared {
@@ -263,9 +276,11 @@ when the file cannot be read. Nothing is deleted.`,
 		},
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Clear under this profile instead of the one matched here")
-	cmd.Flags().BoolVar(&clearAgent, "agent", false, "Clear only the saved harness")
+	cmd.Flags().StringVar(&agentVal, "agent", "", "Clear only the saved agent (or with --gateway, clear only this agent's choice)")
+	cmd.Flags().Lookup("agent").NoOptDefVal = clearDefaultAgent
 	cmd.Flags().BoolVar(&clearCredentials, "gateway", false, "Clear only the saved gateway choices")
-	cmd.Flags().StringVar(&harnessName, "harness", "", "With --gateway, clear only this harness's choice")
+	cmd.Flags().StringVar(&harnessName, "harness", "", "Deprecated: use --agent")
+	_ = cmd.Flags().MarkDeprecated("harness", "use --agent")
 	cmd.Flags().BoolVar(&reset, "reset", false, "Move the whole preferences file aside (for a file aide cannot read)")
 	registerSelectionCompletions(cmd)
 	return cmd
@@ -296,7 +311,7 @@ func runProjectReset(cmd *cobra.Command) error {
 type projectShowResult struct {
 	Profile     string            `json:"profile"`
 	Repository  string            `json:"repository"`
-	Harness     string            `json:"harness,omitempty"`
+	Harness     string            `json:"agent,omitempty"`
 	Gateway     map[string]string `json:"gateway,omitempty"`
 	Credentials *[]string         `json:"credentials"`
 	File        string            `json:"file"`
@@ -351,9 +366,9 @@ func describePreference(p prefs.Preference) string {
 	if p.IsZero() {
 		return "nothing (profile and .aide.yaml defaults apply)"
 	}
-	harness := "harness not set"
+	harness := "agent not set"
 	if p.Harness != "" {
-		harness = "harness " + p.Harness
+		harness = "agent " + p.Harness
 	}
 	creds := "credentials not set"
 	if len(p.Gateway) > 0 {

@@ -43,6 +43,8 @@ func TestWriters_WireProtocols(t *testing.T) {
 			[]string{`"@ai-sdk/openai-compatible"`, `"baseURL":"http://127.0.0.1:11434/v1"`}, []string{"apiKey", "env", "Authorization"}},
 		{"codex responses", config.GatewayConfig{Preset: "openai", Key: "k"}, "codex", "config.toml",
 			[]string{"base_url = 'https://api.openai.com/v1'", "wire_api = 'responses'", "env_key = '" + keyVar + "'"}, nil},
+		{"codex on anthropic-messages gateway", config.GatewayConfig{URL: "https://gw.example.com", API: "anthropic-messages", Key: "k"}, "codex", "config.toml",
+			[]string{"base_url = 'https://gw.example.com/v1'", "wire_api = 'responses'", "env_key = '" + keyVar + "'"}, nil},
 		{"codex keyless", config.GatewayConfig{URL: "http://127.0.0.1:8080/v1", API: "openai-responses", NoAuth: true}, "codex", "config.toml",
 			[]string{"base_url = 'http://127.0.0.1:8080/v1'"}, []string{"env_key"}},
 	}
@@ -86,7 +88,7 @@ func TestWriters_SkipWhatTheyCannotCarry(t *testing.T) {
 	for _, c := range []struct {
 		h  string
 		gw config.GatewayConfig
-	}{{"codex", f.gw}, {"codex", chat}, {"claude", chat}, {"pi", sw}, {"omp", sw}, {"opencode", sw}, {"codex", sw}} {
+	}{{"codex", chat}, {"claude", chat}, {"pi", sw}, {"omp", sw}, {"opencode", sw}, {"codex", sw}} {
 		if _, err := MaterializeHarness(f.ctx, "corp", c.gw, f.cat, c.h, f.home, false); err != nil {
 			t.Fatal(err)
 		}

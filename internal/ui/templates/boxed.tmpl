@@ -7,7 +7,7 @@
 {{- end}}
 │ {{agentIconPrefix .}}{{cyan "Agent     "}}{{agentDisplay .}}
 {{- with availableHarnessesLine .}}
-│ 🤖 {{cyan "Harnesses "}}{{.}}
+│ 🤖 {{cyan "Agents    "}}{{.}}
 {{- end}}
 {{- if .SecretName}}
 │ 🔐 {{cyan "Secret    "}}{{secretDisplay .}}

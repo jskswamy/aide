@@ -107,7 +107,7 @@ func TestWhichAndStatus_JSONGatewayChoices(t *testing.T) {
 			byHarness := map[string]map[string]any{}
 			for _, v := range views {
 				m, _ := v.(map[string]any)
-				h, _ := m["harness"].(string)
+				h, _ := m["agent"].(string)
 				byHarness[h] = m
 			}
 			claude := byHarness["claude"]

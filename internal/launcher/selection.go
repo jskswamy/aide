@@ -313,7 +313,7 @@ func ResolveChoice(cfg *config.Config, profile string, ctx config.Context, harne
 	v, saved, err := ask(harnessName, profile, options)
 	if errors.Is(err, ErrNoTerminal) || errors.Is(err, ui.ErrPickerAborted) {
 		return unset, notices, fmt.Errorf("%s has gateways marked in profile %q (%s) but none chosen; choose one with: "+
-			"aide gateway use <name|none> --harness %s, or pass --gateway <name|none>: %w",
+			"aide gateway use <name|none> --agent %s, or pass --gateway <name|none>: %w",
 			harnessName, profile, strings.Join(candidates, ", "), harnessName, &usage.ExitError{Code: exitConfig})
 	}
 	if err != nil {
@@ -375,14 +375,18 @@ func (s *Selection) SelectCredentials(in SelectionInputs, profileDefault []strin
 	}
 }
 
+func isGatewayName(ctx config.Context, name string) bool {
+	_, converted := ctx.ConvertedGateways[name]
+	_, declared := ctx.Gateways[name]
+	return converted || declared
+}
+
 // dropGatewayNames removes from the credential selection the names that
-// choose a gateway instead ("none", and gateways, including a split-off
-// <gw>-codex); the gateway choice carries them.
+// choose a gateway instead ("none", and gateways); the gateway choice
+// carries them.
 func (s *Selection) dropGatewayNames(ctx config.Context) {
 	s.requested = slices.DeleteFunc(s.requested, func(name string) bool {
-		_, converted := ctx.ConvertedGateways[name]
-		_, declared := ctx.Gateways[name]
-		return name == gatewayNone || converted || declared
+		return name == gatewayNone || isGatewayName(ctx, name)
 	})
 	if s.CredentialSource != SourceAuthLogin {
 		s.Credentials = slices.Clone(s.requested)

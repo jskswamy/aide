@@ -115,14 +115,14 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 
 // unwritable says why harnessName gets no entry for gw, or "": a
 // provider switch has no URL, Claude loads only Anthropic Messages and
-// Codex only the Responses API.
+// Codex refuses openai-chat (wire_api = "chat").
 func unwritable(harnessName string, gw config.GatewayConfig) string {
 	switch ep := Endpoint(gw); {
 	case ep.Switch != nil:
 		return "provider switch: nothing to write"
 	case harnessName == "claude" && ep.API != gatewaypreset.APIAnthropicMessages:
 		return "claude loads only anthropic-messages gateways"
-	case harnessName == "codex" && ep.API != gatewaypreset.APIOpenAIResponses:
+	case harnessName == "codex" && ep.API == gatewaypreset.APIOpenAIChat:
 		return "codex loads only openai-responses gateways"
 	}
 	return ""

@@ -92,7 +92,8 @@ func TestValidateGateways_Kinds(t *testing.T) {
 		"claude on a chat api":            {gw: GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-chat", Harnesses: []string{"claude"}}, want: `"claude"`},
 		"codex on chat":                   {gw: GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-chat", Harnesses: []string{"codex"}}, want: `"codex"`},
 		"codex on responses":              {gw: GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-responses", Harnesses: []string{"codex", "pi"}}},
-		"codex on messages":               {gw: GatewayConfig{URL: "https://gw.example.com", Harnesses: []string{"codex"}}, want: `"codex"`},
+		"codex on messages":               {gw: GatewayConfig{URL: "https://gw.example.com", Harnesses: []string{"claude", "codex"}}},
+		"claude on responses":             {gw: GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-responses", Harnesses: []string{"claude"}}, want: `"claude"`},
 		"unknown api":                     {gw: GatewayConfig{URL: "https://gw.example.com", API: "graphql"}, want: "api"},
 		"unknown preset":                  {gw: GatewayConfig{Preset: "nope", URL: "https://gw.example.com"}, want: "preset"},
 		"preset mark outside its list":    {gw: GatewayConfig{Preset: "openrouter", Harnesses: []string{"claude"}}, want: "openrouter"},
@@ -131,7 +132,7 @@ func TestEffectiveHarnesses_FollowThePresetAndWireProtocol(t *testing.T) {
 		"switch":           {GatewayConfig{Preset: "bedrock", Region: "r"}, []string{"claude"}},
 		"custom chat":      {GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-chat"}, []string{"pi", "omp", "opencode"}},
 		"custom responses": {GatewayConfig{URL: "https://gw.example.com/v1", API: "openai-responses"}, []string{"pi", "omp", "opencode", "codex"}},
-		"custom messages":  {GatewayConfig{URL: "https://gw.example.com"}, []string{"claude", "pi", "omp", "opencode"}},
+		"custom messages":  {GatewayConfig{URL: "https://gw.example.com"}, DefaultGatewayHarnesses},
 		"legacy base_url":  {GatewayConfig{BaseURL: "https://gw.example.com"}, DefaultGatewayHarnesses},
 	}
 	for name, c := range cases {

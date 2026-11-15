@@ -100,7 +100,7 @@ default_credentials: [codex]
 			creds:    []string{"codex"},
 		},
 		{
-			name: "custom OPENAI_BASE_URL splits codex into a responses sibling",
+			name: "custom OPENAI_BASE_URL with codex stays one responses gateway",
 			yaml: `
 credentials:
   corp:
@@ -113,12 +113,10 @@ credentials:
 default_credentials: [corp]
 `,
 			gateways: map[string]gw{
-				"corp":       {url: "https://llm.corp/v1", api: "openai-chat", store: "work", key: "corp_token", harnesses: []string{"pi"}},
-				"corp-codex": {url: "https://llm.corp/v1", api: "openai-responses", store: "work", key: "corp_token", harnesses: []string{"codex"}},
+				"corp": {url: "https://llm.corp/v1", api: "openai-responses", store: "work", key: "corp_token", harnesses: []string{"pi", "codex"}},
 			},
-			choice:  map[string]string{"pi": "corp", "codex": "corp-codex"},
-			creds:   []string{"corp"},
-			renames: map[string]map[string]string{"codex": {"corp": "corp-codex"}},
+			choice: map[string]string{"pi": "corp", "codex": "corp"},
+			creds:  []string{"corp"},
 		},
 		{
 			name: "custom OPENAI_BASE_URL without codex has no sibling",

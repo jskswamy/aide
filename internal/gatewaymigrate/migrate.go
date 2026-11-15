@@ -67,7 +67,7 @@ func TranslatePreference(rec prefs.Preference, ctx config.Context, renames map[s
 		}
 		if _, plain := ctx.Credentials[c]; !served && !plain {
 			notices = append(notices, fmt.Sprintf("saved credential %q names no gateway that serves %s; dropped "+
-				"(add one with: aide gateway add %s --harnesses %s)", c, strings.Join(scope, ", "), c, scope[0]))
+				"(add one with: aide gateway add %s --agents %s)", c, strings.Join(scope, ", "), c, scope[0]))
 		}
 	}
 	// A selection with no gateway for a slot harness means none, as the flags do.
@@ -174,7 +174,7 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 			migrated.GatewayChoice[h] = v
 			if conv.Inherited[h] {
 				plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: %s now uses gateway %q, inherited from the old sorted gateway order; "+
-					"change it with: aide gateway use <name|none> --harness %s --profile %s", name, h, v, h, name))
+					"change it with: aide gateway use <name|none> --agent %s --profile %s", name, h, v, h, name))
 			}
 		}
 		// Plain credentials stay opt-in: default_credentials keeps the kept names, the choice carries the gateways.
@@ -187,13 +187,7 @@ func PlanGatewayMigration(cfg *config.Config, caches CacheReader) (Plan, error) 
 		}
 		plan.Notes = append(plan.Notes, codexNotes(name, ctx, renames)...)
 		for _, l := range conv.CodexLost {
-			if l.URL == "" {
-				plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: credential %q no longer serves codex", name, l.Name))
-				continue
-			}
-			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: credential %q no longer serves codex; if its endpoint serves /responses add one with: "+
-				"aide gateway add %s-codex --url %s --api openai-responses --secret-store %s --key %s --harnesses codex --profile %s",
-				name, l.Name, l.Name, l.URL, l.Store, l.Key, name))
+			plan.Notes = append(plan.Notes, fmt.Sprintf("profile %q: credential %q no longer serves codex", name, l.Name))
 		}
 		out.Contexts[name] = migrated
 	}
@@ -216,8 +210,7 @@ func Migrate(cfg *config.Config, caches CacheReader, configDir, stateDir string)
 }
 
 // codexNotes names the legacy gateways that reached Codex only through
-// the omitted harnesses: default and so lose that mark, with the
-// command that adds a Codex gateway.
+// the omitted harnesses: default and so lose that mark.
 func codexNotes(profile string, ctx config.Context, renames map[string]map[string]string) []string {
 	var notes []string
 	for _, old := range slices.Sorted(maps.Keys(ctx.Gateways)) {
@@ -234,13 +227,7 @@ func codexNotes(profile string, ctx config.Context, renames map[string]map[strin
 		if slices.Contains(ctx.ConvertedGateways[name].EffectiveHarnesses(), "codex") {
 			continue
 		}
-		auth := "--secret-store " + gw.Store + " --key " + gw.Key
-		if gw.Key == "" {
-			auth = "--no-auth"
-		}
-		notes = append(notes, fmt.Sprintf("profile %q: gateway %q no longer serves codex; if it serves /v1/responses add one with: "+
-			"aide gateway add %s-codex --url %s/v1 --api openai-responses %s --harnesses codex --profile %s",
-			profile, name, name, config.NormalizeGatewayBaseURL(gw.BaseURL), auth, profile))
+		notes = append(notes, fmt.Sprintf("profile %q: gateway %q no longer serves codex", profile, name))
 	}
 	return notes
 }

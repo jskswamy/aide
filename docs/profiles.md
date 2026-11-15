@@ -292,14 +292,12 @@ Upgrading also migrates legacy gateways (`base_url:`) and the gateway names in `
 - Provider keys templated into `env:` from the profile's `secret:`
   store become gateways (for the providers a gateway preset serves)
   or `credentials:` bindings.
-- Profiles with no config dir of their own run the agent from its
-  global dir (such as `~/.claude`) and share that one login. They are
-  listed and left alone; `--adopt <profile>` keeps the global login
-  of its own agent for one of them by adding `config_dir_name:
-  <profile>` and `config_dirs: {claude: ~/.claude}`. Launched under
-  another agent (`--agent codex`), that profile then uses a fresh
-  `~/.codex-<profile>` dir with its own login. Adopting is refused
-  while another profile still has no config dir of its own.
+- A named profile never writes harness files into the harness's native
+  dir. A native-dir pin in `env:` is dropped, a custom in-home path moves
+  to `config_dirs:`, and `config_dir_name` is derived from the profile
+  name. A dir variable that is templated, relative or outside `$HOME`
+  blocks isolation: the profile fails to load with a hint to edit it by
+  hand.
 - aide refuses to launch a profile that shares a global login with
   another profile; give all but one of them a `config_dir_name:`.
 - A section that uses YAML anchors, aliases or merge keys is refused;

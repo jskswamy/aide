@@ -207,6 +207,7 @@ func writeIfChanged(path string, data []byte, same func(existing []byte) bool) e
 			return nil
 		}
 		if same != nil {
+			existing = bytes.ReplaceAll(existing, []byte("harnesses:"), []byte("agents:"))
 			data = yamlnode.Merge(existing, data)
 		}
 	}
@@ -232,6 +233,9 @@ func sameStructYAML[T any](want []byte) func([]byte) bool {
 
 func sameProfileYAML(name string, want []byte) func([]byte) bool {
 	return func(existing []byte) bool {
+		if bytes.Contains(existing, []byte("harnesses:")) {
+			return false
+		}
 		dec := yaml.NewDecoder(bytes.NewReader(existing))
 		var node yaml.Node
 		if dec.Decode(&node) != nil {

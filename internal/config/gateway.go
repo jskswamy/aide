@@ -35,16 +35,26 @@ type GatewayConfig struct {
 	RefreshTTL string   `yaml:"refresh_ttl,omitempty" json:"refresh_ttl,omitempty"`
 	Store      string   `yaml:"store,omitempty" json:"store,omitempty"`
 	Key        string   `yaml:"key,omitempty" json:"key,omitempty"`
-	Harnesses  []string `yaml:"harnesses,omitempty" json:"harnesses,omitempty"`
+	Harnesses  []string `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
 
 // UnmarshalYAML decodes a gateway and mirrors a new-form url: into
 // BaseURL, the field launch code and validation read; a legacy entry
-// has base_url: and no url:.
+// has base_url: and no url:. Both agents: and the legacy harnesses: key
+// populate Harnesses.
 func (gw *GatewayConfig) UnmarshalYAML(node *yaml.Node) error {
-	type plain GatewayConfig
-	if err := node.Decode((*plain)(gw)); err != nil {
+	type raw GatewayConfig
+	type plain struct {
+		raw             `yaml:",inline"`
+		LegacyHarnesses []string `yaml:"harnesses,omitempty"`
+	}
+	var p plain
+	if err := node.Decode(&p); err != nil {
 		return err
+	}
+	*gw = GatewayConfig(p.raw)
+	if len(gw.Harnesses) == 0 && len(p.LegacyHarnesses) > 0 {
+		gw.Harnesses = p.LegacyHarnesses
 	}
 	if gw.URL != "" && gw.BaseURL == "" {
 		gw.BaseURL = gw.URL
@@ -123,8 +133,7 @@ var gatewayDangerousEnv = []string{
 
 // EffectiveHarnesses returns the harnesses gw serves: Harnesses, or when
 // omitted the preset's, or for a custom url the defaults its wire
-// protocol can serve. A legacy base_url gateway keeps all of the
-// defaults: its conversion splits Codex off.
+// protocol can serve.
 func (gw GatewayConfig) EffectiveHarnesses() []string {
 	if len(gw.Harnesses) > 0 {
 		return slices.Clone(gw.Harnesses)
@@ -137,8 +146,7 @@ func (gw GatewayConfig) EffectiveHarnesses() []string {
 	}
 	api := gatewaypreset.API(cmp.Or(gw.API, apiAnthropicMessages))
 	return slices.DeleteFunc(slices.Clone(DefaultGatewayHarnesses), func(h string) bool {
-		want, ok := harnessAPI[h]
-		return ok && want != api
+		return !harnessAllowsAPI(h, api)
 	})
 }
 
@@ -302,14 +310,14 @@ func validateGateway(name string, gw GatewayConfig, ctx Context, neverAllowEnv [
 	seen := map[string]bool{}
 	for _, h := range gw.Harnesses {
 		if !slices.Contains(DefaultGatewayHarnesses, h) {
-			return fmt.Errorf("harnesses: %q is not a gateway harness (use %s)", h, strings.Join(DefaultGatewayHarnesses, ", "))
+			return fmt.Errorf("agents: %q is not a gateway agent (use %s)", h, strings.Join(DefaultGatewayHarnesses, ", "))
 		}
 		if seen[h] {
-			return fmt.Errorf("harnesses: %q is listed twice", h)
+			return fmt.Errorf("agents: %q is listed twice", h)
 		}
 		seen[h] = true
 		if isPreset && !slices.Contains(preset.Harnesses, h) {
-			return fmt.Errorf("harnesses: preset %s does not serve %q (use %s)", preset.Name, h, strings.Join(preset.Harnesses, ", "))
+			return fmt.Errorf("agents: preset %s does not serve %q (use %s)", preset.Name, h, strings.Join(preset.Harnesses, ", "))
 		}
 	}
 	return checkHarnessAPI(gw, isPreset)
@@ -357,16 +365,24 @@ func validateSwitch(gw GatewayConfig, preset string, sw *gatewaypreset.SwitchSpe
 	return nil
 }
 
-// harnessAPI is the one wire protocol each of these harnesses speaks;
-// the others take any.
-var harnessAPI = map[string]gatewaypreset.API{
-	"claude": gatewaypreset.APIAnthropicMessages,
-	"codex":  gatewaypreset.APIOpenAIResponses,
+// harnessAllowsAPI reports whether harness h can be served by a custom
+// gateway whose default wire protocol is api. Claude speaks only
+// anthropic-messages; Codex speaks openai-responses (and a custom
+// anthropic-messages gateway serves Codex at <base_url>/v1 with
+// wire_api = "responses"); the multi harnesses take any.
+func harnessAllowsAPI(h string, api gatewaypreset.API) bool {
+	switch h {
+	case "claude":
+		return api == gatewaypreset.APIAnthropicMessages
+	case "codex":
+		return api == gatewaypreset.APIAnthropicMessages || api == gatewaypreset.APIOpenAIResponses
+	default:
+		return true
+	}
 }
 
 // checkHarnessAPI rejects a harness mark the gateway's wire protocol
-// cannot serve, and an unknown api. A gateway still in the legacy
-// base_url form is not checked: its conversion splits Codex off.
+// cannot serve, and an unknown api.
 func checkHarnessAPI(gw GatewayConfig, isPreset bool) error {
 	if gw.SwitchSpec() != nil {
 		return nil
@@ -382,8 +398,12 @@ func checkHarnessAPI(gw GatewayConfig, isPreset bool) error {
 		return nil
 	}
 	for _, h := range gw.EffectiveHarnesses() {
-		if want, ok := harnessAPI[h]; ok && want != api {
-			return fmt.Errorf("harnesses: %q speaks %s but this gateway's api is %s", h, want, api)
+		if !harnessAllowsAPI(h, api) {
+			want := gatewaypreset.APIAnthropicMessages
+			if h == "codex" {
+				want = gatewaypreset.APIOpenAIResponses
+			}
+			return fmt.Errorf("agents: %q speaks %s but this gateway's api is %s", h, want, api)
 		}
 	}
 	return nil

@@ -350,15 +350,14 @@ Upgrading is automatic (CUJ 6), but these behaviours change:
     the gateways and the exact command to choose one.
 *   **`aide status`** no longer needs your `age` key to show the secret count;
     it reads key names from the store without decrypting.
-*   **Codex gateways:** a gateway used with Codex must serve the OpenAI
-    Responses API, because Codex 0.167 no longer loads `wire_api = "chat"`.
-    Migration keeps Codex on a legacy gateway only where Codex used it (listed
-    in `harnesses:` or chosen for Codex); see
-    [Legacy gateways and Codex](#self-healing-migration-architecture). A
-    gateway that reached Codex only through the omitted-`harnesses:` default
-    loses that mark, and the migration summary prints the `aide gateway add`
-    command to add a Codex gateway. A split-off `<gw>-codex` is an ordinary
-    gateway: `gateway remove <gw>` leaves it in place.
+*   **Codex gateways:** a gateway used with Codex writes `wire_api = "responses"`
+    at `<url>/v1`, because Codex 0.167 no longer loads `wire_api = "chat"`.
+    A single custom `anthropic-messages` gateway can serve all five harnesses
+    (`claude`, `pi`, `omp`, `opencode`, `codex`), with `aide` routing Codex to
+    `<base_url>/v1` (`wire_api = "responses"`) and the remaining harnesses to
+    `<base_url>` (`anthropic-messages`). Migration keeps Codex on the same
+    gateway where Codex used it, and collapses any already-split `<gw>-codex`
+    sibling sharing the same URL and secret binding back into `<gw>`.
 *   **Remote keyless gateways** are rejected; keyless URLs must be loopback.
 *   **Downgrade:** older `aide` binaries cannot read migrated YAML or v2
     `preferences.json`; restore both from `~/.local/state/aide/migrations/`.
@@ -827,25 +826,17 @@ files into a fragile multi-directory lock/rollback transaction inside
         renames run first. `config.Load` keeps `renames` on
         `Config.LegacyRenames` (never serialized) for `ResolveChoice`.
         *   Codex did not use it: `<gw>` becomes `api: anthropic-messages`
-            without `codex`; the summary prints `aide gateway add <gw>-codex
-            --url <url> --api openai-responses --secret-store <store> --key
-            <key> --harnesses codex` (`--no-auth` instead of the store and key
-            for a keyless gateway) for users whose gateway serves
-            `/v1/responses`.
-        *   Codex was its only harness: `<gw>` is converted in place to
-            `api: openai-responses` with URL
-            `config.NormalizeGatewayBaseURL(base_url) + "/v1"`.
-        *   Otherwise: `<gw>` becomes `api: anthropic-messages` without
-            `codex`, plus a sibling with `api: openai-responses`, that URL, the
-            same `store`/`key` (or `no_auth`), the same `refresh_ttl`,
-            `harnesses: [codex]` and no `model`. Its name is the first of
-            `<gw>-codex`, `<gw>-codex-2`, … that matches no gateway name, no
-            reserved name, and no other gateway's `AIDE_GW_<NAME>_KEY`.
-        *   Every Codex choice for `<gw>` (pin, default) moves to the gateway
-            that now serves Codex, through `renames`. A v1 repo preference that
-            names `<gw>` for Codex follows `renames` too; when Codex no longer
-            has a gateway for it, `TranslatePreference` drops it with the same
-            `aide gateway add` notice.
+            without `codex`, and the summary notes that `<gw>` no longer serves
+            `codex`.
+        *   Codex used it: `<gw>` becomes `api: anthropic-messages` and keeps
+            `codex` in `harnesses:`; the Codex writer emits `wire_api = "responses"`
+            at `config.NormalizeGatewayBaseURL(url) + "/v1"`.
+        *   Already-split `<gw>-codex` siblings (`api: openai-responses`,
+            `harnesses: [codex]`) that share the same normalized base URL and
+            secret binding as `<gw>` (`api: anthropic-messages`) are collapsed
+            back into `<gw>` with `renames["codex"]["<gw>-codex"] = "<gw>"`.
+        *   Every Codex choice for `<gw>` (pin, default, or collapsed
+            `<gw>-codex`) resolves to `<gw>` through `renames`.
         *   Keyless legacy gateways follow the same remote-keyless rule as any
             other gateway.
 2.  **`preferences.json` v1 → v2:**
@@ -1952,3 +1943,4 @@ migration guard and backups.
 *   Review fixes (unconvertible shapes, supersedes the validation entry): load never fails on a legacy shape the conversion leaves; an `env:` provider key no gateway can carry (gemini, a key with no preset) moves into `credentials:` (built-in name, or `env: [VAR]` with the profile's harness) and is default-selected, and a keyless loopback `anthropic-messages` credential becomes a `no_auth` gateway. A provider endpoint, switch or key still in `env:`/`credentials:` after that (a hand edit, or a shape such as an x-api-key route to a custom URL) fails only that profile's launch with `ErrInvalidCredentials`, naming the hand edit.
 *   Review fixes (folder isolation, supersedes the isolation migration entry): at load, every named profile that selects no config dir but sets a profile-capable dir variable in `env:` is isolated (native pins dropped, custom in-home paths to `config_dirs`, `config_dir_name` derived), unless a variable cannot move (templated, relative, outside `$HOME`): then nothing is isolated and a native pin keeps failing load with `ErrProfileDirAlias` asking for a hand edit, so the persisted config always equals the in-memory one. Gateway writers apply the derived profile dir for the harness they write, as a launch does after `--agent`.
 *   Documentation (credential migration): user docs describe the gateway model only (what migrates, the `gemini` exception, the openrouter Codex note, folder isolation, `gateway use` for every gateway); the stale `--credential` flag references are now `--gateway`, and the profiles verification case uses a gateway.
+*   Review fixes (documentation, selection): `--gateway <gateway>` chooses the gateway only and keeps the profile or saved selection of plain credentials (`--gateway none` or a plain credential name still replaces it); the verification guide writes Bedrock, Vertex, P5 and X7 as gateways and marks Foundry as having no gateway; `--adopt` references are removed.

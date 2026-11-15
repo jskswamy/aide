@@ -89,9 +89,13 @@ func registerSelectionCompletions(cmd *cobra.Command) {
 		}
 	}
 	for flag, names := range map[string]func(*cobra.Command) []string{
-		"profile": func(*cobra.Command) []string { return profileNamesForCompletion() },
-		"agent":   func(*cobra.Command) []string { return harnessNamesForCompletion() },
-		"gateway": credentialNamesForCompletion,
+		"profile":     func(*cobra.Command) []string { return profileNamesForCompletion() },
+		"agent":       func(*cobra.Command) []string { return harnessNamesForCompletion() },
+		"agents":      func(*cobra.Command) []string { return harnessNamesForCompletion() },
+		"harness":     func(*cobra.Command) []string { return harnessNamesForCompletion() },
+		"harnesses":   func(*cobra.Command) []string { return harnessNamesForCompletion() },
+		"default-for": func(*cobra.Command) []string { return harnessNamesForCompletion() },
+		"gateway":     credentialNamesForCompletion,
 	} {
 		if cmd.Flags().Lookup(flag) != nil {
 			_ = cmd.RegisterFlagCompletionFunc(flag, complete(names))

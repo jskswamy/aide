@@ -11,6 +11,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/harness"
+	"gopkg.in/yaml.v3"
 )
 
 // CredentialBackendAge is the only credential backend: an entry in an
@@ -29,14 +30,33 @@ type CredentialBinding struct {
 	Key   string `yaml:"key"`
 	// Env overrides the built-in env names; required for custom names.
 	Env []string `yaml:"env,omitempty"`
-	// Harnesses restricts the binding to these harnesses; required for
-	// custom names. Empty on a built-in means every harness.
-	Harnesses []string `yaml:"harnesses,omitempty"`
-	// For gives each harness the binding serves its own route; it
+	// Harnesses restricts the binding to these agents; required for
+	// custom names. Empty on a built-in means every agent.
+	Harnesses []string `yaml:"agents,omitempty"`
+	// For gives each agent the binding serves its own route; it
 	// replaces Env/Harnesses.
 	For map[string]CredentialRoute `yaml:"for,omitempty"`
 	// Capabilities are added to a launch that selects the binding.
 	Capabilities []string `yaml:"capabilities,omitempty"`
+}
+
+// UnmarshalYAML decodes a credential binding, accepting both agents:
+// and the legacy harnesses: key.
+func (b *CredentialBinding) UnmarshalYAML(node *yaml.Node) error {
+	type raw CredentialBinding
+	type plain struct {
+		raw             `yaml:",inline"`
+		LegacyHarnesses []string `yaml:"harnesses,omitempty"`
+	}
+	var p plain
+	if err := node.Decode(&p); err != nil {
+		return err
+	}
+	*b = CredentialBinding(p.raw)
+	if len(b.Harnesses) == 0 && len(p.LegacyHarnesses) > 0 {
+		b.Harnesses = p.LegacyHarnesses
+	}
+	return nil
 }
 
 // CredentialRoute is how one harness reaches a binding's provider: the

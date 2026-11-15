@@ -2,7 +2,7 @@
 {{- if .ContextName}} · profile: {{boldGreen (contextIconDisplay .)}}{{end}}
   {{cyan "Agent     "}}{{agentIconPrefix .}}{{agentDisplay .}}
 {{- with availableHarnessesLine .}}
-  {{cyan "Harnesses "}}{{.}}
+  {{cyan "Agents    "}}{{.}}
 {{- end}}
 {{- if .MatchReason}}
   {{cyan "Matched   "}}{{.MatchReason}}

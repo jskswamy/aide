@@ -215,18 +215,18 @@ func credentialSpec(name string, r CredentialRoute, h string) (s credSpec, serve
 	if checkGatewayURL(s.url) != nil {
 		return s, false, false
 	}
-	want, constrained := harnessAPI[h]
-	return s, !constrained || string(want) == s.api, true
+	return s, harnessAllowsAPI(h, gatewaypreset.API(s.api)), true
 }
 
 // credential converts binding name when the gateway form can express
 // every route of it: harnesses that share a destination share a
-// gateway; Codex, which only speaks the Responses API, gets its own.
+// gateway.
 func (cv *converter) credential(name string, b CredentialBinding) {
 	hs := credentialHarnesses(name, b)
 	if len(hs) == 0 || slices.ContainsFunc(hs, func(h string) bool { return !slices.Contains(DefaultGatewayHarnesses, h) }) {
 		return
 	}
+	hasCodex := slices.Contains(hs, "codex")
 	groups, order, lost := map[credSpec][]string{}, []credSpec{}, []CodexLoss{}
 	for _, h := range DefaultGatewayHarnesses {
 		if !slices.Contains(hs, h) {
@@ -234,18 +234,17 @@ func (cv *converter) credential(name string, b CredentialBinding) {
 		}
 		r, _ := b.Route(name, h)
 		s, serves, ok := credentialSpec(name, r, h)
+		if ok && hasCodex && s.preset == "" && s.api == string(gatewaypreset.APIOpenAIChat) {
+			s.api = apiOpenAIResponses
+			serves = harnessAllowsAPI(h, gatewaypreset.API(s.api))
+		}
 		switch {
 		case !ok || !serves && h != "codex":
 			return
 		case h == "claude" && s.api == apiAnthropicMessages && b.Keyless() && !(GatewayConfig{URL: s.url}).IsLoopback():
 			return // a remote keyless gateway would stop Claude sending its saved login
-		case !serves: // only a preset whose url speaks the OpenAI API gets an add command
-			p, _ := gatewaypreset.Lookup(s.preset)
-			loss := CodexLoss{Name: name}
-			if p.API == gatewaypreset.APIOpenAIChat {
-				loss = CodexLoss{Name: name, URL: p.BaseURL, Store: b.Store, Key: b.Key}
-			}
-			lost = append(lost, loss)
+		case !serves:
+			lost = append(lost, CodexLoss{Name: name})
 		default:
 			if groups[s] == nil {
 				order = append(order, s)

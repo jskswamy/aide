@@ -113,16 +113,16 @@ type BannerData struct {
 	// "login" (native login, nothing injected); empty when unresolved.
 	Credentials []CredentialInfo `json:"credentials,omitempty"`
 	AuthMode    string           `json:"auth_mode,omitempty"`
-	// Harness is the launched harness; GatewayChoices has one entry per
-	// gateway-capable harness of the profile.
-	Harness        string           `json:"harness,omitempty"`
+	// Harness is the launched agent; GatewayChoices has one entry per
+	// gateway-capable agent of the profile.
+	Harness        string           `json:"agent,omitempty"`
 	GatewayChoices []CredentialInfo `json:"gateway_choices,omitempty"`
-	// Selection sources: how the profile, harness and credential
+	// Selection sources: how the profile, agent and credential
 	// selection were chosen ("flag", "match", "default", "preference",
 	// "repository", "profile", "auth"). CredentialSelection is the
 	// selected binding names, never values; empty when none.
 	ProfileSource       string     `json:"profile_source,omitempty"`
-	HarnessSource       string     `json:"harness_source,omitempty"`
+	HarnessSource       string     `json:"agent_source,omitempty"`
 	CredentialSource    string     `json:"credential_source,omitempty"`
 	CredentialSelection []string   `json:"credential_selection,omitempty"`
 	Trust               *TrustInfo `json:"trust,omitempty"` // first untrusted/denied file; nil when all trusted or no project config
@@ -152,11 +152,11 @@ type BannerData struct {
 	IsolationTier *sandbox.IsolationTier `json:"isolation_tier,omitempty"`
 
 	// HarnessConfigDir is the resolved profile config directory for the
-	// active harness (e.g. ~/.claude-work).
-	HarnessConfigDir string `json:"harness_config_dir,omitempty"`
-	// AvailableHarnesses are the other installed harnesses available for
+	// active agent (e.g. ~/.claude-work).
+	HarnessConfigDir string `json:"agent_config_dir,omitempty"`
+	// AvailableHarnesses are the other installed agents available for
 	// this profile, with their resolved profile config directories.
-	AvailableHarnesses []HarnessOption `json:"available_harnesses,omitempty"`
+	AvailableHarnesses []HarnessOption `json:"available_agents,omitempty"`
 	// AvailableGateways are the other credentials or gateways on the
 	// profile that support the active harness.
 	AvailableGateways []GatewayOption `json:"available_gateways,omitempty"`
@@ -192,12 +192,12 @@ type CredentialInfo struct {
 	ModelAge   string   `json:"model_age,omitempty"`
 	TargetFile string   `json:"target_file,omitempty"`
 	TargetSync string   `json:"target_sync,omitempty"`
-	// Gateway visibility: the harness this binding or choice is for,
+	// Gateway visibility: the agent this binding or choice is for,
 	// the choice ("<gw>", "none", "unset"), where it came from, the
 	// gateway kind ("gateway", "keyless" or "switch"), the variable that delivers
-	// its key, whether a multi harness starts on it, how many more
+	// its key, whether a multi agent starts on it, how many more
 	// gateways are in /model, and what is wrong with it.
-	Harness  string   `json:"harness,omitempty"`
+	Harness  string   `json:"agent,omitempty"`
 	Choice   string   `json:"choice,omitempty"`
 	Source   string   `json:"source,omitempty"`
 	Kind     string   `json:"kind,omitempty"`

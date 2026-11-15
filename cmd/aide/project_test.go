@@ -63,7 +63,7 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 	}
 
 	// A second set changes only what it names.
-	if out, err := runProject(t, "set", "--gateway", "anthropic", "--harness", "pi"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "anthropic", "--agent", "pi"); err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, _ = savedFor(t, path, "work")
@@ -74,24 +74,24 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 
 func TestProjectSet_GatewayNoneSavesPerHarnessChoice(t *testing.T) {
 	path := selectionEnv(t, selectionTestConfig)
-	if out, err := runProject(t, "set", "--gateway", "none", "--harness", "pi"); err != nil {
+	if out, err := runProject(t, "set", "--gateway", "none", "--agent", "pi"); err != nil {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, ok := savedFor(t, path, "work")
 	if !ok || p.Gateway["pi"] != "none" || p.LegacyCredentials != nil {
 		t.Errorf("saved = %+v, want gateway pi=none", p)
 	}
-	if out, err := runProject(t, "set", "--auth", "login", "--harness", "claude"); err != nil {
+	if out, err := runProject(t, "set", "--auth", "login", "--agent", "claude"); err != nil {
 		t.Fatalf("project set --auth login: %v\n%s", err, out)
 	}
 	if p, _ = savedFor(t, path, "work"); p.Gateway["claude"] != "none" || p.Gateway["pi"] != "none" {
 		t.Errorf("--auth login saved = %+v, want claude=none kept beside pi=none", p)
 	}
-	if out, err := runProject(t, "clear", "--gateway", "--harness", "pi"); err != nil {
+	if out, err := runProject(t, "clear", "--gateway", "--agent", "pi"); err != nil {
 		t.Fatalf("project clear: %v\n%s", err, out)
 	}
 	if p, _ = savedFor(t, path, "work"); p.Gateway["pi"] != "" || p.Gateway["claude"] != "none" {
-		t.Errorf("after clear --harness pi = %+v", p)
+		t.Errorf("after clear --agent pi = %+v", p)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestProjectSet_RejectsInvalidSelections(t *testing.T) {
 		"unknown harness":    {"set", "--agent", "no-such-harness-xyz"},
 		"conflicting":        {"set", "--gateway", "openai", "--auth", "login"},
 		"no harness":         {"set", "--gateway", "none"},
-		"not a gateway":      {"set", "--gateway", "ghost", "--harness", "pi"},
+		"not a gateway":      {"set", "--gateway", "ghost", "--agent", "pi"},
 		"unknown profile":    {"set", "--profile", "ghost", "--agent", "pi"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestProjectShow_JSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, out)
 	}
-	if got["profile"] != "work" || got["repository"] != "github.com/org/repo" || got["harness"] != "pi" {
+	if got["profile"] != "work" || got["repository"] != "github.com/org/repo" || got["agent"] != "pi" {
 		t.Errorf("show = %v", got)
 	}
 	if gw, ok := got["gateway"].(map[string]any); !ok || gw["pi"] != "none" {

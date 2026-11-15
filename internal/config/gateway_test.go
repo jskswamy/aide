@@ -62,8 +62,8 @@ func TestGateway_LoadAndRoundTrip(t *testing.T) {
 	if got := back.Contexts["work"].Gateways; len(got) != 2 || got["corp"].Key != "corp_token" {
 		t.Errorf("round trip lost gateways:\n%s", out)
 	}
-	if strings.Contains(string(out), "harnesses: []") {
-		t.Errorf("omitted harnesses must stay omitted:\n%s", out)
+	if strings.Contains(string(out), "agents: []") || strings.Contains(string(out), "harnesses:") {
+		t.Errorf("omitted agents must stay omitted:\n%s", out)
 	}
 }
 
@@ -150,8 +150,8 @@ func TestGateway_ValidateGateways(t *testing.T) {
 		"aide key":              {name: "corp", gw: with(func(g *GatewayConfig) { g.Key = "aide_token" }), want: "AIDE_TOKEN"},
 		"config dir key":        {name: "corp", gw: with(func(g *GatewayConfig) { g.Key = "claude_config_dir" }), want: "CLAUDE_CONFIG_DIR"},
 		"never allow env":       {name: "corp", gw: valid, never: []string{"CORP_TOKEN"}, want: "never_allow_env"},
-		"unknown harness":       {name: "corp", gw: with(func(g *GatewayConfig) { g.Harnesses = []string{"gemini"} }), want: "harnesses"},
-		"duplicate harness":     {name: "corp", gw: with(func(g *GatewayConfig) { g.Harnesses = []string{"pi", "pi"} }), want: "harnesses"},
+		"unknown harness":       {name: "corp", gw: with(func(g *GatewayConfig) { g.Harnesses = []string{"gemini"} }), want: "agents"},
+		"duplicate harness":     {name: "corp", gw: with(func(g *GatewayConfig) { g.Harnesses = []string{"pi", "pi"} }), want: "agents"},
 		"collides with binding": {name: "corp", gw: valid, creds: map[string]CredentialBinding{"corp": {}}, want: "credentials"},
 	}
 	for label, tc := range cases {

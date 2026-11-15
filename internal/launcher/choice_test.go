@@ -117,7 +117,7 @@ func TestResolveChoice_Asking(t *testing.T) {
 	if !errors.As(err, &ee) || ee.ExitCode() != 78 {
 		t.Fatalf("error = %v, want exit code 78", err)
 	}
-	for _, want := range []string{"a, b", "aide gateway use <name|none> --harness claude", "--gateway <name|none>"} {
+	for _, want := range []string{"a, b", "aide gateway use <name|none> --agent claude", "--gateway <name|none>"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}
@@ -285,15 +285,15 @@ profiles:
 			t.Error("claude none still injected a gateway")
 		}
 	})
-	t.Run("codex starts on its split gateway", func(t *testing.T) {
+	t.Run("codex starts on the same gateway", func(t *testing.T) {
 		env, args, _ := launchGatewayArgs(t, t.TempDir(), cfg(""), "codex", "")
-		if !slices.Contains(args, "model_provider=aide-alpha-codex") {
-			t.Errorf("codex args = %v, want the split gateway as model_provider", args)
+		if !slices.Contains(args, "model_provider=aide-alpha") {
+			t.Errorf("codex args = %v, want aide-alpha as model_provider", args)
 		}
-		if !has(env, "AIDE_GW_ALPHA_CODEX_KEY") || has(env, "AIDE_GW_BETA_KEY") {
+		if !has(env, "AIDE_GW_ALPHA_KEY") || has(env, "AIDE_GW_BETA_KEY") {
 			t.Errorf("codex injects the wrong keys: %v", env)
 		}
-		if data, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), ".codex-work", "config.toml")); err != nil || !strings.Contains(string(data), "AIDE_GW_ALPHA_CODEX_KEY") {
+		if data, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), ".codex-work", "config.toml")); err != nil || !strings.Contains(string(data), "AIDE_GW_ALPHA_KEY") {
 			t.Errorf("codex config.toml = %s, %v", data, err)
 		}
 	})

@@ -64,6 +64,18 @@ func (c LegacyConversion) NeedsMigration() bool {
 func (c LegacyConversion) Apply(ctx Context) Context {
 	ctx.ConvertedGateways, ctx.DerivedChoice = c.Gateways, c.Choice
 	ctx.ConvertedCredentials, ctx.ConvertedEnv, ctx.MovedCredentials = c.Credentials, c.Env, c.Moved
+	if len(c.Renames) > 0 && len(ctx.GatewayChoice) > 0 {
+		cloned := false
+		for h, ch := range ctx.GatewayChoice {
+			if to := c.Renames[h][ch]; to != "" {
+				if !cloned {
+					ctx.GatewayChoice = maps.Clone(ctx.GatewayChoice)
+					cloned = true
+				}
+				ctx.GatewayChoice[h] = to
+			}
+		}
+	}
 	return ctx
 }
 
@@ -196,28 +208,45 @@ func (cv *converter) gateways() {
 		conv := gw
 		conv.BaseURL, conv.URL, conv.NoAuth = "", gw.BaseURL, gw.Key == ""
 		conv.API, conv.Preset = apiAnthropicMessages, "" // converted gateways are custom url+api
-		codexOnly := codexUsed && slices.Equal(gw.Harnesses, []string{"codex"})
-		codexURL := NormalizeGatewayBaseURL(gw.BaseURL) + "/v1"
-		switch {
-		case codexOnly:
-			conv.URL, conv.API = codexURL, apiOpenAIResponses
-		case codexUsed:
-			sib := conv
-			sib.URL, sib.API, sib.Model, sib.Harnesses = codexURL, apiOpenAIResponses, "", []string{"codex"}
-			sibName := cv.unique(name + "-codex")
-			gateways[sibName] = sib
-			cv.made = append(cv.made, sibName)
-			cv.rename("codex", old, sibName)
-			fallthrough
-		default:
-			conv.Harnesses = slices.DeleteFunc(slices.Clone(served), func(h string) bool { return h == "codex" })
+		conv.Harnesses = slices.Clone(served)
+		if !codexUsed {
+			conv.Harnesses = slices.DeleteFunc(conv.Harnesses, func(h string) bool { return h == "codex" })
 		}
 		gateways[name] = conv
-		for _, h := range served {
-			if name != old && (h != "codex" || codexOnly) {
+		for _, h := range conv.Harnesses {
+			if name != old {
 				cv.rename(h, old, name)
 			}
 		}
+	}
+	cv.collapseCodexSiblings()
+}
+
+// collapseCodexSiblings folds an already-split <gw>-codex sibling back
+// into <gw> when both are custom gateways on the same normalized base
+// URL with the same secret binding.
+func (cv *converter) collapseCodexSiblings() {
+	for _, sibName := range slices.Sorted(maps.Keys(cv.Gateways)) {
+		baseName, ok := strings.CutSuffix(sibName, "-codex")
+		if !ok || baseName == "" {
+			continue
+		}
+		base, hasBase := cv.Gateways[baseName]
+		sib := cv.Gateways[sibName]
+		if !hasBase || base.Preset != "" || sib.Preset != "" ||
+			base.API != apiAnthropicMessages || sib.API != apiOpenAIResponses ||
+			!slices.Equal(sib.Harnesses, []string{"codex"}) ||
+			NormalizeGatewayBaseURL(sib.endpointURL()) != NormalizeGatewayBaseURL(base.endpointURL()) ||
+			sib.Store != base.Store || sib.Key != base.Key || sib.NoAuth != base.NoAuth {
+			continue
+		}
+		if !slices.Contains(base.Harnesses, "codex") {
+			base.Harnesses = append(slices.Clone(base.Harnesses), "codex")
+		}
+		cv.Gateways[baseName] = base
+		delete(cv.Gateways, sibName)
+		cv.Legacy = true
+		cv.rename("codex", sibName, baseName)
 	}
 }
 

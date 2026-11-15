@@ -37,37 +37,46 @@ func TestConvertLegacyGateways(t *testing.T) {
 			wantNames:   []string{"a"},
 			wantRenames: nil,
 			check: func(t *testing.T, got map[string]GatewayConfig) {
-				if got["a"].API != apiOpenAIResponses || got["a"].URL != "https://gw.example.com/v1" {
+				if got["a"].API != apiAnthropicMessages || got["a"].URL != "https://gw.example.com/" || !reflect.DeepEqual(got["a"].Harnesses, []string{"codex"}) {
 					t.Errorf("a = %+v", got["a"])
 				}
 			},
 		},
 		{
-			name:        "default credentials select codex: split",
+			name:        "default credentials select codex: kept on same gateway",
 			ctx:         Context{Gateways: map[string]GatewayConfig{"a": {BaseURL: "https://gw.example.com", Store: "s", Key: "k", RefreshTTL: "2h"}}},
-			wantNames:   []string{"a", "a-codex"},
-			wantRenames: map[string]map[string]string{"codex": {"a": "a-codex"}},
+			wantNames:   []string{"a"},
+			wantRenames: nil,
 			check: func(t *testing.T, got map[string]GatewayConfig) {
-				c := got["a-codex"]
-				if c.API != apiOpenAIResponses || c.URL != "https://gw.example.com/v1" ||
-					c.Store != "s" || c.Key != "k" || c.RefreshTTL != "2h" || !reflect.DeepEqual(c.Harnesses, []string{"codex"}) || c.Model != "" {
-					t.Errorf("a-codex = %+v", c)
-				}
-				for _, h := range got["a"].Harnesses {
-					if h == "codex" {
-						t.Errorf("a still serves codex: %+v", got["a"])
-					}
+				c := got["a"]
+				if c.API != apiAnthropicMessages || c.URL != "https://gw.example.com" ||
+					c.Store != "s" || c.Key != "k" || c.RefreshTTL != "2h" || !reflect.DeepEqual(c.Harnesses, DefaultGatewayHarnesses) {
+					t.Errorf("a = %+v", c)
 				}
 			},
 		},
 		{
-			name: "sibling name avoids collisions",
+			name: "collapses already-split <gw>-codex sibling back into <gw>",
+			ctx: Context{Gateways: map[string]GatewayConfig{
+				"a":       {URL: "https://gw.example.com", API: "anthropic-messages", Store: "s", Key: "k", Harnesses: []string{"claude", "pi", "omp", "opencode"}},
+				"a-codex": {URL: "https://gw.example.com/v1", API: "openai-responses", Store: "s", Key: "k", Harnesses: []string{"codex"}},
+			}},
+			wantNames:   []string{"a"},
+			wantRenames: map[string]map[string]string{"codex": {"a-codex": "a"}},
+			check: func(t *testing.T, got map[string]GatewayConfig) {
+				if !reflect.DeepEqual(got["a"].Harnesses, []string{"claude", "pi", "omp", "opencode", "codex"}) {
+					t.Errorf("a.Harnesses = %v, want codex merged in", got["a"].Harnesses)
+				}
+			},
+		},
+		{
+			name: "distinct <gw>-codex at different URL is not collapsed",
 			ctx: Context{Gateways: map[string]GatewayConfig{
 				"a":       {BaseURL: "https://gw.example.com", Harnesses: []string{"claude", "codex"}},
 				"a-codex": {BaseURL: "https://other.example.com", Harnesses: []string{"claude"}},
 			}},
-			wantNames:   []string{"a", "a-codex", "a-codex-2"},
-			wantRenames: map[string]map[string]string{"codex": {"a": "a-codex-2"}},
+			wantNames:   []string{"a", "a-codex"},
+			wantRenames: nil,
 		},
 		{
 			name:        "reserved name renamed",
@@ -139,10 +148,10 @@ func TestLoadTranslatesLegacyGatewaysAndWritesNewForm(t *testing.T) {
 		t.Errorf("WriteConfigTo() = %v, want ErrNeedsGatewayMigration", err)
 	}
 	got := cfg.Contexts["work"]
-	if _, ok := got.ConvertedGateways["a-codex"]; !ok {
+	if _, ok := got.ConvertedGateways["a"]; !ok || len(got.ConvertedGateways) != 1 {
 		t.Errorf("converted = %v", got.ConvertedGateways)
 	}
-	if cfg.LegacyRenames["work"]["codex"]["a"] != "a-codex" {
+	if len(cfg.LegacyRenames["work"]) != 0 {
 		t.Errorf("renames = %v", cfg.LegacyRenames)
 	}
 	out, err := yaml.Marshal(got)
@@ -169,12 +178,12 @@ func TestConvertLegacyGatewaysAidePrefixRenamed(t *testing.T) {
 func TestConvertLegacyGatewaysKeylessAndReservedCodex(t *testing.T) {
 	got, _ := ConvertLegacyGateways(Context{Gateways: map[string]GatewayConfig{
 		"a": {BaseURL: "http://127.0.0.1:11434"}}})
-	if !got["a"].NoAuth || !got["a-codex"].NoAuth {
+	if !got["a"].NoAuth || len(got) != 1 {
 		t.Errorf("keyless: %+v", got)
 	}
 	got, renames := ConvertLegacyGateways(Context{Gateways: map[string]GatewayConfig{
 		"none": {BaseURL: "https://gw.example.com", Key: "k"}}})
-	if _, ok := got["none-gw-codex"]; !ok || renames["codex"]["none"] != "none-gw-codex" || renames["claude"]["none"] != "none-gw" {
+	if _, ok := got["none-gw"]; !ok || len(got) != 1 || renames["codex"]["none"] != "none-gw" || renames["claude"]["none"] != "none-gw" {
 		t.Errorf("got %v renames %v", got, renames)
 	}
 }
@@ -234,10 +243,10 @@ func TestLegacyGatewayChoice(t *testing.T) {
 			t.Errorf("choice = %q, want a", got)
 		}
 	})
-	t.Run("codex follows the split gateway", func(t *testing.T) {
+	t.Run("codex stays on the same gateway", func(t *testing.T) {
 		ctx := Context{Gateways: map[string]GatewayConfig{"a": legacy()}}
-		if got := choice(ctx, "codex"); got != "a-codex" {
-			t.Errorf("choice = %q, want a-codex", got)
+		if got := choice(ctx, "codex"); got != "a" {
+			t.Errorf("choice = %q, want a", got)
 		}
 	})
 	t.Run("new-form and preset gateways derive nothing", func(t *testing.T) {
@@ -269,12 +278,11 @@ func TestLegacyGatewayChoice(t *testing.T) {
 	})
 }
 
-func TestConvertLegacyGatewaysSiblingHasNoPreset(t *testing.T) {
+func TestConvertLegacyGatewaysClearsPreset(t *testing.T) {
 	got, _ := ConvertLegacyGateways(Context{Gateways: map[string]GatewayConfig{"a": {
 		BaseURL: "https://openrouter.ai/api", Preset: "openrouter-anthropic", Key: "k", Harnesses: []string{"claude", "codex"},
 	}}})
-	sib := got["a-codex"]
-	if sib.Preset != "" || got["a"].Preset != "" || sib.API != apiOpenAIResponses || sib.URL != "https://openrouter.ai/api/v1" {
-		t.Errorf("sibling = %+v, a = %+v", sib, got["a"])
+	if got["a"].Preset != "" || got["a"].API != apiAnthropicMessages || !reflect.DeepEqual(got["a"].Harnesses, []string{"claude", "codex"}) {
+		t.Errorf("a = %+v", got["a"])
 	}
 }

@@ -722,7 +722,7 @@ type statusResult struct {
 	// Selection sources and the selected credential names (never
 	// values); see ui.BannerData.
 	ProfileSource       string   `json:"profile_source,omitempty"`
-	HarnessSource       string   `json:"harness_source,omitempty"`
+	HarnessSource       string   `json:"agent_source,omitempty"`
 	CredentialSource    string   `json:"credential_source,omitempty"`
 	CredentialSelection []string `json:"credential_selection,omitempty"`
 	Notices             []string `json:"notices,omitempty"`
@@ -1043,7 +1043,7 @@ func statusSelectionLine(r statusResult) string {
 	var parts []string
 	for _, p := range []struct{ what, source string }{
 		{"profile", r.ProfileSource},
-		{"harness", r.HarnessSource},
+		{"agent", r.HarnessSource},
 		{"credentials", r.CredentialSource},
 	} {
 		if p.source != "" {

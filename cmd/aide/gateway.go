@@ -48,9 +48,9 @@ type GatewayListEntry struct {
 	Expired    bool                        `json:"expired"`
 	ModelCount int                         `json:"model_count"`
 	DefaultFor []string                    `json:"default_for"`
-	Harnesses  []gateway.HarnessFileStatus `json:"harnesses"`
+	Harnesses  []gateway.HarnessFileStatus `json:"agents"`
 	Models     []gateway.Model             `json:"models,omitempty"`
-	// ChosenFor lists the harnesses whose resolved choice is this
+	// ChosenFor lists the agents whose resolved choice is this
 	// gateway, with where the choice came from.
 	ChosenFor []GatewayChoice `json:"chosen_for"`
 
@@ -58,9 +58,9 @@ type GatewayListEntry struct {
 	ttl         time.Duration
 }
 
-// GatewayChoice is one harness's choice of a gateway and its source.
+// GatewayChoice is one agent's choice of a gateway and its source.
 type GatewayChoice struct {
-	Harness string `json:"harness"`
+	Harness string `json:"agent"`
 	Source  string `json:"source"`
 }
 
@@ -132,7 +132,7 @@ Examples:
   aide gateway add openrouter-anthropic --from-env --profile work
   aide gateway add corp --url https://gateway.example.com --profile work
   op read op://Eng/Gateway/credential | aide gateway add corp --url https://gateway.example.com --key-stdin
-  aide gateway add corp --url https://gateway.example.com --from-env=CORP_GATEWAY_TOKEN --harnesses claude,pi --default-for claude`,
+  aide gateway add corp --url https://gateway.example.com --from-env=CORP_GATEWAY_TOKEN --agents claude,pi --default-for claude`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -150,7 +150,7 @@ Examples:
 			}
 			for _, h := range defaultFor {
 				if !slices.Contains(config.DefaultGatewayHarnesses, h) {
-					return fmt.Errorf("--default-for %q is not a gateway harness (use %s)", h, strings.Join(config.DefaultGatewayHarnesses, ", "))
+					return fmt.Errorf("--default-for %q is not a gateway agent (use %s)", h, strings.Join(config.DefaultGatewayHarnesses, ", "))
 				}
 			}
 			out := cmd.OutOrStdout()
@@ -209,8 +209,7 @@ Examples:
 				if err != nil {
 					return err
 				}
-				if api != "" && api != string(gatewaypreset.APIAnthropicMessages) {
-					// offer only the harnesses this wire protocol can serve; anthropic-messages keeps the codex split
+				if api != "" {
 					presetHarnesses = config.GatewayConfig{URL: rawURL, API: api}.EffectiveHarnesses()
 				}
 			}
@@ -232,7 +231,7 @@ Examples:
 				}
 			}
 
-			resolvedHarnesses, err := resolveGatewayAddHarnesses(cmd, reader, harnesses, cmd.Flags().Changed("harnesses"), tokenStdin, presetHarnesses)
+			resolvedHarnesses, err := resolveGatewayAddHarnesses(cmd, reader, harnesses, cmd.Flags().Changed("agents") || cmd.Flags().Changed("harnesses"), tokenStdin, presetHarnesses)
 			if err != nil {
 				return err
 			}
@@ -252,8 +251,7 @@ Examples:
 				Region:     region,
 				Project:    project,
 			}
-			// Anthropic Messages gateways take the legacy form, which splits Codex
-			// off; every other wire protocol is saved as url+api and keeps its exact url.
+			// Non-Anthropic wire protocols keep their exact URL as url+api.
 			newForm := isSwitch || (api != "" && api != string(gatewaypreset.APIAnthropicMessages))
 			if newForm && !isSwitch {
 				gw.BaseURL = strings.TrimRight(strings.TrimSpace(rawURL), "/")
@@ -331,8 +329,7 @@ Examples:
 				}
 			}
 
-			// The new gateway is written in its one-API-per-gateway form: one
-			// that serves Codex gets a Responses sibling.
+			// Normalize the new gateway into its url+api form before saving.
 			converted, _ := config.ConvertLegacyGateways(config.Context{Gateways: ctx.Gateways, DefaultCredentials: []string{name}})
 			if newForm {
 				converted = map[string]config.GatewayConfig{name: gw}
@@ -423,17 +420,18 @@ Examples:
 	cmd.Flags().StringVar(&fromEnv, "token-env", "", "Deprecated: use --from-env=VAR")
 	cmd.Flags().StringVar(&ttl, "refresh-ttl", "24h", "Launch-time model refresh interval (e.g. 12h, 24h, 168h)")
 	cmd.Flags().StringVar(&ttl, "ttl", "24h", "Deprecated: use --refresh-ttl")
-	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure (default: the preset's, else claude,pi,omp,opencode,codex)")
-	cmd.Flags().StringVar(&model, "model", "", "Model the harnesses start on (default: none)")
+	cmd.Flags().StringVar(&harnesses, "agents", "", "Comma-separated agents to configure (default: the preset's, else claude,pi,omp,opencode,codex)")
+	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Deprecated: use --agents")
+	cmd.Flags().StringVar(&model, "model", "", "Model the agents start on (default: none)")
 	cmd.Flags().StringVar(&store, "secret-store", "", "Secret store for the key (default: the profile's secret store, else the profile name)")
 	cmd.Flags().StringVar(&store, "store", "", "Deprecated: use --secret-store")
 	cmd.Flags().StringVar(&key, "key", "", "Key inside the store (default: <name>_token)")
 	cmd.Flags().StringVar(&ageKey, "age-key", "", "age1... recipient for a new secret store (default: the discovered age identity)")
 	cmd.Flags().BoolVar(&generateAgeKey, "generate-age-key", false, "Create an age identity when none exists, even without a terminal")
-	cmd.Flags().StringSliceVar(&defaultFor, "default-for", nil, "Make this gateway the choice for these harnesses (repeatable)")
-	cmd.Flags().BoolVar(&makeDefault, "default", false, "Make this gateway the choice for every harness it serves")
+	cmd.Flags().StringSliceVar(&defaultFor, "default-for", nil, "Make this gateway the choice for these agents (repeatable)")
+	cmd.Flags().BoolVar(&makeDefault, "default", false, "Make this gateway the choice for every agent it serves")
 	cmd.Flags().BoolVar(&force, "force", false, "Replace a gateway of the same name with another URL, or overwrite an existing secret key")
-	for old, use := range map[string]string{"token-stdin": "--key-stdin", "token-env": "--from-env=VAR", "ttl": "--refresh-ttl", "store": "--secret-store"} {
+	for old, use := range map[string]string{"token-stdin": "--key-stdin", "token-env": "--from-env=VAR", "ttl": "--refresh-ttl", "store": "--secret-store", "harnesses": "--agents"} {
 		_ = cmd.Flags().MarkDeprecated(old, "use "+use)
 	}
 	return cmd
@@ -566,22 +564,22 @@ func gatewayUseCmd(profile *string) *cobra.Command {
 	var harnessName string
 	var repo, unset bool
 	cmd := &cobra.Command{
-		Use:   "use [<name|none>] --harness <h> [--repo] [--unset]",
-		Short: "Choose the gateway a harness uses",
-		Long: `Set which gateway a harness uses: a gateway marked for it, or none for the
-harness's own login. The choice is saved in the profile's gateway_choice,
+		Use:   "use [<name|none>] --agent <a> [--repo] [--unset]",
+		Short: "Choose the gateway an agent uses",
+		Long: `Set which gateway an agent uses: a gateway marked for it, or none for the
+agent's own login. The choice is saved in the profile's gateway_choice,
 or with --repo for this repository only. --unset removes the saved choice.
 
-Without <name> on a terminal, lists the gateways marked for the harness
+Without <name> on a terminal, lists the gateways marked for the agent
 and prompts, with nothing preselected.`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if harnessName == "" {
-				return errors.New("--harness is required (one of " + strings.Join(config.DefaultGatewayHarnesses, ", ") + ")")
+				return errors.New("--agent is required (one of " + strings.Join(config.DefaultGatewayHarnesses, ", ") + ")")
 			}
 			if !slices.Contains(config.DefaultGatewayHarnesses, harnessName) {
-				return fmt.Errorf("--harness %q is not a gateway harness (use %s)", harnessName, strings.Join(config.DefaultGatewayHarnesses, ", "))
+				return fmt.Errorf("--agent %q is not a gateway agent (use %s)", harnessName, strings.Join(config.DefaultGatewayHarnesses, ", "))
 			}
 			if unset && len(args) == 1 {
 				return errors.New("--unset takes no gateway name")
@@ -652,7 +650,9 @@ and prompts, with nothing preselected.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&harnessName, "harness", "", "Harness the choice is for (claude, codex, pi, omp or opencode)")
+	cmd.Flags().StringVar(&harnessName, "agent", "", "Agent the choice is for (claude, codex, pi, omp or opencode)")
+	cmd.Flags().StringVar(&harnessName, "harness", "", "Deprecated: use --agent")
+	_ = cmd.Flags().MarkDeprecated("harness", "use --agent")
 	cmd.Flags().BoolVar(&repo, "repo", false, "Save for this repository only, not in the profile")
 	cmd.Flags().BoolVar(&unset, "unset", false, "Remove the saved choice")
 	return cmd
@@ -721,10 +721,10 @@ func gatewayEditCmd(profile *string) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "edit [<name>]",
-		Short: "Update a gateway's name, URL, token, TTL, or target harnesses",
+		Short: "Update a gateway's name, URL, token, TTL, or target agents",
 		Long: `Update an existing custom gateway on a profile in place.
 
-Pass flags (--name, --url, --ttl, --harnesses, --rotate-token, --token-stdin,
+Pass flags (--name, --url, --ttl, --agents, --rotate-token, --token-stdin,
 --token-env, --store, --key) to update specific fields, or run interactively
 on a terminal with no flags to review and edit each field with its current
 value as the default.`,
@@ -753,6 +753,7 @@ value as the default.`,
 			hasFieldFlags := cmd.Flags().Changed("name") ||
 				cmd.Flags().Changed("url") ||
 				cmd.Flags().Changed("ttl") ||
+				cmd.Flags().Changed("agents") ||
 				cmd.Flags().Changed("harnesses") ||
 				cmd.Flags().Changed("store") ||
 				cmd.Flags().Changed("key")
@@ -772,7 +773,7 @@ value as the default.`,
 				if cmd.Flags().Changed("ttl") {
 					newGW.RefreshTTL = strings.TrimSpace(ttl)
 				}
-				if cmd.Flags().Changed("harnesses") {
+				if cmd.Flags().Changed("agents") || cmd.Flags().Changed("harnesses") {
 					newGW.Harnesses = parseGatewayHarnesses(harnesses)
 				}
 				if cmd.Flags().Changed("store") {
@@ -791,7 +792,7 @@ value as the default.`,
 				}
 			} else {
 				if !stdinIsTTY() {
-					return errors.New("no changes specified; pass at least one flag (--name, --url, --ttl, --harnesses, --store, --key, --token-stdin, --token-env) or run on a terminal")
+					return errors.New("no changes specified; pass at least one flag (--name, --url, --ttl, --agents, --store, --key, --token-stdin, --token-env) or run on a terminal")
 				}
 				fmt.Fprintf(cmd.ErrOrStderr(), "Editing gateway %q on profile %q\n", oldName, profileName)
 				var err error
@@ -809,7 +810,7 @@ value as the default.`,
 					return err
 				}
 				newGW.RefreshTTL = editedTTL
-				editedHarnesses, err := promptFieldDefault(cmd, reader, "Harnesses", strings.Join(oldGW.EffectiveHarnesses(), ","))
+				editedHarnesses, err := promptFieldDefault(cmd, reader, "Agents", strings.Join(oldGW.EffectiveHarnesses(), ","))
 				if err != nil {
 					return err
 				}
@@ -860,7 +861,9 @@ value as the default.`,
 	cmd.Flags().StringVar(&flagName, "name", "", "Rename the gateway to this name")
 	cmd.Flags().StringVar(&rawURL, "url", "", "Updated gateway base URL (https://, or http:// for localhost only)")
 	cmd.Flags().StringVar(&ttl, "ttl", "", "Updated launch-time model refresh interval (e.g. 12h, 24h, 168h)")
-	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Comma-separated harnesses to configure, or 'all' (default: claude,pi,omp,opencode,codex)")
+	cmd.Flags().StringVar(&harnesses, "agents", "", "Comma-separated agents to configure, or 'all' (default: claude,pi,omp,opencode,codex)")
+	cmd.Flags().StringVar(&harnesses, "harnesses", "", "Deprecated: use --agents")
+	_ = cmd.Flags().MarkDeprecated("harnesses", "use --agents")
 	cmd.Flags().BoolVar(&rotateToken, "rotate-token", false, "Prompt for a new bearer token and re-sync models")
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "Read a new bearer token from stdin")
 	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "Read a new bearer token from this environment variable")
@@ -986,7 +989,7 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 			}
 			fmt.Fprintf(out, "✓ Removed gateway %q from profile %q in %s\n", name, profileName, homepath.Tilde(config.FilePath(), home))
 			if len(clearedChoices) > 0 {
-				fmt.Fprintf(out, "! Cleared the gateway choice for %s on profile %q; choose another with: aide gateway use <name|none> --harness <h> --profile %s\n",
+				fmt.Fprintf(out, "! Cleared the gateway choice for %s on profile %q; choose another with: aide gateway use <name|none> --agent <a> --profile %s\n",
 					strings.Join(clearedChoices, ", "), profileName, profileName)
 			}
 
@@ -1032,7 +1035,7 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(), "aide: warning: could not update repository preferences: %v\n", err)
 			}
 			for _, c := range repoCleared {
-				fmt.Fprintf(out, "! Cleared the repository's gateway choice for %s (%s); choose another with: aide gateway use <name|none> --harness <h> --repo\n", c.harness, c.remote)
+				fmt.Fprintf(out, "! Cleared the repository's gateway choice for %s (%s); choose another with: aide gateway use <name|none> --agent <a> --repo\n", c.harness, c.remote)
 			}
 			return nil
 		},
@@ -1633,17 +1636,17 @@ func resolveGatewayAddHarnesses(cmd *cobra.Command, reader *bufio.Reader, flagVa
 		shown = config.DefaultGatewayHarnesses
 	}
 	if !tokenStdin && stdinIsTTY() {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses [%s]: ", strings.Join(shown, ","))
+		fmt.Fprintf(cmd.ErrOrStderr(), "Agents [%s]: ", strings.Join(shown, ","))
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("reading the harnesses: %w", err)
+			return nil, fmt.Errorf("reading the agents: %w", err)
 		}
 		if picked := parseGatewayHarnesses(line); len(picked) > 0 {
 			return picked, nil
 		}
 		return presetDefault, nil
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "Harnesses: %s  (pass --harnesses to change)\n", strings.Join(shown, ", "))
+	fmt.Fprintf(cmd.ErrOrStderr(), "Agents: %s  (pass --agents to change)\n", strings.Join(shown, ", "))
 	return presetDefault, nil
 }
 
@@ -1927,7 +1930,7 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			defaults := "default for: " + strings.Join(e.DefaultFor, ", ")
 			fmt.Fprintf(w, "  ● GATEWAY: %s  [ACTIVE — %s]\n", e.Gateway, defaults)
 		} else {
-			fmt.Fprintf(w, "  ○ GATEWAY: %s  [standby — switch: aide gateway use %s --harness <h> --profile %s, or launch: aide --gateway %s]\n",
+			fmt.Fprintf(w, "  ○ GATEWAY: %s  [standby — switch: aide gateway use %s --agent <a> --profile %s, or launch: aide --gateway %s]\n",
 				e.Gateway, e.Gateway, e.Profile, e.Gateway)
 		}
 		if e.BaseURL != "" {
@@ -1948,10 +1951,10 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			fmt.Fprintf(w, "    Cache:        %s\n", cacheSummary(e))
 			fmt.Fprintf(w, "                  %s\n", homepath.Tilde(e.CachePath, home))
 		}
-		fmt.Fprintln(w, "    Harnesses:")
+		fmt.Fprintln(w, "    Agents:")
 		gw := cfg.Contexts[e.Profile].Gateways[e.Gateway]
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "      HARNESS\tENV VAR\tTARGET FILE\tSTATUS")
+		fmt.Fprintln(tw, "      AGENT\tENV VAR\tTARGET FILE\tSTATUS")
 		for _, st := range e.Harnesses {
 			status := string(st.State)
 			if st.Detail != "" {

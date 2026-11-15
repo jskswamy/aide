@@ -84,7 +84,7 @@ func TestConfigMigratePreviewsThenWritesGateways(t *testing.T) {
 }
 
 // Adding a gateway to a not-yet-migrated profile migrates it first, so
-// the existing choices and the single corp-codex survive.
+// the existing choices survive on the single corp gateway.
 func TestGatewayAddMigratesLegacyProfileFirst(t *testing.T) {
 	e := newGatewayEnv(t)
 	cfgDir := filepath.Join(e.xdg, "aide")
@@ -101,21 +101,18 @@ func TestGatewayAddMigratesLegacyProfileFirst(t *testing.T) {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
 	ctx := mustLoadProfile(t, cfgDir, "work")
-	for _, h := range []string{"claude", "pi", "omp", "opencode"} {
+	for _, h := range []string{"claude", "pi", "omp", "opencode", "codex"} {
 		if ctx.GatewayChoice[h] != "corp" {
 			t.Errorf("gateway_choice.%s = %q, want corp", h, ctx.GatewayChoice[h])
 		}
 	}
-	if _, dup := ctx.Gateways["corp-codex-2"]; dup {
-		t.Error("duplicate corp-codex-2 gateway")
-	}
-	if _, ok := ctx.Gateways["corp-codex"]; !ok {
-		t.Error("corp-codex missing")
+	if _, dup := ctx.Gateways["corp-codex"]; dup {
+		t.Error("unexpected corp-codex gateway")
 	}
 }
 
-// A second gateway added with the default harnesses serves Codex too.
-func TestGatewayAddSecondGatewayGetsCodexSibling(t *testing.T) {
+// A second gateway added with the default harnesses serves Codex on itself.
+func TestGatewayAddSecondGatewayServesCodexDirectly(t *testing.T) {
 	e := newGatewayEnv(t)
 	for _, n := range []string{"g1", "g2"} {
 		if out, err := runGateway(t, gwCmdToken+"\n", "add", n, "--url", e.srv.URL, "--profile", "work", "--token-stdin"); err != nil {
@@ -123,8 +120,11 @@ func TestGatewayAddSecondGatewayGetsCodexSibling(t *testing.T) {
 		}
 	}
 	ctx := mustLoadProfile(t, filepath.Join(e.xdg, "aide"), "work")
-	if cx, ok := ctx.Gateways["g2-codex"]; !ok || strings.Join(cx.Harnesses, ",") != "codex" {
-		t.Errorf("g2-codex = %+v, %v", cx, ok)
+	if g2, ok := ctx.Gateways["g2"]; !ok || strings.Join(g2.Harnesses, ",") != "claude,pi,omp,opencode,codex" {
+		t.Errorf("g2 = %+v, %v", g2, ok)
+	}
+	if _, ok := ctx.Gateways["g2-codex"]; ok {
+		t.Errorf("unexpected g2-codex sibling: %+v", ctx.Gateways["g2-codex"])
 	}
 }
 

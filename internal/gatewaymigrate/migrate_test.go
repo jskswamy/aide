@@ -139,15 +139,19 @@ func TestPlanGatewayMigration(t *testing.T) {
 	if plan.Config.NeedsGatewayMigration {
 		t.Error("the planned config is still flagged")
 	}
-	if got.GatewayChoice["claude"] != "corp" || got.GatewayChoice["pi"] != "corp" || got.GatewayChoice["opencode"] != "alpha" || got.GatewayChoice["codex"] != "alpha-codex" {
+	if got.GatewayChoice["claude"] != "corp" || got.GatewayChoice["pi"] != "corp" || got.GatewayChoice["opencode"] != "alpha" || got.GatewayChoice["codex"] != "alpha" {
 		t.Errorf("gateway_choice = %v", got.GatewayChoice)
 	}
 	if len(got.DefaultCredentials) != 0 || got.Credentials["github"].Key != "gh" {
 		t.Errorf("default_credentials = %v, credentials = %v; the gateway name goes, plain credentials stay opt-in", got.DefaultCredentials, got.Credentials)
 	}
 	if got.Gateways["corp"].API != "anthropic-messages" || got.Gateways["corp"].Model != "claude-sonnet-4-5" ||
-		got.Gateways["alpha-codex"].API != "openai-responses" || got.Gateways["alpha-codex"].URL != "https://alpha.example.com/v1" {
+		got.Gateways["alpha"].API != "anthropic-messages" || got.Gateways["alpha"].URL != "https://alpha.example.com" ||
+		!slices.Equal(got.Gateways["alpha"].Harnesses, []string{"opencode", "codex"}) {
 		t.Errorf("gateways = %+v", got.Gateways)
+	}
+	if _, ok := got.Gateways["alpha-codex"]; ok {
+		t.Errorf("unexpected alpha-codex sibling in %+v", got.Gateways)
 	}
 	var inherited bool
 	for _, n := range plan.Notes {
@@ -161,13 +165,53 @@ func TestPlanGatewayMigration(t *testing.T) {
 	}
 }
 
-func TestPlanNotesCodexLostWithAddCommand(t *testing.T) {
+func TestPlanNotesCodexLostWithUseCommand(t *testing.T) {
 	// alpha claims codex, so corp (every harness by default) loses it.
 	_, cfg := loadLegacy(t, strings.NewReplacer("default_credentials: [corp]\n", "", "    harnesses: [claude, pi]\n", "").Replace(legacyProfile))
 	plan, _ := PlanGatewayMigration(cfg, nil)
-	want := "aide gateway add corp-codex --url https://gw.example.com/v1 --api openai-responses --secret-store work --key corp_token --harnesses codex"
+	want := "profile \"work\": gateway \"corp\" no longer serves codex"
 	if len(plan.Notes) == 0 || !strings.Contains(strings.Join(plan.Notes, "\n"), want) {
 		t.Errorf("notes = %v, want %q", plan.Notes, want)
+	}
+}
+
+func TestPlanCollapsesExistingCodexSibling(t *testing.T) {
+	_, cfg := loadLegacy(t, `agent: claude
+config_dir_name: work
+gateway_choice:
+  claude: corp
+  codex: corp-codex
+  pi: corp
+gateways:
+  corp:
+    url: https://gw.example.com
+    api: anthropic-messages
+    store: work
+    key: corp_token
+    harnesses: [claude, pi, omp, opencode]
+  corp-codex:
+    url: https://gw.example.com/v1
+    api: openai-responses
+    store: work
+    key: corp_token
+    harnesses: [codex]
+`)
+	if !cfg.NeedsGatewayMigration {
+		t.Fatal("a split <gw>-codex sibling must flag NeedsGatewayMigration")
+	}
+	plan, err := PlanGatewayMigration(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := plan.Config.Contexts["work"]
+	if _, ok := got.Gateways["corp-codex"]; ok {
+		t.Errorf("corp-codex was not collapsed: %+v", got.Gateways)
+	}
+	if !slices.Contains(got.Gateways["corp"].Harnesses, "codex") {
+		t.Errorf("corp.Harnesses = %v, want codex merged in", got.Gateways["corp"].Harnesses)
+	}
+	if got.GatewayChoice["codex"] != "corp" {
+		t.Errorf("gateway_choice.codex = %q, want corp", got.GatewayChoice["codex"])
 	}
 }
 
@@ -197,7 +241,7 @@ func TestApplyBacksUpWritesAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.NeedsGatewayMigration || loaded.Contexts["work"].GatewayChoice["pi"] != "corp" || loaded.Contexts["work"].Gateways["alpha-codex"].API != "openai-responses" {
+	if loaded.NeedsGatewayMigration || loaded.Contexts["work"].GatewayChoice["pi"] != "corp" || loaded.Contexts["work"].GatewayChoice["codex"] != "alpha" {
 		t.Errorf("reloaded = %+v", loaded.Contexts["work"])
 	}
 	pf, err := prefs.Load(prefsPath)
@@ -284,10 +328,13 @@ func TestPlanConvertsProviderCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := plan.Config.Contexts["work"]
-	for _, name := range []string{"anthropic", "openrouter", "corp", "corp-codex", "vertex"} {
+	for _, name := range []string{"anthropic", "openrouter", "corp", "vertex"} {
 		if _, ok := got.Gateways[name]; !ok {
 			t.Errorf("gateway %q missing from %v", name, got.Gateways)
 		}
+	}
+	if _, ok := got.Gateways["corp-codex"]; ok {
+		t.Errorf("unexpected corp-codex in %v", got.Gateways)
 	}
 	if len(got.Credentials) != 2 || got.Credentials["gemini"].Key != "gemini_key" || got.Credentials["github"].Key != "gh" {
 		t.Errorf("credentials = %v, want gemini and github only", got.Credentials)
@@ -307,7 +354,6 @@ func TestPlanConvertsProviderCredentials(t *testing.T) {
 	for _, w := range []string{
 		`credential "anthropic" became gateway "anthropic"`,
 		`credential "openrouter" no longer serves codex`,
-		"aide gateway add openrouter-codex --url https://openrouter.ai/api/v1 --api openai-responses --secret-store work --key openrouter_api_key --harnesses codex",
 		`env: CLAUDE_CODE_USE_VERTEX became gateway "vertex"`,
 	} {
 		if !strings.Contains(notes, w) {

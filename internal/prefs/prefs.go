@@ -62,9 +62,27 @@ func (k Key) Validate() error {
 // gatewaymigrate.TranslatePreference): nil is unset; a non-nil empty
 // one is an explicit selection of no credentials.
 type Preference struct {
-	Harness           string            `json:"harness,omitempty"`
+	Harness           string            `json:"agent,omitempty"`
 	Gateway           map[string]string `json:"gateway,omitempty"`
 	LegacyCredentials *[]string         `json:"credentials,omitempty"`
+}
+
+// UnmarshalJSON decodes a preference and accepts the legacy "harness"
+// key when "agent" is absent.
+func (p *Preference) UnmarshalJSON(data []byte) error {
+	type plain Preference
+	var raw struct {
+		plain
+		LegacyHarness string `json:"harness,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = Preference(raw.plain)
+	if p.Harness == "" && raw.LegacyHarness != "" {
+		p.Harness = raw.LegacyHarness
+	}
+	return nil
 }
 
 // Selection returns names as an explicit credential selection, empty

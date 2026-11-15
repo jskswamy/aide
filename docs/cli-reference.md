@@ -24,7 +24,7 @@ sandbox policy.
 |------|---------|-------------|
 | `--agent <name>` | | Override which agent (harness) to launch, for this run only |
 | `--profile <name>` | | Use this profile instead of the one matched for the directory |
-| `--gateway <name\|none>` | | Use this gateway for this run (one value; `none` is the harness's own login); replaces the saved choice. A credential binding name still works for legacy credentials |
+| `--gateway <name\|none>` | | Use this gateway for this run (one value; `none` is the harness's own login); replaces the saved choice. A plain `credentials:` binding name selects that binding instead |
 | `--auth <mode>` | api | Deprecated: `--auth login` is `--gateway none` |
 | `--with <caps>` | | Activate capabilities for this session (e.g., `--with k8s,docker`) |
 | `--without <caps>` | | Disable profile capabilities for this session |
@@ -58,15 +58,15 @@ One-time flags never change saved preferences. Precedence:
   marked for it. `claude` and `codex` with gateways marked and no choice
   open a picker on a terminal and exit `78` otherwise. aide never picks a
   gateway on its own. See [Gateways](configuration.md#gateways).
-- Credentials: the `default_credentials:` bindings (or a saved
-  repository selection) are injected into the harnesses they serve,
-  skipping bindings restricted to other agents; `--credential` names
-  replace that selection (`--credential=` injects none). Bindings outside
-  it are not injected.
+- Credentials: plain `credentials:` bindings selected by
+  `default_credentials:` or a saved repository selection are injected
+  into the harnesses they serve, skipping bindings restricted to other
+  agents; `--gateway <credential>` replaces that selection and
+  `--gateway none` injects none. Bindings outside it are not injected.
 
 **Exit codes:** `78` (`EX_CONFIG`) when a `claude` or `codex` gateway
 choice is unset in a script; stderr names the gateways and the command
-to choose one (`aide gateway use <name|none> --harness <h>` or
+to choose one (`aide gateway use <name|none> --agent <a>` or
 `--gateway <name|none>`). Other failures exit `1`.
 
 ---
@@ -185,36 +185,37 @@ authoritative 5-hour/weekly percentages remain in the agent's own `/usage`.
 ## aide gateway
 
 ```
-aide gateway add [<preset>|<name>] [--url <url>] [--api <protocol>] [--no-auth] [--region <r>] [--project <p>] [--from-env[=VAR] | --key-stdin] [--harnesses <list>] [--default | --default-for <h>]... [--profile <name>]
+aide gateway add [<preset>|<name>] [--url <url>] [--api <protocol>] [--no-auth] [--region <r>] [--project <p>] [--from-env[=VAR] | --key-stdin] [--agents <list>] [--default | --default-for <a>]... [--profile <name>]
 aide gateway list [--all] [--models] [--format json]
-aide gateway use [<name|none>] --harness <h> [--repo] [--unset]
-aide gateway edit [<name>] [--name <new>] [--url <url>] [--harnesses <list>] [--rotate-token] [--profile <name>]
+aide gateway use [<name|none>] --agent <a> [--repo] [--unset]
+aide gateway edit [<name>] [--name <new>] [--url <url>] [--agents <list>] [--rotate-token] [--profile <name>]
 aide gateway sync [<name>]
 aide gateway remove <name> [--keep-secret]
 ```
 
 Registers LLM gateways on a profile, stores their keys in the profile's
 age secret store, and writes `aide-<name>` provider entries into each
-marked harness's config. `--profile` (default: the profile matched for
+marked agent's config. `--profile` (default: the profile matched for
 the directory) applies to every subcommand.
 
 - `add` encrypts the key (creating a default age identity on a terminal,
   or with `--generate-age-key`), saves `gateways:` and records
   `gateway_choice: none` for any marked `claude` or `codex` whose choice was
-  unset, unless `--default` or `--default-for <h>` makes the new gateway the
-  choice. It fetches `/v1/models` and syncs the harness files. The key is
+  unset, unless `--default` or `--default-for <a>` makes the new gateway the
+  choice. It fetches `/v1/models` and syncs the agent files. The key is
   read from a hidden prompt, `--key-stdin` or `--from-env`, never from a
-  flag value. `--token-stdin`, `--token-env`, `--ttl` and `--store` remain as
-  deprecated aliases; `--no-credentials` is removed.
-- `use` sets the choice for one harness in the profile (or this
-  repository with `--repo`); `none` is the harness's own login and `--unset`
-  removes the choice. On a terminal without a name it shows the picker.
+  flag value. `--token-stdin`, `--token-env`, `--ttl`, `--store` and
+  `--harnesses` remain as deprecated aliases; `--no-credentials` is removed.
+- `use` sets the choice for one agent in the profile (or this
+  repository with `--repo`); `none` is the agent's own login and `--unset`
+  removes the choice (`--harness` is a deprecated alias for `--agent`). On a
+  terminal without a name it shows the picker.
 - `edit --name <new>` renames a gateway (there is no `rename`),
-  migrating its key, cache, choices and harness entries.
+  migrating its key, cache, choices and agent entries.
 - `list` shows each gateway's URL, store and key name, cache age, file
-  status per harness and the harnesses it is chosen for. Values are never
+  status per agent and the agents it is chosen for. Values are never
   printed.
-- `remove` deletes the gateway, cache and harness entries, and the key
+- `remove` deletes the gateway, cache and agent entries, and the key
   unless `--keep-secret` or another user of the key remains. Choices that
   named it become unset.
 
@@ -234,26 +235,26 @@ only, never secret values, and never touch `.aide.yaml` or
 `clear` refuse; launches use the profile defaults.
 
 ```
-aide project set [--profile <name>] [--agent <harness>] [--gateway <name|none> [--harness <h>]]
-aide project clear [--profile <name>] [--agent] [--gateway [--harness <h>]]
+aide project set [--profile <name>] [--agent <agent>] [--gateway <name|none>]
+aide project clear [--profile <name>] [--agent [<agent>]] [--gateway]
 aide project clear --reset
 aide project show [--profile <name>] [--format json]
 ```
 
 - `set` changes only the fields it names and checks them the way a
-  launch would (harness known and supported by the profile's config
+  launch would (agent known and supported by the profile's config
   dir, credentials defined in the profile and allowed for the
-  harness). `--gateway none` saves the harness's own login;
-  `--harness` says which harness the gateway applies to (default:
-  `--agent`). `--no-credentials` is removed; `--auth login` is the
+  agent). `--gateway none` saves the agent's own login;
+  `--agent` says which agent the gateway applies to (or uses the saved
+  default agent). `--no-credentials` is removed; `--auth login` is the
   deprecated form of `--gateway none`.
 - `clear` with `--agent` or `--gateway` clears that field (`--gateway
-  --harness <h>` clears one harness's choice); with neither, both. Cleared fields fall back to `.aide.yaml` and the
+  --agent <a>` clears one agent's choice); with neither, both. Cleared fields fall back to `.aide.yaml` and the
   profile defaults.
 - `clear --reset` moves the whole preferences file aside to
   `<file>.corrupt-<timestamp>` (nothing is deleted) and starts empty;
   use it when aide reports the file unreadable.
-- `show --format json` prints `profile`, `repository`, `harness`,
+- `show --format json` prints `profile`, `repository`, `agent`,
   `credentials` (`null` when unset, `[]` for an explicit empty
   selection) and `file`.
 
@@ -642,7 +643,7 @@ aide profile remove-secret --profile work
 ### aide profile migrate
 
 ```
-aide profile migrate [--write] [--adopt <profile>]...
+aide profile migrate [--write]
 ```
 
 Converts `config.yaml` from `contexts:` to `profiles:`. Without `--write`
@@ -656,7 +657,6 @@ refused; expand it by hand first.
 | Flag | Description |
 |------|-------------|
 | `--write` | Write the migrated config (default: preview only) |
-| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}`. Under `--agent <other agent>` the profile then uses a fresh `~/.<agent>-<profile>` dir with its own login; the preview lists them. Repeatable, but two profiles cannot adopt the same dir, and a profile cannot adopt while another profile still has no config dir of its own |
 
 See [Profiles § Migrating from contexts](profiles.md#migrating-from-contexts).
 
@@ -1315,7 +1315,7 @@ aide config edit
 ### aide config migrate
 
 ```
-aide config migrate [--write] [--adopt <profile>]...
+aide config migrate [--write]
 ```
 
 Also converts legacy gateways (`base_url:`), LLM provider credentials, `env:` provider
@@ -1327,7 +1327,6 @@ a hint to run this command. Splits a single-file `config.yaml` (upgrading `conte
 | Flag | Description |
 |------|-------------|
 | `--write` | Write the split config files (default: preview only) |
-| `--adopt <profile>` | Keep this profile on its own agent's global login (e.g. `~/.claude`) by adding `config_dir_name: <profile>` and `config_dirs: {<agent>: <default dir>}` |
 
 ```
 aide config migrate

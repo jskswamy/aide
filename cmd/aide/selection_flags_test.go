@@ -81,11 +81,15 @@ func names(v any) []string {
 }
 
 // choiceFor is the gateway choice which reports for harness h.
-func choiceFor(got map[string]any, h string) any {
+func choiceFor(got map[string]any, h string) any { return choiceField(got, h, "choice") }
+
+func choiceSourceFor(got map[string]any, h string) any { return choiceField(got, h, "source") }
+
+func choiceField(got map[string]any, h, field string) any {
 	views, _ := got["gateway_choices"].([]any)
 	for _, v := range views {
 		if m, _ := v.(map[string]any); m["harness"] == h {
-			return m["choice"]
+			return m[field]
 		}
 	}
 	return nil
@@ -125,9 +129,14 @@ func TestWhich_HonorsSavedPreferenceAndFlags(t *testing.T) {
 		t.Errorf("pi choice = %v, want the saved openai", c)
 	}
 
+	// --gateway <gw> sets the gateway choice only; plain credentials keep
+	// the saved selection.
 	got = runSelectionJSON(t, whichCmd(), "--agent", "claude", "--gateway", "anthropic")
-	if got["agent_name"] != "claude" || got["harness_source"] != "flag" || got["credential_source"] != "flag" {
+	if got["agent_name"] != "claude" || got["harness_source"] != "flag" || got["credential_source"] != "preference" {
 		t.Errorf("flags did not win: agent %v from %v, credentials from %v", got["agent_name"], got["harness_source"], got["credential_source"])
+	}
+	if c, src := choiceFor(got, "claude"), choiceSourceFor(got, "claude"); c != "anthropic" || src != "flag" {
+		t.Errorf("claude choice = %v from %v, want anthropic from flag", c, src)
 	}
 
 	got = runSelectionJSON(t, whichCmd(), "--profile", "personal")

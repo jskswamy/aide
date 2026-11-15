@@ -40,6 +40,7 @@ func TestConvertLegacyCredentials(t *testing.T) {
 		creds    []string // removed from credentials:
 		env      []string // removed from env:
 		lost     []string // credentials that lost codex
+		moved    []string // env: keys moved into credentials:
 		renames  map[string]map[string]string
 	}{
 		{
@@ -235,6 +236,7 @@ env:
   OPENAI_BASE_URL: https://llm.corp/v1
   OPENAI_API_KEY: "{{ .secrets.oa }}"
 `,
+			moved: []string{"OPENAI_API_KEY"},
 		},
 		{
 			name: "env templated ANTHROPIC_BASE_URL keeps its key unconverted",
@@ -244,6 +246,7 @@ env:
   ANTHROPIC_BASE_URL: "{{ .secrets.url }}"
   ANTHROPIC_API_KEY: "{{ .secrets.k }}"
 `,
+			moved: []string{"ANTHROPIC_API_KEY"},
 		},
 		{
 			name: "env x-api-key to a custom endpoint stays",
@@ -253,6 +256,7 @@ env:
   ANTHROPIC_BASE_URL: https://proxy.corp
   ANTHROPIC_API_KEY: "{{ .secrets.k }}"
 `,
+			moved: []string{"ANTHROPIC_API_KEY"},
 		},
 		{
 			name: "env x-api-key to the vendor URL becomes the anthropic preset",
@@ -279,13 +283,16 @@ credentials:
 `,
 		},
 		{
-			name: "keyless claude endpoint stays so Claude keeps its login",
+			name: "keyless loopback claude endpoint becomes a no_auth gateway",
 			yaml: `
 credentials:
   local:
     for:
       claude: {set: {ANTHROPIC_BASE_URL: "http://127.0.0.1:4000"}}
 `,
+			gateways: map[string]gw{"local": {url: "http://127.0.0.1:4000", api: "anthropic-messages", noAuth: true, harnesses: []string{"claude"}}},
+			choice:   map[string]string{"claude": "none"},
+			creds:    []string{"local"},
 		},
 		{
 			name: "anthropic with codex loses codex without an add command",
@@ -373,6 +380,13 @@ credentials:
 			if !reflect.DeepEqual(got.Renames, tt.renames) {
 				t.Errorf("renames = %v, want %v", got.Renames, tt.renames)
 			}
+			var moved []string
+			for _, l := range got.Moved {
+				moved = append(moved, l.EnvVar)
+			}
+			if !slices.Equal(moved, tt.moved) {
+				t.Errorf("moved = %v, want %v", moved, tt.moved)
+			}
 			var lost []string
 			for _, l := range got.CodexLost {
 				lost = append(lost, l.Name)
@@ -380,7 +394,7 @@ credentials:
 			if !slices.Equal(lost, tt.lost) {
 				t.Errorf("codex lost = %v, want %v", lost, tt.lost)
 			}
-			if want := len(tt.gateways) > 0 || len(tt.creds) > 0 || len(tt.env) > 0; got.NeedsMigration() != want {
+			if want := len(tt.gateways) > 0 || len(tt.creds) > 0 || len(tt.env) > 0 || len(tt.moved) > 0; got.NeedsMigration() != want {
 				t.Errorf("NeedsMigration() = %v", got.NeedsMigration())
 			}
 		})
@@ -435,5 +449,66 @@ profiles:
 	}
 	if cfg.NeedsGatewayMigration || strings.Contains(strings.Join(cfg.Contexts["work"].DefaultCredentials, ","), "anthropic") {
 		t.Error("a migrated profile needs no migration")
+	}
+}
+
+// A profile the converter cannot turn fully into gateways still loads,
+// and what it keeps injecting routes as before.
+func TestLoad_UnconvertedLegacyShapesKeepRouting(t *testing.T) {
+	tests := []struct {
+		name, body, cred, envVar string
+		harness                  string
+	}{
+		{"env GEMINI_API_KEY", `    agent: gemini
+    secret: work
+    env: {GEMINI_API_KEY: "{{ .secrets.gemini }}"}
+`, "gemini", "GEMINI_API_KEY", "gemini"},
+		{"env GROQ_API_KEY", `    agent: claude
+    secret: work
+    env: {GROQ_API_KEY: "{{ .secrets.groq }}"}
+`, "groq_api_key", "GROQ_API_KEY", "claude"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := loadYAML(t, "default_profile: work\nprofiles:\n  work:\n"+tt.body)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			ctx := cfg.Contexts["work"].Residual()
+			if _, left := ctx.Env[tt.envVar]; left {
+				t.Errorf("env still carries %s, which would be injected twice or not at all", tt.envVar)
+			}
+			r, ok := ctx.Credentials[tt.cred].Route(tt.cred, tt.harness)
+			if !ok || !slices.Equal(r.Env, []string{tt.envVar}) {
+				t.Errorf("route = %+v, %v; want %s injected into %s", r, ok, tt.envVar, tt.harness)
+			}
+			if !slices.Equal(ctx.DefaultCredentials, []string{tt.cred}) {
+				t.Errorf("default_credentials = %v, want [%s] as the old implicit binding was", ctx.DefaultCredentials, tt.cred)
+			}
+			if !cfg.NeedsGatewayMigration {
+				t.Error("the move into credentials: is a migration")
+			}
+		})
+	}
+}
+
+func TestLoad_KeylessLoopbackCredentialBecomesNoAuthGateway(t *testing.T) {
+	cfg, err := loadYAML(t, `default_profile: work
+profiles:
+  work:
+    agent: claude
+    credentials:
+      local: {for: {claude: {set: {ANTHROPIC_BASE_URL: "http://127.0.0.1:4000"}}}}
+    default_credentials: [local]
+`)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	ctx := cfg.Contexts["work"]
+	if g := ctx.ConvertedGateways["local"]; !g.NoAuth || g.URL != "http://127.0.0.1:4000" || !slices.Equal(g.Harnesses, []string{"claude"}) {
+		t.Errorf("gateway = %+v, want a no_auth gateway on the same endpoint for claude", g)
+	}
+	if ctx.DerivedChoice["claude"] != "local" || len(ctx.Residual().Credentials) != 0 {
+		t.Errorf("choice = %v, credentials = %v", ctx.DerivedChoice, ctx.Residual().Credentials)
 	}
 }

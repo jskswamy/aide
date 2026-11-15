@@ -76,6 +76,10 @@ func HarnessConfigDir(ctx config.Context, harnessName, home string) (string, err
 	if _, err := lookupHarnessFile(harnessName); err != nil {
 		return "", err
 	}
+	// Launching under harnessName gives a named profile its derived dirs
+	// (as the launch does after --agent), even when its own agent: has none.
+	ctx.Agent = harnessName
+	(*config.Config)(nil).ApplyDefaultProfileDir(ctx.Name, &ctx)
 	dir := ctx.LaunchConfigDir(harnessName, home, os.Getenv)
 	if dir == "" {
 		return "", fmt.Errorf("gateway: %s has no known config dir", harnessName)
@@ -100,7 +104,7 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 		return nil, "", "", err
 	}
 	if d, ok := harness.Lookup(harnessName); ok && ctx.Name != "" && !config.IsDefaultProfile(ctx.Name) && fsutil.SameDir(d.DefaultDir(home), dir) {
-		return nil, "", "", fmt.Errorf("%w: profile %q, %s dir %s; give it its own config_dir_name", ErrSharedNativeDir, ctx.Name, harnessName, homepath.Tilde(dir, home))
+		return nil, "", "", fmt.Errorf("%w: profile %q, %s dir %s; set its dir variable aside: config_dir_name or config_dirs in the profile instead of env", ErrSharedNativeDir, ctx.Name, harnessName, homepath.Tilde(dir, home))
 	}
 	path := hf.path(ctx, dir, home)
 	if !hf.singleGatewayPerDir() {
@@ -266,7 +270,7 @@ func Prune(ctx config.Context, harnessName, home string, configured []string) (b
 	keep := setOf(configured)
 	// Only the default profile reaches the native dir (harnessTarget refuses
 	// named profiles), and other profiles' older entries there are not its to drop.
-	if d, ok := harness.Lookup(harnessName); ok && d.DefaultDir(home) == dir {
+	if d, ok := harness.Lookup(harnessName); ok && fsutil.SameDir(d.DefaultDir(home), dir) {
 		keep = nil
 	}
 	harnessWrites.Lock()

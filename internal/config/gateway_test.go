@@ -280,12 +280,12 @@ func TestGateway_SynthesizeDefaultsDoNotCollide(t *testing.T) {
 		t.Errorf("DefaultCredentials = %v, want [anthropic alpha]", got.DefaultCredentials)
 	}
 	for _, h := range []string{"claude", "pi", "opencode"} {
-		if defs := defaultCredentialsForHarness(got, h); !slices.Equal(defs, []string{"anthropic"}) {
-			t.Errorf("defaultCredentialsForHarness(%s) = %v, want [anthropic]", h, defs)
+		if defs := DefaultCredentialsForHarness(got, h); !slices.Equal(defs, []string{"anthropic"}) {
+			t.Errorf("DefaultCredentialsForHarness(%s) = %v, want [anthropic]", h, defs)
 		}
 	}
-	if defs := defaultCredentialsForHarness(got, "codex"); !slices.Equal(defs, []string{"alpha"}) {
-		t.Errorf("defaultCredentialsForHarness(codex) = %v, want [alpha]", defs)
+	if defs := DefaultCredentialsForHarness(got, "codex"); !slices.Equal(defs, []string{"alpha"}) {
+		t.Errorf("DefaultCredentialsForHarness(codex) = %v, want [alpha]", defs)
 	}
 	if !slices.Equal(ctx.DefaultCredentials, []string{"anthropic"}) {
 		t.Errorf("input DefaultCredentials mutated: %v", ctx.DefaultCredentials)

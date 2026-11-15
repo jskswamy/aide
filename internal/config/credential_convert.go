@@ -4,11 +4,13 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/jskswamy/aide/internal/envscrub"
 	"github.com/jskswamy/aide/internal/gatewaypreset"
+	"github.com/jskswamy/aide/internal/harness"
 )
 
 // credSpec is where one harness's route of a credential goes: a preset,
@@ -235,8 +237,8 @@ func (cv *converter) credential(name string, b CredentialBinding) {
 		switch {
 		case !ok || !serves && h != "codex":
 			return
-		case h == "claude" && s.api == apiAnthropicMessages && b.Keyless():
-			return // a keyless gateway would stop Claude sending its saved login
+		case h == "claude" && s.api == apiAnthropicMessages && b.Keyless() && !(GatewayConfig{URL: s.url}).IsLoopback():
+			return // a remote keyless gateway would stop Claude sending its saved login
 		case !serves: // only a preset whose url speaks the OpenAI API gets an add command
 			p, _ := gatewaypreset.Lookup(s.preset)
 			loss := CodexLoss{Name: name}
@@ -293,6 +295,29 @@ func (cv *converter) credential(name string, b CredentialBinding) {
 	cv.CodexLost = append(cv.CodexLost, lost...)
 }
 
+// moveKeys moves the env: provider keys the conversion left alone (a
+// key no preset serves, gemini) into credentials:, the way the old
+// profile migration did: a built-in name, or env: [VAR] for the
+// profile's harness. A profile whose agent names no known harness keeps
+// them in env:.
+func (cv *converter) moveKeys() {
+	h := canonicalHarness(filepath.Base(cv.ctx.Agent))
+	for _, l := range cv.implicit {
+		if cv.names[l.Name] || slices.Contains(cv.Env, l.EnvVar) {
+			continue
+		}
+		if IsBuiltinCredential(l.Name) {
+			l.Binding.Env = nil
+		} else if _, ok := harness.Lookup(h); ok {
+			l.Binding.Harnesses = []string{h}
+		} else {
+			continue
+		}
+		cv.Moved = append(cv.Moved, l)
+		cv.Converted = append(cv.Converted, fmt.Sprintf("env: %s moved to credentials.%s, still injected by default", l.EnvVar, l.Name))
+	}
+}
+
 // credentialSwitch converts a keyless bedrock or vertex binding that
 // does nothing but set the switch for Claude.
 func (cv *converter) credentialSwitch(name string, b CredentialBinding) {
@@ -329,7 +354,7 @@ func (cv *converter) choices() {
 			continue
 		}
 		v := "none"
-		for _, name := range defaultCredentialsForHarness(cv.synth, h) {
+		for _, name := range DefaultCredentialsForHarness(cv.synth, h) {
 			if !cv.names[name] {
 				continue
 			}

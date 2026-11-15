@@ -320,12 +320,11 @@ default_profile: work
 	}
 }
 
-// A provider key in env: that cannot become a gateway (here the store
-// is a path, which a gateway cannot name) is refused with a pointer to
-// aide gateway add, never passed through.
-func TestLauncher_ProviderKeyInEnvIsRefused(t *testing.T) {
+// A provider key in env: the conversion moves into credentials: is
+// injected by default, as before, and never passed through env:.
+func TestLauncher_ProviderKeyInEnvKeepsInjecting(t *testing.T) {
 	store, values := fixtureStore(t)
-	_, stderr, err := launchCredentials(t, fmt.Sprintf(`
+	env, stderr, err := launchCredentials(t, fmt.Sprintf(`
 contexts:
   work:
     agent: claude
@@ -333,12 +332,40 @@ contexts:
     env:
       ANTHROPIC_API_KEY: "{{ .secrets.anthropic_api_key }}"
 default_context: work
-`, store), "", false)
-	if !errors.Is(err, config.ErrInvalidCredentials) || !strings.Contains(err.Error(), "aide gateway add") {
-		t.Fatalf("Launch() error = %v, want ErrInvalidCredentials pointing to aide gateway add", err)
+`, store), "", true)
+	if err != nil {
+		t.Fatalf("Launch() error = %v", err)
 	}
-	if strings.Contains(err.Error()+stderr, values["anthropic_api_key"]) {
+	if got, _ := envValue(env, "ANTHROPIC_API_KEY"); got != values["anthropic_api_key"] {
+		t.Error("the env: key was not injected as before")
+	}
+	if strings.Contains(stderr, values["anthropic_api_key"]) {
 		t.Error("a secret value was printed")
+	}
+}
+
+// A plain credential outside default_credentials is neither decrypted
+// nor injected.
+func TestLauncher_PlainCredentialOutsideDefaultsIsNotInjected(t *testing.T) {
+	store, values := fixtureStore(t)
+	env, _, err := launchCredentials(t, fmt.Sprintf(`
+profiles:
+  work:
+    agent: claude
+    credentials:
+      github: {backend: age, store: %[1]s, key: anthropic_api_key, env: [GITHUB_TOKEN], harnesses: [claude]}
+      prod_db: {backend: age, store: %[1]s, key: openai_api_key, env: [PROD_DB_TOKEN], harnesses: [claude]}
+    default_credentials: [github]
+default_profile: work
+`, store), "", true)
+	if err != nil {
+		t.Fatalf("Launch() error = %v", err)
+	}
+	if got, _ := envValue(env, "GITHUB_TOKEN"); got != values["anthropic_api_key"] {
+		t.Error("the default credential was not injected")
+	}
+	if _, ok := envValue(env, "PROD_DB_TOKEN"); ok {
+		t.Error("a credential outside default_credentials reached the agent")
 	}
 }
 
@@ -354,7 +381,7 @@ default_context: work
 	if !errors.Is(err, config.ErrInvalidCredentials) {
 		t.Fatalf("Launch() error = %v, want ErrInvalidCredentials", err)
 	}
-	if !strings.Contains(err.Error(), "aide gateway add") || !strings.Contains(err.Error(), "work") {
+	if !strings.Contains(err.Error(), "credentials:") || !strings.Contains(err.Error(), "work") {
 		t.Errorf("error lacks migration guidance: %v", err)
 	}
 	if strings.Contains(err.Error()+stderr, "sk-literal-in-config") {
@@ -628,12 +655,15 @@ func planProfile(t *testing.T, ctx config.Context, agent string, in SelectionInp
 }
 
 func TestPlanProfileCredentials_RouteCapabilitiesJoinTheLaunch(t *testing.T) {
-	ctx, _, _, err := planProfile(t, routeProfile(), "claude", SelectionInputs{Credentials: []string{"bedrock"}, CredentialsSet: true})
+	// a provider switch or endpoint is a gateway's and fails the launch
+	routes := config.Context{Credentials: map[string]config.CredentialBinding{"cloud": {Capabilities: []string{"aws"},
+		For: map[string]config.CredentialRoute{"claude": {Set: map[string]string{"AWS_PROFILE": "dev"}}}}}}
+	ctx, _, _, err := planProfile(t, routes, "claude", SelectionInputs{Credentials: []string{"cloud"}, CredentialsSet: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(ctx.Capabilities, "aws") {
-		t.Errorf("capabilities = %v, want aws from the bedrock route", ctx.Capabilities)
+		t.Errorf("capabilities = %v, want aws from the cloud route", ctx.Capabilities)
 	}
 }
 

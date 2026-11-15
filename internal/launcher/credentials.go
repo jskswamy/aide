@@ -255,7 +255,11 @@ func profileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext) (config
 			}
 		}
 	}
-	return rc.Context.Residual(), nil
+	res := rc.Context.Residual()
+	if err := config.CheckNoProviderSettings(res); err != nil {
+		return config.Context{}, fmt.Errorf("%w: %s: %s", config.ErrInvalidCredentials, label, err)
+	}
+	return res, nil
 }
 
 // projectFileSettingEnv names the .aide.yaml whose env: sets key.
@@ -302,7 +306,7 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 		sel.Choices = passiveChoices(cfg, rc.Name, ctx, in)
 		sel.Choices[harnessName] = ResolvedChoice{sel.Gateway, sel.ChoiceNotices}
 	}
-	sel.SelectCredentials(in, slices.Sorted(maps.Keys(ctx.Credentials)))
+	sel.SelectCredentials(in, ctx.DefaultCredentials)
 	sel.dropGatewayNames(ctx)
 	plan, err := sel.PlanCredentials(rc.Name, ctx, harnessName, in.Auth)
 	if err != nil {

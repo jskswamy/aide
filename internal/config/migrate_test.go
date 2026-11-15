@@ -106,20 +106,19 @@ func TestMigrateProfiles_LeavesProviderKeysForTheGatewayMigration(t *testing.T) 
 	}
 }
 
-func TestMigrateProfiles_ProviderKeyThatCannotConvertFails(t *testing.T) {
+// What the gateway conversion cannot express never blocks the profile
+// migration: it fails that profile's launch, not the config.
+func TestMigrateProfiles_ProviderKeyThatCannotConvertDoesNotFail(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	_, err := MigrateProfiles([]byte(`contexts:
+	m, err := MigrateProfiles([]byte(`contexts:
   work:
     agent: claude
     env:
       ANTHROPIC_API_KEY: sk-literal-value
 `), MigrateOptions{Home: home})
-	if !errors.Is(err, ErrInvalidCredentials) || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
-		t.Fatalf("err = %v, want ErrInvalidCredentials naming the key", err)
-	}
-	if strings.Contains(err.Error(), "sk-literal-value") {
-		t.Errorf("error printed the value: %v", err)
+	if err != nil || !strings.Contains(string(m.Output), "ANTHROPIC_API_KEY: sk-literal-value") {
+		t.Fatalf("err = %v, output = %s; want the migration to keep the key as it is", err, m.Output)
 	}
 }
 
@@ -234,7 +233,7 @@ func TestCheckEnvKept_RejectsDroppedVars(t *testing.T) {
 	}
 }
 
-func TestMigrateProfiles_TemplatedEndpointStops(t *testing.T) {
+func TestMigrateProfiles_TemplatedEndpointDoesNotFail(t *testing.T) {
 	_, err := MigrateProfiles([]byte(`contexts:
   work:
     agent: claude
@@ -243,8 +242,8 @@ func TestMigrateProfiles_TemplatedEndpointStops(t *testing.T) {
       ANTHROPIC_API_KEY: "{{ .secrets.k }}"
       ANTHROPIC_BASE_URL: "{{ .secrets.url }}"
 `), MigrateOptions{})
-	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_BASE_URL") {
-		t.Fatalf("error = %v, want a refusal naming the templated endpoint", err)
+	if err != nil {
+		t.Fatalf("error = %v, want the migration to leave the templated endpoint to the gateway migration", err)
 	}
 }
 

@@ -152,7 +152,7 @@ func (c *Config) validateProfileDirs(home string) error {
 		for _, name := range names {
 			ctx := c.Contexts[name]
 			if d.DefaultConfigDir != "" && (pinsGlobalDir(ctx, d, home) || envPinsGlobalDir(ctx, d, home)) {
-				return fmt.Errorf("%w: profile %q cannot use %s's global default config dir %s; use an isolated per-profile directory (e.g. ~/.%s-%s) instead",
+				return fmt.Errorf("%w: profile %q cannot use %s's global default config dir %s; use an isolated per-profile directory (e.g. ~/.%s-%s) instead; move the path of any other harness dir variable from env: into config_dirs: by hand, then set config_dir_name",
 					ErrProfileDirAlias, name, h, homepath.Tilde(d.DefaultDir(home), home), h, configDirName(name))
 			}
 			dir, global := ctx.NativeConfigDir(h, home), false
@@ -221,25 +221,24 @@ func applyDefaultProfileDir(name string, ctx *Context, harnessOf func(string) st
 	ctx.Profile = configDirName(name)
 }
 
-// isolateNativeDirs gives a named profile whose env: pins a harness dir
-// to the native one its own dirs: the pin is dropped, config_dir_name
-// is the profile name and a custom dir variable moves to config_dirs.
-// It marks the config for migration, which writes the result.
-// shortcut: a dir variable that is templated, relative or outside home stays in
-// env:, where it blocks the derived name on reload; upgrade if that is seen.
+// isolateNativeDirs gives a named profile that selects no config dir
+// but sets a harness dir variable in env: its own dirs: a pin to the
+// native dir is dropped, a custom in-home path moves to config_dirs and
+// config_dir_name is the profile name, so no named profile shares the
+// native dirs. A profile with a dir variable that cannot move (templated,
+// relative or outside $HOME) is left as it is, so nothing is isolated
+// in memory that the migration could not persist; a pin to the native
+// dir then fails validateProfileDirs, asking for a hand edit. It marks
+// the config for migration, which writes the result.
 func (c *Config) isolateNativeDirs(home string) {
 	for name, ctx := range c.Contexts {
-		if IsDefaultProfile(name) || name == "" {
+		if IsDefaultProfile(name) || name == "" || ctx.SelectsConfigDir() || !hasExplicitProfileEnv(ctx) {
 			continue
 		}
-		pinned := false
-		for _, d := range harness.All() {
-			pinned = pinned || d.SupportsProfiles() && d.DefaultConfigDir != "" && envPinsGlobalDir(ctx, d, home)
+		if d, ok := harness.Lookup(c.HarnessOf(ctx.Agent)); ctx.Agent != "" && (!ok || !d.SupportsProfiles()) {
+			continue // as applyDefaultProfileDir: a harness without profile dirs has none to isolate
 		}
-		if !pinned {
-			continue
-		}
-		ctx.Env, ctx.ConfigDirs = maps.Clone(ctx.Env), maps.Clone(ctx.ConfigDirs)
+		moved, dropped, stuck := map[string]string{}, []string(nil), false
 		// pi and omp share one variable: it is global when it names either default.
 		for _, key := range slices.Sorted(maps.Keys(ctx.Env)) {
 			v := ctx.Env[key]
@@ -253,21 +252,31 @@ func (c *Config) isolateNativeDirs(home string) {
 				}
 			}
 			custom := filepath.IsAbs(dir) && fsutil.IsUnderDir(dir, home) && filepath.Clean(dir) != filepath.Clean(home) && !strings.Contains(v, "{{")
-			if len(users) == 0 || !global && !custom {
-				continue
-			}
-			if !global {
-				if ctx.ConfigDirs == nil {
-					ctx.ConfigDirs = map[string]string{}
-				}
+			switch {
+			case len(users) == 0:
+			case global:
+				dropped = append(dropped, key)
+			case custom:
 				for _, d := range users {
-					ctx.ConfigDirs[d.Name] = v
+					moved[d.Name] = v
 				}
+				dropped = append(dropped, key)
+			default:
+				stuck = true
 			}
-			delete(ctx.Env, key)
-			ctx.IsolatedEnv = append(ctx.IsolatedEnv, key)
 		}
-		slices.Sort(ctx.IsolatedEnv)
+		if stuck || len(dropped) == 0 {
+			continue
+		}
+		ctx.Env, ctx.ConfigDirs = maps.Clone(ctx.Env), maps.Clone(ctx.ConfigDirs)
+		for _, key := range dropped {
+			delete(ctx.Env, key)
+		}
+		if len(moved) > 0 && ctx.ConfigDirs == nil {
+			ctx.ConfigDirs = map[string]string{}
+		}
+		maps.Copy(ctx.ConfigDirs, moved)
+		ctx.IsolatedEnv = dropped
 		if len(ctx.Env) == 0 {
 			ctx.Env = nil
 		}

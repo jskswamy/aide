@@ -483,8 +483,8 @@ func TestLoad_DefaultProfileConfigDirName(t *testing.T) {
 	if got := cfg.Contexts["explicit"].Profile; got != "custom" {
 		t.Errorf("explicit.Profile = %q, want custom", got)
 	}
-	if got := cfg.Contexts["redirected"].Profile; got != "" {
-		t.Errorf("redirected.Profile = %q, want empty when env override is set", got)
+	if got := cfg.Contexts["redirected"]; got.Profile != "redirected" || got.ConfigDirs["claude"] != "~/.claude-r" || len(got.Env) != 0 {
+		t.Errorf("redirected = %+v, want its env: dir isolated into config_dirs", got)
 	}
 	if got := cfg.Contexts["nonprofile"].Profile; got != "" {
 		t.Errorf("nonprofile.Profile = %q, want empty for harness without profile support", got)
@@ -521,19 +521,19 @@ func TestLoad_EnvRedirectedDirsSharedByProfilesFail(t *testing.T) {
 			"profiles:\n" +
 				"  a:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-shared}\n" +
 				"  b:\n    agent: claude\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-shared}\n",
-			[]string{`"a"`, `"b"`, "CLAUDE_CONFIG_DIR", "~/.claude-shared"},
+			[]string{`"a"`, `"b"`, "~/.claude-shared"},
 		},
 		"env dir is another profile's derived dir": {
 			"profiles:\n" +
 				"  a:\n    agent: claude\n    config_dir_name: work\n" +
 				"  b:\n    agent: codex\n    env: {CLAUDE_CONFIG_DIR: ~/.claude-work}\n",
-			[]string{`"a"`, `"b"`, "CLAUDE_CONFIG_DIR", "~/.claude-work"},
+			[]string{`"a"`, `"b"`, "~/.claude-work"},
 		},
 		"env dir is another profile's pinned dir": {
 			"profiles:\n" +
 				"  a:\n    agent: pi\n    config_dir_name: a\n    config_dirs: {pi: ~/pi-a}\n" +
 				"  b:\n    agent: pi\n    env: {PI_CODING_AGENT_DIR: ~/pi-a}\n",
-			[]string{`"a"`, `"b"`, "PI_CODING_AGENT_DIR", "~/pi-a"},
+			[]string{`"a"`, `"b"`, "~/pi-a"},
 		},
 	}
 	for name, tc := range cases {

@@ -44,7 +44,7 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, ok := savedFor(t, path, "work")
-	if !ok || p.Harness != "pi" || p.Credentials == nil || !slices.Equal(*p.Credentials, []string{"openai"}) {
+	if !ok || p.Harness != "pi" || p.LegacyCredentials == nil || !slices.Equal(*p.LegacyCredentials, []string{"openai"}) {
 		t.Errorf("saved = %+v, %v", p, ok)
 	}
 	if !strings.Contains(out, "github.com/org/repo") || !strings.Contains(out, `"work"`) {
@@ -68,7 +68,7 @@ func TestProjectSet_SavesHarnessAndCredentialsWithoutTouchingRepoOrConfig(t *tes
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, _ = savedFor(t, path, "work")
-	if p.Harness != "pi" || !slices.Equal(*p.Credentials, []string{"anthropic"}) {
+	if p.Harness != "pi" || !slices.Equal(*p.LegacyCredentials, []string{"anthropic"}) {
 		t.Errorf("after second set = %+v", p)
 	}
 }
@@ -79,7 +79,7 @@ func TestProjectSet_NoCredentialsSavesExplicitEmptySelection(t *testing.T) {
 		t.Fatalf("project set: %v\n%s", err, out)
 	}
 	p, ok := savedFor(t, path, "work")
-	if !ok || p.Credentials == nil || len(*p.Credentials) != 0 {
+	if !ok || p.LegacyCredentials == nil || len(*p.LegacyCredentials) != 0 {
 		t.Errorf("saved = %+v, want explicit empty selection", p)
 	}
 	got := runSelectionJSON(t, whichCmd())
@@ -149,7 +149,7 @@ func TestProjectClear_ClearsFieldsIndependently(t *testing.T) {
 		t.Fatalf("project clear: %v\n%s", err, out)
 	}
 	p, ok := savedFor(t, path, "work")
-	if !ok || p.Harness != "pi" || p.Credentials != nil {
+	if !ok || p.Harness != "pi" || p.LegacyCredentials != nil {
 		t.Errorf("after clear --gateway = %+v, want harness kept and credentials unset", p)
 	}
 	if out, err := runProject(t, "clear"); err != nil {

@@ -97,7 +97,7 @@ func TestWhich_HonorsSavedPreferenceAndFlags(t *testing.T) {
 	path := selectionEnv(t, selectionTestConfig)
 	if err := prefs.Update(path, func(f *prefs.File) error {
 		f.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"},
-			prefs.Preference{Harness: "pi", Credentials: prefs.Selection("openai")})
+			prefs.Preference{Harness: "pi", LegacyCredentials: prefs.Selection("openai")})
 		return nil
 	}); err != nil {
 		t.Fatal(err)

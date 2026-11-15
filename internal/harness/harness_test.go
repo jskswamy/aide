@@ -314,3 +314,52 @@ func TestSandboxEnv(t *testing.T) {
 		t.Errorf("nil Sandbox SandboxEnv = %v, want nil", got)
 	}
 }
+
+func TestApplyChoice(t *testing.T) {
+	tests := []struct {
+		name       string
+		harness    string
+		args       []string
+		entry      string
+		model      string
+		want       []string
+		wantNotice bool
+	}{
+		{"codex with model", "codex", []string{"exec"}, "aide-corp", "gpt-5", []string{"-c", "model_provider=aide-corp", "-c", "model=gpt-5", "exec"}, false},
+		{"codex without model", "codex", nil, "aide-corp", "", []string{"-c", "model_provider=aide-corp"}, false},
+		{"pi with model", "pi", []string{"-p", "hi"}, "aide-corp", "m1", []string{"--provider", "aide-corp", "--model", "m1", "-p", "hi"}, false},
+		{"pi without model", "pi", []string{"-p"}, "aide-corp", "", []string{"-p"}, false},
+		{"omp with model", "omp", nil, "aide-corp", "m1", []string{"--model", "aide-corp/m1"}, false},
+		{"claude takes no flags", "claude", []string{"-p"}, "aide-corp", "m1", []string{"-p"}, false},
+		{"no entry", "codex", []string{"exec"}, "", "", []string{"exec"}, false},
+		{"management subcommand", "codex", []string{"login"}, "aide-corp", "m1", []string{"login"}, false},
+		{"user --model", "pi", []string{"--model", "x"}, "aide-corp", "m1", []string{"--model", "x"}, true},
+		{"user --model=", "omp", []string{"--model=x"}, "aide-corp", "m1", []string{"--model=x"}, true},
+		{"user -m", "codex", []string{"-m", "x"}, "aide-corp", "m1", []string{"-m", "x"}, true},
+		{"user -c model_provider", "codex", []string{"-c", "model_provider=other"}, "aide-corp", "", []string{"-c", "model_provider=other"}, true},
+		{"unrelated -c", "codex", []string{"-c", "sandbox=none"}, "aide-corp", "", []string{"-c", "model_provider=aide-corp", "-c", "sandbox=none"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, _ := harness.Lookup(tt.harness)
+			got, env, notice := d.ApplyChoice(tt.args, tt.entry, tt.model)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("args = %v, want %v", got, tt.want)
+			}
+			if env != nil {
+				t.Errorf("env = %v, want nil", env)
+			}
+			if (notice != "") != tt.wantNotice {
+				t.Errorf("notice = %q, wantNotice %v", notice, tt.wantNotice)
+			}
+		})
+	}
+}
+
+func TestReach(t *testing.T) {
+	for name, want := range map[string]harness.Reach{"claude": harness.ReachSlot, "codex": harness.ReachSlot, "pi": harness.ReachMulti, "omp": harness.ReachMulti, "opencode": harness.ReachMulti, "gemini": harness.ReachNone} {
+		if d, _ := harness.Lookup(name); d.Reach != want {
+			t.Errorf("%s reach = %q, want %q", name, d.Reach, want)
+		}
+	}
+}

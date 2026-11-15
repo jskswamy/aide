@@ -119,9 +119,9 @@ func projectSetCmd() *cobra.Command {
 				}
 				switch {
 				case noCredentials:
-					p.Credentials = prefs.Selection()
+					p.LegacyCredentials = prefs.Selection()
 				case credsSet:
-					p.Credentials = prefs.Selection(nonEmpty(credentials)...)
+					p.LegacyCredentials = prefs.Selection(nonEmpty(credentials)...)
 				}
 				if err := t.check(p); err != nil {
 					return err
@@ -150,8 +150,8 @@ func projectSetCmd() *cobra.Command {
 func (t *projectTarget) check(p prefs.Preference) error {
 	rc := *t.rc
 	in := launcher.SelectionInputs{Agent: p.Harness}
-	if p.Credentials != nil {
-		in.Credentials, in.CredentialsSet = *p.Credentials, true
+	if p.LegacyCredentials != nil {
+		in.Credentials, in.CredentialsSet = *p.LegacyCredentials, true
 	}
 	sel, _, err := launcher.SelectHarness(t.cfg, &rc, in, exec.LookPath)
 	if err != nil {
@@ -207,8 +207,8 @@ when the file cannot be read. Nothing is deleted.`,
 					p.Harness = ""
 				}
 				if all || clearCredentials {
-					cleared = cleared || p.Credentials != nil
-					p.Credentials = nil
+					cleared = cleared || p.LegacyCredentials != nil
+					p.LegacyCredentials = nil
 				}
 				if !cleared {
 					return prefs.ErrUnchanged
@@ -289,7 +289,7 @@ func projectShowCmd() *cobra.Command {
 					return err
 				}
 				p, _ := f.Get(t.key)
-				res.Harness, res.Credentials = p.Harness, p.Credentials
+				res.Harness, res.Credentials = p.Harness, p.LegacyCredentials
 			}
 			return output.Emit(cmd.OutOrStdout(), format, res, func(w io.Writer) error {
 				fmt.Fprintf(w, "Profile:      %s\n", res.Profile)
@@ -298,7 +298,7 @@ func projectShowCmd() *cobra.Command {
 					return nil
 				}
 				fmt.Fprintf(w, "Repository:   %s\n", res.Repository)
-				fmt.Fprintf(w, "Saved:        %s\n", describePreference(prefs.Preference{Harness: res.Harness, Credentials: res.Credentials}))
+				fmt.Fprintf(w, "Saved:        %s\n", describePreference(prefs.Preference{Harness: res.Harness, LegacyCredentials: res.Credentials}))
 				fmt.Fprintf(w, "File:         %s\n", res.File)
 				return nil
 			})
@@ -319,11 +319,11 @@ func describePreference(p prefs.Preference) string {
 		harness = "harness " + p.Harness
 	}
 	creds := "credentials not set"
-	if p.Credentials != nil {
-		if len(*p.Credentials) == 0 {
+	if p.LegacyCredentials != nil {
+		if len(*p.LegacyCredentials) == 0 {
 			creds = "no credentials"
 		} else {
-			creds = "credentials " + strings.Join(*p.Credentials, ", ")
+			creds = "credentials " + strings.Join(*p.LegacyCredentials, ", ")
 		}
 	}
 	return harness + ", " + creds

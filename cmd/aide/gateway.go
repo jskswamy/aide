@@ -243,7 +243,7 @@ Examples:
 				return fmt.Errorf("gateway %q is saved, but writing harness files failed (retry with: aide gateway sync %s --profile %s): %w",
 					name, name, profileName, err)
 			}
-			printHarnessStatuses(out, res.HarnessStatuses, gw, home)
+			printHarnessStatuses(out, res.HarnessStatuses, home)
 			return nil
 		},
 	}
@@ -743,7 +743,7 @@ cached catalogue, and write it into every provisioned harness config.`,
 						Token: token, HomeDir: home, Progress: out,
 					})
 					if err == nil {
-						printHarnessStatuses(out, res.HarnessStatuses, gw, home)
+						printHarnessStatuses(out, res.HarnessStatuses, home)
 						continue
 					}
 				}
@@ -1281,7 +1281,7 @@ func materializeGatewayFromCache(out io.Writer, ctx config.Context, name string,
 		}
 	}
 	if len(statuses) > 0 {
-		printHarnessStatuses(out, statuses, gw, home)
+		printHarnessStatuses(out, statuses, home)
 	}
 }
 
@@ -1321,17 +1321,17 @@ func updateRepoPrefsGatewayName(home, profileName, oldName, newName string) erro
 		}
 		changed := false
 		for remote, p := range remotes {
-			if p.Credentials == nil {
+			if p.LegacyCredentials == nil {
 				continue
 			}
-			creds := slices.Clone(*p.Credentials)
+			creds := slices.Clone(*p.LegacyCredentials)
 			for i, c := range creds {
 				if c == oldName {
 					creds[i] = newName
 					changed = true
 				}
 			}
-			p.Credentials = &creds
+			p.LegacyCredentials = &creds
 			remotes[remote] = p
 		}
 		if !changed {
@@ -1352,14 +1352,14 @@ func updateRepoPrefsGatewayRemove(home, profileName, name string) error {
 		}
 		changed := false
 		for remote, p := range remotes {
-			if p.Credentials == nil || !slices.Contains(*p.Credentials, name) {
+			if p.LegacyCredentials == nil || !slices.Contains(*p.LegacyCredentials, name) {
 				continue
 			}
-			creds := slices.DeleteFunc(slices.Clone(*p.Credentials), func(c string) bool { return c == name })
+			creds := slices.DeleteFunc(slices.Clone(*p.LegacyCredentials), func(c string) bool { return c == name })
 			if len(creds) == 0 {
-				p.Credentials = nil
+				p.LegacyCredentials = nil
 			} else {
-				p.Credentials = &creds
+				p.LegacyCredentials = &creds
 			}
 			f.Set(prefs.Key{Profile: profileName, Remote: remote}, p)
 			changed = true
@@ -1711,7 +1711,7 @@ func definedGateways(ctx config.Context) string {
 }
 
 // printHarnessStatuses prints one line per harness after a sync.
-func printHarnessStatuses(w io.Writer, statuses []gateway.HarnessFileStatus, gw config.GatewayConfig, home string) {
+func printHarnessStatuses(w io.Writer, statuses []gateway.HarnessFileStatus, home string) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, st := range statuses {
 		mark := "✓"
@@ -1723,7 +1723,7 @@ func printHarnessStatuses(w io.Writer, statuses []gateway.HarnessFileStatus, gw 
 			mark, detail = "!", "stale, "+st.Detail
 		default:
 			if !gateway.SingleGatewayPerDir(st.Harness) {
-				detail += fmt.Sprintf(", %s, env: %s", st.Detail, gw.TokenEnv(st.Harness))
+				detail += fmt.Sprintf(", %s, env: %s", st.Detail, st.EnvVar)
 			} else {
 				detail += ", " + st.Detail
 			}
@@ -1852,7 +1852,7 @@ func printGatewayList(w io.Writer, entries []GatewayListEntry, cfg *config.Confi
 			}
 			envVar := st.EnvVar
 			if envVar == "" && e.Kind != "credential" {
-				envVar = gw.TokenEnv(st.Harness)
+				envVar = gw.TokenEnv(e.Gateway, st.Harness)
 			}
 			targetFile := st.FilePath
 			if targetFile != "-" {

@@ -178,7 +178,7 @@ func TestGatewayCmd_AddWithTokenStdin(t *testing.T) {
 		t.Errorf("cache = %+v, %v", cat, err)
 	}
 	data, err := os.ReadFile(filepath.Join(e.home, ".pi-work", "models.json"))
-	if err != nil || strings.Contains(string(data), gwCmdToken) || !strings.Contains(string(data), "CORP_TOKEN") {
+	if err != nil || strings.Contains(string(data), gwCmdToken) || !strings.Contains(string(data), "AIDE_GW_CORP_KEY") {
 		t.Errorf("pi models.json = %s, %v", data, err)
 	}
 }
@@ -647,7 +647,7 @@ func TestGatewayCmd_List(t *testing.T) {
 	}
 	for _, want := range []string{
 		"PROFILE: work", "GATEWAY: corp", e.srv.URL, "store=work, key=corp_token", "2 models",
-		"ANTHROPIC_AUTH_TOKEN", "CORP_TOKEN", "pending", "Model One", "acme",
+		"ANTHROPIC_AUTH_TOKEN", "AIDE_GW_CORP_KEY", "pending", "Model One", "acme",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output missing %q:\n%s", want, out)
@@ -986,7 +986,7 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 	prefPath := prefs.DefaultPath(e.home)
 	pf := &prefs.File{Version: prefs.Version}
 	pf.Set(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}, prefs.Preference{
-		Credentials: prefs.Selection("api"),
+		LegacyCredentials: prefs.Selection("api"),
 	})
 	if err := prefs.Save(prefPath, pf); err != nil {
 		t.Fatal(err)
@@ -1000,7 +1000,7 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 		`Migrated secret key "api_token" → "acme_token"`,
 		`Renamed gateway "api" → "acme" under profile "work"`,
 		`Moved cache`,
-		`env: ACME_TOKEN`,
+		`env: AIDE_GW_ACME_KEY`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rename output missing %q:\n%s", want, out)
@@ -1045,7 +1045,7 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(piRaw), `"$API_TOKEN"`) || !strings.Contains(string(piRaw), `"aide-acme"`) || !strings.Contains(string(piRaw), `"$ACME_TOKEN"`) {
+	if strings.Contains(string(piRaw), `"$API_TOKEN"`) || !strings.Contains(string(piRaw), `"aide-acme"`) || !strings.Contains(string(piRaw), `"$AIDE_GW_ACME_KEY"`) {
 		t.Errorf("pi models.json after rename:\n%s", piRaw)
 	}
 	codexRaw, err := os.ReadFile(filepath.Join(e.home, ".codex-work", "config.toml"))
@@ -1061,7 +1061,7 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p, ok := updatedPrefs.Get(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}); !ok || p.Credentials == nil || (*p.Credentials)[0] != "acme" {
+	if p, ok := updatedPrefs.Get(prefs.Key{Profile: "work", Remote: "github.com/org/repo"}); !ok || p.LegacyCredentials == nil || (*p.LegacyCredentials)[0] != "acme" {
 		t.Errorf("repo preference after rename = %+v, ok=%v", p, ok)
 	}
 }

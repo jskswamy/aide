@@ -125,17 +125,17 @@ func (gw GatewayConfig) IsLoopback() bool {
 	return isLoopbackHost(u.Hostname())
 }
 
-// TokenEnv is the variable harness h reads gw's token from: Claude
-// Code's fixed ANTHROPIC_AUTH_TOKEN, else EnvVarName. Empty when gw
-// has no token.
-func (gw GatewayConfig) TokenEnv(h string) string {
+// TokenEnv is the variable harness h reads the token of gateway name
+// from: Claude Code's fixed ANTHROPIC_AUTH_TOKEN, else
+// AIDE_GW_<NAME>_KEY. Empty when gw has no token.
+func (gw GatewayConfig) TokenEnv(name, h string) string {
 	if !gw.RequiresToken() {
 		return ""
 	}
 	if h == "claude" {
 		return claudeGatewayTokenEnv
 	}
-	return gw.EnvVarName()
+	return GatewayKeyVar(name)
 }
 
 // ValidateGatewayTarget rejects a keyless gateway that is not on
@@ -155,8 +155,8 @@ func ValidateGatewayTarget(name string, gw GatewayConfig) error {
 // use as a path segment.
 func IsGatewayName(name string) bool { return gatewayIdentRE.MatchString(name) }
 
-// EnvVarName is the variable pi, omp, opencode and codex read the token
-// from: Key uppercased.
+// EnvVarName is Key uppercased: the variable the key's name must be
+// safe as. Launches inject the token as GatewayKeyVar, not under it.
 func (gw GatewayConfig) EnvVarName() string {
 	return strings.ToUpper(gw.Key)
 }
@@ -294,10 +294,10 @@ func checkGatewayKey(gw GatewayConfig, neverAllowEnv []string) error {
 	return nil
 }
 
-// gatewayBinding is the credential binding gw injects: Claude Code gets
+// GatewayBinding is the credential binding gw injects: Claude Code gets
 // its own fixed variables plus the endpoint, the other harnesses get
-// the token as EnvVarName.
-func gatewayBinding(gw GatewayConfig) CredentialBinding {
+// the token as GatewayKeyVar(name).
+func GatewayBinding(name string, gw GatewayConfig) CredentialBinding {
 	routes := map[string]CredentialRoute{}
 	for _, h := range gw.EffectiveHarnesses() {
 		if h == "claude" {
@@ -307,7 +307,7 @@ func gatewayBinding(gw GatewayConfig) CredentialBinding {
 				claudeGatewayDiscoveryEnv: "1",
 				claudeGatewayAPIKeyEnv:    "",
 			}
-			if e := gw.TokenEnv(h); e != "" {
+			if e := gw.TokenEnv(name, h); e != "" {
 				env = []string{e}
 			} else {
 				set[claudeGatewayTokenEnv] = KeylessPlaceholder
@@ -315,7 +315,7 @@ func gatewayBinding(gw GatewayConfig) CredentialBinding {
 			routes[h] = CredentialRoute{Env: env, Set: set}
 			continue
 		}
-		if e := gw.TokenEnv(h); e != "" {
+		if e := gw.TokenEnv(name, h); e != "" {
 			routes[h] = CredentialRoute{Env: []string{e}}
 		} else {
 			routes[h] = CredentialRoute{}
@@ -350,7 +350,7 @@ func SynthesizeGatewayCredentials(ctx Context) (Context, error) {
 		if _, taken := ctx.Credentials[name]; taken {
 			return ctx, fmt.Errorf("%w: gateways.%s: credentials.%s already exists", ErrInvalidGateway, name, name)
 		}
-		ctx.Credentials[name] = gatewayBinding(ctx.Gateways[name])
+		ctx.Credentials[name] = GatewayBinding(name, ctx.Gateways[name])
 	}
 	for _, name := range names {
 		if slices.Contains(ctx.DefaultCredentials, name) {
@@ -432,6 +432,6 @@ func DefaultCredentialsForHarness(synthCtx Context, harnessName string) []string
 
 // gatewayScrubNames are the variables any gateway may inject, scrubbed
 // from an inherited environment whenever a profile declares a gateway.
-func gatewayScrubNames(gw GatewayConfig) []string {
-	return []string{gw.EnvVarName(), claudeGatewayTokenEnv, claudeGatewayBaseURLEnv, claudeGatewayAPIKeyEnv, claudeGatewayDiscoveryEnv}
+func gatewayScrubNames(name string, gw GatewayConfig) []string {
+	return []string{gw.EnvVarName(), GatewayKeyVar(name), claudeGatewayTokenEnv, claudeGatewayBaseURLEnv, claudeGatewayAPIKeyEnv, claudeGatewayDiscoveryEnv}
 }

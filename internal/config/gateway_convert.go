@@ -40,7 +40,7 @@ func ConvertLegacyGateways(ctx Context) (gateways map[string]GatewayConfig, rena
 	// reserved name and no gateway's AIDE_GW_<NAME>_KEY.
 	free := func(candidate string) bool {
 		return !reservedGatewayName(candidate) && !slices.ContainsFunc(taken, func(o string) bool {
-			return gatewayKeyVar(o) == gatewayKeyVar(candidate)
+			return GatewayKeyVar(o) == GatewayKeyVar(candidate)
 		})
 	}
 	unique := func(base string) string {
@@ -102,8 +102,9 @@ func reservedGatewayName(name string) bool {
 	return n == "none" || strings.HasPrefix(n, "aide-")
 }
 
-// gatewayKeyVar is the variable name that would carry gateway name's key.
-func gatewayKeyVar(name string) string {
+// GatewayKeyVar is the variable that carries gateway name's key into a
+// launch and that harness files name as the key's source.
+func GatewayKeyVar(name string) string {
 	return "AIDE_GW_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_")) + "_KEY"
 }
 
@@ -112,6 +113,58 @@ func (c Context) ChoiceIsUnset(harness string) bool { return c.GatewayChoice[har
 
 // ChoiceIsNone reports whether harness is explicitly set to use no gateway.
 func (c Context) ChoiceIsNone(harness string) bool { return c.GatewayChoice[harness] == "none" }
+
+// GatewayCandidates returns, sorted, the gateways of ctx marked for
+// harness h, in the converted (one API per gateway) form.
+func (c Context) GatewayCandidates(h string) []string {
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(c.ConvertedGateways)) {
+		if slices.Contains(c.ConvertedGateways[name].EffectiveHarnesses(), h) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// LegacyGatewayChoice is the choice a profile with legacy gateways
+// makes for harness h without a gateway_choice: the gateway today's
+// default rule (default_credentials: and the sorted gateway order, see
+// DefaultCredentialsForHarness) injects, as renamed for h, or "none"
+// when that rule injects no gateway. It is "" when no legacy gateway is
+// marked for h, which leaves the choice unset. renames is
+// Config.LegacyRenames for the profile.
+func LegacyGatewayChoice(ctx Context, h string, renames map[string]map[string]string) string {
+	candidates := ctx.GatewayCandidates(h)
+	synth, err := SynthesizeGatewayCredentials(ctx)
+	if err != nil || !slices.ContainsFunc(candidates, func(n string) bool {
+		_, legacy := ctx.Gateways[n]
+		return legacy || renamedFrom(renames[h], n) != ""
+	}) {
+		return ""
+	}
+	for _, name := range DefaultCredentialsForHarness(synth, h) {
+		if _, legacy := ctx.Gateways[name]; !legacy {
+			continue
+		}
+		if to, ok := renames[h][name]; ok {
+			name = to
+		}
+		if slices.Contains(candidates, name) {
+			return name
+		}
+	}
+	return "none"
+}
+
+// renamedFrom returns the old name that renames maps to name, or "".
+func renamedFrom(renames map[string]string, name string) string {
+	for from, to := range renames {
+		if to == name {
+			return from
+		}
+	}
+	return ""
+}
 
 // ValidateGatewayChoices reports gateway_choice entries that name a
 // gateway that is missing or does not serve the harness. Stale choices

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -93,6 +94,11 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 	return hf, dir, path, nil
 }
 
+// harnessWrites serializes writes to harness files: gateways synced in
+// parallel share one file per harness, and each write reads the file
+// first.
+var harnessWrites sync.Mutex
+
 // MaterializeHarness writes cat into harnessName's config file. When
 // the harness's dir does not exist and createDirIfMissing is false,
 // nothing is written and the status is pending: aide leaves a harness
@@ -100,9 +106,9 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string, createDirIfMissing bool) (HarnessFileStatus, error) {
 	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
 	if err != nil {
-		return HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(harnessName)}, err
+		return HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(gwName, harnessName)}, err
 	}
-	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(harnessName), FilePath: path}
+	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(gwName, harnessName), FilePath: path}
 	if cat == nil {
 		return st, errors.New("gateway: no cached catalogue to write")
 	}
@@ -115,7 +121,10 @@ func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConf
 			return st, fmt.Errorf("creating %s: %w", dir, err)
 		}
 	}
-	if err := hf.write(path, gwName, gw, cat, IsDefaultGateway(ctx, gwName, harnessName)); err != nil {
+	harnessWrites.Lock()
+	err = hf.write(path, gwName, gw, cat, IsDefaultGateway(ctx, gwName, harnessName))
+	harnessWrites.Unlock()
+	if err != nil {
 		return st, err
 	}
 	st.State, st.Detail = StateSynced, fmt.Sprintf("%d models", len(cat.Models))
@@ -126,7 +135,7 @@ func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConf
 // fresh catalogue cat for gwName.
 func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string) HarnessFileStatus {
 	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
-	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(harnessName), FilePath: path}
+	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(gwName, harnessName), FilePath: path}
 	if err != nil {
 		st.State, st.Detail = StateStale, err.Error()
 		return st
@@ -469,7 +478,7 @@ func (piFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCat
 		Models:     piModels(cat.Models),
 	}
 	if gw.RequiresToken() {
-		p.APIKey = "$" + gw.EnvVarName()
+		p.APIKey = "$" + config.GatewayKeyVar(gwName)
 	} else {
 		p.APIKey = cmp.Or(gwName, "none")
 	}
@@ -494,7 +503,7 @@ func (piFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cached
 		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
 	case p.BaseURL != NormalizeBaseURL(gw.BaseURL):
 		return "baseUrl differs", nil
-	case gw.RequiresToken() && (p.APIKey != "$"+gw.EnvVarName() || !p.AuthHeader):
+	case gw.RequiresToken() && (p.APIKey != "$"+config.GatewayKeyVar(gwName) || !p.AuthHeader):
 		return "apiKey differs", nil
 	case !gw.RequiresToken() && (!isLiteralPiPlaceholder(p.APIKey) || p.AuthHeader):
 		return "apiKey differs", nil
@@ -658,7 +667,7 @@ func (ompFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCa
 	}
 	if gw.RequiresToken() {
 		p.AuthHeader = true
-		p.APIKey = gw.EnvVarName()
+		p.APIKey = config.GatewayKeyVar(gwName)
 	} else {
 		p.Auth = "none"
 	}
@@ -685,7 +694,7 @@ func (ompFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *Cache
 		return "baseUrl differs", nil
 	case p.API != "anthropic-messages":
 		return "api differs", nil
-	case gw.RequiresToken() && (p.APIKey != gw.EnvVarName() || !p.AuthHeader || (p.Auth != "" && p.Auth != "apiKey")):
+	case gw.RequiresToken() && (p.APIKey != config.GatewayKeyVar(gwName) || !p.AuthHeader || (p.Auth != "" && p.Auth != "apiKey")):
 		return "apiKey differs", nil
 	case !gw.RequiresToken() && (p.APIKey != "" || p.AuthHeader || p.Auth != "none"):
 		return "apiKey differs", nil
@@ -761,10 +770,10 @@ func (openCodeFile) path(ctx config.Context, dir, home string) string {
 
 func (openCodeFile) singleGatewayPerDir() bool { return false }
 
-func openCodeAPIKey(gw config.GatewayConfig) string { return "{env:" + gw.EnvVarName() + "}" }
+func openCodeAPIKey(gwName string) string { return "{env:" + config.GatewayKeyVar(gwName) + "}" }
 
-func openCodeAuthHeader(gw config.GatewayConfig) string {
-	return "Bearer " + openCodeAPIKey(gw)
+func openCodeAuthHeader(gwName string) string {
+	return "Bearer " + openCodeAPIKey(gwName)
 }
 
 func defaultOpenCodeModelID(models []Model) string {
@@ -815,9 +824,9 @@ func (openCodeFile) write(path, gwName string, gw config.GatewayConfig, cat *Cac
 		Models:   openCodeModels(cat.Models),
 	}
 	if gw.RequiresToken() {
-		p.Env = []string{gw.EnvVarName()}
-		p.Settings.APIKey = openCodeAPIKey(gw)
-		p.Headers = map[string]string{"Authorization": openCodeAuthHeader(gw)}
+		p.Env = []string{config.GatewayKeyVar(gwName)}
+		p.Settings.APIKey = openCodeAPIKey(gwName)
+		p.Headers = map[string]string{"Authorization": openCodeAuthHeader(gwName)}
 	}
 	if _, err := setJSONEntry(doc, "providers", id, p); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -879,17 +888,17 @@ func (openCodeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *
 		return fmt.Sprintf("provider %q missing", ProviderID(gwName)), nil
 	case p.Package != "@ai-sdk/anthropic":
 		return "package differs", nil
-	case gw.RequiresToken() && !slices.Equal(p.Env, []string{gw.EnvVarName()}):
+	case gw.RequiresToken() && !slices.Equal(p.Env, []string{config.GatewayKeyVar(gwName)}):
 		return "env differs", nil
 	case !gw.RequiresToken() && len(p.Env) != 0:
 		return "env differs", nil
 	case p.Settings.BaseURL != NormalizeBaseURL(gw.BaseURL)+"/v1":
 		return "baseURL differs", nil
-	case gw.RequiresToken() && p.Settings.APIKey != openCodeAPIKey(gw):
+	case gw.RequiresToken() && p.Settings.APIKey != openCodeAPIKey(gwName):
 		return "apiKey differs", nil
 	case !gw.RequiresToken() && p.Settings.APIKey != "":
 		return "apiKey differs", nil
-	case gw.RequiresToken() && p.Headers["Authorization"] != openCodeAuthHeader(gw):
+	case gw.RequiresToken() && p.Headers["Authorization"] != openCodeAuthHeader(gwName):
 		return "authorization header differs", nil
 	case !gw.RequiresToken() && p.Headers["Authorization"] != "":
 		return "authorization header differs", nil
@@ -992,7 +1001,7 @@ func (c codexFile) write(path, gwName string, gw config.GatewayConfig, _ *Cached
 		"wire_api": codexWireAPI,
 	}
 	if gw.RequiresToken() {
-		entry["env_key"] = gw.EnvVarName()
+		entry["env_key"] = config.GatewayKeyVar(gwName)
 	}
 	providers[id] = entry
 	doc["model_providers"] = providers
@@ -1045,7 +1054,7 @@ func (c codexFile) mismatch(path, gwName string, gw config.GatewayConfig, _ *Cac
 		return "base_url differs", nil
 	case p["wire_api"] != codexWireAPI:
 		return "wire_api differs", nil
-	case gw.RequiresToken() && p["env_key"] != gw.EnvVarName():
+	case gw.RequiresToken() && p["env_key"] != config.GatewayKeyVar(gwName):
 		return "env_key differs", nil
 	case !gw.RequiresToken():
 		if _, ok := p["env_key"]; ok {

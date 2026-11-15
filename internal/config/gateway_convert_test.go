@@ -209,3 +209,42 @@ func TestLoadRejectsURLOnlyGateway(t *testing.T) {
 		t.Fatal("Load() accepted a gateway with url and no base_url")
 	}
 }
+
+func TestLegacyGatewayChoice(t *testing.T) {
+	legacy := func(h ...string) GatewayConfig {
+		return GatewayConfig{BaseURL: "https://gw.example.com", Store: "s", Key: "k", Harnesses: h}
+	}
+	convert := func(ctx Context) (Context, map[string]map[string]string) {
+		ctx.ConvertedGateways, _ = ConvertLegacyGateways(ctx)
+		_, renames := ConvertLegacyGateways(ctx)
+		return ctx, renames
+	}
+	t.Run("sorted rule picks the first gateway", func(t *testing.T) {
+		ctx, renames := convert(Context{Gateways: map[string]GatewayConfig{"b": legacy("claude"), "a": legacy("claude")}})
+		if got := LegacyGatewayChoice(ctx, "claude", renames); got != "a" {
+			t.Errorf("choice = %q, want a", got)
+		}
+	})
+	t.Run("codex follows the split gateway", func(t *testing.T) {
+		ctx, renames := convert(Context{Gateways: map[string]GatewayConfig{"a": legacy()}})
+		if got := LegacyGatewayChoice(ctx, "codex", renames); got != "a-codex" {
+			t.Errorf("choice = %q, want a-codex", got)
+		}
+	})
+	t.Run("no marked gateway leaves it unset", func(t *testing.T) {
+		ctx, renames := convert(Context{Gateways: map[string]GatewayConfig{"a": legacy("claude")}})
+		if got := LegacyGatewayChoice(ctx, "pi", renames); got != "" {
+			t.Errorf("choice = %q, want unset", got)
+		}
+	})
+	t.Run("a provider credential that claims the slot means none", func(t *testing.T) {
+		ctx, renames := convert(Context{
+			Gateways:           map[string]GatewayConfig{"a": legacy("claude")},
+			Credentials:        map[string]CredentialBinding{"anthropic": {Store: "s", Key: "k"}},
+			DefaultCredentials: []string{"anthropic"},
+		})
+		if got := LegacyGatewayChoice(ctx, "claude", renames); got != "none" {
+			t.Errorf("choice = %q, want none", got)
+		}
+	})
+}

@@ -1,5 +1,5 @@
 // Package prefs stores user-local repository preferences: the default
-// harness and the selected credential binding names for a repository,
+// harness and the gateway choice per harness for a repository,
 // keyed by profile and normalized origin remote. It never stores
 // credential values or model choices, and lives in aide's state
 // directory, never in the repository or the user config.
@@ -17,7 +17,7 @@ import (
 )
 
 // Version is the preferences file format this aide reads and writes.
-const Version = 1
+const Version = 2
 
 // ErrUnsupportedVersion reports a preferences file written by a newer
 // aide. It is never overwritten.
@@ -54,12 +54,16 @@ func (k Key) Validate() error {
 	return nil
 }
 
-// Preference is what is saved for one repository. A nil Credentials is
-// unset (the profile default applies); a non-nil empty one is an
-// explicit selection of no credentials, as for native-login launches.
+// Preference is what is saved for one repository. Gateway is the
+// per-harness gateway choice: "" or absent is unset, "none" is the
+// harness's own login, anything else a gateway name. LegacyCredentials
+// is a version 1 credential selection kept until it is translated (see
+// gatewaymigrate.TranslatePreference): nil is unset; a non-nil empty
+// one is an explicit selection of no credentials.
 type Preference struct {
-	Harness     string    `json:"harness,omitempty"`
-	Credentials *[]string `json:"credentials,omitempty"`
+	Harness           string            `json:"harness,omitempty"`
+	Gateway           map[string]string `json:"gateway,omitempty"`
+	LegacyCredentials *[]string         `json:"credentials,omitempty"`
 }
 
 // Selection returns names as an explicit credential selection, empty
@@ -71,7 +75,7 @@ func Selection(names ...string) *[]string {
 
 // IsZero reports a preference with nothing set.
 func (p Preference) IsZero() bool {
-	return p.Harness == "" && p.Credentials == nil
+	return p.Harness == "" && len(p.Gateway) == 0 && p.LegacyCredentials == nil
 }
 
 // File is the on-disk preferences document: profile name, then

@@ -567,7 +567,9 @@ harness's default.
 `aide gateway add` never changes how existing launches authenticate:
 for each marked `claude` or `codex` whose choice was unset it records
 `none`, unless you pass `--default-for <harness>` (repeatable) or
-`--default` to make the new gateway the choice. A stored choice that
+`--default` to make the new gateway the choice. On a terminal without
+those flags, `add` asks per `claude`/`codex` whether to make it the
+default, and records `none` on No or off a terminal. A stored choice that
 names a gateway no longer marked for the harness is reported on stderr
 and treated as unset. `aide gateway use --harness <h> --unset` clears one.
 
@@ -583,9 +585,11 @@ once", "Always in this repo" (when the repository has an `origin`), or
 
 #### Exit code 78
 
-When the choice is unset and stdin is not a terminal, aide stops
+When the choice is unset and stdin is not a terminal (or the picker is
+aborted), aide stops
 before starting the harness with exit code `78` (`EX_CONFIG`) and
-prints the candidate gateways and the commands to resolve it:
+prints the candidate gateways and the commands to resolve it, along
+the lines of this example (not exact output):
 
 ```
 claude has gateways marked in profile "work" (corp, openrouter) but none chosen;
@@ -624,10 +628,16 @@ capability for that launch only, which grants the full capability
 (`~/.aws` and `AWS_*` variables, or the gcloud equivalent). Two regions
 are two named gateways.
 
-`aide gateway add` currently writes only gateways that serve the
-Anthropic Messages API with a bearer key (custom `--url` gateways and
+The main entry `aide gateway add` writes serves only the Anthropic
+Messages API with a bearer key (custom `--url` gateways and
 `openrouter-anthropic`); other presets are in the catalog and in the
 schema above but `add` refuses them until aide can write them.
+
+When `codex` is among the harnesses (the default), `add` also creates
+`<name>-codex`, a Responses API gateway (`api: openai-responses`) at
+`<url>/v1` that serves `codex` only. Its `gateway_choice.codex` stays
+`none` unless you pass `--default` or `--default-for codex`. Pass
+`--harnesses` without `codex` to skip it.
 
 | Flag of `gateway add` | Default | Meaning |
 | :--- | :--- | :--- |
@@ -638,7 +648,7 @@ schema above but `add` refuses them until aide can write them.
 | `--key-stdin`, `--from-env[=VAR]` | hidden prompt | Where the key comes from |
 | `--harnesses` | the preset's, else `claude,pi,omp,opencode,codex` | Harnesses that may use it |
 | `--model` | none | Model the harnesses start on |
-| `--default`, `--default-for <h>` | off | Make it the choice for `claude`/`codex` |
+| `--default`, `--default-for <h>` | off | Make it the choice for every harness it serves |
 | `--refresh-ttl` | `24h` | Launch-time model refresh interval |
 | `--secret-store` | the profile's `secret:` store, else the profile name | Store for the key |
 | `--key` | `<name>_token` | Key inside the store |

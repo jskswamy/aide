@@ -167,7 +167,9 @@ $ aide gateway add corp --url https://llm.example.com
 $ aide gateway use corp --harness claude
 ```
 
-aide never selects a gateway for you. When `claude` or `codex` has gateways
+With codex among the harnesses (the default), `add` also creates
+`corp-codex`, a Responses API gateway at `/v1` for Codex only; pass
+`--harnesses` without `codex` to skip it. aide never selects a gateway for you. When `claude` or `codex` has gateways
 marked and no choice, aide shows a picker on a terminal and exits with code
 `78` in a script. See [Gateways](configuration.md#gateways).
 

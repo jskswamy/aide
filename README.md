@@ -394,11 +394,11 @@ Point Claude, Pi, Oh My Pi, OpenCode or Codex at a hosted service, a company pro
 
 ```bash
 aide gateway add corp --url https://llm.example.com --profile work
-aide gateway use corp --harness claude     # choose it; aide never picks for you
+aide gateway use corp --harness claude --profile work  # choose it; aide never picks for you
 aide --gateway none                        # this launch uses Claude's own login
 ```
 
-The key is stored age-encrypted, each harness's config gets an `aide-<name>` entry that names a variable and never the key, and `gateway_choice:` records which gateway each harness uses. Adding a gateway never changes how existing launches authenticate. When `claude` or `codex` has gateways marked and no choice, aide opens a picker on a terminal and exits with code `78` in a script. Upgrading migrates older gateway config automatically (with backups; preview with `aide config migrate`). See [Gateways in docs/configuration.md](docs/configuration.md#gateways).
+The key is stored age-encrypted, each harness's config gets an `aide-<name>` entry that names a variable and never the key, and `gateway_choice:` records which gateway each harness uses. With the default harnesses, `add` also creates `corp-codex`, a Responses API gateway at `<url>/v1` for Codex only (pass `--harnesses` without `codex` to skip it). Adding a gateway never changes how existing launches authenticate. When `claude` or `codex` has gateways marked and no choice, aide opens a picker on a terminal and exits with code `78` in a script. Upgrading migrates older gateway config automatically (with backups; preview with `aide config migrate`). See [Gateways in docs/configuration.md](docs/configuration.md#gateways).
 
 ## Secrets
 

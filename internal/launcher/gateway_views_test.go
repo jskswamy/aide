@@ -1,7 +1,6 @@
 package launcher
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -73,11 +72,11 @@ func TestEnrichBanner_GatewayFields(t *testing.T) {
 	if len(data.AvailableGateways) != 1 || data.AvailableGateways[0].Name != "a" || data.AvailableGateways[0].KeyEnv != "ANTHROPIC_AUTH_TOKEN" {
 		t.Errorf("available = %+v", data.AvailableGateways)
 	}
-	// A --gateway that does not serve another harness is a warning on
-	// that harness, not a failure.
+	// --gateway only affects the launched harness: others show their own
+	// choice without a flag warning.
 	for _, v := range data.GatewayChoices {
-		if v.Harness == "codex" && !slices.ContainsFunc(v.Warnings, func(s string) bool { return s != "" }) {
-			t.Errorf("codex view has no warning for --gateway b: %+v", v)
+		if v.Harness == "codex" && (len(v.Warnings) > 0 || v.Source == SourceFlag) {
+			t.Errorf("codex view reflects --gateway b: %+v", v)
 		}
 	}
 }

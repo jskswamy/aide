@@ -51,6 +51,15 @@ func keyLocation(c CredentialInfo) string {
 	return loc
 }
 
+// unsetText words an unset choice: multi harnesses (Others set) start on
+// their own default, slot harnesses prompt or exit 78.
+func unsetText(c CredentialInfo, harness string) string {
+	if c.Others > 0 {
+		return fmt.Sprintf("unset (starts on %s default)", harness)
+	}
+	return "unset (would prompt on a terminal, exit 78 in scripts)"
+}
+
 // activeChoice is the active harness's entry in GatewayChoices.
 func activeChoice(data *BannerData) *CredentialInfo {
 	for i := range data.GatewayChoices {
@@ -90,7 +99,7 @@ func gatewayLines(data *BannerData) []string {
 	case "none":
 		lines = append(lines, fmt.Sprintf("none — %s login%s", data.Harness, src))
 	case "unset":
-		lines = append(lines, fmt.Sprintf("unset — %s starts on its own default%s", data.Harness, src))
+		lines = append(lines, unsetText(*ch, data.Harness)+src)
 	default:
 		head := ch.Choice
 		if ch.Startup {
@@ -115,7 +124,11 @@ func gatewayLines(data *BannerData) []string {
 				lines = append(lines, "models: not synced yet")
 			}
 			if c.TargetFile != "" {
-				lines = append(lines, fmt.Sprintf("file: %s (%s)", c.TargetFile, c.TargetSync))
+				file := "file: " + c.TargetFile
+				if c.TargetSync != "" {
+					file += " (" + c.TargetSync + ")"
+				}
+				lines = append(lines, file)
 			}
 			continue
 		}
@@ -176,9 +189,11 @@ func GatewaySummary(profile string, views []CredentialInfo) []string {
 		switch {
 		case v.Source == sourceNoCandidates, v.Choice == "none":
 		case v.Choice == "unset":
+			text := unsetText(v, v.Harness)
 			if v.Others > 0 {
-				rest = append(rest, fmt.Sprintf("starts on %s default · %d in /model", v.Harness, v.Others))
+				text += fmt.Sprintf(" · %d in /model", v.Others)
 			}
+			rest = append(rest, text)
 		default:
 			rest = append(rest, keyLocation(v))
 			if v.Others > 0 {

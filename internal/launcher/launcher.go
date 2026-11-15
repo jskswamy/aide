@@ -358,7 +358,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefYolo = cfg.Preferences.Yolo
 	}
 	effectiveYolo := l.resolveEffectiveYolo(prefYolo, rc.Context.Yolo, nil)
-	extraArgs = l.applyGatewayChoice(cfg.HarnessOf(agentName), rc.Context, sel.Gateway, extraArgs)
+	extraArgs, choiceEnv := l.applyGatewayChoice(cfg.HarnessOf(agentName), rc.Context, sel.Gateway, extraArgs)
 	extraArgs = ApplyLaunchArgs(cfg.HarnessOf(agentName), extraArgs)
 	if effectiveYolo {
 		var err error
@@ -536,6 +536,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	if len(blockedVars) > 0 {
 		env = filterNeverAllowEnv(env, blockedVars)
 	}
+	env = l.mergeChoiceEnv(env, choiceEnv, sel.Gateway.Source == SourceFlag, blockedVars)
 
 	// An OpenCode profile with a config dir keeps its accounts in its own
 	// database there. The path is read from OPENCODE_CONFIG_DIR before the

@@ -299,6 +299,70 @@ profiles:
 	})
 }
 
+func TestMergeChoiceEnv(t *testing.T) {
+	const key = "OPENCODE_CONFIG_CONTENT"
+	choice := map[string]string{key: `{"model":"aide-a/m"}`}
+	tests := []struct {
+		name     string
+		env      []string
+		explicit bool
+		blocked  []string
+		want     string // "" means the variable is absent
+		stderr   string
+	}{
+		{"unset", []string{"A=1"}, false, nil, `{"model":"aide-a/m"}`, ""},
+		{"blocked", []string{"A=1"}, true, []string{key}, "", "never_allow_env"},
+		{"flag replaces only model", []string{key + `={"model":"x","theme":"t"}`}, true, nil, `{"model":"aide-a/m","theme":"t"}`, "replaces"},
+		{"saved choice yields", []string{key + `={"model":"x"}`}, false, nil, `{"model":"x"}`, "keeps"},
+		{"invalid json", []string{key + "=nope"}, true, nil, "nope", "not a JSON object"},
+		{"non-object", []string{key + "=[1]"}, true, nil, "[1]", "not a JSON object"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			l := &Launcher{Stderr: &stderr}
+			got := envSliceToMap(l.mergeChoiceEnv(tt.env, choice, tt.explicit, tt.blocked))[key]
+			if got != tt.want {
+				t.Errorf("%s = %q, want %q", key, got, tt.want)
+			}
+			if !strings.Contains(stderr.String(), tt.stderr) || (tt.stderr == "" && stderr.Len() > 0) {
+				t.Errorf("stderr = %q, want it to contain %q", stderr.String(), tt.stderr)
+			}
+		})
+	}
+}
+
+func TestLaunch_OpenCodeStartsOnChoice(t *testing.T) {
+	fakeGatewayStore(t)
+	gs := newGatewayServer(t, `{"data":[{"id":"m"}]}`)
+	cfg := fmt.Sprintf(`
+profiles:
+  work:
+    agent: opencode
+    config_dir_name: work
+    gateways:
+      alpha:
+        base_url: %s
+        store: work
+        key: corp_token
+        model: alpha-model
+        harnesses: [opencode]
+    gateway_choice:
+      opencode: alpha
+default_profile: work
+`, gs.URL)
+	env, args, stderr := launchGatewayArgs(t, t.TempDir(), cfg, "opencode", "")
+	if got, _ := envValue(env, "OPENCODE_CONFIG_CONTENT"); got != `{"model":"aide-alpha/alpha-model"}` {
+		t.Errorf("OPENCODE_CONFIG_CONTENT = %q; stderr:\n%s", got, stderr)
+	}
+	if !slices.Contains(args, "--standalone") {
+		t.Errorf("opencode args = %v, want --standalone so the choice env reaches the session", args)
+	}
+	if slices.Contains(args, "aide-alpha") {
+		t.Errorf("opencode args = %v, want no startup flags", args)
+	}
+}
+
 func TestResolveChoice_SavedNonGatewaySelectionIsNone(t *testing.T) {
 	ctx := config.Context{Gateways: map[string]config.GatewayConfig{
 		"corp": {BaseURL: "https://corp.example.com", Store: "s", Key: "k", Harnesses: []string{"claude"}},

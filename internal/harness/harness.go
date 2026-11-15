@@ -9,6 +9,7 @@
 package harness
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -62,6 +63,11 @@ type Descriptor struct {
 	// for model ("" when the gateway has none). Nil means the harness
 	// takes no startup flags.
 	ChoiceArgs func(entry, model string) []string
+	// ChoiceEnv returns the env vars that select provider entry for
+	// model for an invocation with args, or nil when it takes none (no
+	// model, a subcommand, or a server the launch does not own). Nil
+	// means the harness takes no startup env.
+	ChoiceEnv func(args []string, entry, model string) map[string]string
 }
 
 // Reach is how a harness uses gateways.
@@ -90,7 +96,7 @@ var userChoiceFlags = []string{"--model", "-m", "--provider"}
 // notice when it delivered nothing because the user's own flags win.
 // Management invocations get nothing. It runs before ApplyLaunchArgs.
 func (d Descriptor) ApplyChoice(args []string, entry, model string) ([]string, map[string]string, string) {
-	if entry == "" || d.ChoiceArgs == nil {
+	if entry == "" || (d.ChoiceArgs == nil && d.ChoiceEnv == nil) {
 		return args, nil, ""
 	}
 	if len(args) > 0 && slices.Contains(d.ManagementArgs, args[0]) {
@@ -99,7 +105,34 @@ func (d Descriptor) ApplyChoice(args []string, entry, model string) ([]string, m
 	if f := userChoiceFlag(args); f != "" {
 		return args, nil, fmt.Sprintf("%s sets %s, so the gateway choice %q is not applied", d.Name, f, entry)
 	}
-	return append(d.ChoiceArgs(entry, model), args...), nil, ""
+	var env map[string]string
+	if d.ChoiceEnv != nil {
+		env = d.ChoiceEnv(args, entry, model)
+	}
+	if d.ChoiceArgs != nil {
+		args = append(d.ChoiceArgs(entry, model), args...)
+	}
+	return args, env, ""
+}
+
+// opencodeChoiceEnv starts OpenCode on entry/model through its
+// per-launch config, on a root launch or `run`. It sets nothing for
+// other subcommands or when the launch joins a server aide did not
+// start (--server, attach), whose config this env cannot reach.
+func opencodeChoiceEnv(args []string, entry, model string) map[string]string {
+	if model == "" || (len(args) > 0 && args[0] != "run" && opencodeSubcommands[args[0]]) {
+		return nil
+	}
+	if hasServerFlag(args) {
+		return nil
+	}
+	b, _ := json.Marshal(map[string]string{"model": entry + "/" + model})
+	return map[string]string{"OPENCODE_CONFIG_CONTENT": string(b)}
+}
+
+// hasServerFlag reports --server or --server=URL in args.
+func hasServerFlag(args []string) bool {
+	return slices.ContainsFunc(args, func(a string) bool { name, _, _ := strings.Cut(a, "="); return name == "--server" })
 }
 
 // userChoiceFlag returns the first model or provider flag in args,
@@ -237,7 +270,7 @@ var opencodeStandaloneLeaves = map[string][]string{
 // for other subcommands, and is prepended for root invocations. An
 // explicit --standalone or --server wins.
 func (d Descriptor) ApplyLaunchArgs(args []string) []string {
-	if d.Name != "opencode" || slices.Contains(args, "--standalone") || slices.Contains(args, "--server") {
+	if d.Name != "opencode" || slices.Contains(args, "--standalone") || hasServerFlag(args) {
 		return args
 	}
 	if len(args) == 0 || !opencodeSubcommands[args[0]] {
@@ -402,6 +435,7 @@ var descriptors = []Descriptor{
 		Icon:             "🔷",
 		Reach:            ReachMulti,
 		ManagementArgs:   commonManagementArgs,
+		ChoiceEnv:        opencodeChoiceEnv,
 	},
 	{
 		// Pi's --approve trusts project-local files, a separate decision

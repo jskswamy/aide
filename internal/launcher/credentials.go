@@ -369,14 +369,15 @@ func PlanProfileCredentials(cfg *config.Config, rc *aidectx.ResolvedContext, in 
 
 // passiveChoices resolves every gateway-capable harness's choice
 // without asking. A choice that cannot be resolved is shown unset with
-// the reason.
+// the reason. The --gateway flag and auth mode only affect the launched
+// harness, so the others resolve from saved choices alone.
 func passiveChoices(cfg *config.Config, profile string, ctx config.Context, in SelectionInputs) map[string]ResolvedChoice {
 	out := map[string]ResolvedChoice{}
 	for _, d := range harness.All() {
 		if d.Reach == harness.ReachNone {
 			continue
 		}
-		c, notices, err := ResolveChoice(cfg, profile, ctx, d.Name, in, nil)
+		c, notices, err := ResolveChoice(cfg, profile, ctx, d.Name, SelectionInputs{Saved: in.Saved}, nil)
 		if err != nil {
 			c, notices = Choice{Source: SourceUnset}, append(notices, err.Error())
 		}

@@ -337,6 +337,8 @@ func TestApplyChoice(t *testing.T) {
 		{"user --model=", "omp", []string{"--model=x"}, "aide-corp", "m1", []string{"--model=x"}, true},
 		{"user -m", "codex", []string{"-m", "x"}, "aide-corp", "m1", []string{"-m", "x"}, true},
 		{"user -c model_provider", "codex", []string{"-c", "model_provider=other"}, "aide-corp", "", []string{"-c", "model_provider=other"}, true},
+		{"user --config model", "codex", []string{"--config=model=x"}, "aide-corp", "", []string{"--config=model=x"}, true},
+		{"user --config model spaced", "codex", []string{"--config", "model=x"}, "aide-corp", "", []string{"--config", "model=x"}, true},
 		{"unrelated -c", "codex", []string{"-c", "sandbox=none"}, "aide-corp", "", []string{"-c", "model_provider=aide-corp", "-c", "sandbox=none"}, false},
 	}
 	for _, tt := range tests {

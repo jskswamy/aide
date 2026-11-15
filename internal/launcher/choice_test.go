@@ -298,3 +298,21 @@ profiles:
 		}
 	})
 }
+
+func TestResolveChoice_SavedNonGatewaySelectionIsNone(t *testing.T) {
+	ctx := config.Context{Gateways: map[string]config.GatewayConfig{
+		"corp": {BaseURL: "https://corp.example.com", Store: "s", Key: "k", Harnesses: []string{"claude"}},
+	}}
+	ctx.ConvertedGateways, _ = config.ConvertLegacyGateways(ctx)
+	ctx.Agent = "claude"
+	ctx.Credentials = map[string]config.CredentialBinding{"anthropic": {Store: "s", Key: "ak"}}
+	in := SelectionInputs{Saved: prefs.Preference{Harness: "claude", LegacyCredentials: prefs.Selection("anthropic")}}
+	got, _, err := ResolveChoice(&config.Config{}, "work", ctx, "claude", in, nil)
+	if err != nil || got.Value != "none" || got.Source != SourceRepo {
+		t.Fatalf("choice = %+v, %v, want repo none", got, err)
+	}
+	sel := Selection{}
+	if _, _, _, err := PlanProfileCredentials(&config.Config{}, &aidectx.ResolvedContext{Name: "work", Context: ctx}, in, &sel); err != nil {
+		t.Errorf("PlanProfileCredentials: %v", err)
+	}
+}

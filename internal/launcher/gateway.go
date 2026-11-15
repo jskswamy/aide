@@ -154,7 +154,11 @@ func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName,
 		if slices.Contains(injected, name) {
 			continue
 		}
-		if _, err := gateway.MaterializeHarness(ctx, name, ctx.Gateways[name], &gateway.CachedCatalogue{}, harnessName, homeDir, true); err != nil {
+		gw, cat := ctx.Gateways[name], &gateway.CachedCatalogue{}
+		if gateway.InspectHarness(ctx, name, gw, cat, harnessName, homeDir).State == gateway.StateSynced {
+			continue
+		}
+		if _, err := gateway.MaterializeHarness(ctx, name, gw, cat, harnessName, homeDir, true); err != nil {
 			fmt.Fprintf(l.stderr(), "aide: warning: could not write gateway %q for %s: %v\n", name, harnessName, err)
 		}
 	}

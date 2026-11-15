@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -100,6 +101,7 @@ func Load(configDir, projectDir string) (*Config, error) {
 	if err := cfg.validateCredentials(); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	cfg.warnKeylessGateways()
 	if err := cfg.ValidatePlugins(); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
@@ -233,4 +235,20 @@ func SandboxPolicyToRef(sp *SandboxPolicy) *SandboxRef {
 		return &SandboxRef{Disabled: true}
 	}
 	return &SandboxRef{Inline: sp}
+}
+
+// loadWarnings receives Load's non-fatal warnings.
+var loadWarnings io.Writer = os.Stderr
+
+// warnKeylessGateways warns about keyless gateways off loopback without
+// failing Load, so `aide gateway remove` and `edit` still work.
+func (c *Config) warnKeylessGateways() {
+	for _, name := range sortedKeys(c.Contexts) {
+		ctx := c.Contexts[name]
+		for _, g := range slices.Sorted(maps.Keys(ctx.Gateways)) {
+			if err := ValidateGatewayTarget(g, ctx.Gateways[g]); err != nil {
+				fmt.Fprintf(loadWarnings, "aide: warning: profile %q: %v\n", name, err)
+			}
+		}
+	}
 }

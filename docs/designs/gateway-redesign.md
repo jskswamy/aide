@@ -1876,3 +1876,7 @@ migration guard and backups.
     the synthesized default context) fixed.
 *   **User approval of the re-reviewed change:** approved by the user on
     2026-11-14.
+
+### Implementation decisions
+
+*   Keyless safety: `config.Load` prints the non-loopback keyless warning to stderr (package-level writer); the Claude placeholder lives in the route's `Set` (so the banner skips any `Set` value equal to `config.KeylessPlaceholder`); `Launcher.Launch` validates only gateways in the launch's credential plan.

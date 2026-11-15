@@ -47,7 +47,8 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 		ctx, cancel = context.WithTimeout(ctx, DefaultFetchTimeout)
 		defer cancel()
 	}
-	if Endpoint(opts.Gateway).Switch != nil {
+	ep := Endpoint(opts.Gateway)
+	if ep.Switch != nil {
 		return &SyncResult{}, nil // nothing to fetch or write for a provider switch
 	}
 	progress := opts.Progress
@@ -57,7 +58,6 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	base := NormalizeBaseURL(opts.Gateway.BaseURL)
 	models := opts.Models
 	if !opts.Prefetch {
-		ep := Endpoint(opts.Gateway)
 		fmt.Fprintf(progress, "→ Fetching models from %s...\n", ep.ModelsURL())
 		var err error
 		models, err = FetchModels(ctx, opts.HTTPClient, ep, opts.Token)

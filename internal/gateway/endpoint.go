@@ -24,7 +24,7 @@ type EndpointSpec struct {
 	Switch *gatewaypreset.SwitchSpec
 }
 
-// Endpoint resolves gw: a preset gives its URL, wire protocol and key
+// Endpoint resolves gw: a preset (with no other url) gives its URL, wire protocol and key
 // header, a custom gateway its url and api with a Bearer key (api
 // defaults to anthropic-messages).
 func Endpoint(gw config.GatewayConfig) EndpointSpec {
@@ -38,8 +38,12 @@ func Endpoint(gw config.GatewayConfig) EndpointSpec {
 		if p.Kind == gatewaypreset.KindProviderSwitch {
 			return EndpointSpec{Switch: p.Switch}
 		}
-		ep.BaseURL, ep.API, ep.Header = p.BaseURL, p.API, p.Header
-		ep.Keyless = ep.Keyless || p.Kind == gatewaypreset.KindKeylessLoopback
+		// A url that differs from the preset's was set on purpose (gateway edit --url):
+		// resolve it as a custom gateway so the key goes where the user pointed it.
+		if ep.BaseURL == "" || NormalizeBaseURL(ep.BaseURL) == NormalizeBaseURL(p.BaseURL) {
+			ep.BaseURL, ep.API, ep.Header = p.BaseURL, p.API, p.Header
+			ep.Keyless = ep.Keyless || p.Kind == gatewaypreset.KindKeylessLoopback
+		}
 	}
 	if ep.API == gatewaypreset.APIAnthropicMessages {
 		ep.BaseURL = NormalizeBaseURL(ep.BaseURL)

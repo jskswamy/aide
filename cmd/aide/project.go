@@ -1,11 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -85,24 +88,29 @@ func (t *projectTarget) describe() string {
 }
 
 func projectSetCmd() *cobra.Command {
-	var profile, agent string
-	var credentials []string
-	var noCredentials bool
+	var profile, agent, gw, harnessName, auth string
 	cmd := &cobra.Command{
 		Use:   "set",
-		Short: "Save the default harness and/or credentials for this repository",
+		Short: "Save the default harness and/or gateway for this repository",
 		Example: `  aide project set --agent pi
-  aide project set --gateway openrouter
-  aide project set --agent claude --no-credentials   # native login`,
+  aide project set --gateway corp --harness claude
+  aide project set --gateway none --harness claude   # native login`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			credsSet := cmd.Flags().Changed("gateway")
-			if agent == "" && !credsSet && !noCredentials {
-				return errors.New("nothing to save: pass --agent, --gateway or --no-credentials")
+			gwSet := cmd.Flags().Changed("gateway")
+			if auth != "" {
+				if auth != string(launcher.AuthLogin) {
+					return fmt.Errorf("--auth %q: only login is accepted here; use --gateway none", auth)
+				}
+				if gwSet && gw != "none" {
+					return fmt.Errorf("--auth login means --gateway none; it conflicts with --gateway %s", gw)
+				}
+				fmt.Fprintln(cmd.ErrOrStderr(), "--auth login is deprecated; use --gateway none")
+				gw, gwSet = "none", true
 			}
-			if credsSet && noCredentials {
-				return errors.New("--gateway and --no-credentials conflict: pick one")
+			if agent == "" && !gwSet {
+				return errors.New("nothing to save: pass --agent or --gateway")
 			}
 			t, err := resolveProjectTarget(cmd, profile)
 			if err != nil {
@@ -117,11 +125,10 @@ func projectSetCmd() *cobra.Command {
 				if agent != "" {
 					p.Harness = agent
 				}
-				switch {
-				case noCredentials:
-					p.LegacyCredentials = prefs.Selection()
-				case credsSet:
-					p.LegacyCredentials = prefs.Selection(nonEmpty(credentials)...)
+				if gwSet {
+					if err := t.setGateway(&p, gw, cmp.Or(harnessName, agent)); err != nil {
+						return err
+					}
 				}
 				if err := t.check(p); err != nil {
 					return err
@@ -138,10 +145,37 @@ func projectSetCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Save under this profile instead of the one matched here")
 	cmd.Flags().StringVar(&agent, "agent", "", "Default harness for this repository")
-	cmd.Flags().StringArrayVar(&credentials, "gateway", nil, "Gateway or credential binding to inject by default (repeatable); replaces the saved selection")
-	cmd.Flags().BoolVar(&noCredentials, "no-credentials", false, "Inject no credentials by default (native login)")
+	cmd.Flags().StringVar(&gw, "gateway", "", "Gateway to use by default, or none for the harness's own login")
+	cmd.Flags().StringVar(&harnessName, "harness", "", "Harness the gateway applies to (default: --agent)")
+	cmd.Flags().StringVar(&auth, "auth", "", "Deprecated: use --gateway none instead of --auth login")
 	registerSelectionCompletions(cmd)
 	return cmd
+}
+
+// setGateway saves gw as the repository's choice for harness h: a
+// gateway marked for h, or none. A name that is not a gateway but is a
+// credential of the profile keeps its legacy selection.
+func (t *projectTarget) setGateway(p *prefs.Preference, gw, h string) error {
+	ctx := t.rc.Context
+	if _, isCredential := ctx.Credentials[gw]; isCredential && gw != "none" && !slices.Contains(ctx.GatewayCandidates(h), gw) {
+		p.LegacyCredentials = prefs.Selection(gw)
+		return nil
+	}
+	if h == "" {
+		return errors.New("--harness is required with --gateway (or pass --agent)")
+	}
+	if !slices.Contains(config.DefaultGatewayHarnesses, h) {
+		return fmt.Errorf("--harness %q is not a gateway harness (use %s)", h, strings.Join(config.DefaultGatewayHarnesses, ", "))
+	}
+	if candidates := ctx.GatewayCandidates(h); gw != "none" && !slices.Contains(candidates, gw) {
+		return fmt.Errorf("profile %q has no gateway %q marked for %s (marked: %s)", t.rc.Name, gw, h, strings.Join(append(candidates, "none"), ", "))
+	}
+	p.Gateway = maps.Clone(p.Gateway)
+	if p.Gateway == nil {
+		p.Gateway = map[string]string{}
+	}
+	p.Gateway[h] = gw
+	return nil
 }
 
 // check validates p the way a launch would use it: the harness must be
@@ -165,14 +199,14 @@ func (t *projectTarget) check(p prefs.Preference) error {
 }
 
 func projectClearCmd() *cobra.Command {
-	var profile string
+	var profile, harnessName string
 	var clearAgent, clearCredentials, reset bool
 	cmd := &cobra.Command{
 		Use:   "clear",
 		Short: "Clear saved repository preferences (all, or the fields named)",
 		Long: `Clear what aide project set saved for this repository under the current
-profile. With --agent or --gateway only that field is cleared; with
-neither, both are. Cleared fields fall back to .aide.yaml and the
+profile. With --agent or --gateway only that field is cleared (--gateway
+--harness <h> clears one harness's choice); with neither, both are. Cleared fields fall back to .aide.yaml and the
 profile defaults.
 
 --reset moves the whole preferences file (every repository and
@@ -194,6 +228,9 @@ when the file cannot be read. Nothing is deleted.`,
 			if err := t.key.Validate(); err != nil {
 				return fmt.Errorf("cannot clear repository preferences: %w", err)
 			}
+			if harnessName != "" && !clearCredentials {
+				return errors.New("--harness goes with --gateway")
+			}
 			all := !clearAgent && !clearCredentials
 			out := cmd.OutOrStdout()
 			var cleared bool
@@ -207,8 +244,14 @@ when the file cannot be read. Nothing is deleted.`,
 					p.Harness = ""
 				}
 				if all || clearCredentials {
-					cleared = cleared || p.LegacyCredentials != nil
-					p.LegacyCredentials = nil
+					if harnessName == "" {
+						cleared = cleared || p.LegacyCredentials != nil || len(p.Gateway) > 0
+						p.LegacyCredentials, p.Gateway = nil, nil
+					} else if _, ok := p.Gateway[harnessName]; ok {
+						cleared = true
+						p.Gateway = maps.Clone(p.Gateway)
+						delete(p.Gateway, harnessName)
+					}
 				}
 				if !cleared {
 					return prefs.ErrUnchanged
@@ -229,7 +272,8 @@ when the file cannot be read. Nothing is deleted.`,
 	}
 	cmd.Flags().StringVar(&profile, "profile", "", "Clear under this profile instead of the one matched here")
 	cmd.Flags().BoolVar(&clearAgent, "agent", false, "Clear only the saved harness")
-	cmd.Flags().BoolVar(&clearCredentials, "gateway", false, "Clear only the saved gateway/credential selection")
+	cmd.Flags().BoolVar(&clearCredentials, "gateway", false, "Clear only the saved gateway choices")
+	cmd.Flags().StringVar(&harnessName, "harness", "", "With --gateway, clear only this harness's choice")
 	cmd.Flags().BoolVar(&reset, "reset", false, "Move the whole preferences file aside (for a file aide cannot read)")
 	registerSelectionCompletions(cmd)
 	return cmd
@@ -258,11 +302,12 @@ func runProjectReset(cmd *cobra.Command) error {
 // projectShowResult is `aide project show --format json`. Credentials
 // is null when unset and [] for an explicit empty selection.
 type projectShowResult struct {
-	Profile     string    `json:"profile"`
-	Repository  string    `json:"repository"`
-	Harness     string    `json:"harness,omitempty"`
-	Credentials *[]string `json:"credentials"`
-	File        string    `json:"file"`
+	Profile     string            `json:"profile"`
+	Repository  string            `json:"repository"`
+	Harness     string            `json:"harness,omitempty"`
+	Gateway     map[string]string `json:"gateway,omitempty"`
+	Credentials *[]string         `json:"credentials"`
+	File        string            `json:"file"`
 }
 
 func projectShowCmd() *cobra.Command {
@@ -289,7 +334,7 @@ func projectShowCmd() *cobra.Command {
 					return err
 				}
 				p, _ := f.Get(t.key)
-				res.Harness, res.Credentials = p.Harness, p.LegacyCredentials
+				res.Harness, res.Gateway, res.Credentials = p.Harness, p.Gateway, p.LegacyCredentials
 			}
 			return output.Emit(cmd.OutOrStdout(), format, res, func(w io.Writer) error {
 				fmt.Fprintf(w, "Profile:      %s\n", res.Profile)
@@ -298,7 +343,7 @@ func projectShowCmd() *cobra.Command {
 					return nil
 				}
 				fmt.Fprintf(w, "Repository:   %s\n", res.Repository)
-				fmt.Fprintf(w, "Saved:        %s\n", describePreference(prefs.Preference{Harness: res.Harness, LegacyCredentials: res.Credentials}))
+				fmt.Fprintf(w, "Saved:        %s\n", describePreference(prefs.Preference{Harness: res.Harness, Gateway: res.Gateway, LegacyCredentials: res.Credentials}))
 				fmt.Fprintf(w, "File:         %s\n", res.File)
 				return nil
 			})
@@ -319,7 +364,13 @@ func describePreference(p prefs.Preference) string {
 		harness = "harness " + p.Harness
 	}
 	creds := "credentials not set"
-	if p.LegacyCredentials != nil {
+	if len(p.Gateway) > 0 {
+		var parts []string
+		for _, h := range slices.Sorted(maps.Keys(p.Gateway)) {
+			parts = append(parts, h+"="+p.Gateway[h])
+		}
+		creds = "gateway " + strings.Join(parts, ", ")
+	} else if p.LegacyCredentials != nil {
 		if len(*p.LegacyCredentials) == 0 {
 			creds = "no credentials"
 		} else {

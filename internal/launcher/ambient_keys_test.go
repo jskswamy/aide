@@ -81,7 +81,7 @@ func TestAmbientKeys_NonInteractiveScrubNotice(t *testing.T) {
 	if _, ok := envValue(env, "ANTHROPIC_API_KEY"); ok {
 		t.Error("expected ANTHROPIC_API_KEY to be scrubbed in non-interactive launch")
 	}
-	wantNote := `aide: note: scrubbed ambient ANTHROPIC_API_KEY from the environment (profile "work" has no credential binding); configure a gateway with aide gateway add <name> --url ... or pass --auth login to silence`
+	wantNote := `aide: note: scrubbed ambient ANTHROPIC_API_KEY from the environment (profile "work" has no credential binding); configure a gateway with aide gateway add <name> --url ... or pass --gateway none to silence`
 	if !strings.Contains(stderr, wantNote) {
 		t.Errorf("stderr missing scrub notice:\ngot:  %s\nwant: %s", stderr, wantNote)
 	}

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -254,7 +256,7 @@ func TestGatewayCmd_AddRejectsBadInput(t *testing.T) {
 		"missing url token-stdin": {[]string{"add", "corp", "--token-stdin"}, "--url is required"},
 		"both token sources":      {[]string{"add", "corp", "--url", e.srv.URL, "--token-stdin", "--token-env", "MY_GW_TOKEN"}, "mutually exclusive"},
 		"empty token env":         {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "UNSET_GW_TOKEN"}, "UNSET_GW_TOKEN"},
-		"no token source":         {[]string{"add", "corp", "--url", e.srv.URL}, "token-env"},
+		"no token source":         {[]string{"add", "corp", "--url", e.srv.URL}, "from-env"},
 		"remote http":             {[]string{"add", "corp", "--url", "http://gw.example.com", "--token-env", "MY_GW_TOKEN"}, "https"},
 		"unknown profile":         {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--profile", "nope"}, "nope"},
 		"bad harness":             {[]string{"add", "corp", "--url", e.srv.URL, "--token-env", "MY_GW_TOKEN", "--harnesses", "gemini"}, "gemini"},
@@ -509,7 +511,7 @@ func TestGatewayCmd_AddNoAuthEmptyCatalogue(t *testing.T) {
 func TestGatewayCmd_AddProbe401NonTTY(t *testing.T) {
 	e := newGatewayEnv(t)
 	out, err := runGateway(t, "", "add", "corp", "--url", e.srv.URL, "--profile", "work")
-	if err == nil || !strings.Contains(err.Error(), "token-env") {
+	if err == nil || !strings.Contains(err.Error(), "from-env") {
 		t.Fatalf("err = %v\n%s", err, out)
 	}
 	if strings.Contains(e.config(t), "gateways") {
@@ -661,7 +663,7 @@ func TestGatewayCmd_RemoveNoAuthSkipsSecret(t *testing.T) {
 
 func TestGatewayCmd_List(t *testing.T) {
 	e := newGatewayEnv(t)
-	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--token-stdin"); err != nil {
+	if _, err := runGateway(t, gwCmdToken, "add", "corp", "--url", e.srv.URL, "--key-stdin", "--default-for", "claude"); err != nil {
 		t.Fatal(err)
 	}
 	out, err := runGateway(t, "", "list", "--profile", "work", "--models")
@@ -869,7 +871,7 @@ default_profile: work
 		t.Fatal(err)
 	}
 
-	// List shows both built-in anthropic (default for claude, pi, omp, opencode) and api-codex (default for codex).
+	// List shows the built-in anthropic as the default, and api-codex as a standby (codex keeps its own login).
 	out, err := runGateway(t, "", "list", "--profile", "work")
 	if err != nil {
 		t.Fatalf("list: %v\n%s", err, out)
@@ -877,31 +879,51 @@ default_profile: work
 	for _, want := range []string{
 		"● GATEWAY: anthropic  [ACTIVE — default for: claude, pi, omp, opencode]",
 		"https://api.anthropic.com (built-in)",
-		"● GATEWAY: api-codex  [ACTIVE — default for: codex]",
-		"○ GATEWAY: api  [standby — switch: aide gateway use api --profile work, or launch: aide --gateway api]",
+		"○ GATEWAY: api-codex  [standby — switch: aide gateway use api-codex --harness <h> --profile work, or launch: aide --gateway api-codex]",
+		"○ GATEWAY: api  [standby — switch: aide gateway use api --harness <h> --profile work, or launch: aide --gateway api]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list missing %q:\n%s", want, out)
 		}
 	}
 
-	// Switch default to api via `aide gateway use api --profile work`.
-	out, err = runGateway(t, "", "use", "api", "--profile", "work")
+	// Choose api for claude via `aide gateway use api --harness claude`.
+	out, err = runGateway(t, "", "use", "api", "--harness", "claude", "--profile", "work")
 	if err != nil {
 		t.Fatalf("use api: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `Set default gateway for profile "work" to "api" (claude, pi, omp, opencode)`) {
+	if !strings.Contains(out, `Set the gateway for claude on profile "work" to "api"`) {
 		t.Errorf("unexpected use output:\n%s", out)
 	}
 	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := loaded.Contexts["work"].DefaultCredentials; len(got) != 0 {
-		t.Errorf("DefaultCredentials after use api = %v, want anthropic displaced", got)
-	}
-	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "api" || got["codex"] != "api-codex" {
+	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "api" || got["codex"] != "none" {
 		t.Errorf("GatewayChoice after use api = %v", got)
+	}
+	if _, err := runGateway(t, "", "use", "ghost", "--harness", "claude", "--profile", "work"); err == nil {
+		t.Error("use of an unknown gateway succeeded")
+	}
+	if _, err := runGateway(t, "", "use", "api", "--profile", "work"); err == nil {
+		t.Error("use without --harness succeeded")
+	}
+	if out, err = runGateway(t, "", "use", "none", "--harness", "claude", "--profile", "work"); err != nil {
+		t.Fatalf("use none: %v\n%s", err, out)
+	}
+	if out, err = runGateway(t, "", "use", "--unset", "--harness", "claude", "--profile", "work"); err != nil {
+		t.Fatalf("use --unset: %v\n%s", err, out)
+	}
+	if loaded, err = config.Load(filepath.Join(e.xdg, "aide"), e.home); err != nil {
+		t.Fatal(err)
+	}
+	if _, set := loaded.Contexts["work"].GatewayChoice["claude"]; set {
+		t.Errorf("--unset left %v", loaded.Contexts["work"].GatewayChoice)
+	}
+	for _, h := range []string{"claude", "pi", "omp", "opencode"} {
+		if _, err := runGateway(t, "", "use", "api", "--harness", h, "--profile", "work"); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Verify `aide gateway list` (with no --profile flag) defaults to the active profile ("work"),
@@ -911,7 +933,7 @@ default_profile: work
 		t.Fatalf("list default profile: %v\n%s", err, out)
 	}
 	apiIdx := strings.Index(out, "● GATEWAY: api  [ACTIVE — default for: claude, pi, omp, opencode]")
-	anthIdx := strings.Index(out, "○ GATEWAY: anthropic  [standby — switch: aide gateway use anthropic --profile work, or launch: aide --gateway anthropic]")
+	anthIdx := strings.Index(out, "○ GATEWAY: anthropic  [standby — launch: aide --gateway anthropic]")
 	if apiIdx < 0 || anthIdx < 0 || apiIdx > anthIdx {
 		t.Errorf("expected active api before standby anthropic (apiIdx=%d, anthIdx=%d):\n%s", apiIdx, anthIdx, out)
 	}
@@ -922,15 +944,18 @@ default_profile: work
 		t.Error("expected --profile and --all to be mutually exclusive")
 	}
 
-	// Switch back to anthropic via interactive TTY picker (api is [1] and anthropic is [2], or check order).
+	// The interactive picker lists the harness's gateways, then none, with nothing preselected.
 	orig := stdinIsTTY
 	stdinIsTTY = func() bool { return true }
 	t.Cleanup(func() { stdinIsTTY = orig })
-	out, err = runGateway(t, "1\n", "use", "--profile", "work")
+	if _, err := runGateway(t, "\n", "use", "--harness", "claude", "--profile", "work"); err == nil {
+		t.Error("an empty answer selected a gateway")
+	}
+	out, err = runGateway(t, "2\n", "use", "--harness", "claude", "--profile", "work")
 	if err != nil {
 		t.Fatalf("interactive use: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `Set default gateway for profile "work" to "anthropic"`) {
+	if !strings.Contains(out, `to "none"`) {
 		t.Errorf("unexpected interactive use output:\n%s", out)
 	}
 }
@@ -954,7 +979,7 @@ default_profile: work
 	t.Cleanup(func() { stdinIsTTY = orig })
 
 	url := strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
-	stdin := strings.Join([]string{url, "acme", "", gwCmdToken, "y"}, "\n") + "\n"
+	stdin := strings.Join([]string{url, "acme", "", gwCmdToken, "y", "y"}, "\n") + "\n"
 	out, err := runGateway(t, stdin, "add", "--profile", "work")
 	if err != nil {
 		t.Fatalf("interactive add: %v\n%s", err, out)
@@ -962,7 +987,8 @@ default_profile: work
 	for _, want := range []string{
 		"Gateway base URL",
 		"Gateway name [localhost]: ",
-		`Make "acme" the default instead? [Y/n]: `,
+		"Make acme the default for claude in profile work? [y/N]: ",
+		"Make acme-codex the default for codex in profile work? [y/N]: ",
 		`Saved gateway "acme" under profile "work"`,
 	} {
 		if !strings.Contains(out, want) {
@@ -976,8 +1002,8 @@ default_profile: work
 	if _, ok := loaded.Contexts["work"].Gateways["acme"]; !ok {
 		t.Errorf("gateways = %+v, want acme", loaded.Contexts["work"].Gateways)
 	}
-	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "acme" || got["pi"] != "acme" {
-		t.Errorf("GatewayChoice = %v, want acme", got)
+	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "acme" || got["codex"] != "acme-codex" || got["pi"] != "" {
+		t.Errorf("GatewayChoice = %v, want claude=acme, codex=acme-codex, pi unset", got)
 	}
 }
 
@@ -1026,7 +1052,7 @@ func TestGatewayCmd_RenameMigratesSecretKeyCacheAndHarnesses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := runGateway(t, "", "rename", "api", "acme", "--profile", "work")
+	out, err := runGateway(t, "", "edit", "api", "--name", "acme", "--profile", "work")
 	if err != nil {
 		t.Fatalf("rename api acme: %v\n%s", err, out)
 	}
@@ -1468,7 +1494,7 @@ func TestGatewayCmd_EditPreSaveVerificationAndURLMismatchCache(t *testing.T) {
 	// Remove pi models.json and verify `gateway use` does not materialize the mismatched cache.
 	piModels := filepath.Join(e.home, ".pi-work", "models.json")
 	_ = os.Remove(piModels)
-	if _, err := runGateway(t, "", "use", "work-gw", "--profile", "work"); err != nil {
+	if _, err := runGateway(t, "", "use", "work-gw", "--harness", "pi", "--profile", "work"); err != nil {
 		t.Fatalf("gateway use on mismatched cache: %v", err)
 	}
 	if _, err := os.Stat(piModels); !os.IsNotExist(err) {
@@ -1698,4 +1724,181 @@ func TestGatewayCmd_KeylessRemoteRejected(t *testing.T) {
 			t.Fatalf("edit: %v\n%s", err, out)
 		}
 	})
+}
+
+func TestGatewayCmd_AddFromEnvAndDefaultFor(t *testing.T) {
+	e := newGatewayEnv(t)
+	t.Setenv("CORP_GATEWAY_KEY", gwCmdToken)
+	out, err := runGateway(t, "", "add", "corp", "--url", e.srv.URL, "--from-env=CORP_GATEWAY_KEY",
+		"--harnesses", "claude,pi", "--model", "m1", "--default-for", "pi", "--profile", "work")
+	if err != nil {
+		t.Fatalf("add --from-env: %v\n%s", err, out)
+	}
+	if got := e.store(t, "work"); got["corp_token"] != gwCmdToken {
+		t.Errorf("stored key = %v", got)
+	}
+	gw := loadedGateway(t, e, "corp")
+	if gw.Model != "m1" || gw.API != "anthropic-messages" {
+		t.Errorf("gateway = %+v", gw)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// pi was named; claude, a slot harness left unnamed, stays on its own login.
+	if got := loaded.Contexts["work"].GatewayChoice; got["pi"] != "corp" || got["claude"] != "none" {
+		t.Errorf("GatewayChoice = %v, want pi=corp claude=none", got)
+	}
+}
+
+func TestGatewayCmd_AddFromEnvErrors(t *testing.T) {
+	e := newGatewayEnv(t)
+	t.Setenv("OPENROUTER_API_KEY", "")
+	for name, tc := range map[string]struct {
+		args []string
+		want string
+	}{
+		"bare from-env on a custom gateway": {[]string{"add", "corp", "--url", e.srv.URL, "--from-env"}, "--from-env=VAR"},
+		"preset key not exported":           {[]string{"add", "openrouter-anthropic", "--from-env"}, "OPENROUTER_API_KEY"},
+		"preset aide cannot deliver":        {[]string{"add", "openai", "--from-env=OPENAI_API_KEY"}, "cannot yet write"},
+		"no-auth with a key name":           {[]string{"add", "corp", "--url", e.srv.URL, "--no-auth", "--key", "k"}, "--no-auth takes no key"},
+		"no-auth off loopback":              {[]string{"add", "corp", "--url", "https://llm.example.com", "--no-auth"}, "loopback"},
+		"other wire protocol":               {[]string{"add", "corp", "--url", e.srv.URL, "--api", "openai-chat"}, "cannot yet write"},
+		"key and env together":              {[]string{"add", "corp", "--url", e.srv.URL, "--key-stdin", "--from-env=X"}, "mutually exclusive"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runGateway(t, "", append(tc.args, "--profile", "work")...)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestGatewayCmd_AddDeprecatedAliasesStillWork(t *testing.T) {
+	e := newGatewayEnv(t)
+	t.Setenv("CORP_GATEWAY_KEY", gwCmdToken)
+	if out, err := runGateway(t, "", "add", "corp", "--url", e.srv.URL, "--token-env", "CORP_GATEWAY_KEY", "--store", "team", "--ttl", "12h", "--profile", "work"); err != nil {
+		t.Fatalf("add with deprecated flags: %v\n%s", err, out)
+	}
+	if gw := loadedGateway(t, e, "corp"); gw.Store != "team" || gw.RefreshTTL != "12h" {
+		t.Errorf("gateway = %+v", gw)
+	}
+}
+
+// routeToTestServer sends every default-transport request to srv, so a
+// preset's remote URL can be probed in a test.
+func routeToTestServer(t *testing.T, srv *httptest.Server) {
+	t.Helper()
+	orig := http.DefaultTransport
+	u, _ := url.Parse(srv.URL)
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		r = r.Clone(r.Context())
+		r.URL.Scheme, r.URL.Host = u.Scheme, u.Host
+		return orig.RoundTrip(r)
+	})
+	t.Cleanup(func() { http.DefaultTransport = orig })
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestGatewayCmd_AddPresetFromEnvVar(t *testing.T) {
+	e := newGatewayEnv(t)
+	routeToTestServer(t, e.srv)
+	t.Setenv("OPENROUTER_API_KEY", gwCmdToken)
+	// openrouter shares the variable but is not deliverable; the deliverable
+	// openrouter-anthropic is found instead.
+	if out, err := runGateway(t, "", "add", "--from-env=OPENROUTER_API_KEY", "--profile", "work"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	gw := loadedGateway(t, e, "openrouter-anthropic")
+	if gw.Preset != "openrouter-anthropic" || gw.API != "anthropic-messages" || gw.URL != "" && gw.URL != "https://openrouter.ai/api" ||
+		strings.Join(gw.Harnesses, ",") != "claude,pi,omp,opencode" {
+		t.Errorf("gateway = %+v", gw)
+	}
+	loaded, err := config.Load(filepath.Join(e.xdg, "aide"), e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Contexts["work"].GatewayChoice; got["claude"] != "none" {
+		t.Errorf("GatewayChoice = %v, want claude=none", got)
+	}
+	if got := e.store(t, "work"); got["openrouter_anthropic_token"] != gwCmdToken {
+		t.Errorf("secret store = %v", got)
+	}
+}
+
+func TestGatewayCmd_AddGenerateAgeKeyOffTerminal(t *testing.T) {
+	e := newGatewayEnv(t)
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+	t.Setenv("MY_GW_TOKEN", gwCmdToken)
+	out, err := runGateway(t, "", "add", "corp", "--url", e.srv.URL, "--from-env=MY_GW_TOKEN", "--generate-age-key", "--profile", "work")
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	_, rest, ok := strings.Cut(out, "Generated age key at ")
+	if !ok {
+		t.Fatalf("no generated key reported:\n%s", out)
+	}
+	keyPath, _, _ := strings.Cut(rest, " (")
+	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
+	if got := e.store(t, "work"); got["corp_token"] != gwCmdToken {
+		t.Errorf("secret store = %v", got)
+	}
+}
+
+func TestGatewayCmd_AddNoAuthLoopbackIsKeyless(t *testing.T) {
+	e := newGatewayEnv(t)
+	srv := openAnonModels(t, `{"data":[{"id":"m1"}]}`)
+	if out, err := runGateway(t, "", "add", "local", "--url", srv.URL, "--no-auth", "--profile", "work"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if gw := loadedGateway(t, e, "local"); gw.Store != "" || gw.Key != "" || !gw.NoAuth {
+		t.Errorf("gateway = %+v, want keyless", gw)
+	}
+}
+
+func TestGatewayCmd_AddDefaultForUnservedHarness(t *testing.T) {
+	e := newGatewayEnv(t)
+	_, err := runGateway(t, gwCmdToken+"\n", "add", "corp", "--url", e.srv.URL, "--key-stdin", "--harnesses", "claude,pi", "--default-for", "opencode", "--profile", "work")
+	if err == nil || !strings.Contains(err.Error(), "does not serve opencode") {
+		t.Errorf("err = %v", err)
+	}
+	if strings.Contains(e.config(t), "gateways") {
+		t.Error("a rejected add wrote config")
+	}
+}
+
+func TestGatewayCmd_UseRepoSetsAndUnsets(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	e := newGatewayEnv(t)
+	t.Setenv("PATH", filepath.Dir(git))
+	for _, args := range [][]string{{"init", "-q", e.home}, {"-C", e.home, "remote", "add", "origin", "git@github.com:org/repo.git"}} {
+		if out, err := exec.Command(git, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if out, err := runGateway(t, gwCmdToken+"\n", "add", "corp", "--url", e.srv.URL, "--key-stdin", "--profile", "work"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	key := prefs.Key{Profile: "work", Remote: "github.com/org/repo"}
+	got := func() string {
+		f, err := prefs.Load(prefs.DefaultPath(e.home))
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, _ := f.Get(key)
+		return p.Gateway["pi"]
+	}
+	if out, err := runGateway(t, "", "use", "corp", "--harness", "pi", "--repo", "--profile", "work"); err != nil || got() != "corp" {
+		t.Fatalf("use --repo: %v, pref = %q\n%s", err, got(), out)
+	}
+	if out, err := runGateway(t, "", "use", "--harness", "pi", "--repo", "--unset", "--profile", "work"); err != nil || got() != "" {
+		t.Fatalf("use --repo --unset: %v, pref = %q\n%s", err, got(), out)
+	}
 }

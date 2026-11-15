@@ -104,6 +104,6 @@ func (l *Launcher) noteAmbientProviderKeys(cfg *config.Config, rc *aidectx.Resol
 		return
 	}
 	fmt.Fprintf(l.stderr(), "aide: note: scrubbed ambient %s from the environment (%s has no credential binding); "+
-		"configure a gateway with aide gateway add <name> --url ... or pass --auth login to silence\n",
+		"configure a gateway with aide gateway add <name> --url ... or pass --gateway none to silence\n",
 		strings.Join(keys, ", "), profileLabel(cfg, rc.Name))
 }

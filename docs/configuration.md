@@ -642,7 +642,7 @@ When `codex` is among the harnesses (the default), `add` also creates
 | :--- | :--- | :--- |
 | `<preset>\|<name>` | first DNS label of the URL's host (prompted on a terminal) | Preset or gateway name |
 | `--url` | the preset's (prompted on a terminal) | Base URL; `https://`, or `http://` for loopback only |
-| `--api` | the preset's | Wire protocol (`anthropic-messages`) |
+| `--api` | the preset's | Wire protocol (`anthropic-messages`, `openai-chat`, `openai-responses`) |
 | `--no-auth` | off | Keyless loopback gateway |
 | `--key-stdin`, `--from-env[=VAR]` | hidden prompt | Where the key comes from |
 | `--harnesses` | the preset's, else `claude,pi,omp,opencode,codex` | Harnesses that may use it |

@@ -49,6 +49,14 @@ func TestProfileEnv_IsolatedProfile(t *testing.T) {
 		"OPENCODE_DATA_DIR": "/h/.opencode-forge",
 		"GEMINI_DATA_DIR":   "/h/.gemini-forge/tmp",
 	}
+	// Agents aide cannot scope get a path that cannot exist, so a named
+	// profile never reports their global (shared) data.
+	for _, v := range usage.DefaultBackend().UnscopedVars {
+		want[v] = "/dev/null/aide-unscoped"
+	}
+	if _, ok := want["ANTIGRAVITY_DATA_DIR"]; !ok {
+		t.Error("UnscopedVars lacks ANTIGRAVITY_DATA_DIR (agy)")
+	}
 	if m := assignments(t, got); !maps.Equal(m, want) {
 		t.Errorf("ProfileEnv = %v, want %v", m, want)
 	}
@@ -72,6 +80,12 @@ func TestProfileEnv_DefaultProfileUsesHarnessDefaults(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, m[k], v)
 		}
 	}
+	// The global dirs are the default profile's own data.
+	for _, v := range usage.DefaultBackend().UnscopedVars {
+		if _, ok := m[v]; ok {
+			t.Errorf("default profile sets %s; want it unset", v)
+		}
+	}
 }
 
 func TestProfileEnv_SetsMissingPaths(t *testing.T) {
@@ -91,9 +105,10 @@ func TestProfileEnv_SkipsHarnessesWithoutProfileSupport(t *testing.T) {
 	// Harnesses where Descriptor.ProfileEnvKey == "" (aider, amp, ...)
 	// must contribute nothing — no assignment whose Var is "" — and
 	// must not panic.
-	if len(got) != len(usage.DefaultBackend().HarnessEnv) {
-		t.Errorf("ProfileEnv emitted %d assignments, want one per mapped harness (%d)",
-			len(got), len(usage.DefaultBackend().HarnessEnv))
+	b := usage.DefaultBackend()
+	if want := len(b.HarnessEnv) + len(b.UnscopedVars); len(got) != want {
+		t.Errorf("ProfileEnv emitted %d assignments, want one per mapped harness and unscoped var (%d)",
+			len(got), want)
 	}
 	for _, e := range got {
 		k, v, _ := strings.Cut(e, "=")

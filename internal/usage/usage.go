@@ -48,13 +48,18 @@ type ProfileConfigFunc func(args, scopeEnv []string) ([]string, func(), error)
 // Backend is one usage-report tool's seam entry: its identity, its
 // harness env mapping, and the rules --all and scrubbing follow.
 type Backend struct {
-	Name          string
-	Binary        string
-	InstallHint   string
-	HarnessEnv    map[string]EnvMapping // aide harness name -> mapping
-	SingleRoot    []string              // env vars accepting one dir only
-	AllExclude    []string              // env vars --all must never set
-	ScrubExtra    []string              // extra vars to scrub for this backend
+	Name        string
+	Binary      string
+	InstallHint string
+	HarnessEnv  map[string]EnvMapping // aide harness name -> mapping
+	SingleRoot  []string              // env vars accepting one dir only
+	AllExclude  []string              // env vars --all must never set
+	ScrubExtra  []string              // extra vars to scrub for this backend
+	// UnscopedVars are the backend's data-dir vars for agents aide
+	// cannot scope per profile. A named profile points each at a path
+	// that cannot exist, so the backend reports no data rather than
+	// the global dir.
+	UnscopedVars  []string
 	Setup         SetupFunc
 	ProfileConfig ProfileConfigFunc
 }
@@ -81,6 +86,15 @@ var ccusageBackend = Backend{
 		"PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR",
 		"OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG",
 		"GEMINI_HOME", "XDG_DATA_HOME",
+	},
+	// shortcut: snapshot of ccusage 20.0.37's documented data-dir vars for
+	// agents not in HarnessEnv; an agent a later ccusage adds leaks into
+	// named profiles until its var is listed here.
+	UnscopedVars: []string{
+		"ANTIGRAVITY_DATA_DIR", "AMP_DATA_DIR", "DROID_SESSIONS_DIR",
+		"CODEBUFF_DATA_DIR", "CLINE_DATA_DIR", "HERMES_HOME",
+		"GOOSE_PATH_ROOT", "OPENCLAW_DIR", "KILO_DATA_DIR",
+		"KIMI_DATA_DIR", "QWEN_DATA_DIR", "GROK_HOME", "ZCODE_HOME",
 	},
 	Setup:         SetupPiStores,
 	ProfileConfig: IsolatePiStores,
@@ -116,6 +130,14 @@ func ProfileEnv(b Backend, ctx config.Context, home string) []string {
 		}
 		vars = append(vars, m.Var)
 		values[m.Var] = dir + m.Suffix
+	}
+	if ctx.SelectsConfigDir() {
+		// A path under /dev/null is never a directory, so the backend
+		// skips these agents instead of reading their shared global dir.
+		for _, v := range b.UnscopedVars {
+			vars = append(vars, v)
+			values[v] = "/dev/null/aide-unscoped"
+		}
 	}
 	sort.Strings(vars)
 	out := make([]string, len(vars))

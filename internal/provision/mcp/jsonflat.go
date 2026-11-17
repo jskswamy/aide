@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/provision"
@@ -112,3 +113,32 @@ func serverBody(s provision.MCPServer) map[string]any {
 
 // serverBodyAny adapts serverBody to reconcile's body func signature.
 func serverBodyAny(s provision.MCPServer) any { return serverBody(s) }
+
+// reconcile merges prev (managed-only entries dropped) with desired
+// and returns the new server map plus the sorted managed-key list.
+// body converts a desired server into its on-disk JSON shape, letting
+// each format-specific handler supply its own server-body encoding.
+func reconcile(prevServers map[string]json.RawMessage, prevManaged []string, desired map[string]provision.MCPServer, body func(provision.MCPServer) any) (map[string]json.RawMessage, []string, error) {
+	wasManaged := map[string]bool{}
+	for _, k := range prevManaged {
+		wasManaged[k] = true
+	}
+	newServers := map[string]json.RawMessage{}
+	for key, raw := range prevServers {
+		if wasManaged[key] {
+			continue
+		}
+		newServers[key] = raw
+	}
+	newManaged := make([]string, 0, len(desired))
+	for key, s := range desired {
+		raw, err := json.Marshal(body(s))
+		if err != nil {
+			return nil, nil, fmt.Errorf("provision/mcp: marshalling server %q: %w", key, err)
+		}
+		newServers[key] = raw
+		newManaged = append(newManaged, key)
+	}
+	sort.Strings(newManaged)
+	return newServers, newManaged, nil
+}

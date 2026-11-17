@@ -242,7 +242,7 @@ func TestSyncWarnsWhenAgentDoesNotSupportHooks(t *testing.T) {
 			{Event: "pre_tool", Matcher: "shell", Command: "rtk hook codex"},
 		},
 	}
-	warnAndFilterHooks(&buf, theFakeProv, &desired)
+	warnAndFilterDesired(&buf, theFakeProv, &desired)
 	if len(desired.Hooks) != 0 {
 		t.Errorf("Hooks should be nil after warn-and-filter, got %v", desired.Hooks)
 	}

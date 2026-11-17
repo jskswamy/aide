@@ -5,21 +5,6 @@ import (
 	"strings"
 )
 
-// renderRules converts a slice of Rules to Seatbelt profile text.
-func renderRules(rules []Rule) string {
-	var b strings.Builder
-	for _, r := range rules {
-		if r.comment != "" {
-			fmt.Fprintf(&b, ";; %s\n", r.comment)
-		}
-		if r.lines != "" {
-			b.WriteString(r.lines)
-			b.WriteByte('\n')
-		}
-	}
-	return b.String()
-}
-
 // taggedRule pairs a rule with its source module name for rendering.
 type taggedRule struct {
 	module string

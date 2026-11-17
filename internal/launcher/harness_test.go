@@ -39,8 +39,8 @@ func TestAliasIsNotLaunchable(t *testing.T) {
 		if IsKnownAgent(alias) || ResolveAgentModule(alias) != nil {
 			t.Errorf("%s alias treated as a launchable harness", alias)
 		}
-		if _, err := YoloArgs(alias); err == nil {
-			t.Errorf("YoloArgs(%s) succeeded", alias)
+		if _, err := ApplyYoloArgs(alias, nil); err == nil {
+			t.Errorf("ApplyYoloArgs(%s) succeeded", alias)
 		}
 	}
 }

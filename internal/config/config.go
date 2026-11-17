@@ -228,18 +228,6 @@ func (c *Config) ensureBuiltinDefault() {
 	}
 }
 
-// SandboxPolicyToRef wraps a SandboxPolicy pointer into a SandboxRef.
-// Used when promoting a project override's sandbox field to a context.
-func SandboxPolicyToRef(sp *SandboxPolicy) *SandboxRef {
-	if sp == nil {
-		return nil
-	}
-	if sp.Disabled {
-		return &SandboxRef{Disabled: true}
-	}
-	return &SandboxRef{Inline: sp}
-}
-
 // loadWarnings receives Load's non-fatal warnings.
 var loadWarnings io.Writer = os.Stderr
 

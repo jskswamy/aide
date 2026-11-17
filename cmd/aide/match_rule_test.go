@@ -13,62 +13,6 @@ import (
 	"github.com/jskswamy/aide/internal/config"
 )
 
-func TestAutoDetectMatchRule_NonGitFolder_PathRule(t *testing.T) {
-	dir := t.TempDir()
-	rule, desc := autoDetectMatchRule(dir)
-	if rule.Path != dir || rule.Remote != "" {
-		t.Errorf("non-git folder: got %+v, want Path=%s", rule, dir)
-	}
-	if desc == "" {
-		t.Error("description must be non-empty")
-	}
-}
-
-func TestAutoDetectMatchRule_GitRepoWithRemote_RemoteRule(t *testing.T) {
-	dir := t.TempDir()
-	mustRun(t, dir, "git", "init")
-	mustRun(t, dir, "git", "remote", "add", "origin", "git@example.com:foo/bar.git")
-	rule, _ := autoDetectMatchRule(dir)
-	if rule.Remote != "example.com/foo/bar" {
-		t.Errorf("git repo with remote: got %+v, want Remote=example.com/foo/bar", rule)
-	}
-	if rule.Path != "" {
-		t.Errorf("git repo with remote should not set Path: got %q", rule.Path)
-	}
-}
-
-func TestAutoDetectMatchRule_RemoteWithCredentials_PersistsNormalizedForm(t *testing.T) {
-	dir := t.TempDir()
-	mustRun(t, dir, "git", "init")
-	mustRun(t, dir, "git", "remote", "add", "origin", "https://user:s3cret@GitHub.com/org/repo.git")
-	rule, desc := autoDetectMatchRule(dir)
-	if rule.Remote != "github.com/org/repo" {
-		t.Errorf("got %+v, want Remote=github.com/org/repo", rule)
-	}
-	if strings.Contains(desc, "s3cret") || strings.Contains(rule.Remote, "s3cret") {
-		t.Errorf("credentials leaked: rule=%+v desc=%q", rule, desc)
-	}
-}
-
-func TestAutoDetectMatchRule_LocalPathRemote_PathRule(t *testing.T) {
-	dir := t.TempDir()
-	mustRun(t, dir, "git", "init")
-	mustRun(t, dir, "git", "remote", "add", "origin", "/srv/git/repo.git")
-	rule, _ := autoDetectMatchRule(dir)
-	if rule.Path != dir || rule.Remote != "" {
-		t.Errorf("host-less remote: got %+v, want Path=%s", rule, dir)
-	}
-}
-
-func TestAutoDetectMatchRule_GitRepoNoRemote_PathRule(t *testing.T) {
-	dir := t.TempDir()
-	mustRun(t, dir, "git", "init")
-	rule, _ := autoDetectMatchRule(dir)
-	if rule.Path != dir {
-		t.Errorf("git repo no remote: got %+v, want Path=%s", rule, dir)
-	}
-}
-
 func mustRun(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(name, args...)

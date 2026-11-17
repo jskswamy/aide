@@ -49,13 +49,6 @@ func TestRegisterAndLookup(t *testing.T) {
 	if _, ok := ProvisionerFor("missing"); ok {
 		t.Error("missing should not be found")
 	}
-	all := AllProvisioners()
-	if len(all) != 2 {
-		t.Fatalf("want 2, got %d", len(all))
-	}
-	if all[0].Name() != "alpha" || all[1].Name() != "beta" {
-		t.Errorf("sort order = %v", []string{all[0].Name(), all[1].Name()})
-	}
 }
 
 func TestRegisterDuplicatePanics(t *testing.T) {

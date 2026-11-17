@@ -2,7 +2,6 @@ package launcher
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"time"
@@ -72,34 +71,4 @@ func envIntDefault(name string, def int) int {
 		return def
 	}
 	return n
-}
-
-// ShouldShowSignpost reports whether to nudge the user toward --diagnose
-// after an abnormal child exit. Suppresses on clean exits and on
-// user/system shutdown signals (SIGINT, SIGTERM, SIGHUP, SIGQUIT) since
-// those represent intentional termination, not a failure worth diagnosing.
-//
-// Note: this predicate is currently unused in v1. The default exec path
-// uses syscall.Exec, so aide is replaced by the child before it can
-// observe the exit. Re-enabling the signpost becomes a one-line change
-// once aide moves to fork+exec as the default execution strategy.
-func ShouldShowSignpost(exitCode int, signal string) bool {
-	if exitCode == 0 {
-		return false
-	}
-	switch signal {
-	case "SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT":
-		return false
-	}
-	switch exitCode {
-	case 129, 130, 131, 143: // SIGHUP, SIGINT, SIGQUIT, SIGTERM as 128+signum
-		return false
-	}
-	return true
-}
-
-// EmitSignpost writes the diagnostic hint to w. Caller is responsible
-// for the predicate (see ShouldShowSignpost).
-func EmitSignpost(w io.Writer) {
-	_, _ = io.WriteString(w, "\nhint: re-run with 'aide --diagnose' to capture a diagnostic report.\n")
 }

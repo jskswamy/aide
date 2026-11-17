@@ -72,23 +72,42 @@ func (g *customGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
 		}
 	}
 
-	paths := g.resolvePaths(ctx)
-
-	// Deny rules for each path, with existence check.
-	for _, p := range paths {
-		if pathExists(p) {
-			result.Rules = append(result.Rules, DenyDir(p)...)
-			result.Protected = append(result.Protected, p)
-		} else {
-			result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", p))
-		}
-	}
-
-	// Allow rules for explicitly allowed paths.
+	// Allow rules and opt-out set for explicitly allowed paths.
+	allowedSet := make(map[string]bool, len(g.cfg.Allowed)*2)
 	for _, a := range g.cfg.Allowed {
 		expanded := filepath.Clean(seatbelt.ExpandHome(a, ctx.HomeDir))
 		result.Rules = append(result.Rules, AllowReadFile(expanded))
 		result.Allowed = append(result.Allowed, expanded)
+		allowedSet[expanded] = true
+		allowedSet[seatbelt.ResolveOrSelf(expanded)] = true
+	}
+
+	paths := g.resolvePaths(ctx)
+
+	// Deny rules for each path, with existence check and symlink resolution.
+	// macOS Seatbelt checks file-read* against the kernel-resolved target, so
+	// a symlinked key must also have its resolved target denied.
+	seen := make(map[string]bool, len(paths)*2)
+	protect := func(target string) {
+		if !seen[target] && !allowedSet[target] {
+			seen[target] = true
+			result.Rules = append(result.Rules, DenyDir(target)...)
+			result.Protected = append(result.Protected, target)
+		}
+	}
+	for _, p := range paths {
+		resolved := seatbelt.ResolveOrSelf(p)
+		if allowedSet[p] || allowedSet[resolved] {
+			continue
+		}
+		if pathExists(p) {
+			protect(p)
+			if resolved != p {
+				protect(resolved)
+			}
+		} else {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s not found", p))
+		}
 	}
 
 	return result
@@ -109,7 +128,13 @@ func (g *customGuard) resolvePaths(ctx *seatbelt.Context) []string {
 
 	var out []string
 	for _, p := range g.cfg.Paths {
-		out = append(out, seatbelt.ExpandHome(p, ctx.HomeDir))
+		p = seatbelt.ExpandHome(p, ctx.HomeDir)
+		// Globs expand at launch; files created later need a relaunch.
+		if expanded := seatbelt.ExpandGlobs([]string{p}); len(expanded) > 0 {
+			out = append(out, expanded...)
+			continue
+		}
+		out = append(out, p) // glob with no matches (reported as skipped)
 	}
 	return out
 }
@@ -125,7 +150,7 @@ func ValidateCustomGuard(name string, cfg CustomGuardConfig) *seatbelt.Validatio
 	default:
 		r.AddError("custom guard %q: unknown guard type %q (use default, opt-in or a guard_types name)", name, cfg.Type)
 	}
-	if slices.ContainsFunc(builtinGuards, func(g seatbelt.Guard) bool { return g.Name() == name }) {
+	if name == "all-default" || slices.ContainsFunc(builtinGuards, func(g seatbelt.Guard) bool { return g.Name() == name }) {
 		r.AddError("custom guard %q conflicts with built-in guard", name)
 	}
 	if cfg.EnvOverride != "" && len(cfg.Paths) != 1 {

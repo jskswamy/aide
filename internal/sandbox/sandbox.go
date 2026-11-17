@@ -1,9 +1,11 @@
 package sandbox
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -159,16 +161,84 @@ func (n *noopSandbox) GenerateProfile(_ Policy) (string, error) {
 }
 
 func expandGlobs(patterns []string) []string {
-	var result []string
-	for _, p := range patterns {
-		if strings.ContainsAny(p, "*?[") {
-			matches, _ := filepath.Glob(p)
-			result = append(result, matches...)
-		} else {
-			result = append(result, p)
+	return seatbelt.ExpandGlobs(patterns)
+}
+
+// splitAroundDenied replaces each read-only grant that contains a denied
+// path with grants for its entries minus the denied ones, recursing toward
+// the denied path. Landlock has no deny rule, so leaving such a path out of
+// the allow-list is the only way to block it. Entries created after launch
+// in a split directory are not readable until the next launch.
+// It also returns the directories that were split so Landlock can grant
+// directory listing (AccessFSReadDir) on them without granting file reads
+// to their denied children.
+func splitAroundDenied(readable, denied []string, origin map[string]string) (grants, splitDirs []string) {
+	deniedSet := make(map[string]bool, len(denied))
+	for _, d := range denied {
+		deniedSet[d] = true
+	}
+	seen := make(map[string]bool)
+	visited := make(map[string]bool)
+	emit := func(p string) {
+		if !seen[p] {
+			seen[p] = true
+			grants = append(grants, p)
 		}
 	}
-	return result
+	var split func(rootGrant, grant string)
+	split = func(rootGrant, grant string) {
+		if !slices.ContainsFunc(denied, func(d string) bool { return strings.HasPrefix(d, grant+"/") }) {
+			emit(grant)
+			return
+		}
+		if visited[grant] {
+			return
+		}
+		visited[grant] = true
+		entries, err := os.ReadDir(grant)
+		if err != nil {
+			// shortcut: unreadable dir keeps the whole grant (pre-split behaviour); the deny is then unenforced.
+			emit(grant)
+			return
+		}
+		splitDirs = append(splitDirs, grant)
+		for _, e := range entries {
+			child := filepath.Join(grant, e.Name())
+			resolved := resolveSymlink(child)
+			// Skip symlinks that resolve outside the original grant unless
+			// covered by another readable grant; Landlock follows symlinks
+			// when opening rule targets, so granting the link would widen
+			// access to the out-of-tree target.
+			if resolved != child && !strings.HasPrefix(resolved, rootGrant+"/") && resolved != rootGrant && !pathCoveredBy(resolved, nil, readable) {
+				continue
+			}
+			if isUnderDeniedTree(child, deniedSet) || isUnderDeniedTree(resolved, deniedSet) {
+				continue
+			}
+			if _, ok := origin[resolved]; !ok {
+				origin[resolved] = origin[grant]
+			}
+			split(rootGrant, resolved)
+		}
+	}
+	for _, r := range readable {
+		split(r, r)
+	}
+	return grants, splitDirs
+}
+
+func pathCoveredBy(p string, writable, readable []string) bool {
+	for _, w := range writable {
+		if w == p || strings.HasPrefix(p, w+"/") {
+			return true
+		}
+	}
+	for _, r := range readable {
+		if r == p || strings.HasPrefix(p, r+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // ToSeatbeltContext projects the Policy onto a seatbelt.Context. It is the
@@ -205,6 +275,11 @@ type GrantedPathSet struct {
 
 	// Readable is the set of absolute paths the agent may read (but not write).
 	Readable []string
+
+	// ListableDirs holds read-only directories that were split around a nested
+	// deny on Linux; Landlock grants directory-listing (AccessFSReadDir) on
+	// them without granting file-read access to their denied children.
+	ListableDirs []string
 
 	// Denied is the set of absolute paths that are explicitly inaccessible,
 	// regardless of any allow rule in Writable or Readable.

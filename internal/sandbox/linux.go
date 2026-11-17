@@ -17,6 +17,7 @@ import (
 
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 	"github.com/landlock-lsm/go-landlock/landlock"
+	llsyscall "github.com/landlock-lsm/go-landlock/landlock/syscall"
 	"golang.org/x/sys/unix"
 )
 
@@ -181,21 +182,24 @@ func linuxLandlockGrantedPaths(policy Policy) GrantedPathSet {
 		}
 	}
 
+	gps.Readable, gps.ListableDirs = splitAroundDenied(gps.Readable, gps.Denied, gps.OriginGuard)
 	return gps
 }
 
-func pathCoveredBy(p string, writable, readable []string) bool {
-	for _, w := range writable {
-		if w == p || strings.HasPrefix(p, w+"/") {
-			return true
+// landlockUnenforcedDenies returns the denied paths that sit inside a
+// writable grant. Landlock cannot block them, and splitting a writable
+// directory would stop the agent creating files in it.
+func landlockUnenforcedDenies(gps GrantedPathSet) map[string]string {
+	out := map[string]string{}
+	for _, d := range gps.Denied {
+		for _, w := range gps.Writable {
+			if strings.HasPrefix(d, w+"/") {
+				out[d] = w
+				break
+			}
 		}
 	}
-	for _, r := range readable {
-		if r == p || strings.HasPrefix(p, r+"/") {
-			return true
-		}
-	}
-	return false
+	return out
 }
 
 // landlockPolicyJSON is the serializable Policy projection passed to the
@@ -470,30 +474,6 @@ func RunSandboxApply(policyFDStr string, agentCmd []string) error {
 
 	gps := linuxLandlockGrantedPaths(policy)
 
-	var rules []landlock.Rule
-	for _, p := range gps.Writable {
-		if !pathExists(p) {
-			continue
-		}
-		// WithRefer adds LANDLOCK_ACCESS_FS_REFER, which is required for any
-		// rename or hard-link operation whose source dirfd differs from the
-		// destination dirfd — even within the same writable subtree on the
-		// same filesystem. Without it, the kernel returns synthetic EXDEV.
-		// This breaks ordinary tooling that relies on cross-directory
-		// renames (cargo/rustc rmeta staging, npm/pnpm pack, git temp-rename
-		// commits, atomic-write-via-tempfile patterns), so we grant REFER on
-		// every writable directory rule. REFER is safe to grant: the kernel
-		// still verifies that the destination's parent has at least the same
-		// access rights as the source's parent, so it cannot be used to
-		// escape the sandbox.
-		rule := landlock.RWDirs(p).WithRefer()
-		// /dev needs ioctl for TIOCGWINSZ/TCGETS on tty devices; RWDirs omits it.
-		if p == "/dev" || strings.HasPrefix(p, "/dev/") {
-			rule = rule.WithIoctlDev()
-		}
-		rules = append(rules, rule)
-	}
-
 	// Both the agent symlink and its resolved target must be readable for execve.
 	// When AllowSubprocess=false, Phase 2 re-execs the aide binary inside the
 	// new PID namespace; that binary must also be in the Landlock allow-list or
@@ -506,19 +486,7 @@ func RunSandboxApply(policyFDStr string, agentCmd []string) error {
 		}
 		execPaths = append(execPaths, collectAgentExecPaths(filepath.Clean(aideBin))...)
 	}
-	allReadable := appendMissingPaths(gps.Readable, gps.Writable, execPaths)
-
-	for _, p := range allReadable {
-		info, err := os.Stat(p)
-		if err != nil {
-			continue
-		}
-		if info.IsDir() {
-			rules = append(rules, landlock.RODirs(p))
-		} else {
-			rules = append(rules, landlock.ROFiles(p))
-		}
-	}
+	rules := buildLandlockFSRules(gps, execPaths)
 
 	// Validate raw ports — DerivePortPolicy silently drops out-of-range values.
 	if err := ValidatePortRange(policy.AllowPorts); err != nil {
@@ -565,6 +533,51 @@ func RunSandboxApply(policyFDStr string, agentCmd []string) error {
 	}
 
 	return syscall.Exec(agentPath, agentCmd, os.Environ())
+}
+
+func buildLandlockFSRules(gps GrantedPathSet, execPaths []string) []landlock.Rule {
+	var rules []landlock.Rule
+	for _, p := range gps.Writable {
+		if !pathExists(p) {
+			continue
+		}
+		// WithRefer adds LANDLOCK_ACCESS_FS_REFER, which is required for any
+		// rename or hard-link operation whose source dirfd differs from the
+		// destination dirfd — even within the same writable subtree on the
+		// same filesystem. Without it, the kernel returns synthetic EXDEV.
+		// This breaks ordinary tooling that relies on cross-directory
+		// renames (cargo/rustc rmeta staging, npm/pnpm pack, git temp-rename
+		// commits, atomic-write-via-tempfile patterns), so we grant REFER on
+		// every writable directory rule. REFER is safe to grant: the kernel
+		// still verifies that the destination's parent has at least the same
+		// access rights as the source's parent, so it cannot be used to
+		// escape the sandbox.
+		rule := landlock.RWDirs(p).WithRefer()
+		// /dev needs ioctl for TIOCGWINSZ/TCGETS on tty devices; RWDirs omits it.
+		if p == "/dev" || strings.HasPrefix(p, "/dev/") {
+			rule = rule.WithIoctlDev()
+		}
+		rules = append(rules, rule)
+	}
+
+	allReadable := appendMissingPaths(gps.Readable, gps.Writable, execPaths)
+	for _, p := range allReadable {
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			rules = append(rules, landlock.RODirs(p))
+		} else {
+			rules = append(rules, landlock.ROFiles(p))
+		}
+	}
+	for _, p := range gps.ListableDirs {
+		if pathExists(p) {
+			rules = append(rules, landlock.PathAccess(llsyscall.AccessFSReadDir, p))
+		}
+	}
+	return rules
 }
 
 // forkExecInPIDNamespace forks into a new PID namespace, runs
@@ -775,14 +788,18 @@ func (l *LinuxSandbox) GenerateProfile(policy Policy) (string, error) {
 		fmt.Fprintf(&b, "  %s\n", p)
 	}
 
-	deniedPaths := expandGlobs(denied)
-	if len(deniedPaths) > 0 {
+	if len(denied) > 0 {
 		b.WriteString("\n## Denied paths\n")
-		for _, p := range deniedPaths {
-			fmt.Fprintf(&b, "  %s\n", p)
+		unenforced := map[string]string{}
+		if tier.Backend == BackendLandlock {
+			unenforced = landlockUnenforcedDenies(gps)
 		}
-		if len(deniedPaths) != len(denied) {
-			b.WriteString("\n  # (expanded from globs in denied list)\n")
+		for _, p := range denied {
+			if w, ok := unenforced[p]; ok {
+				fmt.Fprintf(&b, "  %s  # not enforced: Landlock cannot block inside writable %s\n", p, w)
+				continue
+			}
+			fmt.Fprintf(&b, "  %s\n", p)
 		}
 	}
 
@@ -891,15 +908,15 @@ func (l *LinuxSandbox) applyBwrap(cmd *exec.Cmd, policy Policy, bwrapPath string
 	// is the host's /dev/null (bwrap resolves --ro-bind sources against
 	// the host fs), available regardless of the sandbox's fresh --dev /dev.
 	//
-	// Asymmetry note: Landlock cannot enforce file-level deny inside an
-	// allowed subtree because its API has no point-deny — denied files
-	// whose parent dir is in the writable/readable allow-list remain
-	// accessible under Landlock. bwrap can close this gap; Landlock can't.
+	// Asymmetry note: Landlock has no point-deny. A deny inside a read-only
+	// grant is enforced by splitting the grant (splitAroundDenied); one
+	// inside a writable grant stays accessible under Landlock. bwrap closes
+	// both.
 	//
 	// Denied dirs get a read-only (0555) tmpfs, not just an empty one: a
 	// default-mode tmpfs is owner-writable, so a sandboxed process could
 	// still CREATE files inside a denied directory.
-	for _, p := range expandGlobs(denied) {
+	for _, p := range denied {
 		info, err := os.Stat(p)
 		if err != nil {
 			continue

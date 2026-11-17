@@ -1,0 +1,122 @@
+{
+  "strictness": 2,
+  "commentTypes": [
+    "logic",
+    "syntax"
+  ],
+  "triggerOnUpdates": true,
+  "ignorePatterns": "**/mocks/**\ntestdata/**\ngo.sum\nflake.lock\n.beads/**\ndocs/superpowers/plans/**",
+  "summarySection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": true
+  },
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": true
+  },
+  "confidenceScoreSection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": true
+  },
+  "sequenceDiagramSection": {
+    "included": false,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "instructions": "Follow .greptile/rules.md and the composable skills in .greptile/skills/ (sandbox-threat-model.md, ponytail-review.md, refactor-scan.md, doc-sync-audit.md). Prioritize bugs, sandbox/credential security threats, concurrency/resource leaks, missing tests on risky logic, documentation drift, and dead/duplicated code. Do not post formatting, linter, or prose-style comments already enforced by CI.",
+  "rules": [
+    {
+      "id": "sandbox-deny-wins-and-ceiling",
+      "scope": [
+        "pkg/seatbelt/**",
+        "internal/sandbox/**"
+      ],
+      "severity": "high",
+      "rule": "Enforce (deny default) baseline (DD-27), allow-broad + deny-narrow ordering where deny rules emit after allow rules (DD-26), never_allow applied last after all capabilities (DD-30), no mid-session escalation (DD-31), and policy parity between macOS Seatbelt and Linux Landlock+seccomp+bwrap (DD-33)."
+    },
+    {
+      "id": "sandbox-input-and-symlink-validation",
+      "scope": [
+        "pkg/seatbelt/**",
+        "internal/sandbox/**",
+        "internal/fsutil/**",
+        "internal/homepath/**"
+      ],
+      "severity": "high",
+      "rule": "Every external input (os.Getenv, exec.LookPath, filepath.EvalSymlinks, .aide.yaml paths) feeding a sandbox rule operand must validate its resolved path against a trusted prefix or ExistsOrUnderHome and handle errors explicitly (never discard via _ = without a soundness comment)."
+    },
+    {
+      "id": "gateway-credential-and-proxy-isolation",
+      "scope": [
+        "internal/gateway/**",
+        "internal/gatewaymigrate/**",
+        "internal/gatewaypreset/**"
+      ],
+      "severity": "high",
+      "rule": "Real upstream provider credentials must never leak into agent-visible env vars, HTTP responses, error strings, logs, or statuslines. Validate upstream target URLs against configured presets/endpoints to prevent SSRF credential exfiltration, propagate request context cancellation, close HTTP bodies, and guard shared proxy state against data races."
+    },
+    {
+      "id": "secrets-ephemeral-and-redaction",
+      "scope": [
+        "internal/secrets/**",
+        "internal/envscrub/**",
+        "internal/redact/**",
+        "internal/launcher/**"
+      ],
+      "severity": "high",
+      "rule": "Decrypt in-process via sops/v3/decrypt only (DD-4). Write runtime artifacts only to $XDG_RUNTIME_DIR/aide-<pid>/ (0700 dir, 0600 files) with cleanup on exit and signals (SIGTERM, SIGINT, SIGQUIT, SIGHUP, DD-10). Scrub never_allow_env before exec.Command (internal/launcher/ is the sole agent exec point)."
+    },
+    {
+      "id": "trust-gate-before-project-config",
+      "scope": [
+        "internal/trust/**",
+        "internal/consent/**",
+        "internal/approvalstore/**",
+        "internal/config/**",
+        "internal/context/**"
+      ],
+      "severity": "high",
+      "rule": "Project .aide.yaml files are untrusted until SHA-256 content-addressed trust verification succeeds (DD-32). Flag any code path that evaluates capabilities, hooks, MCPs, or env overrides from .aide.yaml prior to trust verification or introduces a TOCTOU window between hashing and parsing."
+    },
+    {
+      "id": "provision-and-config-atomicity",
+      "scope": [
+        "internal/provision/**",
+        "internal/harness/**",
+        "internal/piinstall/**",
+        "internal/config/**",
+        "internal/yamlnode/**"
+      ],
+      "severity": "medium",
+      "rule": "File mutations and profile provisioning must handle partial-write failures cleanly (atomic rename or rollback), prevent path traversal outside target profile directories, and preserve zero-value config backward compatibility."
+    },
+    {
+      "id": "documentation-sync-check",
+      "scope": [
+        "cmd/aide/**",
+        "internal/config/**",
+        "internal/capability/**",
+        "internal/sandbox/**",
+        "internal/provision/**",
+        "internal/gateway/**",
+        "internal/secrets/**",
+        "pkg/seatbelt/**"
+      ],
+      "severity": "medium",
+      "rule": "Apply .greptile/skills/doc-sync-audit.md: verify user and architecture docs (docs/cli-reference.md, docs/configuration.md, docs/capabilities.md, docs/sandbox.md, docs/provisioning.md, docs/profiles.md, docs/secrets.md, DESIGN.md) are updated in the same PR when CLI flags, config schema, capabilities, guards, or DD-1..DD-33 invariants change."
+    },
+    {
+      "id": "ponytail-and-refactor-check",
+      "scope": [
+        "cmd/**",
+        "internal/**",
+        "pkg/**"
+      ],
+      "severity": "medium",
+      "rule": "Apply .greptile/skills/ponytail-review.md and .greptile/skills/refactor-scan.md: every finding must cite a concrete input/state that causes a failure; check all callers when a signature or behavior changes; flag dead/orphaned code, duplicate/near-copy logic, missed helper reuse (internal/fsutil, homepath, hashutil, sliceutil, yamlnode, redact, envscrub), code smells, and Go idiom defects (%v instead of %w, unmanaged goroutines); respect // shortcut: comments."
+    }
+  ]
+}

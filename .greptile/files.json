@@ -1,0 +1,142 @@
+{
+  "files": [
+    {
+      "path": ".greptile/skills/sandbox-threat-model.md",
+      "description": "Composable skill: 5-Boundary Agent Sandbox Threat-Model Sweep and DD-1..DD-33 enforcement.",
+      "scope": [
+        "pkg/seatbelt/**",
+        "internal/sandbox/**",
+        "internal/capability/**",
+        "internal/gateway/**",
+        "internal/gatewaymigrate/**",
+        "internal/gatewaypreset/**",
+        "internal/secrets/**",
+        "internal/envscrub/**",
+        "internal/redact/**",
+        "internal/trust/**",
+        "internal/consent/**",
+        "internal/approvalstore/**",
+        "internal/provision/**",
+        "internal/launcher/**",
+        "internal/config/**",
+        "internal/context/**"
+      ]
+    },
+    {
+      "path": ".greptile/skills/ponytail-review.md",
+      "description": "Composable skill: Ponytail code review (Bug, Risk, Scale, Missing Test, Speed, Lean/YAGNI, and 4-part finding format).",
+      "scope": [
+        "cmd/**",
+        "internal/**",
+        "pkg/**"
+      ]
+    },
+    {
+      "path": ".greptile/skills/refactor-scan.md",
+      "description": "Composable skill: Refactoring, dead/orphaned code, helper reuse, DRY (Logic/Knowledge/Structural), code smells, and Go idioms.",
+      "scope": [
+        "cmd/**",
+        "internal/**",
+        "pkg/**"
+      ]
+    },
+    {
+      "path": ".greptile/skills/doc-sync-audit.md",
+      "description": "Composable skill: Documentation sync and accuracy audit (MISSING, WRONG, STALE, MISLEADING doc claims).",
+      "scope": [
+        "cmd/**",
+        "internal/**",
+        "pkg/**",
+        "docs/**",
+        "README.md",
+        "DESIGN.md"
+      ]
+    },
+    {
+      "path": "DESIGN.md",
+      "description": "Authoritative architecture, package boundaries, and design decisions DD-1 through DD-33.",
+      "scope": [
+        "cmd/**",
+        "internal/**",
+        "pkg/**"
+      ]
+    },
+    {
+      "path": "docs/cli-reference.md",
+      "description": "User-facing CLI command and flag reference that must stay synchronized with cmd/aide/.",
+      "scope": [
+        "cmd/aide/**"
+      ]
+    },
+    {
+      "path": "docs/configuration.md",
+      "description": "Configuration schema and .aide.yaml reference that must stay synchronized with internal/config/.",
+      "scope": [
+        "internal/config/**",
+        "internal/context/**"
+      ]
+    },
+    {
+      "path": "docs/capabilities.md",
+      "description": "Built-in capability definitions and effects that must stay synchronized with internal/capability/.",
+      "scope": [
+        "internal/capability/**",
+        "internal/sandbox/**"
+      ]
+    },
+    {
+      "path": "docs/sandbox.md",
+      "description": "Sandbox policy model, guards, deny-wins semantics, and never_allow ceiling.",
+      "scope": [
+        "pkg/seatbelt/**",
+        "internal/sandbox/**",
+        "internal/capability/**"
+      ]
+    },
+    {
+      "path": "docs/superpowers/specs/2026-06-07-linux-sandbox-threat-model.md",
+      "description": "Linux Landlock, seccomp, and bubblewrap threat model and enforcement invariants (DD-33).",
+      "scope": [
+        "internal/sandbox/**"
+      ]
+    },
+    {
+      "path": "docs/designs/gateway-redesign.md",
+      "description": "Credential-injecting gateway proxy architecture, auth modes, and routing invariants.",
+      "scope": [
+        "internal/gateway/**",
+        "internal/gatewaymigrate/**",
+        "internal/gatewaypreset/**"
+      ]
+    },
+    {
+      "path": "docs/secrets.md",
+      "description": "Secret decryption lifecycle, ephemeral runtime storage, and environment scrubbing rules.",
+      "scope": [
+        "internal/secrets/**",
+        "internal/envscrub/**",
+        "internal/redact/**",
+        "internal/launcher/**"
+      ]
+    },
+    {
+      "path": "docs/provisioning.md",
+      "description": "Declarative agent provisioning, skillshare sync, and isolated harness profile rules.",
+      "scope": [
+        "internal/provision/**",
+        "internal/harness/**",
+        "internal/piinstall/**"
+      ]
+    },
+    {
+      "path": "docs/profiles.md",
+      "description": "Built-in default profile (DD-7), profile isolation, and binding resolution.",
+      "scope": [
+        "internal/config/**",
+        "internal/context/**",
+        "internal/provision/**",
+        "internal/harness/**"
+      ]
+    }
+  ]
+}

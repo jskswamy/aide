@@ -3,6 +3,7 @@ package guards_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -181,5 +182,63 @@ func TestGuard_CustomValidation_BuiltinNameCollision(t *testing.T) {
 	result = guards.ValidateCustomGuard("aide-secrets", cfg)
 	if result.OK() {
 		t.Error("expected error for built-in name collision (aide-secrets)")
+	}
+}
+
+func TestSetCustomGuards_RegistersByType(t *testing.T) {
+	t.Cleanup(func() { _ = guards.SetCustomGuards(nil) })
+	err := guards.SetCustomGuards(map[string]guards.CustomGuardConfig{
+		"audit-logs": {Type: "default", Paths: []string{"~/.config/audit"}},
+		"team-vault": {Type: "opt-in", Paths: []string{"~/.config/team-vault"}},
+		"untyped":    {Paths: []string{"~/.untyped"}},
+	})
+	if err != nil {
+		t.Fatalf("SetCustomGuards: %v", err)
+	}
+	if g, ok := guards.GuardByName("team-vault"); !ok || g.Type() != "opt-in" {
+		t.Errorf("team-vault lookup = %v, %v; want opt-in guard", g, ok)
+	}
+	defaults := guards.DefaultGuardNames()
+	for _, want := range []string{"audit-logs", "untyped"} {
+		if !slices.Contains(defaults, want) {
+			t.Errorf("DefaultGuardNames() = %v, missing %s", defaults, want)
+		}
+	}
+	if slices.Contains(defaults, "team-vault") {
+		t.Errorf("DefaultGuardNames() = %v, opt-in team-vault should be absent", defaults)
+	}
+	if !slices.Contains(guards.ExpandGuardName("all-default"), "audit-logs") {
+		t.Error("all-default does not expand to custom default guard audit-logs")
+	}
+	if got := guards.CustomGuardConfigs(); len(got) != 3 {
+		t.Errorf("CustomGuardConfigs() = %v, want 3 entries", got)
+	}
+
+	if err := guards.SetCustomGuards(nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := guards.GuardByName("audit-logs"); ok {
+		t.Error("audit-logs still registered after replacing the custom set")
+	}
+}
+
+func TestSetCustomGuards_RejectsInvalidAndKeepsPreviousSet(t *testing.T) {
+	t.Cleanup(func() { _ = guards.SetCustomGuards(nil) })
+	if err := guards.SetCustomGuards(map[string]guards.CustomGuardConfig{"kept": {Paths: []string{"~/.kept"}}}); err != nil {
+		t.Fatal(err)
+	}
+	for name, cfg := range map[string]guards.CustomGuardConfig{
+		"base":     {Paths: []string{"~/.x"}},
+		"always":   {Type: "always", Paths: []string{"~/.x"}},
+		"bad-type": {Type: "compliance", Paths: []string{"~/.x"}},
+		"no-paths": {Type: "default"},
+	} {
+		err := guards.SetCustomGuards(map[string]guards.CustomGuardConfig{name: cfg})
+		if err == nil {
+			t.Errorf("SetCustomGuards(%s) succeeded, want error", name)
+		}
+	}
+	if _, ok := guards.GuardByName("kept"); !ok {
+		t.Error("a rejected set replaced the previous custom guards")
 	}
 }

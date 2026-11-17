@@ -6,8 +6,13 @@
 package guards
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
+	"sync"
 
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
@@ -40,7 +45,7 @@ func NewCustomGuard(name string, cfg CustomGuardConfig) seatbelt.Guard {
 }
 
 func (g *customGuard) Name() string        { return g.name }
-func (g *customGuard) Type() string        { return g.cfg.Type }
+func (g *customGuard) Type() string        { return cmp.Or(g.cfg.Type, "default") }
 func (g *customGuard) Description() string { return g.cfg.Description }
 
 func (g *customGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult {
@@ -113,10 +118,14 @@ func (g *customGuard) resolvePaths(ctx *seatbelt.Context) []string {
 // Returns a ValidationResult; check result.OK() to determine if validation passed.
 func ValidateCustomGuard(name string, cfg CustomGuardConfig) *seatbelt.ValidationResult {
 	r := &seatbelt.ValidationResult{}
-	if cfg.Type == "always" {
+	switch cfg.Type {
+	case "", "default", "opt-in":
+	case "always":
 		r.AddError("custom guard %q cannot use type \"always\"", name)
+	default:
+		r.AddError("custom guard %q: unknown guard type %q (use default, opt-in or a guard_types name)", name, cfg.Type)
 	}
-	if _, ok := GuardByName(name); ok {
+	if slices.ContainsFunc(builtinGuards, func(g seatbelt.Guard) bool { return g.Name() == name }) {
 		r.AddError("custom guard %q conflicts with built-in guard", name)
 	}
 	if cfg.EnvOverride != "" && len(cfg.Paths) != 1 {
@@ -126,4 +135,39 @@ func ValidateCustomGuard(name string, cfg CustomGuardConfig) *seatbelt.Validatio
 		r.AddError("custom guard %q: at least one path is required", name)
 	}
 	return r
+}
+
+var (
+	customMu      sync.RWMutex
+	customGuards  []seatbelt.Guard
+	customConfigs map[string]CustomGuardConfig
+)
+
+// SetCustomGuards validates defs and makes them the custom guard set,
+// replacing any earlier set; nil clears it. An empty Type means
+// "default". On error the earlier set stays in place.
+func SetCustomGuards(defs map[string]CustomGuardConfig) error {
+	var errs []error
+	gs := make([]seatbelt.Guard, 0, len(defs))
+	for _, name := range slices.Sorted(maps.Keys(defs)) {
+		if err := ValidateCustomGuard(name, defs[name]).Err(); err != nil {
+			errs = append(errs, err)
+		}
+		gs = append(gs, NewCustomGuard(name, defs[name]))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	customMu.Lock()
+	defer customMu.Unlock()
+	customGuards, customConfigs = gs, maps.Clone(defs)
+	return nil
+}
+
+// CustomGuardConfigs returns the definitions of the current custom guard
+// set, so a re-exec'd sandbox process can rebuild it.
+func CustomGuardConfigs() map[string]CustomGuardConfig {
+	customMu.RLock()
+	defer customMu.RUnlock()
+	return maps.Clone(customConfigs)
 }

@@ -41,6 +41,10 @@ type Policy struct {
 	// Guards lists the active guard names (resolved from registry).
 	Guards []string
 
+	// CustomGuards holds the custom guard definitions Guards may name, so
+	// the Linux re-exec child (which loads no config) can rebuild them.
+	CustomGuards map[string]guards.CustomGuardConfig
+
 	// AgentModule is the agent-specific seatbelt module (e.g. ClaudeAgent).
 	AgentModule seatbelt.Module
 
@@ -130,6 +134,7 @@ type Paths struct {
 func DefaultPolicy(p Paths, env []string) Policy {
 	return Policy{
 		Guards:          guards.DefaultGuardNames(),
+		CustomGuards:    guards.CustomGuardConfigs(),
 		ProjectRoot:     p.ProjectRoot,
 		RuntimeDir:      p.RuntimeDir,
 		TempDir:         p.TempDir,

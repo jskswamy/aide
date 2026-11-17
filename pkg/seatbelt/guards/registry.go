@@ -5,6 +5,8 @@
 package guards
 
 import (
+	"slices"
+
 	"github.com/jskswamy/aide/pkg/seatbelt"
 )
 
@@ -36,16 +38,19 @@ func init() {
 	)
 }
 
-// AllGuards returns all built-in guards in registration order.
-func AllGuards() []seatbelt.Guard {
-	out := make([]seatbelt.Guard, len(builtinGuards))
-	copy(out, builtinGuards)
-	return out
+// AllGuards returns the built-in guards in registration order, then the
+// custom guards (see SetCustomGuards) sorted by name.
+func AllGuards() []seatbelt.Guard { return all() }
+
+func all() []seatbelt.Guard {
+	customMu.RLock()
+	defer customMu.RUnlock()
+	return slices.Concat(builtinGuards, customGuards)
 }
 
 // GuardByName returns the guard with the given name, or (nil, false) if not found.
 func GuardByName(name string) (seatbelt.Guard, bool) {
-	for _, g := range builtinGuards {
+	for _, g := range all() {
 		if g.Name() == name {
 			return g, true
 		}
@@ -56,7 +61,7 @@ func GuardByName(name string) (seatbelt.Guard, bool) {
 // ByType returns all guards whose Type() equals typ.
 func ByType(typ string) []seatbelt.Guard {
 	var out []seatbelt.Guard
-	for _, g := range builtinGuards {
+	for _, g := range all() {
 		if g.Type() == typ {
 			out = append(out, g)
 		}
@@ -71,7 +76,7 @@ func ExpandGuardName(name string) []string {
 	switch name {
 	case "all-default":
 		var names []string
-		for _, g := range builtinGuards {
+		for _, g := range all() {
 			if g.Type() == "default" {
 				names = append(names, g.Name())
 			}
@@ -85,7 +90,7 @@ func ExpandGuardName(name string) []string {
 // DefaultGuardNames returns the names of all "always" and "default" guards.
 func DefaultGuardNames() []string {
 	var names []string
-	for _, g := range builtinGuards {
+	for _, g := range all() {
 		if g.Type() == "always" || g.Type() == "default" {
 			names = append(names, g.Name())
 		}

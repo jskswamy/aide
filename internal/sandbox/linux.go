@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 	"github.com/landlock-lsm/go-landlock/landlock"
 	"golang.org/x/sys/unix"
 )
@@ -206,29 +207,31 @@ func pathCoveredBy(p string, writable, readable []string) bool {
 // guards to fall back to HOME-based defaults and their actual paths are
 // absent from the Landlock allow-list, silently denying agent reads.
 type landlockPolicyJSON struct {
-	Guards          []string    `json:"Guards,omitempty"`
-	HomeDir         string      `json:"HomeDir,omitempty"`
-	Env             []string    `json:"Env,omitempty"`
-	ProjectRoot     string      `json:"ProjectRoot,omitempty"`
-	RuntimeDir      string      `json:"RuntimeDir,omitempty"`
-	TempDir         string      `json:"TempDir,omitempty"`
-	Network         NetworkMode `json:"Network,omitempty"`
-	AllowPorts      []int       `json:"AllowPorts,omitempty"`
-	DenyPorts       []int       `json:"DenyPorts,omitempty"`
-	SSHPorts        []int       `json:"SSHPorts,omitempty"`
-	ExtraDenied     []string    `json:"ExtraDenied,omitempty"`
-	ExtraWritable   []string    `json:"ExtraWritable,omitempty"`
-	ExtraReadable   []string    `json:"ExtraReadable,omitempty"`
-	ExtraAllow      []string    `json:"ExtraAllow,omitempty"`
-	AllowSubprocess bool        `json:"AllowSubprocess"`
-	CleanEnv        bool        `json:"CleanEnv"`
-	AgentReadable   []string    `json:"AgentReadable,omitempty"`
-	AgentWritable   []string    `json:"AgentWritable,omitempty"`
+	Guards          []string                            `json:"Guards,omitempty"`
+	CustomGuards    map[string]guards.CustomGuardConfig `json:"CustomGuards,omitempty"`
+	HomeDir         string                              `json:"HomeDir,omitempty"`
+	Env             []string                            `json:"Env,omitempty"`
+	ProjectRoot     string                              `json:"ProjectRoot,omitempty"`
+	RuntimeDir      string                              `json:"RuntimeDir,omitempty"`
+	TempDir         string                              `json:"TempDir,omitempty"`
+	Network         NetworkMode                         `json:"Network,omitempty"`
+	AllowPorts      []int                               `json:"AllowPorts,omitempty"`
+	DenyPorts       []int                               `json:"DenyPorts,omitempty"`
+	SSHPorts        []int                               `json:"SSHPorts,omitempty"`
+	ExtraDenied     []string                            `json:"ExtraDenied,omitempty"`
+	ExtraWritable   []string                            `json:"ExtraWritable,omitempty"`
+	ExtraReadable   []string                            `json:"ExtraReadable,omitempty"`
+	ExtraAllow      []string                            `json:"ExtraAllow,omitempty"`
+	AllowSubprocess bool                                `json:"AllowSubprocess"`
+	CleanEnv        bool                                `json:"CleanEnv"`
+	AgentReadable   []string                            `json:"AgentReadable,omitempty"`
+	AgentWritable   []string                            `json:"AgentWritable,omitempty"`
 }
 
 func policyToJSON(p Policy) (landlockPolicyJSON, error) {
 	j := landlockPolicyJSON{
 		Guards:          p.Guards,
+		CustomGuards:    p.CustomGuards,
 		HomeDir:         p.HomeDir,
 		Env:             p.Env,
 		ProjectRoot:     p.ProjectRoot,
@@ -280,6 +283,7 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 	extraReadable = append(extraReadable, j.AgentReadable...)
 	return Policy{
 		Guards:          j.Guards,
+		CustomGuards:    j.CustomGuards,
 		HomeDir:         j.HomeDir,
 		Env:             j.Env,
 		ProjectRoot:     j.ProjectRoot,
@@ -453,6 +457,9 @@ func RunSandboxApply(policyFDStr string, agentCmd []string) error {
 		return fmt.Errorf("unmarshal sandbox policy: %w", err)
 	}
 	policy := policyFromJSON(pj)
+	if err := guards.SetCustomGuards(policy.CustomGuards); err != nil {
+		return fmt.Errorf("custom guards in sandbox policy: %w", err)
+	}
 
 	// Resolve agent path before Landlock takes effect; LookPath needs FS access.
 	agentPath, err := exec.LookPath(agentCmd[0])

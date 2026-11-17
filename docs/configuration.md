@@ -199,7 +199,20 @@ capabilities:
 - `never_allow:` (list) - Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
 - `never_allow_env:` (list) - Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
 - `scrub_env:` (list) - Extra variable names added to the credential scrub registry (see [Credential-clean environment](#credential-clean-environment)). An entry ending in `*` matches a prefix (`CORP_LLM_*`).
-- `custom_guards:` and `guard_types:` (advanced) - Define custom seatbelt guard modules. Most users should not need these.
+- `custom_guards:` and `guard_types:` (advanced) - Deny the agent your own paths. Each custom guard lists `paths` (`~/` expands to home), an optional `description`, `allowed` paths readable inside them, and `env_override` (a variable whose value replaces a single path). Its `type` is `default` (on unless unguarded; the default when omitted), `opt-in` (on only when named in `guards:` or `guards_extra:`), or a name from `guard_types:`, whose `behavior` is `default` or `opt-in`. Names must not clash with built-in guards, and `always` is reserved for them. `aide sandbox guards` lists custom guards next to the built-in ones.
+
+  ```yaml
+  guard_types:
+    team-internal:
+      behavior: opt-in
+  custom_guards:
+    audit-logs:
+      paths: ["~/.config/audit"]
+    team-vault:
+      type: team-internal
+      paths: ["~/.config/team-vault"]
+      env_override: TEAM_VAULT_DIR
+  ```
 
 ### `provisioning.yaml` (Shared Tooling)
 

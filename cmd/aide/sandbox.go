@@ -923,7 +923,6 @@ func sandboxGuardsCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			allGuards := guards.AllGuards()
 
 			// Resolve the active set from the current context config
 			var activeNames []string
@@ -959,6 +958,7 @@ func sandboxGuardsCmd() *cobra.Command {
 				activeSet[n] = true
 			}
 
+			allGuards := guards.AllGuards() // after loading config, which registers custom guards
 			entries := make([]sandboxGuardEntry, 0, len(allGuards))
 			for _, g := range allGuards {
 				entries = append(entries, sandboxGuardEntry{

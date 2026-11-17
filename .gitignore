@@ -3,7 +3,7 @@
 .dolt/
 *.db
 .beads/
-.claude/
+.claude/*
 !.claude/commands/
 
 # Project config (user-specific)

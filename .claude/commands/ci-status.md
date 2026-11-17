@@ -1,6 +1,6 @@
 # CI Status
 
-Check GitHub Actions results for the current branch. Read-only — does
+Check GitHub Actions results for the current branch. Read-only -- does
 not run any checks locally.
 
 ## Step 1: Get current branch
@@ -35,7 +35,7 @@ This lists all checks with their status, duration, and URL.
 
 Query both CI workflows:
 ~~~bash
-gh run list --branch <branch> --workflow ci.yml --limit 1 --json databaseId,status,conclusion
+gh run list --branch <branch> --workflow checks.yml --limit 1 --json databaseId,status,conclusion
 gh run list --branch <branch> --workflow security.yml --limit 1 --json databaseId,status,conclusion
 ~~~
 

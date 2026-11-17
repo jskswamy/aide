@@ -1,7 +1,7 @@
 # Fix Checks
 
 Detect and fix failures from local checks or CI. Does not auto-commit
-fixes — the user reviews changes before committing.
+fixes -- the user reviews changes before committing.
 
 ## Environment Setup
 
@@ -35,7 +35,7 @@ If ALL checks pass locally, fall back to remote CI failures (Step 1b).
 If no local failures, fetch CI logs:
 
 ~~~bash
-gh run list --branch $(git branch --show-current) --workflow ci.yml --limit 1 --json databaseId,conclusion
+gh run list --branch $(git branch --show-current) --workflow checks.yml --limit 1 --json databaseId,conclusion
 ~~~
 
 If the latest run failed:
@@ -46,7 +46,7 @@ gh run view <id> --log-failed
 
 Parse the failure output and proceed to Step 2 with those failures.
 
-If CI also passes, report "All checks pass — nothing to fix."
+If CI also passes, report "All checks pass -- nothing to fix."
 
 ## Step 2: Categorize and fix
 
@@ -67,7 +67,7 @@ For each failure, apply fixes based on this classification:
 - Code-level fixes: add error handling where appropriate
 - Cosmetic findings (e.g., unhandled Fprintf errors in UI code): suggest
   adding `//nolint:G104` with a brief reason comment
-- Classify each finding — do not blindly nolint everything
+- Classify each finding -- do not blindly nolint everything
 
 **Govulncheck (dependency vulns):**
 - Run `go get -u <module>@<fixed-version>` then `go mod tidy`

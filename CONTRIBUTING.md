@@ -84,6 +84,7 @@ Zero tolerance policy: `max-issues-per-linter: 0`, `max-same-issues: 0`. Fix all
 
 | Hook | Source |
 |------|--------|
+| no-commit-to-branch | pre-commit-hooks (blocks direct commits to `main`) |
 | trailing-whitespace | pre-commit-hooks |
 | end-of-file-fixer | pre-commit-hooks |
 | check-yaml | pre-commit-hooks |
@@ -92,6 +93,7 @@ Zero tolerance policy: `max-issues-per-linter: 0`, `max-same-issues: 0`. Fix all
 | actionlint | rhysd/actionlint |
 | doc-slop-check | local (`scripts/check-doc-slop.sh`) |
 | go-build | dnephin/pre-commit-golang |
+| bd-pre-commit | local (`bd hooks run pre-commit` when `bd` is installed) |
 
 **On push:**
 
@@ -101,6 +103,7 @@ Zero tolerance policy: `max-issues-per-linter: 0`, `max-same-issues: 0`. Fix all
 | gosec | local (`make security/gosec`) |
 | gitleaks | gitleaks/gitleaks |
 | go-unit-tests | dnephin/pre-commit-golang |
+| bd-pre-push | local (`bd hooks run pre-push` when `bd` is installed) |
 
 ## Commit Message Convention
 
@@ -132,14 +135,15 @@ Heuristic: if commit B starts with "Fix", "Update", or "Correct" and shares a ke
 
 ## Pull Requests
 
-- PRs are rebase-merged. Each commit on the branch lands on `main` as-is, so every commit must stand on its own.
-- Branch from `main`.
+- PRs are rebase-merged (`gh pr merge --rebase --delete-branch`). Merge commits and squash merges are disabled so `main` keeps a linear history where every commit stands on its own.
+- Branch from `main` using short-lived branches (`feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`). Direct commits and pushes to `main` are blocked.
 - Keep PRs focused on a single concern.
+- Update corresponding user and architecture documentation (`docs/*.md`, `README.md`, `DESIGN.md`) in the same PR when flags, config schema, capabilities, or design decisions change.
 - Unrelated dependency bumps, formatting passes, and refactors go in separate PRs.
 - No `fixup!` or `squash!` subjects in the pushed branch - autosquash before pushing.
 - Describe what changed and why in the PR description.
 - CI must pass before requesting review.
-- Two-stage review: automated AI review first, then human review.
+- Two-stage review: automated AI review via Greptile (`.greptile/` threat-model, Ponytail, refactoring, and doc-sync skills) first, then human review.
 
 ## Security
 

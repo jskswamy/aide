@@ -42,13 +42,21 @@ func SubpathWithParentMetadata(path string) []Rule {
 }
 
 // ExpandGlobs expands glob patterns in a list of paths.
-// Non-glob paths are passed through unchanged.
+// Non-glob paths and existing literal paths that contain glob characters
+// (such as brackets) are preserved alongside any glob matches.
 func ExpandGlobs(patterns []string) []string {
 	var result []string
 	for _, p := range patterns {
 		if strings.ContainsAny(p, "*?[") {
 			matches, _ := filepath.Glob(p)
-			result = append(result, matches...)
+			if _, err := os.Lstat(p); err == nil {
+				result = append(result, p)
+			}
+			for _, m := range matches {
+				if m != p {
+					result = append(result, m)
+				}
+			}
 		} else {
 			result = append(result, p)
 		}

@@ -304,6 +304,24 @@ resolve paths.
 (T1) — fd-inherited, immutable post-creation, no window for an
 attacker to mutate. Defended by the same mechanism as T1.
 
+### TA4 — Split read-only directories retain `LANDLOCK_ACCESS_FS_READ_DIR` on their subtree
+
+**What.** When a read-only grant (such as `~/.ssh`) contains a denied child,
+`splitAroundDenied` replaces `RODirs` on the parent with per-entry `ROFiles` /
+`RODirs` grants for the allowed children and a directory-listing-only
+`PathAccess(AccessFSReadDir, parent)` rule on the split directory so tools
+(e.g. `ssh` `Include ~/.ssh/conf.d/*`) can still enumerate allowed siblings.
+Because Landlock applies `AccessFSReadDir` to the directory hierarchy beneath
+`parent`, directory entry names inside a denied subdirectory under `parent`
+remain listable (`getdents64`), while opening or reading any denied file
+(`AccessFSReadFile`) is blocked by the kernel.
+
+**Why accepted.** Landlock has no non-recursive `READ_DIR` rule, and dropping
+`READ_DIR` on the parent breaks directory enumeration for allowed siblings.
+Exposing filenames without file contents matches macOS Seatbelt's
+`file-read-metadata` vs `file-read-data` distinction and does not expose
+credential material stored inside files.
+
 ## Threats out of scope
 
 ### TO1 — Setuid binaries in writable paths

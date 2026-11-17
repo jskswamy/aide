@@ -1162,3 +1162,14 @@ func TestLinuxSystemReadable_SysfsScope(t *testing.T) {
 		t.Errorf("linuxSystemReadable must contain %q for Bun/Node cgroup queries", narrowCgroup)
 	}
 }
+
+func TestLandlockUnenforcedDenies(t *testing.T) {
+	gps := GrantedPathSet{
+		Writable: []string{"/proj"},
+		Denied:   []string{"/proj/.git/hooks", "/home/u/.ssh/prod_db"},
+	}
+	got := landlockUnenforcedDenies(gps)
+	if len(got) != 1 || got["/proj/.git/hooks"] != "/proj" {
+		t.Errorf("landlockUnenforcedDenies() = %v, want only /proj/.git/hooks", got)
+	}
+}

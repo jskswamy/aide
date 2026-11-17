@@ -199,7 +199,7 @@ capabilities:
 - `never_allow:` (list) - Paths that no capability can ever access. These are enforced globally regardless of which capabilities are active.
 - `never_allow_env:` (list) - Environment variables always stripped from the agent process, even if a capability would otherwise permit them.
 - `scrub_env:` (list) - Extra variable names added to the credential scrub registry (see [Credential-clean environment](#credential-clean-environment)). An entry ending in `*` matches a prefix (`CORP_LLM_*`).
-- `custom_guards:` and `guard_types:` (advanced) - Deny the agent your own paths. Each custom guard lists `paths` (`~/` expands to home), an optional `description`, `allowed` paths readable inside them, and `env_override` (a variable whose value replaces a single path). Its `type` is `default` (on unless unguarded; the default when omitted), `opt-in` (on only when named in `guards:` or `guards_extra:`), or a name from `guard_types:`, whose `behavior` is `default` or `opt-in`. Names must not clash with built-in guards, and `always` is reserved for them. `aide sandbox guards` lists custom guards next to the built-in ones.
+- `custom_guards:` and `guard_types:` (advanced) - Deny the agent your own paths. Each custom guard lists `paths` (`~/` expands to home; globs such as `~/.ssh/prod_*` expand at launch), an optional `description`, `allowed` paths exempted from `paths` (for example, exempting `~/.ssh/prod_bastion.pub` from `~/.ssh/prod_*`; does not carve out a file inside a directory listed directly in `paths`), and `env_override` (a variable whose value replaces a single path). Its `type` is `default` (on unless unguarded; the default when omitted), `opt-in` (on only when named in `guards:` or `guards_extra:`), or a name from `guard_types:`, whose `behavior` is `default` or `opt-in`. Names must not clash with built-in guards, and `always` is reserved for them. `aide sandbox guards` lists custom guards next to the built-in ones. On Linux (Landlock), a guarded path inside a read-only grant such as `~/.ssh` is blocked, but one inside a writable grant such as the project directory is not; see [never_allow](capabilities.md#never_allow-the-hard-ceiling).
 
   ```yaml
   guard_types:
@@ -208,6 +208,8 @@ capabilities:
   custom_guards:
     audit-logs:
       paths: ["~/.config/audit"]
+    prod-ssh:                         # with the ssh capability, everything in ~/.ssh but these
+      paths: ["~/.ssh/prod_*"]
     team-vault:
       type: team-internal
       paths: ["~/.config/team-vault"]

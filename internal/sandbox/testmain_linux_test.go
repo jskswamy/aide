@@ -13,5 +13,6 @@ import (
 func TestMain(m *testing.M) {
 	dispatchPolicyFDHelper()
 	dispatchLandlockRenameHelper()
+	dispatchLandlockSplitDirHelper()
 	os.Exit(m.Run())
 }

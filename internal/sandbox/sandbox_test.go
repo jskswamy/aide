@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
@@ -176,6 +178,140 @@ func TestResolveSymlinkForDeny_StillFallsBack(t *testing.T) {
 	if got != "/no/such/path" {
 		t.Errorf("resolveSymlinkForDeny(missing) = %q, want cleaned input", got)
 	}
+}
+
+func TestExpandGlobs_PreservesUnmatchedLiteralWithBrackets(t *testing.T) {
+	dir := t.TempDir()
+	bracketFile := filepath.Join(dir, "prod_[1]")
+	sibling := filepath.Join(dir, "prod_1")
+	for _, f := range []string{bracketFile, sibling} {
+		if err := os.WriteFile(f, []byte("secret"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := expandGlobs([]string{bracketFile})
+	assertContains(t, got, bracketFile, "expandGlobs must preserve an existing literal path even when a glob sibling matches")
+}
+
+func TestSplitAroundDenied_AncestorSymlinkCycleDoesNotHang(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssh := filepath.Join(root, ".ssh")
+	if err := os.MkdirAll(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"id_ed25519", "prod_db"} {
+		if err := os.WriteFile(filepath.Join(ssh, f), []byte("k"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Create an ancestor symlink loop: ~/.ssh/loop -> ~/.ssh
+	if err := os.Symlink(ssh, filepath.Join(ssh, "loop")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, splitDirs := splitAroundDenied([]string{ssh}, []string{filepath.Join(ssh, "prod_db")}, map[string]string{ssh: "ssh"})
+	want := []string{filepath.Join(ssh, "id_ed25519")}
+	if !slices.Equal(got, want) {
+		t.Errorf("splitAroundDenied() = %v, want %v", got, want)
+	}
+	if !slices.Equal(splitDirs, []string{ssh}) {
+		t.Errorf("splitDirs = %v, want [%s]", splitDirs, ssh)
+	}
+}
+
+func TestSplitAroundDenied(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssh := filepath.Join(root, ".ssh")
+	for _, f := range []string{"id_ed25519", "config", "prod_db", "prod/deploy", "prod/../team/key", "team/prod_key"} {
+		p := filepath.Join(ssh, f)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("k"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := filepath.Join(root, "other")
+	denied := []string{filepath.Join(ssh, "prod_db"), filepath.Join(ssh, "prod"), filepath.Join(ssh, "team", "prod_key")}
+	origin := map[string]string{ssh: "ssh"}
+
+	got, splitDirs := splitAroundDenied([]string{ssh, other}, denied, origin)
+
+	want := []string{
+		filepath.Join(ssh, "config"),
+		filepath.Join(ssh, "id_ed25519"),
+		filepath.Join(ssh, "team", "key"),
+		other,
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("splitAroundDenied() = %v, want %v", got, want)
+	}
+	wantSplitDirs := []string{ssh, filepath.Join(ssh, "team")}
+	if !slices.Equal(splitDirs, wantSplitDirs) {
+		t.Errorf("splitDirs = %v, want %v", splitDirs, wantSplitDirs)
+	}
+	if origin[filepath.Join(ssh, "team", "key")] != "ssh" {
+		t.Errorf("split entries should inherit the parent grant's origin, got %q", origin[filepath.Join(ssh, "team", "key")])
+	}
+}
+
+func TestSplitAroundDenied_ExcludesSymlinkEscapingGrantAndResolvesInTreeAlias(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := filepath.Join(root, "allowed")
+	privateDir := filepath.Join(root, "private")
+	for _, f := range []string{
+		filepath.Join(allowed, "ok.txt"),
+		filepath.Join(allowed, "blocked"),
+		filepath.Join(allowed, "sub", "keep.txt"),
+		filepath.Join(allowed, "sub", "secret"),
+		filepath.Join(privateDir, "outside.txt"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Symlink inside allowed pointing outside allowed -> must not be granted.
+	escapeLink := filepath.Join(allowed, "escape-link")
+	if err := os.Symlink(privateDir, escapeLink); err != nil {
+		t.Fatal(err)
+	}
+	// Symlink inside allowed pointing to in-tree subdir containing a denied descendant ->
+	// must not grant the whole subdir and restore the denied descendant.
+	aliasLink := filepath.Join(allowed, "alias-sub")
+	if err := os.Symlink(filepath.Join(allowed, "sub"), aliasLink); err != nil {
+		t.Fatal(err)
+	}
+
+	denied := []string{
+		filepath.Join(allowed, "blocked"),
+		filepath.Join(allowed, "sub", "secret"),
+	}
+	origin := map[string]string{allowed: "ssh"}
+
+	got, _ := splitAroundDenied([]string{allowed}, denied, origin)
+
+	for _, p := range got {
+		if p == escapeLink || p == privateDir || strings.HasPrefix(p, privateDir+"/") {
+			t.Errorf("splitAroundDenied granted out-of-tree symlink target %q: %v", p, got)
+		}
+		if p == aliasLink || p == filepath.Join(allowed, "sub") || p == filepath.Join(allowed, "sub", "secret") {
+			t.Errorf("splitAroundDenied restored denied descendant via in-tree symlink %q: %v", p, got)
+		}
+	}
+	assertContains(t, got, filepath.Join(allowed, "ok.txt"), "ok.txt should remain readable")
+	assertContains(t, got, filepath.Join(allowed, "sub", "keep.txt"), "sub/keep.txt should remain readable")
 }
 
 // helper

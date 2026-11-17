@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jskswamy/aide/internal/testutil"
 	"github.com/jskswamy/aide/pkg/seatbelt"
 	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
@@ -83,37 +84,71 @@ func TestGuard_Custom_EnvOverride(t *testing.T) {
 
 func TestGuard_Custom_AllowedPaths(t *testing.T) {
 	tmpDir := t.TempDir()
-	secretsDir := filepath.Join(tmpDir, ".secrets-dir")
-	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
+	sshDir := filepath.Join(tmpDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	publicFile := filepath.Join(secretsDir, "public.txt")
-	if err := os.WriteFile(publicFile, []byte("public"), 0o600); err != nil {
-		t.Fatal(err)
+	prodDB := filepath.Join(sshDir, "prod_db")
+	prodPub := filepath.Join(sshDir, "prod_db.pub")
+	for _, f := range []string{prodDB, prodPub} {
+		if err := os.WriteFile(f, []byte("key"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	cfg := guards.CustomGuardConfig{
 		Type:        "default",
-		Description: "Custom with allowed file",
-		Paths:       []string{"~/.secrets-dir"},
-		Allowed:     []string{"~/.secrets-dir/public.txt"},
+		Description: "Custom with allowed exception",
+		Paths:       []string{"~/.ssh/prod_*"},
+		Allowed:     []string{"~/.ssh/prod_db.pub"},
 	}
-	g := guards.NewCustomGuard("my-secrets", cfg)
+	g := guards.NewCustomGuard("prod-ssh", cfg)
 
 	ctx := &seatbelt.Context{HomeDir: tmpDir}
 	rules := g.Rules(ctx)
 	output := renderTestRules(rules.Rules)
 
-	// Deny rule for the directory.
-	if !strings.Contains(output, `(subpath "`+secretsDir+`")`) {
-		t.Errorf("expected subpath deny for %s", secretsDir)
+	if !strings.Contains(output, `(subpath "`+prodDB+`")`) {
+		t.Errorf("expected subpath deny for %s", prodDB)
 	}
-	// Allow rule for the specific file.
-	if !strings.Contains(output, `(allow file-read*`) {
-		t.Error("expected allow file-read* rule for allowed path")
+	if strings.Contains(output, `(subpath "`+prodPub+`")`) {
+		t.Errorf("allowed path %s must be exempted from deny rules, got:\n%s", prodPub, output)
 	}
-	if !strings.Contains(output, publicFile) {
-		t.Errorf("expected allowed path %s in output", publicFile)
+	if slices.Contains(rules.Protected, prodPub) {
+		t.Errorf("allowed path %s must not appear in Protected: %v", prodPub, rules.Protected)
+	}
+	if !slices.Contains(rules.Allowed, prodPub) {
+		t.Errorf("expected %s in Allowed: %v", prodPub, rules.Allowed)
+	}
+}
+
+func TestCustomGuard_SymlinkTargetDenied(t *testing.T) {
+	home := t.TempDir()
+	ssh := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(ssh, "key-material")
+	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(ssh, "prod_db")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	g := guards.NewCustomGuard("prod-ssh", guards.CustomGuardConfig{
+		Paths: []string{"~/.ssh/prod_*"},
+	})
+	result := g.Rules(&seatbelt.Context{HomeDir: home, GOOS: "darwin"})
+	output := renderTestRules(result.Rules)
+
+	resolvedTarget := seatbelt.ResolveOrSelf(target)
+	if !slices.Contains(result.Protected, link) || !slices.Contains(result.Protected, resolvedTarget) {
+		t.Errorf("Protected = %v, want both symlink %s and resolved target %s", result.Protected, link, resolvedTarget)
+	}
+	if !strings.Contains(output, `(subpath "`+resolvedTarget+`")`) {
+		t.Errorf("Seatbelt rules must deny resolved target %s, got:\n%s", resolvedTarget, output)
 	}
 }
 
@@ -152,6 +187,52 @@ func TestGuard_CustomValidation_EmptyPaths(t *testing.T) {
 	}
 }
 
+func TestCustomGuard_LiteralBracketPathKeptAlongsideSiblingGlobMatch(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	ssh := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	literalBracket := filepath.Join(ssh, "prod_[1]")
+	sibling := filepath.Join(ssh, "prod_1")
+	for _, f := range []string{literalBracket, sibling} {
+		if err := os.WriteFile(f, []byte("k"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g := guards.NewCustomGuard("prod-ssh", guards.CustomGuardConfig{
+		Paths: []string{"~/.ssh/prod_[1]"},
+	})
+	result := g.Rules(&seatbelt.Context{HomeDir: home, GOOS: "darwin"})
+	if !slices.Contains(result.Protected, literalBracket) {
+		t.Errorf("Protected = %v, missing configured literal bracket file %s", result.Protected, literalBracket)
+	}
+}
+
+func TestCustomGuard_GlobPaths(t *testing.T) {
+	home := testutil.CanonicalTempDir(t)
+	ssh := filepath.Join(home, ".ssh")
+	for _, f := range []string{"id_ed25519", "prod_db", "prod_web"} {
+		if err := os.MkdirAll(ssh, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(ssh, f), []byte("k"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g := guards.NewCustomGuard("prod-ssh", guards.CustomGuardConfig{
+		Paths: []string{"~/.ssh/prod_*", "~/.ssh/staging_*"},
+	})
+	result := g.Rules(&seatbelt.Context{HomeDir: home, GOOS: "darwin"})
+	want := []string{filepath.Join(ssh, "prod_db"), filepath.Join(ssh, "prod_web")}
+	if !slices.Equal(result.Protected, want) {
+		t.Errorf("Protected = %v, want %v", result.Protected, want)
+	}
+	if len(result.Skipped) != 1 {
+		t.Errorf("Skipped = %v, want the unmatched staging_* glob", result.Skipped)
+	}
+}
+
 func TestCustomGuard_MissingPaths(t *testing.T) {
 	cfg := guards.CustomGuardConfig{
 		Type:  "default",
@@ -182,6 +263,11 @@ func TestGuard_CustomValidation_BuiltinNameCollision(t *testing.T) {
 	result = guards.ValidateCustomGuard("aide-secrets", cfg)
 	if result.OK() {
 		t.Error("expected error for built-in name collision (aide-secrets)")
+	}
+
+	result = guards.ValidateCustomGuard("all-default", cfg)
+	if result.OK() {
+		t.Error("expected error for reserved meta-guard name all-default")
 	}
 }
 

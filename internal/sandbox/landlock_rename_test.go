@@ -99,6 +99,70 @@ func TestLandlock_RenameAcrossDirs_RequiresRefer(t *testing.T) {
 	}
 }
 
+func dispatchLandlockSplitDirHelper() {
+	root := os.Getenv("AIDE_TEST_LANDLOCK_SPLIT_DIR")
+	if root == "" {
+		return
+	}
+	policy := Policy{
+		ExtraReadable: []string{root},
+		ExtraDenied: []string{
+			filepath.Join(root, "denied.txt"),
+			filepath.Join(root, "denied-dir"),
+		},
+		Guards: []string{},
+	}
+	gps := linuxLandlockGrantedPaths(policy)
+	rules := buildLandlockFSRules(gps, nil)
+	if err := landlock.V5.BestEffort().RestrictPaths(rules...); err != nil {
+		fmt.Printf("RESTRICT_FAIL:%v\n", err)
+		os.Exit(2)
+	}
+	if _, err := os.ReadDir(root); err != nil {
+		fmt.Printf("READDIR_FAIL:%v\n", err)
+		os.Exit(3)
+	}
+	if _, err := os.ReadFile(filepath.Join(root, "allowed.txt")); err != nil {
+		fmt.Printf("READ_ALLOWED_FAIL:%v\n", err)
+		os.Exit(4)
+	}
+	if _, err := os.ReadFile(filepath.Join(root, "denied.txt")); err == nil {
+		fmt.Println("READ_DENIED_SUCCEEDED")
+		os.Exit(5)
+	}
+	if _, err := os.ReadFile(filepath.Join(root, "denied-dir", "secret.txt")); err == nil {
+		fmt.Println("READ_DENIED_DIR_FILE_SUCCEEDED")
+		os.Exit(6)
+	}
+	fmt.Println("PASS")
+	os.Exit(0)
+}
+
+func TestLandlock_SplitDirRemainsListableWhileDeniedChildBlocked(t *testing.T) {
+	if os.Getenv("AIDE_TEST_LANDLOCK_SPLIT_DIR") != "" {
+		t.Skip("subprocess helper invocation")
+	}
+	if !landlockSupported(t) {
+		t.Skip("Landlock not supported on this kernel")
+	}
+	root := t.TempDir()
+	for _, f := range []string{"allowed.txt", "denied.txt", "denied-dir/secret.txt"} {
+		p := filepath.Join(root, f)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestLandlock_SplitDirRemainsListableWhileDeniedChildBlocked")
+	cmd.Env = append(os.Environ(), "AIDE_TEST_LANDLOCK_SPLIT_DIR="+root)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "PASS") {
+		t.Fatalf("split directory listing or file enforcement failed: %v\noutput: %s", err, out)
+	}
+}
+
 func landlockSupported(t *testing.T) bool {
 	t.Helper()
 	caps := DetectKernelCapabilities()

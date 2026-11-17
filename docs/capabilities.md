@@ -247,14 +247,22 @@ to the profile.
 
 **Platform note:** on macOS, Seatbelt's deny-wins semantics enforce this
 unconditionally, even for a path nested inside an already-granted directory.
-On Linux it depends on the active backend: bubblewrap supports the same
-carve-out, but Landlock - the primary backend on modern kernels - has no
-per-file deny inside an already-allowed directory. A `never_allow` path
-nested inside a capability's granted directory is **not currently enforced
-under Landlock**. Run `aide sandbox show` to check your active backend; if
-it's Landlock, define a narrowly-scoped capability (like `k8s-dev` below)
-instead of relying on `never_allow` to carve an exception out of a broad
-grant. This is a known platform limitation, not a configuration mistake.
+On Linux, bubblewrap does the same. Landlock, the primary Linux backend, has
+no deny rule, so aide blocks reading files inside a **read-only** grant by
+granting that directory's entries one by one (while keeping directory listing
+`LANDLOCK_ACCESS_FS_READ_DIR` on the split directory so tools such as `ssh`
+`Include` globs can still discover allowed siblings) and leaving the denied
+ones out. Three consequences:
+
+- Directory listing (`readdir`) remains permitted under a split read-only
+  directory (including denied subdirectories beneath it), while reading any
+  denied file's contents (`LANDLOCK_ACCESS_FS_READ_FILE`) is blocked.
+- A file or directory created inside a split directory after launch is not
+  readable until the next launch.
+- A denied path inside a **writable** grant (the project directory, for
+  example) is not enforced under Landlock. Splitting it would stop the agent
+  creating files there. `aide sandbox test` marks these entries
+  `# not enforced`.
 
 **Example: protecting production kubeconfig**
 
@@ -274,11 +282,11 @@ capabilities:
 ```
 
 Even if someone later creates a broader capability that tries to read
-`~/.kube/prod-config`, the `never_allow` rule blocks it - on macOS, and on
-Linux under the bubblewrap backend. Under Landlock, this is why `k8s-dev`
-above grants only the specific dev/staging files rather than the whole
-`~/.kube/` directory: a narrow grant doesn't need `never_allow` to carve an
-exception out of it.
+`~/.kube/prod-config`, the `never_allow` rule blocks it on macOS and under
+bubblewrap. The built-in `k8s` capability makes `~/.kube` writable, so under
+Landlock the rule is not enforced while `k8s` is active. That is why `k8s-dev`
+above grants only the specific dev/staging files: a narrow grant doesn't need
+`never_allow` to carve an exception out of it.
 
 ### never_allow_env: blocking sensitive variables
 

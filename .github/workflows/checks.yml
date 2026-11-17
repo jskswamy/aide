@@ -37,7 +37,7 @@ jobs:
       # Node.js 20 deprecation notice.
       - run: pipx install pre-commit
 
-      - run: pre-commit run --all-files
+      - run: SKIP=no-commit-to-branch pre-commit run --all-files
 
   test:
     name: Test (Linux)

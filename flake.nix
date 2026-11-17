@@ -76,14 +76,13 @@
             export GOBIN="$PWD/.gobin"
             export PATH="$GOBIN:$PATH"
 
-            # Install pre-commit hooks when no custom hooksPath is active (e.g. beads).
-            # beads users invoke pre-commit via their own hook chain; everyone else
-            # gets it wired up here automatically.
-            if ! git config --local core.hooksPath >/dev/null 2>&1 && [ -f .pre-commit-config.yaml ]; then
-              _sentinel=".git/hooks/.pre-commit-installed"
+            # Install all git hook stages declared in .pre-commit-config.yaml
+            # (including Beads lifecycle hooks and no-commit-to-branch).
+            if [ -f .pre-commit-config.yaml ]; then
+              git config --local --unset core.hooksPath 2>/dev/null || true
+              _sentinel=".git/hooks/.pre-commit-installed-v2"
               if [ ! -f "$_sentinel" ]; then
                 pre-commit install -q 2>/dev/null && \
-                pre-commit install --hook-type pre-push -q 2>/dev/null && \
                 touch "$_sentinel" 2>/dev/null || true
               fi
             fi

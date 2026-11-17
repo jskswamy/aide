@@ -452,12 +452,3 @@ func warnAndFilterDesired(out io.Writer, prov provision.Provisioner, d *provisio
 		d.Hooks = nil
 	}
 }
-
-// warnAndFilterHooks is a testable shim used by tests that only need the hooks branch.
-func warnAndFilterHooks(out io.Writer, prov provision.Provisioner, d *provision.Desired) {
-	if !prov.SupportsHooks() && len(d.Hooks) > 0 {
-		fmt.Fprintf(out, "warning: agent %q does not support hooks (%d declared) — skipping\n",
-			prov.Name(), len(d.Hooks))
-		d.Hooks = nil
-	}
-}

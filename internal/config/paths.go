@@ -53,15 +53,6 @@ func ProfileFilePath(configDir, name string) string {
 	return filepath.Join(configDir, "profiles", name+".yaml")
 }
 
-// HasAnyConfigFile reports whether configDir contains config.yaml, sandbox.yaml,
-// provisioning.yaml, or at least one profile file in profiles/.
-func HasAnyConfigFile(configDir string) bool {
-	if _, err := os.Stat(filepath.Join(configDir, "config.yaml")); err == nil {
-		return true
-	}
-	return len(SplitRelativePaths(configDir)) > 0
-}
-
 // ResolveSecretPathFrom resolves a secret name to an absolute path.
 // If the value is already absolute, return it as-is.
 // Otherwise, resolve relative to SecretsDirFrom(base).

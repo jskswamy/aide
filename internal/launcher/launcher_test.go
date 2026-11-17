@@ -872,80 +872,6 @@ agent: /usr/local/bin/my-agent
 	}
 }
 
-func TestYoloArgs_Claude(t *testing.T) {
-	args, err := YoloArgs("claude")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(args) != 1 || args[0] != "--dangerously-skip-permissions" {
-		t.Errorf("expected [--dangerously-skip-permissions], got %v", args)
-	}
-}
-
-func TestYoloArgs_Codex(t *testing.T) {
-	args, err := YoloArgs("codex")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(args) != 1 || args[0] != "--approve-for-me" {
-		t.Errorf("expected [--approve-for-me], got %v", args)
-	}
-}
-
-func TestYoloArgs_OpenCode(t *testing.T) {
-	args, err := YoloArgs("opencode")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(args) != 1 || args[0] != "--auto" {
-		t.Errorf("expected [--auto], got %v", args)
-	}
-}
-
-func TestYoloArgs_Agy(t *testing.T) {
-	args, err := YoloArgs("agy")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(args) != 1 || args[0] != "--dangerously-skip-permissions" {
-		t.Errorf("expected [--dangerously-skip-permissions], got %v", args)
-	}
-}
-
-// Pi has no permission prompts, so yolo is already its only mode: it must
-// launch without error and without extra args (not --approve, which trusts
-// project-local files and is a different decision).
-func TestYoloArgs_PiNeedsNoFlag(t *testing.T) {
-	args, err := YoloArgs("pi")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(args) != 0 {
-		t.Errorf("expected no args, got %v", args)
-	}
-}
-
-func TestYoloArgs_AbsolutePath(t *testing.T) {
-	// Agent specified as full path should still match by basename.
-	args, err := YoloArgs("/usr/local/bin/claude")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(args) != 1 || args[0] != "--dangerously-skip-permissions" {
-		t.Errorf("expected [--dangerously-skip-permissions], got %v", args)
-	}
-}
-
-func TestYoloArgs_UnsupportedAgent(t *testing.T) {
-	_, err := YoloArgs("vim")
-	if err == nil {
-		t.Fatal("expected error for unsupported agent, got nil")
-	}
-	if !strings.Contains(err.Error(), "--yolo not supported") {
-		t.Errorf("expected '--yolo not supported' error, got: %v", err)
-	}
-}
-
 func TestLauncher_YoloInjectsFlag(t *testing.T) {
 	requireClaudeHome(t)
 	configDir := t.TempDir()
@@ -992,6 +918,17 @@ agent: claude
 		if innerArgs[i] != want {
 			t.Errorf("innerArgs[%d] = %q, want %q", i, innerArgs[i], want)
 		}
+	}
+}
+
+func TestApplyYoloArgs_AbsolutePath(t *testing.T) {
+	// Agent specified as full path should still match by basename.
+	got, err := ApplyYoloArgs("/usr/local/bin/claude", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0] != "--dangerously-skip-permissions" {
+		t.Errorf("expected [--dangerously-skip-permissions], got %v", got)
 	}
 }
 
@@ -1546,34 +1483,6 @@ agent: claude
 		if a == "--dangerously-skip-permissions" {
 			t.Error("--no-yolo should override --yolo")
 		}
-	}
-}
-
-func TestYoloSource(t *testing.T) {
-	tr := true
-	f := false
-
-	tests := []struct {
-		name     string
-		cliFlag  bool
-		pref     *bool
-		ctx      *bool
-		proj     *bool
-		expected string
-	}{
-		{"cli flag", true, nil, nil, nil, "--yolo flag"},
-		{"preferences", false, &tr, nil, nil, "preferences"},
-		{"context", false, nil, &tr, nil, "context config"},
-		{"project", false, nil, nil, &tr, ".aide.yaml"},
-		{"cli beats all", true, &f, &f, &f, "--yolo flag"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := yoloSource(tt.cliFlag, tt.pref, tt.ctx, tt.proj)
-			if got != tt.expected {
-				t.Errorf("yoloSource() = %q, want %q", got, tt.expected)
-			}
-		})
 	}
 }
 

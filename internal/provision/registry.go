@@ -1,8 +1,6 @@
 package provision
 
 import (
-	"sort"
-
 	"github.com/jskswamy/aide/internal/harness"
 )
 
@@ -39,21 +37,6 @@ func ProvisionerFor(agentName string) (Provisioner, bool) {
 		}
 	}
 	return nil, false
-}
-
-// AllProvisioners returns every registered driver, sorted by name for
-// deterministic iteration.
-func AllProvisioners() []Provisioner {
-	names := make([]string, 0, len(provisionerRegistry))
-	for n := range provisionerRegistry {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	out := make([]Provisioner, len(names))
-	for i, n := range names {
-		out[i] = provisionerRegistry[n]
-	}
-	return out
 }
 
 // resetRegistryForTest clears the registry. Test-only helper.

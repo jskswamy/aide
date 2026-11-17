@@ -803,27 +803,6 @@ func ApplyYoloArgs(agentName string, extraArgs []string) ([]string, error) {
 	)
 }
 
-// YoloArgs returns the skip-permissions args for the given agent.
-// Returns an error if the agent does not support yolo mode.
-func YoloArgs(agentName string) ([]string, error) {
-	// Normalize: strip path prefix to match by binary basename.
-	if d, ok := launchableHarness(agentName); ok {
-		if args, ok := d.YoloArgs(); ok {
-			return args, nil
-		}
-	}
-	var supported []string
-	for _, d := range harness.All() {
-		if _, ok := d.YoloArgs(); ok && d.Launchable() {
-			supported = append(supported, d.Name)
-		}
-	}
-	return nil, fmt.Errorf(
-		"--yolo not supported for agent %q. Supported agents: %s",
-		agentName, strings.Join(supported, ", "),
-	)
-}
-
 // wrapTemplateError converts raw Go template errors into actionable messages.
 func wrapTemplateError(err error, contextName string, secret string) error {
 	msg := err.Error()
@@ -1165,23 +1144,6 @@ func stringSetDiff(a, b []string) []string {
 		}
 	}
 	return diff
-}
-
-// yoloSource returns a human-readable string describing why yolo is active.
-func yoloSource(cliFlag bool, preferences, context, project *bool) string {
-	if cliFlag {
-		return "--yolo flag"
-	}
-	if project != nil && *project {
-		return ".aide.yaml"
-	}
-	if context != nil && *context {
-		return "context config"
-	}
-	if preferences != nil && *preferences {
-		return "preferences"
-	}
-	return "config"
 }
 
 // trustStore returns the effective trust store.

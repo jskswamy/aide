@@ -98,22 +98,6 @@ func resolveScopeFlag(flagVal, cwd, remote string, opts []bindScopeOption) (conf
 	return config.MatchRule{}, "", fmt.Errorf("invalid --scope %q for %s (valid scopes: %s)", flagVal, cwd, strings.Join(valid, ", "))
 }
 
-// autoDetectMatchRule returns the match rule that best identifies the
-// given folder. If the folder is inside a git repo whose default remote
-// has a host, match by the normalized remote (durable across worktrees and
-// fresh checkouts, and free of any credentials in the URL). Otherwise
-// match by exact folder path.
-//
-// The second return value is a human-readable description suitable for
-// inclusion in user-facing output, e.g. "by remote github.com/org/foo" or
-// "by path /Users/x/work/foo".
-func autoDetectMatchRule(cwd string) (config.MatchRule, string) {
-	if remote := aidectx.CurrentRemote(cwd); remote != "" {
-		return config.MatchRule{Remote: remote}, fmt.Sprintf("by remote %s", remote)
-	}
-	return config.MatchRule{Path: cwd}, fmt.Sprintf("by path %s", cwd)
-}
-
 func effectiveRemoteName(r config.MatchRule) string {
 	if r.RemoteName == "" {
 		return aidectx.DefaultRemoteName

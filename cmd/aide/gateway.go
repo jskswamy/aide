@@ -260,14 +260,8 @@ Examples:
 			if isSwitch && (tokenStdin || fromEnv != "" || noAuth) {
 				return fmt.Errorf("preset %s is a provider switch: it takes no key; drop --key-stdin, --from-env and --no-auth", preset.Name)
 			}
-			if gw.Key != "" && gw.Store == "" {
-				gw.Store = ctx.Secret
-				if gw.Store == "" {
-					gw.Store = profileName
-				}
-			}
-			if gw.Store != "" && gw.Key == "" {
-				gw.Key = defaultGatewayKey(name)
+			if gw.Key != "" || gw.Store != "" {
+				gw = withSecretDefaults(gw, ctx, profileName, name)
 			}
 			old, hadOld := ctx.Gateways[name]
 			if hadOld && !force && (!isSwitch || old.SwitchSpec() == nil) && gateway.Endpoint(old).BaseURL != gateway.Endpoint(gw).BaseURL {
@@ -306,15 +300,7 @@ Examples:
 				ctx.Gateways[name] = gw
 			}
 			if token != "" {
-				if gw.Store == "" {
-					gw.Store = ctx.Secret
-				}
-				if gw.Store == "" {
-					gw.Store = profileName
-				}
-				if gw.Key == "" {
-					gw.Key = defaultGatewayKey(name)
-				}
+				gw = withSecretDefaults(gw, ctx, profileName, name)
 				ctx.Gateways[name] = gw
 				if err := config.ValidateGateways("profiles."+profileName, ctx, cfg.NeverAllowEnv); err != nil {
 					return err
@@ -662,18 +648,12 @@ and prompts, with nothing preselected.`,
 // should use. Nothing is preselected: an empty answer is an error.
 func promptGatewayUse(cmd *cobra.Command, reader *bufio.Reader, profileName, harnessName string, candidates []string) (string, error) {
 	options := append(slices.Clone(candidates), "none")
-	fmt.Fprintf(cmd.ErrOrStderr(), "Gateways for %s on profile %q:\n", harnessName, profileName)
-	for i, o := range options {
-		fmt.Fprintf(cmd.ErrOrStderr(), "  [%d] %s\n", i+1, o)
+	ans, idx, err := promptNumbered(cmd.ErrOrStderr(), reader, fmt.Sprintf("Gateways for %s on profile %q:", harnessName, profileName), options, "Select: ")
+	if err != nil {
+		return "", err
 	}
-	fmt.Fprint(cmd.ErrOrStderr(), "Select: ")
-	line, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("reading selection: %w", err)
-	}
-	ans := strings.TrimSpace(line)
-	if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(options) {
-		return options[idx-1], nil
+	if idx >= 0 {
+		return options[idx], nil
 	}
 	if ans == "" {
 		return "", errors.New("no gateway selected")
@@ -843,15 +823,7 @@ value as the default.`,
 					return err
 				}
 				if !oldGW.RequiresToken() {
-					if newGW.Store == "" {
-						newGW.Store = ctx.Secret
-					}
-					if newGW.Store == "" {
-						newGW.Store = profileName
-					}
-					if newGW.Key == "" {
-						newGW.Key = defaultGatewayKey(newName)
-					}
+					newGW = withSecretDefaults(newGW, ctx, profileName, newName)
 				}
 			}
 
@@ -1044,6 +1016,14 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 	return cmd
 }
 
+// withSecretDefaults fills gw's unset secret store (the profile's secret
+// store, else the profile name) and key (<name>_token).
+func withSecretDefaults(gw config.GatewayConfig, ctx config.Context, profileName, name string) config.GatewayConfig {
+	gw.Store = cmp.Or(gw.Store, ctx.Secret, profileName)
+	gw.Key = cmp.Or(gw.Key, defaultGatewayKey(name))
+	return gw
+}
+
 func defaultGatewayKey(name string) string {
 	return strings.ReplaceAll(name, "-", "_") + "_token"
 }
@@ -1103,23 +1083,17 @@ func resolveEditableGatewayTarget(cmd *cobra.Command, reader *bufio.Reader, cfg 
 		if len(names) == 1 {
 			return profileName, names[0], ctx, nil
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "Custom gateways on profile %q:\n", profileName)
-		tw := tabwriter.NewWriter(cmd.ErrOrStderr(), 0, 0, 2, ' ', 0)
+		rows := make([]string, len(names))
 		for i, n := range names {
-			fmt.Fprintf(tw, "  [%d] %s\t%s\n", i+1, n, ctx.Gateways[n].BaseURL)
+			rows[i] = n + "\t" + ctx.Gateways[n].BaseURL
 		}
-		_ = tw.Flush()
-		fmt.Fprint(cmd.ErrOrStderr(), "Select gateway to edit [1]: ")
-		line, err := reader.ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return "", "", config.Context{}, fmt.Errorf("reading selection: %w", err)
+		ans, idx, err := promptNumbered(cmd.ErrOrStderr(), reader, fmt.Sprintf("Custom gateways on profile %q:", profileName), rows, "Select gateway to edit [1]: ")
+		if err != nil {
+			return "", "", config.Context{}, err
 		}
-		ans := strings.TrimSpace(line)
-		name := names[0]
-		if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(names) {
-			name = names[idx-1]
-		} else if ans != "" {
-			name = ans
+		name := cmp.Or(ans, names[0])
+		if idx >= 0 {
+			name = names[idx]
 		}
 		if _, ok := ctx.Gateways[name]; !ok {
 			return "", "", config.Context{}, fmt.Errorf("profile %q has no gateway %q (defined: %s)", profileName, name, definedGateways(ctx))
@@ -1187,23 +1161,17 @@ func resolveEditableGatewayTarget(cmd *cobra.Command, reader *bufio.Reader, cfg 
 			if tokenStdin || !stdinIsTTY() {
 				return "", "", config.Context{}, fmt.Errorf("gateway %q exists on multiple profiles (%s); pass --profile <name>", name, strings.Join(matches, ", "))
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Gateway %q exists on multiple profiles:\n", name)
-			tw := tabwriter.NewWriter(cmd.ErrOrStderr(), 0, 0, 2, ' ', 0)
+			rows := make([]string, len(matches))
 			for i, p := range matches {
-				fmt.Fprintf(tw, "  [%d] %s\t%s\n", i+1, p, cfg.Contexts[p].Gateways[name].BaseURL)
+				rows[i] = p + "\t" + cfg.Contexts[p].Gateways[name].BaseURL
 			}
-			_ = tw.Flush()
-			fmt.Fprint(cmd.ErrOrStderr(), "Select profile to edit [1]: ")
-			line, err := reader.ReadString('\n')
-			if err != nil && !errors.Is(err, io.EOF) {
-				return "", "", config.Context{}, fmt.Errorf("reading selection: %w", err)
+			ans, idx, err := promptNumbered(cmd.ErrOrStderr(), reader, fmt.Sprintf("Gateway %q exists on multiple profiles:", name), rows, "Select profile to edit [1]: ")
+			if err != nil {
+				return "", "", config.Context{}, err
 			}
-			ans := strings.TrimSpace(line)
-			chosen := matches[0]
-			if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(matches) {
-				chosen = matches[idx-1]
-			} else if ans != "" {
-				chosen = ans
+			chosen := cmp.Or(ans, matches[0])
+			if idx >= 0 {
+				chosen = matches[idx]
 			}
 			if !slices.Contains(matches, chosen) {
 				return "", "", config.Context{}, fmt.Errorf("profile %q does not have gateway %q (matches: %s)", chosen, name, strings.Join(matches, ", "))
@@ -1223,24 +1191,19 @@ func resolveEditableGatewayTarget(cmd *cobra.Command, reader *bufio.Reader, cfg 
 		return c.profile, c.gateway, cfg.Contexts[c.profile], nil
 	}
 
-	fmt.Fprintln(cmd.ErrOrStderr(), "Configured gateways:")
-	tw := tabwriter.NewWriter(cmd.ErrOrStderr(), 0, 0, 2, ' ', 0)
+	rows := make([]string, len(choices))
 	for i, c := range choices {
-		fmt.Fprintf(tw, "  [%d] %s / %s\t%s\n", i+1, c.profile, c.gateway, c.baseURL)
+		rows[i] = c.profile + " / " + c.gateway + "\t" + c.baseURL
 	}
-	_ = tw.Flush()
-	fmt.Fprint(cmd.ErrOrStderr(), "Select gateway to edit [1]: ")
-	line, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", "", config.Context{}, fmt.Errorf("reading selection: %w", err)
+	ans, idx, err := promptNumbered(cmd.ErrOrStderr(), reader, "Configured gateways:", rows, "Select gateway to edit [1]: ")
+	if err != nil {
+		return "", "", config.Context{}, err
 	}
-	ans := strings.TrimSpace(line)
 	if ans == "" {
-		c := choices[0]
-		return c.profile, c.gateway, cfg.Contexts[c.profile], nil
+		idx = 0
 	}
-	if idx, convErr := strconv.Atoi(ans); convErr == nil && idx >= 1 && idx <= len(choices) {
-		c := choices[idx-1]
+	if idx >= 0 {
+		c := choices[idx]
 		return c.profile, c.gateway, cfg.Contexts[c.profile], nil
 	}
 	if p, g, ok := strings.Cut(ans, "/"); ok {
@@ -1273,6 +1236,28 @@ func resolveEditableGatewayTarget(cmd *cobra.Command, reader *bufio.Reader, cfg 
 		configured = append(configured, c.profile+"/"+c.gateway)
 	}
 	return "", "", config.Context{}, fmt.Errorf("gateway %q not found on any profile (configured: %s)", ans, strings.Join(configured, ", "))
+}
+
+// promptNumbered prints header and rows as a numbered list ("\t" aligns a
+// row's columns), then prompt, and reads one answer. ans is the trimmed
+// answer; idx is its 0-based row when ans is a listed number, else -1.
+func promptNumbered(w io.Writer, reader *bufio.Reader, header string, rows []string, prompt string) (ans string, idx int, err error) {
+	fmt.Fprintln(w, header)
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for i, r := range rows {
+		fmt.Fprintf(tw, "  [%d] %s\n", i+1, r)
+	}
+	_ = tw.Flush()
+	fmt.Fprint(w, prompt)
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", -1, fmt.Errorf("reading selection: %w", err)
+	}
+	ans = strings.TrimSpace(line)
+	if n, convErr := strconv.Atoi(ans); convErr == nil && n >= 1 && n <= len(rows) {
+		return ans, n - 1, nil
+	}
+	return ans, -1, nil
 }
 
 func promptFieldDefault(cmd *cobra.Command, reader *bufio.Reader, label, current string) (string, error) {

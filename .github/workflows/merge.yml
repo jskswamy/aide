@@ -1,0 +1,93 @@
+name: Merge
+
+# Comment "/merge" on a pull request to fast-forward main to its head.
+# GitHub's merge buttons re-create commits and drop their signatures; a
+# fast-forward lands the exact commits CI checked. GitHub then marks the PR
+# merged. This never runs PR code: it only moves main to the PR's commit.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+concurrency: merge-main
+
+jobs:
+  fast-forward:
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/merge')
+    runs-on: ubuntu-26.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.issue.number }}
+      ACTOR: ${{ github.event.comment.user.login }}
+    steps:
+      - name: Check who asked
+        run: |
+          # role_name, not the legacy permission field, which reports maintain as write.
+          role=$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq .role_name)
+          case "$role" in admin|maintain) ;; *) echo "::error::$ACTOR has the $role role; /merge needs maintain or admin"; exit 1 ;; esac
+
+      - name: Check the pull request
+        id: pr
+        run: |
+          read -r sha base draft state head_ref same_repo < <(gh pr view "$PR" -R "$REPO" \
+            --json headRefOid,baseRefName,isDraft,state,headRefName,isCrossRepository \
+            --jq '[.headRefOid, .baseRefName, .isDraft, .state, .headRefName, (.isCrossRepository | not)] | @tsv')
+          [ "$state" = OPEN ] || { echo "::error::PR is $state"; exit 1; }
+          [ "$draft" = false ] || { echo "::error::PR is a draft"; exit 1; }
+          [ "$base" = main ] || { echo "::error::PR targets $base, not main"; exit 1; }
+          # Check the captured commit, not the PR's moving head, and require every
+          # check the ruleset names, so a check that has not started yet also fails.
+          # shortcut: reads check runs only; a required commit status would never pass.
+          required=$(gh api "repos/$REPO/rules/branches/main" \
+            --jq '[.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context] | unique | .[]')
+          passed=$(gh api "repos/$REPO/commits/$sha/check-runs" --paginate --jq '.check_runs[] | select(.conclusion=="success") | .name')
+          missing=$(comm -23 <(sort -u <<<"$required") <(sort -u <<<"$passed") | paste -sd, -)
+          [ -z "$missing" ] || { echo "::error::Required checks not passing on $sha: $missing"; exit 1; }
+          # GraphQL variables, not shell ones.
+          # shellcheck disable=SC2016
+          query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){totalCount nodes{isResolved}}}}}'
+          read -r total open < <(gh api graphql -F n="$PR" -f o="${REPO%/*}" -f r="${REPO#*/}" -f query="$query" \
+            --jq '.data.repository.pullRequest.reviewThreads | [.totalCount, ([.nodes[] | select(.isResolved | not)] | length)] | @tsv')
+          # shortcut: one page of threads; past 100, merge by hand after checking them.
+          [ "$total" -le 100 ] || { echo "::error::$total review threads; /merge checks at most 100"; exit 1; }
+          [ "$open" = 0 ] || { echo "::error::$open review threads are unresolved"; exit 1; }
+          # A push after the checks above would land unchecked commits.
+          [ "$(gh pr view "$PR" -R "$REPO" --json headRefOid --jq .headRefOid)" = "$sha" ] \
+            || { echo "::error::The PR changed while checking; comment /merge again"; exit 1; }
+          {
+            echo "sha=$sha"
+            echo "head_ref=$head_ref"
+            echo "same_repo=$same_repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward main
+        env:
+          SHA: ${{ steps.pr.outputs.sha }}
+        run: |
+          git fetch origin "refs/pull/$PR/head"
+          git merge-base --is-ancestor origin/main "$SHA" \
+            || { echo "::error::Not a fast-forward of main; rebase the branch onto main"; exit 1; }
+          git push origin "$SHA:refs/heads/main"
+
+      - name: Delete the branch
+        if: steps.pr.outputs.same_repo == 'true'
+        # The branch name goes through env, never into the script text, and
+        # the lease keeps commits pushed after the check from being deleted.
+        env:
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+          SHA: ${{ steps.pr.outputs.sha }}
+        run: git push origin --force-with-lease="refs/heads/$HEAD_REF:$SHA" ":refs/heads/$HEAD_REF"
+
+      - name: Report failure
+        if: failure()
+        run: |
+          gh pr comment "$PR" -R "$REPO" --body "/merge failed, see $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"

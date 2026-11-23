@@ -27,4 +27,4 @@ make security/vuln    # Run govulncheck for known CVEs
    - Architecture or `DD-1..DD-33` changes must update `DESIGN.md`.
 3. **Greptile Review & Rebase-Only Merge**:
    - Open a focused Pull Request against `main` (`gh pr create --fill`) so GitHub Actions CI and Greptile (`.greptile/`) run the 5-Boundary Sandbox Threat-Model Sweep, Ponytail review, refactoring scan, and doc-sync audit.
-   - Use `/pr-review` (`.claude/commands/pr-review.md`) and `/ci-status` (`.claude/commands/ci-status.md`) to inspect feedback, fold fixups into atomic commits (`git rebase -i --autosquash origin/main`), and merge via `gh pr merge --rebase --delete-branch`.
+   - Use `/pr-review` (`.claude/commands/pr-review.md`) and `/ci-status` (`.claude/commands/ci-status.md`) to inspect feedback, fold fixups into atomic commits (`git rebase -i --autosquash origin/main`), and keep the branch rebased onto `main`. Never merge with GitHub's merge buttons; a maintainer merges by commenting `/merge` on the PR (see CONTRIBUTING.md "Pull Requests").

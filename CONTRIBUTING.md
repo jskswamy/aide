@@ -135,8 +135,11 @@ Heuristic: if commit B starts with "Fix", "Update", or "Correct" and shares a ke
 
 ## Pull Requests
 
-- PRs are rebase-merged (`gh pr merge --rebase --delete-branch`). Merge commits and squash merges are disabled so `main` keeps a linear history where every commit stands on its own.
-- Branch from `main` using short-lived branches (`feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`). Direct commits and pushes to `main` are blocked.
+- `main` only moves by fast-forward, so it keeps a linear history where every commit stands on its own and keeps its author's signature. Do not use GitHub's merge buttons: "Rebase and merge" rewrites the commits and drops their signatures, and squash and merge commits are disabled.
+- Branch from `main` using short-lived branches (`feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`). Direct commits to `main` are blocked.
+- Keep the branch rebased onto `main`: `git fetch origin && git rebase origin/main && git push --force-with-lease`. The "Rebased on main" check fails while the branch is behind `main` or contains merge commits. Rebase your own branch, so your own key signs it; outside contributors must sign their commits.
+- To merge, a maintainer comments `/merge` on the PR. `.github/workflows/merge.yml` checks that the commenter has maintain or admin access, the PR is open and not a draft, required checks pass, every review thread is resolved and the branch is a fast-forward of `main`. It then pushes the PR's head commit to `main`, so GitHub marks the PR merged, and deletes the branch. On failure it comments with a link to the run.
+- The workflow pushes as GitHub Actions, which is a bypass actor on the `main` ruleset; the separate no-force-push rule still allows only fast-forwards. If the workflow is unavailable, a maintainer can do the same by hand after checking the PR: `git push origin <head-sha>:main`.
 - Keep PRs focused on a single concern.
 - Update corresponding user and architecture documentation (`docs/*.md`, `README.md`, `DESIGN.md`) in the same PR when flags, config schema, capabilities, or design decisions change.
 - Unrelated dependency bumps, formatting passes, and refactors go in separate PRs.

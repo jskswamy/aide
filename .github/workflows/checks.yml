@@ -83,3 +83,23 @@ jobs:
   gosec:
     name: Security Scan (gosec)
     uses: ./.github/workflows/_gosec.yml
+
+  # main only takes fast-forward pushes of commits that already ran CI, so
+  # each commit keeps its author's signature (GitHub's rebase merge drops it).
+  rebased:
+    name: Rebased on main
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    steps:
+      # The default checkout is GitHub's test merge commit, shallow and
+      # without origin/main; check the PR's own head with full history.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - run: |
+          git merge-base --is-ancestor origin/main HEAD \
+            || { echo "::error::Branch is behind main. Run: git fetch origin && git rebase origin/main && git push --force-with-lease"; exit 1; }
+          test -z "$(git rev-list --merges origin/main..HEAD)" \
+            || { echo "::error::Branch has merge commits. Rebase onto main instead of merging it in."; exit 1; }

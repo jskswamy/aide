@@ -1,4 +1,10 @@
-## Unreleased
+## v3.7.0 (2026-11-23)
+
+### 💥 Breaking changes
+
+- **Provider credentials are gateways now**: Migration turns provider credentials into gateways. A provider setting it could not convert does not stop the config from loading, but launching that profile fails with a pointer to `aide gateway add`: a provider endpoint (such as `ANTHROPIC_BASE_URL`) or `CLAUDE_CODE_USE_*` switch in `env:` or `credentials:`, or a provider API key in `env:` (keep keys in a secret store via `credentials:`). `aide env set` refuses provider keys, endpoints and switches in any scope, and `aide profile migrate` no longer moves `env:` keys into `credentials:`.
+- **Removed flags and commands**: the launch flags `--credential` and `--adopt`, `aide gateway rename` (use `aide gateway edit --name`) and `aide project set --no-credentials`. The launch flag `--gateway` takes a single value.
+- **Deprecated aliases**: `aide gateway add` keeps `--token-stdin`, `--token-env`, `--store` and `--ttl` as aliases for `--key-stdin`, `--from-env=VAR`, `--secret-store` and `--refresh-ttl`. `--auth login` is an alias for `--gateway none`.
 
 ### ✨ New
 
@@ -8,8 +14,13 @@
 - **Self-healing gateway and credential migration with backups**: Legacy `base_url:` gateways, LLM provider `credentials:` (`anthropic`, `openai`, `codex`, `openrouter`, and custom endpoint routes), keyless Bedrock/Vertex bindings, `env:` provider switches/endpoints, and `default_credentials:` automatically migrate to `gateways:` and `gateway_choice:` with timestamped backups under `~/.local/state/aide/migrations/` (preview or apply explicitly with `aide config migrate [--write]`). Read-only configs run from the in-memory translation.
 - **Gateway visibility in banner, `which`, `status`, `prompt`, and `statusline`**: The launch banner, `aide which`, `aide status`, and `aide gateway list` show each agent's active gateway, choice source, key location (`store/key → ENV_VAR`), and per-agent sync status without decrypting secrets (`aide status` counts store keys in clear). `aide prompt --gateway` (`preferences.prompt_gateway: true`) and `aide statusline` (`statusline.gateway`) render an opt-in gateway segment (`⇄<gw>`, `⇄login`, `⇄?`).
 - **Unified `agent` / `agents` terminology**: Standardized CLI flags (`--agent`, `--agents`), YAML keys (`agents:`), banner labels (`Agents`), and JSON fields (`agent`, `agents`, `agent_source`, `agent_config_dir`, `available_agents`) across `gateway`, `project`, `which`, and `status`, while keeping `--harness`, `--harnesses`, and `harnesses:` as backward-compatible aliases.
+- **Opt-in `gpu` capability**: `aide --with gpu` (or `capabilities: [gpu]`) lets agents use the GPU for compute and offscreen rendering. On macOS (Apple Silicon) it adds the Metal and IOSurface sandbox rules, so Metal and offscreen OpenGL work. On Linux (Landlock) it adds read-only GPU sysfs, driver-registry and `/opt/rocm*` paths plus the `*_VISIBLE_DEVICES` variables; this is untested on real GPU hardware, and hosts on the bubblewrap fallback get no GPU. It is never enabled by project markers. See [GPU](docs/capabilities.md#gpu).
+- **Glob paths in custom guards and nested denies on Linux**: custom guard paths such as `~/.ssh/prod_*` expand at launch on macOS and Linux (new matching files need a relaunch). Under Landlock, a deny inside a read-only grant (custom guard, `never_allow`, `denied_extra`) is now enforced by splitting that grant into its entries. Denies inside writable grants still cannot be enforced by Landlock, and `aide sandbox test` now marks them `# not enforced`.
+- **Age key setup without a terminal**: `aide gateway add --generate-age-key` lets a script create the first age key, and setup now explains why no key was found (`SOPS_AGE_KEY` / `SOPS_AGE_KEY_FILE` holding no usable identity, or only a YubiKey present without `--age-key`).
 
 ### 🐛 Bug Fixes
 
 - Isolate named-profile agent config directories so gateway writers never modify shared native directories (`~/.claude`, `~/.codex`), migrating native-dir pins in `env:` to `config_dir_name` / `config_dirs:`.
 - Keep plain non-LLM `credentials:` (`GITHUB_TOKEN`, `gemini`) active alongside `--gateway <gw>` overrides instead of dropping the profile's default plain credentials.
+- `custom_guards:` and `guard_types:` in `sandbox.yaml` now take effect. They were parsed but never registered, so a default-type guard left its path readable and an opt-in custom guard in `guards_extra` failed with "unknown guard name". `aide sandbox guards` now lists custom guards.
+- `aide usage --profile <name>` no longer includes usage from agents aide cannot scope to a profile (such as Antigravity); that usage is counted under the default profile and `--all` only.

@@ -81,6 +81,7 @@ one warns that this grants the whole capability.
 | `git-remote` | Git remote operations over HTTPS (port 443) - for SSH-based remotes, also enable `ssh` | - | - |
 | `gpg` | GPG keys and signing | `~/.gnupg/` | `GNUPGHOME` |
 | `clipboard` | Read/write access to the system clipboard (macOS only) | - | - |
+| `gpu` | GPU compute and offscreen rendering (Metal, OpenGL, CUDA, ROCm, Vulkan); see [GPU](#gpu) | Linux only: GPU sysfs, driver registries, `/opt/rocm*` | Linux only: `CUDA_VISIBLE_DEVICES`, `NVIDIA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES` |
 | `ccstatusline` | Read access to ccstatusline's settings, for `aide statusline` invoked from a ccstatusline Custom Command widget | `~/.config/ccstatusline/settings.json` | - |
 | `skillshare` | Read-only access to the skills, agents and plugins [Skillshare](skillshare.md) links into agent config dirs | `skills/` and `agents/` in `$XDG_CONFIG_HOME/skillshare` (else `~/.config/skillshare`), `$XDG_STATE_HOME/skillshare/plugins` (else `~/.local/state/skillshare/plugins`), and the safe `sources:` paths of Skillshare's config | - |
 
@@ -100,6 +101,80 @@ state, its backups (`~/.local/share/skillshare`) or its cache. A `sources:`
 path is refused when it is relative, `$HOME`, `/`, outside `$HOME`, or
 overlaps a sensitive dir (`~/.ssh`, `~/.aws`, ...), a harness's default
 config dir, any profile's config dir, or aide's config dir.
+
+### GPU
+
+`gpu` lets the agent use the GPU for compute (PyTorch, JAX, llama.cpp) and
+offscreen rendering (ManimGL, headless OpenGL or Vulkan). It is never
+enabled automatically, even when a project imports `torch` or `moderngl`:
+use `aide --with gpu` or `capabilities: [gpu]`. One capability covers
+every GPU vendor.
+
+```bash
+aide --with gpu            # this session only
+aide cap show gpu          # what it grants on this OS
+aide sandbox test --with gpu
+```
+
+```yaml
+# In your profile or .aide.yaml
+capabilities: [gpu]
+```
+
+To define your own capability on top of it:
+
+```yaml
+# ~/.config/aide/sandbox.yaml
+capabilities:
+  my-ml: { extends: gpu, env_allow: [HF_HOME] }
+```
+
+**macOS (Apple Silicon).** Adds two sandbox rules: opening the Apple GPU
+driver and IOSurface (`AGXDeviceUserClient`, `IOSurfaceRootUserClient`),
+and looking up the Metal shader compiler (`com.apple.MTLCompilerService`).
+Tested with Metal compute and an offscreen OpenGL context. Intel Macs and
+on-screen windows are not covered. If a framework still fails, check that
+both rules appear in `aide sandbox test --with gpu` and report the error.
+
+**Linux (Landlock).** Untested on real GPU hardware: the paths come from
+vendor, Mesa and Flatpak documentation. Landlock already lets every agent
+open `/dev`, so `gpu` adds only read-only paths that GPU libraries use to
+find the GPU and its driver:
+
+| Path | Used by |
+|------|---------|
+| `/sys/class/drm`, `/sys/dev/char`, `/sys/bus/pci/devices`, `/sys/devices/pci*` | Mesa and libdrm finding render nodes and PCI IDs |
+| `/sys/class/kfd`, `/sys/devices/virtual/kfd` | AMD ROCm GPU topology |
+| `/etc/OpenCL/vendors`, `/etc/vulkan/icd.d`, `/etc/glvnd/egl_vendor.d` | Picking the OpenCL, Vulkan and EGL driver |
+| `/opt/rocm*` | ROCm install |
+
+Paths that do not exist on your machine are skipped. Globs skip silently;
+plain paths print `skipped: <path> (not found)`, so an NVIDIA host shows a
+few warnings for the AMD paths. These are harmless.
+
+Limits on Linux:
+
+- **Host permissions still apply.** Intel and AMD render nodes
+  (`/dev/dri/renderD*`, `/dev/kfd`) need your user in the `render` (or
+  `video`) group.
+- **NVIDIA device files created on first use** (`/dev/nvidia-uvm`,
+  `/dev/nvidia-caps/*`) cannot be created inside the sandbox, because
+  `nvidia-modprobe` is setuid and Landlock blocks privilege gain. Create
+  them on the host before launching: run `nvidia-modprobe -u -c=0`, enable
+  `nvidia-persistenced`, or add udev rules.
+- **bubblewrap fallback gets no GPU.** When aide falls back to bwrap (see
+  `aide sandbox show`, line "Backend"), the sandbox has a fresh `/dev`
+  without GPU nodes, so programs fall back to the CPU.
+- **PCI GPUs only.** GPUs under `/sys/devices/platform` (ARM boards) or
+  virtio GPUs in VMs are not covered.
+- **The sandbox-level `readable:` key replaces the default read list**, and
+  then capability reads, including `gpu`'s, are ignored. Use `readable_extra:`
+  instead.
+- The PCI paths also show read-only information about other PCI devices.
+
+When the GPU does not work under `aide --with gpu`, please open an issue
+with: the output of `aide sandbox show` and `aide sandbox test --with gpu`,
+the failing command and its error, and `ls -l /dev/dri /dev/nvidia* /dev/kfd`.
 
 ### Network
 

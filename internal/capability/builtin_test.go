@@ -2,8 +2,10 @@ package capability
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestBuiltins_AllPresent(t *testing.T) {
@@ -21,8 +23,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 26 {
-		t.Errorf("expected 26 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 27 {
+		t.Errorf("expected 27 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -423,5 +425,49 @@ func TestBuiltin_Ponytail_Paths(t *testing.T) {
 	}
 	if len(c.Readable) != 0 || len(c.Markers) != 0 {
 		t.Errorf("ponytail is write-only and auto-included: %+v", c)
+	}
+}
+
+var gpuAllow = []string{
+	`iokit-open (iokit-user-client-class "AGXDeviceUserClient" "IOSurfaceRootUserClient")`,
+	`mach-lookup (global-name "com.apple.MTLCompilerService")`,
+}
+
+func TestBuiltin_GPU_AllowRulesAndNoMarkers(t *testing.T) {
+	gpu, ok := Builtins()["gpu"]
+	if !ok {
+		t.Fatal("missing built-in capability 'gpu'")
+	}
+	if !reflect.DeepEqual(gpu.Allow, gpuAllow) {
+		t.Errorf("Allow = %v, want %v", gpu.Allow, gpuAllow)
+	}
+	if len(gpu.Markers) != 0 {
+		t.Errorf("gpu must be opt-in only (no markers), got %v", gpu.Markers)
+	}
+}
+
+func TestBuiltin_GPU_NotAutoDetected(t *testing.T) {
+	fsys := fstest.MapFS{
+		"pyproject.toml":   {Data: []byte("[project]\ndependencies = [\"torch\", \"moderngl\"]\n")},
+		"requirements.txt": {Data: []byte("torch\nmoderngl\njax\n")},
+	}
+	if got := DetectProject(fsys); slices.Contains(got, "gpu") {
+		t.Errorf("DetectProject must never suggest gpu, got %v", got)
+	}
+}
+
+func TestBuiltin_GPU_OverrideAndExtendsKeepAllow(t *testing.T) {
+	reg := MergedRegistry(map[string]Capability{
+		"gpu":   {Name: "gpu", EnvAllow: []string{"HF_HOME"}},
+		"my-ml": {Name: "my-ml", Extends: "gpu"},
+	})
+	for _, name := range []string{"gpu", "my-ml"} {
+		set, err := ResolveAll([]string{name}, reg, nil, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := set.ToSandboxOverrides().Allow; !reflect.DeepEqual(got, gpuAllow) {
+			t.Errorf("%s: Allow = %v, want %v", name, got, gpuAllow)
+		}
 	}
 }

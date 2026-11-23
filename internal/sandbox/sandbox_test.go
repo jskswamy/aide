@@ -324,3 +324,28 @@ func assertContains(t *testing.T, slice []string, item string, msg string) {
 	}
 	t.Errorf("%s: %q not found in %v", msg, item, slice)
 }
+
+// Capability read paths may be globs or absent on a given host (e.g. the
+// gpu capability's /opt/rocm* and /sys/class/kfd): unmatched globs must
+// drop silently, absent plain paths must warn and drop.
+func TestReadablePaths_UnmatchedGlobSilentMissingPlainWarns(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "present")
+	if err := os.Mkdir(present, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	glob := filepath.Join(dir, "nomatch*")
+	missing := filepath.Join(dir, "missing")
+
+	var warnings []string
+	kept := validateAndFilterPaths([]string{present, glob, missing}, &warnings)
+	if want := []string{present, glob}; !slices.Equal(kept, want) {
+		t.Errorf("validateAndFilterPaths = %v, want %v", kept, want)
+	}
+	if want := []string{"skipped: " + missing + " (not found)"}; !slices.Equal(warnings, want) {
+		t.Errorf("warnings = %v, want %v", warnings, want)
+	}
+	if got := expandGlobs(kept); !slices.Equal(got, []string{present}) {
+		t.Errorf("expandGlobs = %v, want [%s]", got, present)
+	}
+}

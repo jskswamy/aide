@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -706,5 +707,16 @@ func TestCapShow_SkillshareListsGrantedPaths(t *testing.T) {
 	}
 	if strings.Contains(out, "hooks") {
 		t.Errorf("cap show skillshare lists hooks/; got:\n%s", out)
+	}
+}
+
+func TestCapShow_GPUPerOS(t *testing.T) {
+	out := runCapCmd(t, "show", "gpu")
+	if !strings.Contains(out, "com.apple.MTLCompilerService") {
+		t.Errorf("cap show gpu missing allow rule; got:\n%s", out)
+	}
+	hasLinux := strings.Contains(out, "/sys/class/drm") && strings.Contains(out, "CUDA_VISIBLE_DEVICES")
+	if hasLinux != (runtime.GOOS == "linux") {
+		t.Errorf("cap show gpu on %s: Linux paths/env shown = %v; got:\n%s", runtime.GOOS, hasLinux, out)
 	}
 }

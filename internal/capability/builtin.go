@@ -1,6 +1,10 @@
 package capability
 
-import "github.com/jskswamy/aide/internal/sliceutil"
+import (
+	"runtime"
+
+	"github.com/jskswamy/aide/internal/sliceutil"
+)
 
 // builtins holds all built-in capability definitions.
 var builtins map[string]Capability
@@ -277,17 +281,8 @@ func init() {
 			},
 		},
 
-		// GPU (macOS rules below; minimal set for Metal compute and offscreen
-		// OpenGL on Apple Silicon, see docs/superpowers/specs/2026-11-23-gpu-capability-design.md).
-		// Never auto-detected: no Markers.
-		"gpu": {
-			Name:        "gpu",
-			Description: "GPU compute and offscreen rendering (Metal, OpenGL)",
-			Allow: []string{
-				`iokit-open (iokit-user-client-class "AGXDeviceUserClient" "IOSurfaceRootUserClient")`,
-				`mach-lookup (global-name "com.apple.MTLCompilerService")`,
-			},
-		},
+		// GPU: never auto-detected (no Markers). See gpuCapability.
+		"gpu": gpuCapability(runtime.GOOS),
 
 		// CLI Tools
 		"ccstatusline": {
@@ -337,6 +332,37 @@ func init() {
 			NetworkMode: "unrestricted",
 		},
 	}
+}
+
+// gpuCapability builds the gpu builtin for goos, so tests can check every
+// OS. See docs/superpowers/specs/2026-11-23-gpu-capability-design.md.
+func gpuCapability(goos string) Capability {
+	c := Capability{
+		Name:        "gpu",
+		Description: "GPU compute and offscreen rendering (Metal, OpenGL, CUDA, ROCm, Vulkan)",
+		// macOS: minimal set for Metal compute and offscreen OpenGL on Apple
+		// Silicon. Allow rules are inert on Linux.
+		Allow: []string{
+			`iokit-open (iokit-user-client-class "AGXDeviceUserClient" "IOSurfaceRootUserClient")`,
+			`mach-lookup (global-name "com.apple.MTLCompilerService")`,
+		},
+	}
+	if goos == "linux" {
+		// Device nodes are already reachable under Landlock; GPU libraries
+		// also need sysfs (DRM, PCI, KFD) and the driver registries.
+		c.Readable = []string{
+			"/sys/class/drm", "/sys/dev/char",
+			"/sys/bus/pci/devices", "/sys/devices/pci*",
+			"/sys/class/kfd", "/sys/devices/virtual/kfd",
+			"/etc/OpenCL/vendors", "/etc/vulkan/icd.d", "/etc/glvnd/egl_vendor.d",
+			"/opt/rocm*",
+		}
+		c.EnvAllow = []string{
+			"CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES",
+			"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES",
+		}
+	}
+	return c
 }
 
 // Builtins returns a copy of the built-in capability registry.

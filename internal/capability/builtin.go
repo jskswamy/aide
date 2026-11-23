@@ -277,6 +277,18 @@ func init() {
 			},
 		},
 
+		// GPU (macOS rules below; minimal set for Metal compute and offscreen
+		// OpenGL on Apple Silicon, see docs/superpowers/specs/2026-11-23-gpu-capability-design.md).
+		// Never auto-detected: no Markers.
+		"gpu": {
+			Name:        "gpu",
+			Description: "GPU compute and offscreen rendering (Metal, OpenGL)",
+			Allow: []string{
+				`iokit-open (iokit-user-client-class "AGXDeviceUserClient" "IOSurfaceRootUserClient")`,
+				`mach-lookup (global-name "com.apple.MTLCompilerService")`,
+			},
+		},
+
 		// CLI Tools
 		"ccstatusline": {
 			Name:        "ccstatusline",

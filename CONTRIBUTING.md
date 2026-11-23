@@ -145,6 +145,23 @@ Heuristic: if commit B starts with "Fix", "Update", or "Correct" and shares a ke
 - CI must pass before requesting review.
 - Two-stage review: automated AI review via Greptile (`.greptile/` threat-model, Ponytail, refactoring, and doc-sync skills) first, then human review.
 
+## Releases
+
+aide follows [semantic versioning](https://semver.org/), with a bias towards small numbers:
+
+| Bump | When |
+|------|------|
+| Patch (`3.7.x`) | The default for every release, including new features, capabilities and fixes. |
+| Minor (`3.x.0`) | A deliberate milestone: a large redesign, or removed flags or commands that users must react to, with automatic config migration. |
+| Major (`x.0.0`) | Users must hand-edit config or change scripts because aide cannot migrate it for them. |
+
+When in doubt, choose the smaller bump. List removed or changed behaviour under "💥 Breaking changes" in the release notes whatever the bump.
+
+To release:
+
+1. On a branch, replace `RELEASE_NOTES.md` with only the new version, under `## vX.Y.Z (YYYY-MM-DD)`. Commit it as "Prepare release notes for vX.Y.Z" and merge the PR. goreleaser publishes this file as the top of the GitHub release.
+2. Tag the merged commit and push the tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"` and `git push origin vX.Y.Z`. The `v*` tag starts `.github/workflows/release.yml`, which runs the tests and security scans, then goreleaser.
+
 ## Security
 
 - gosec and gitleaks run in CI.

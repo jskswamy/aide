@@ -471,3 +471,33 @@ func TestBuiltin_GPU_OverrideAndExtendsKeepAllow(t *testing.T) {
 		}
 	}
 }
+
+func TestGPUCapability_LinuxOnlyPathsAndEnv(t *testing.T) {
+	linux := gpuCapability("linux")
+	wantReadable := []string{
+		"/sys/class/drm", "/sys/dev/char",
+		"/sys/bus/pci/devices", "/sys/devices/pci*",
+		"/sys/class/kfd", "/sys/devices/virtual/kfd",
+		"/etc/OpenCL/vendors", "/etc/vulkan/icd.d", "/etc/glvnd/egl_vendor.d",
+		"/opt/rocm*",
+	}
+	wantEnv := []string{
+		"CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES",
+		"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES",
+	}
+	if !reflect.DeepEqual(linux.Readable, wantReadable) {
+		t.Errorf("linux Readable = %v, want %v", linux.Readable, wantReadable)
+	}
+	if !reflect.DeepEqual(linux.EnvAllow, wantEnv) {
+		t.Errorf("linux EnvAllow = %v, want %v", linux.EnvAllow, wantEnv)
+	}
+	darwin := gpuCapability("darwin")
+	if len(darwin.Readable) != 0 || len(darwin.EnvAllow) != 0 {
+		t.Errorf("darwin must get no Readable/EnvAllow, got %v / %v", darwin.Readable, darwin.EnvAllow)
+	}
+	for _, c := range []Capability{linux, darwin} {
+		if !reflect.DeepEqual(c.Allow, gpuAllow) || len(c.Markers) != 0 {
+			t.Errorf("Allow = %v, Markers = %v; want both rules and no markers", c.Allow, c.Markers)
+		}
+	}
+}

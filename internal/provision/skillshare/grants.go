@@ -1,19 +1,15 @@
 package skillshare
 
 import (
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/jskswamy/aide/internal/config"
-	"github.com/jskswamy/aide/internal/fsutil"
-	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
-	"github.com/jskswamy/aide/pkg/seatbelt/modules"
+	"github.com/jskswamy/aide/internal/pathguard"
 )
 
 // ConfigDir is Skillshare's config dir: $XDG_CONFIG_HOME/skillshare,
@@ -53,10 +49,10 @@ func Installed(home string, getenv func(string) string) bool {
 // config dir: granting it would expose logins and keys. The fixed dirs
 // get the same checks, except that an $XDG_* dir may live outside $HOME.
 func ReadableDirs(cfg *config.Config, home string, getenv func(string) string) []string {
-	g := grantChecker{home: fsutil.ResolveNearest(home), protected: protectedDirs(cfg, home, getenv)}
+	g := pathguard.NewChecker(cfg, home, getenv)
 	var out []string
 	add := func(literal string, underHome bool) {
-		for _, p := range g.grant(literal, underHome) {
+		for _, p := range g.Grant(literal, underHome) {
 			if !slices.Contains(out, p) {
 				out = append(out, p)
 			}
@@ -70,89 +66,6 @@ func ReadableDirs(cfg *config.Config, home string, getenv func(string) string) [
 		add(src, true)
 	}
 	return out
-}
-
-// grantChecker decides which paths the capability may grant.
-type grantChecker struct {
-	home      string   // resolved
-	protected []string // resolved
-}
-
-// grant returns literal's resolved path (and literal, when it
-// differs) if it exists and may be granted, else nothing. underHome
-// requires the resolved path to lie strictly inside $HOME.
-func (g grantChecker) grant(literal string, underHome bool) []string {
-	if !filepath.IsAbs(literal) || strings.Contains(literal, "{{") {
-		return nil
-	}
-	literal = filepath.Clean(literal)
-	resolved, err := filepath.EvalSymlinks(literal)
-	if err != nil {
-		return nil // missing, or a broken or looping link
-	}
-	if strings.Contains(resolved, "{{") || !g.allowed(resolved, underHome) {
-		return nil
-	}
-	if resolved == literal {
-		return []string{resolved}
-	}
-	return []string{resolved, literal}
-}
-
-func (g grantChecker) allowed(p string, underHome bool) bool {
-	if p == string(filepath.Separator) || p == g.home {
-		return false
-	}
-	if underHome && !fsutil.IsUnderDir(p, g.home) {
-		return false
-	}
-	for _, d := range g.protected {
-		if fsutil.IsUnderDir(p, d) || fsutil.IsUnderDir(d, p) {
-			return false
-		}
-	}
-	return true
-}
-
-// protectedDirs are the dirs no skillshare grant may overlap, resolved:
-// the sensitive home dirs, every harness's default config dir, every
-// profile's config dirs (and dirs its env: points a harness at), and
-// aide's config dir.
-func protectedDirs(cfg *config.Config, home string, getenv func(string) string) []string {
-	var dirs []string
-	add := func(d string) {
-		if !filepath.IsAbs(d) {
-			return
-		}
-		if r := fsutil.ResolveNearest(d); !slices.Contains(dirs, r) {
-			dirs = append(dirs, r)
-		}
-	}
-	for _, rel := range modules.SensitiveHomeDirs() {
-		add(filepath.Join(home, filepath.FromSlash(rel)))
-	}
-	add(config.DirFrom(homepath.XDG(getenv("XDG_CONFIG_HOME"), home, ".config")))
-	all := harness.All()
-	for _, d := range all {
-		add(d.DefaultDir(home))
-	}
-	if cfg == nil {
-		return dirs
-	}
-	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
-		ctx := cfg.Contexts[name]
-		for _, d := range all {
-			if ctx.SelectsConfigDir() && d.SupportsProfiles() {
-				add(ctx.NativeConfigDir(d.Name, home))
-			}
-			for _, key := range d.ConfigEnvKeys {
-				if v := ctx.Env[key]; v != "" && !strings.Contains(v, "{{") {
-					add(expand(v, home))
-				}
-			}
-		}
-	}
-	return dirs
 }
 
 // configSources are the paths Skillshare's config lists under sources:

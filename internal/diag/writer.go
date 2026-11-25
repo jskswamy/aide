@@ -1,9 +1,8 @@
 package diag
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"path/filepath"
@@ -58,12 +57,13 @@ func (w *Writer) Write(body string, fallback io.Writer) (string, error) {
 //
 //	<cacheDir>/<RFC3339-timestamp>-<short-hash>.md
 //
-// where short-hash is the first 8 hex chars of SHA-256(seed) so concurrent
+// where short-hash is the 8-hex-char FNV-1a digest of seed so concurrent
 // runs from different cwds don't collide.
 func (w *Writer) path(seed string) string {
 	ts := w.now().Format("2006-01-02T15-04-05Z")
-	h := sha256.Sum256([]byte(seed))
-	short := hex.EncodeToString(h[:4]) // 8 chars
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(seed))
+	short := fmt.Sprintf("%08x", h.Sum32()) // 8 chars
 	name := fmt.Sprintf("%s-%s.md", ts, short)
 	return filepath.Join(w.CacheDir, name)
 }

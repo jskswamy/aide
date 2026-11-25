@@ -106,7 +106,7 @@ capture sandbox-deny events from the failed run.`,
 	rootCmd.Flags().BoolVar(&ignoreProjectConfig, "ignore-project-config", false, "Launch without applying .aide.yaml")
 	rootCmd.Flags().BoolVarP(&unrestrictedNetwork, "unrestricted-network", "N", false,
 		"Allow unrestricted network access, ignoring config port rules")
-	rootCmd.Flags().BoolVar(&diagnose, "diagnose", false, "wrap the run and write a redacted post-mortem on exit")
+	rootCmd.Flags().BoolVar(&diagnose, "diagnose", false, "wrap the run and write a redacted post-mortem on exit (to check setup before a run, use aide doctor)")
 	rootCmd.Flags().BoolVar(&diagnoseTrace, "diagnose-trace", false, "implies --diagnose; also capture macOS sandbox denials (Darwin only)")
 	rootCmd.Flags().StringSliceVar(&variantFlag, "variant", nil,
 		"Pin variants for capabilities in --with (format: capability=variant). Repeatable. Must match a --with capability.")

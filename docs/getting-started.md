@@ -310,7 +310,18 @@ Env:
   AWS_PROFILE              ← from secrets.aws_profile
 ```
 
-`aide validate` checks the config for errors:
+`aide doctor` reports what launch would use here and every problem it finds, each with a fix command or steps (`aide doctor --fix` applies them, asking first):
+
+```
+$ aide doctor
+0 errors, 1 warning, 2 tips
+
+Profile   work (path glob match: ~/work/*)
+Agent     claude
+...
+```
+
+`aide validate` checks only the config file for errors:
 
 ```
 $ aide validate

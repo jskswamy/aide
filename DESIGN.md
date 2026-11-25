@@ -843,6 +843,12 @@ internal/
     schema.go             # Config types and validation
     paths.go              # XDG path resolution (via adrg/xdg)
     template.go           # text/template resolution for env vars
+  doctor/
+    finding.go            # Typed findings: ID, severity, fix command or steps
+    configchecks.go       # Config-wide checks shared with aide validate
+    report.go             # Report ordering, text and JSON (schema_version)
+    redundant.go          # Redundant sandbox allow rules
+    fix.go, run.go        # Fix suggestions and the --fix loop
   context/
     resolver.go           # Context matching engine
     git.go                # Git remote detection + project root
@@ -852,6 +858,7 @@ internal/
     age.go                # Age key discovery
   launcher/
     launcher.go           # Full launch flow (sandbox, credential scrub, materialization)
+    sandbox_resolve.go    # Capability + sandbox step shared by launch, which, status and doctor
     runtime.go            # Ephemeral runtime dir management
   sandbox/
     sandbox.go            # Sandbox interface and default policy

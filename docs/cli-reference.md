@@ -308,6 +308,30 @@ aide validate
 
 ---
 
+## aide doctor
+
+```
+aide doctor [--profile <name>] [--format human|json]
+```
+
+Reports what launch would use in the current directory (profile and why it
+matched, agent, secret store, capabilities with their variants, sandbox guards
+and network, the trust state of each `.aide.yaml`, and capabilities whose
+project markers are present), then every problem found here and in the rest
+of the config. Each finding has a severity (error, warning or tip) and either
+an `aide` command that fixes it or written steps.
+
+It changes nothing, never prompts and never decrypts secrets. It exits
+non-zero only when it finds an error, as `aide validate` does. Inside an aide
+session (`AIDE_SANDBOX=on`) the report says so; on Linux the sandbox hides the
+config, and the report asks you to run `aide doctor` in a separate terminal.
+
+`--format json` prints the report with a `schema_version` for scripts and the
+Claude Code plugin. To explain a run that already failed, use
+`aide --diagnose`.
+
+---
+
 ## aide init
 
 ```

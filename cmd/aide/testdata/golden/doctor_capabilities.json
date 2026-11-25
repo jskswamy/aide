@@ -1,0 +1,40 @@
+{
+  "counts": {
+    "errors": 0,
+    "tips": 0,
+    "warnings": 0
+  },
+  "directory": {
+    "agent": "claude",
+    "capabilities": [
+      {
+        "name": "go",
+        "variants": []
+      }
+    ],
+    "cwd": "$HOME/repo",
+    "detected_capabilities": [
+      "git-remote"
+    ],
+    "guards": [
+      "base",
+      "system-runtime",
+      "network",
+      "filesystem",
+      "git-integration",
+      "keychain",
+      "node-toolchain",
+      "nix-toolchain",
+      "project-secrets",
+      "dev-credentials",
+      "aide-secrets"
+    ],
+    "match_reason": "default_context (work)",
+    "network": "outbound",
+    "profile": "work",
+    "project_config": []
+  },
+  "findings": [],
+  "inside_sandbox": false,
+  "schema_version": 1
+}

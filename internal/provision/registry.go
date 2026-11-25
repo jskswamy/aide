@@ -38,6 +38,3 @@ func ProvisionerFor(agentName string) (Provisioner, bool) {
 	}
 	return nil, false
 }
-
-// resetRegistryForTest clears the registry. Test-only helper.
-func resetRegistryForTest() { provisionerRegistry = map[string]Provisioner{} }

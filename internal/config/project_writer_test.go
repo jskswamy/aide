@@ -66,7 +66,7 @@ func TestWriteProjectOverride_Atomic(t *testing.T) {
 	}
 }
 
-func TestFindProjectConfigForWrite_ExistingFile(t *testing.T) {
+func TestProjectConfigWriteTarget_ExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	aidePath := filepath.Join(dir, ProjectConfigFileName)
 	if err := os.WriteFile(aidePath, []byte("agent: claude\n"), 0644); err != nil {
@@ -77,13 +77,16 @@ func TestFindProjectConfigForWrite_ExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := FindProjectConfigForWrite(subdir)
+	got, err := ProjectConfigWriteTarget(subdir, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if got != aidePath {
 		t.Errorf("expected %q, got %q", aidePath, got)
 	}
 }
 
-func TestFindProjectConfigForWrite_GitRoot(t *testing.T) {
+func TestProjectConfigWriteTarget_GitRoot(t *testing.T) {
 	dir := t.TempDir()
 	gitDir := filepath.Join(dir, ".git")
 	if err := os.MkdirAll(gitDir, 0755); err != nil {
@@ -94,16 +97,22 @@ func TestFindProjectConfigForWrite_GitRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := FindProjectConfigForWrite(subdir)
+	got, err := ProjectConfigWriteTarget(subdir, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	expected := filepath.Join(dir, ProjectConfigFileName)
 	if got != expected {
 		t.Errorf("expected %q (git root), got %q", expected, got)
 	}
 }
 
-func TestFindProjectConfigForWrite_FallbackToCwd(t *testing.T) {
+func TestProjectConfigWriteTarget_FallbackToCwd(t *testing.T) {
 	dir := t.TempDir()
-	got := FindProjectConfigForWrite(dir)
+	got, err := ProjectConfigWriteTarget(dir, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	expected := filepath.Join(dir, ProjectConfigFileName)
 	if got != expected {
 		t.Errorf("expected %q (cwd fallback), got %q", expected, got)

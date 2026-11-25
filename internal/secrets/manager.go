@@ -46,15 +46,6 @@ func NewManager(secretsDir, runtimeDir string) *Manager {
 	}
 }
 
-// NewManagerWithEditor creates a Manager with a custom EditorRunner (for testing).
-func NewManagerWithEditor(secretsDir, runtimeDir string, editor EditorRunner) *Manager {
-	return &Manager{
-		secretsDir: secretsDir,
-		runtimeDir: runtimeDir,
-		editor:     editor,
-	}
-}
-
 // Create creates a new encrypted secrets file by opening $EDITOR.
 func (m *Manager) Create(name, secretsDir, agePublicKey string) error {
 	if err := validateName(name); err != nil {

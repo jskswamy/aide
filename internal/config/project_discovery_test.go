@@ -244,9 +244,6 @@ func TestProjectConfigWriteTarget_Worktree(t *testing.T) {
 	if err != nil || local != filepath.Join(wtDir, ".aide.yaml") {
 		t.Errorf("local target = %q, %v; want the worktree's own file", local, err)
 	}
-	if got := FindProjectConfigForWrite(wtDir); got != local {
-		t.Errorf("FindProjectConfigForWrite = %q, want %q", got, local)
-	}
 	main, err := ProjectConfigWriteTarget(wtDir, true)
 	if err != nil || main != filepath.Join(mainDir, ".aide.yaml") {
 		t.Errorf("--main target = %q, %v", main, err)

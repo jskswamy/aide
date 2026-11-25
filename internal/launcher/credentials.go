@@ -158,18 +158,12 @@ func servedHarnesses(b config.CredentialBinding) []string {
 // at path.
 type StoreLoader func(path string) (map[string]string, error)
 
-// ResolveCredentialEnv decrypts the stores of plan's bindings, and only
+// resolveCredentialEnv decrypts the stores of plan's bindings, and only
 // those, one at a time (decryption mutates the process env), and
-// returns the env vars to inject. A missing store or key fails without
+// returns the env vars to inject. An Optional binding whose store or
+// key cannot be read is withheld (reported by name in withheld) instead
+// of failing; non-optional missing stores or keys fail without
 // returning any value.
-func ResolveCredentialEnv(plan CredentialPlan, load StoreLoader) (map[string]string, error) {
-	env, _, err := resolveCredentialEnv(plan, load)
-	return env, err
-}
-
-// resolveCredentialEnv is ResolveCredentialEnv, except that an Optional
-// binding whose store or key cannot be read is withheld (reported by
-// name in withheld) instead of failing.
 func resolveCredentialEnv(plan CredentialPlan, load StoreLoader) (env map[string]string, withheld map[string]error, err error) {
 	load = CachingStoreLoader(load)
 	env = map[string]string{}

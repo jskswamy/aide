@@ -26,11 +26,6 @@ type LinuxSandbox struct {
 	lastTier *IsolationTier
 }
 
-// LastTier returns the IsolationTier computed during the most recent Apply call.
-func (l *LinuxSandbox) LastTier() *IsolationTier {
-	return l.lastTier
-}
-
 // NewSandbox returns a Sandbox backed by Landlock (preferred) or bubblewrap.
 func NewSandbox() Sandbox {
 	return &LinuxSandbox{}

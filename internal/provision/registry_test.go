@@ -36,6 +36,8 @@ func restoreRegistry(snap map[string]Provisioner) {
 	provisionerRegistry = snap
 }
 
+func resetRegistryForTest() { provisionerRegistry = map[string]Provisioner{} }
+
 func TestRegisterAndLookup(t *testing.T) {
 	snap := snapshotRegistry()
 	t.Cleanup(func() { restoreRegistry(snap) })

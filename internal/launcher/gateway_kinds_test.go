@@ -16,7 +16,7 @@ func TestGatewayBindings_XAPIKeyKeyTravelsAsAPIKey(t *testing.T) {
 		"anth": {Preset: "anthropic", Store: "s", Key: "k", Harnesses: []string{"claude"}},
 	}}
 	plan := gatewayBindings(ctx, "claude", Choice{Value: "anth"})
-	env, err := ResolveCredentialEnv(CredentialPlan{Bindings: plan}, func(string) (map[string]string, error) {
+	env, _, err := resolveCredentialEnv(CredentialPlan{Bindings: plan}, func(string) (map[string]string, error) {
 		return map[string]string{"k": "sk-ant-secret"}, nil
 	})
 	if err != nil {

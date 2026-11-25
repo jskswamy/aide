@@ -63,9 +63,9 @@ func TestResolveCredentials_InjectsOnlySelectedBindings(t *testing.T) {
 		t.Errorf("Auth = %q, want api by default", plan.Auth)
 	}
 	stores := newFakeStores()
-	env, err := ResolveCredentialEnv(plan, stores.load)
+	env, _, err := resolveCredentialEnv(plan, stores.load)
 	if err != nil {
-		t.Fatalf("ResolveCredentialEnv() error = %v", err)
+		t.Fatalf("resolveCredentialEnv() error = %v", err)
 	}
 	want := map[string]string{"ANTHROPIC_API_KEY": "sk-ant-work"}
 	if len(env) != 1 || env["ANTHROPIC_API_KEY"] != want["ANTHROPIC_API_KEY"] {
@@ -84,7 +84,7 @@ func TestResolveCredentials_DecryptsEachStoreOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	stores := newFakeStores()
-	env, err := ResolveCredentialEnv(plan, stores.load)
+	env, _, err := resolveCredentialEnv(plan, stores.load)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestResolveCredentials_MissingKeyFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := ResolveCredentialEnv(plan, newFakeStores().load)
+	env, _, err := resolveCredentialEnv(plan, newFakeStores().load)
 	if !errors.Is(err, ErrCredentialKeyMissing) {
 		t.Fatalf("error = %v, want ErrCredentialKeyMissing", err)
 	}
@@ -127,7 +127,7 @@ func TestResolveCredentials_MissingStoreFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveCredentialEnv(plan, newFakeStores().load); err == nil || !strings.Contains(err.Error(), "/stores/gone") {
+	if _, _, err := resolveCredentialEnv(plan, newFakeStores().load); err == nil || !strings.Contains(err.Error(), "/stores/gone") {
 		t.Fatalf("error = %v, want one naming the store", err)
 	}
 }
@@ -152,7 +152,7 @@ func TestPlanCredentials_NativeLoginInjectsNothing(t *testing.T) {
 		t.Errorf("plan = %+v, want no bindings and anthropic ignored", plan)
 	}
 	stores := newFakeStores()
-	env, err := ResolveCredentialEnv(plan, stores.load)
+	env, _, err := resolveCredentialEnv(plan, stores.load)
 	if err != nil || len(env) != 0 || len(stores.opened) != 0 {
 		t.Errorf("login resolved env=%v opened=%v err=%v, want nothing", env, stores.opened, err)
 	}
@@ -616,7 +616,7 @@ func TestResolveCredentials_RoutePerHarness(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: PlanCredentials() error = %v", tt.harness, err)
 		}
-		env, err := ResolveCredentialEnv(plan, newFakeStores().load)
+		env, _, err := resolveCredentialEnv(plan, newFakeStores().load)
 		if err != nil || !maps.Equal(env, tt.want) {
 			t.Errorf("%s: env = %v err = %v, want %v", tt.harness, env, err, tt.want)
 		}
@@ -629,7 +629,7 @@ func TestResolveCredentials_KeylessRouteOpensNoStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	stores := newFakeStores()
-	env, err := ResolveCredentialEnv(plan, stores.load)
+	env, _, err := resolveCredentialEnv(plan, stores.load)
 	if err != nil || !maps.Equal(env, map[string]string{"CLAUDE_CODE_USE_BEDROCK": "1"}) || len(stores.opened) != 0 {
 		t.Errorf("env = %v opened = %v err = %v, want only the setting and no store", env, stores.opened, err)
 	}

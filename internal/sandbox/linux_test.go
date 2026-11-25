@@ -673,8 +673,8 @@ func TestApply_Unavailable_DoesNotMutateCmd(t *testing.T) {
 	if strings.Join(cmd.Args, " ") != originalArgs {
 		t.Errorf("cmd.Args mutated: got %q, want %q", strings.Join(cmd.Args, " "), originalArgs)
 	}
-	if s.LastTier() == nil || s.LastTier().Tier != TierUnavailable {
-		t.Errorf("LastTier = %v, want unavailable", s.LastTier())
+	if s.lastTier == nil || s.lastTier.Tier != TierUnavailable {
+		t.Errorf("lastTier = %v, want unavailable", s.lastTier)
 	}
 }
 
@@ -709,9 +709,9 @@ func TestApply_LandlockDegradedNetworkNone_PrefersBwrap(t *testing.T) {
 	if applyErr := s.Apply(cmd, policy, runtimeDir); applyErr != nil {
 		t.Fatalf("Apply returned error: %v (regression: degraded Landlock + bwrap-supported policy must fall back, not error)", applyErr)
 	}
-	tier := s.LastTier()
+	tier := s.lastTier
 	if tier == nil || tier.Backend != BackendBwrap {
-		t.Fatalf("LastTier = %+v, want Backend=%q", tier, BackendBwrap)
+		t.Fatalf("lastTier = %+v, want Backend=%q", tier, BackendBwrap)
 	}
 	if cmd.Path != bwrapPath {
 		t.Errorf("cmd.Path = %q, want %q (Apply did not dispatch to bwrap)", cmd.Path, bwrapPath)

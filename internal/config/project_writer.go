@@ -58,17 +58,12 @@ func WriteProjectOverrideWithTrust(path string, po *ProjectOverride, store *trus
 	return nil
 }
 
-// FindProjectConfigForWrite returns the .aide.yaml that project-scope
+// ProjectConfigWriteTarget returns the .aide.yaml that project-scope
 // edits from startDir write: this checkout's existing file, else one
-// at the checkout root, else in startDir. In a linked worktree that is
-// the worktree's own file, never the inherited main checkout's.
-func FindProjectConfigForWrite(startDir string) string {
-	return DiscoverProject(startDir).LocalWritePath(startDir)
-}
-
-// ProjectConfigWriteTarget is FindProjectConfigForWrite, or with main
-// the main checkout's .aide.yaml of the linked worktree startDir is in
-// (created if absent). main outside a linked worktree is an error.
+// at the checkout root, else in startDir (in a linked worktree, the
+// worktree's own file). With main, it returns the main checkout's
+// .aide.yaml of the linked worktree startDir is in (created if absent);
+// main outside a linked worktree is an error.
 func ProjectConfigWriteTarget(startDir string, main bool) (string, error) {
 	d := DiscoverProject(startDir)
 	if !main {

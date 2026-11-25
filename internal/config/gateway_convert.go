@@ -274,9 +274,6 @@ func GatewayKeyVar(name string) string {
 // ChoiceIsUnset reports whether harness has no explicit gateway choice.
 func (c Context) ChoiceIsUnset(harness string) bool { return c.GatewayChoice[harness] == "" }
 
-// ChoiceIsNone reports whether harness is explicitly set to use no gateway.
-func (c Context) ChoiceIsNone(harness string) bool { return c.GatewayChoice[harness] == "none" }
-
 // GatewayCandidates returns, sorted, the gateways of ctx marked for
 // harness h, in the converted (one API per gateway) form.
 func (c Context) GatewayCandidates(h string) []string {

@@ -351,10 +351,6 @@ type Registry struct {
 // New returns a registry of names.
 func New(names ...string) Registry { return Registry{}.With(names...) }
 
-// SecretMaterial returns the registry of aide's own secret material
-// (SOPS_AGE_KEY, SOPS_AGE_KEY_FILE).
-func SecretMaterial() Registry { return Registry{}.Pin(secretMaterialNames...) }
-
 // Credentials returns the registry for a configured launch: provider
 // keys and tokens, federation and cloud selectors, and secret material.
 // Only the cloud names can be exempted with Permit.

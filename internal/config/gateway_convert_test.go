@@ -120,9 +120,6 @@ func TestGatewayChoiceHelpersAndValidation(t *testing.T) {
 		GatewayChoice:     map[string]string{"claude": "none", "codex": "gone", "pi": "a", "omp": ""},
 		ConvertedGateways: map[string]GatewayConfig{"a": {URL: "https://x.example.com", Harnesses: []string{"pi"}}},
 	}
-	if !ctx.ChoiceIsNone("claude") || ctx.ChoiceIsNone("pi") {
-		t.Error("ChoiceIsNone")
-	}
 	if !ctx.ChoiceIsUnset("omp") || !ctx.ChoiceIsUnset("opencode") || ctx.ChoiceIsUnset("pi") {
 		t.Error("ChoiceIsUnset")
 	}

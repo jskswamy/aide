@@ -614,6 +614,14 @@ func TestCreate_WithMockEditor(t *testing.T) {
 	}
 }
 
+func NewManagerWithEditor(secretsDir, runtimeDir string, editor EditorRunner) *Manager {
+	return &Manager{
+		secretsDir: secretsDir,
+		runtimeDir: runtimeDir,
+		editor:     editor,
+	}
+}
+
 func TestCreate_EditorError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockEditor := smocks.NewMockEditorRunner(ctrl)

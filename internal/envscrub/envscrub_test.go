@@ -47,18 +47,9 @@ func TestCredentialsScrubsProviderTokensFederationCloudAndSops(t *testing.T) {
 	}
 }
 
-func TestSecretMaterialScrubsOnlySops(t *testing.T) {
-	env := []string{"ANTHROPIC_API_KEY=k", "SOPS_AGE_KEY=s", "SOPS_AGE_KEY_FILE=f", "AWS_PROFILE=p"}
-	got := names(envscrub.ScrubCredentials(env, envscrub.SecretMaterial(), nil))
-	want := []string{"ANTHROPIC_API_KEY", "AWS_PROFILE"}
-	if !slices.Equal(got, want) {
-		t.Errorf("scrubbed env = %v, want %v", got, want)
-	}
-}
-
 func TestExtraNamesAndPrefixes(t *testing.T) {
 	env := []string{"MY_PROVIDER_TOKEN=x", "CORP_A=1", "CORP_B=2", "CORPORATE=3", "KEEP=1"}
-	got := names(envscrub.ScrubCredentials(env, envscrub.SecretMaterial(), []string{"MY_PROVIDER_TOKEN", "CORP_*"}))
+	got := names(envscrub.ScrubCredentials(env, envscrub.New("SOPS_AGE_KEY"), []string{"MY_PROVIDER_TOKEN", "CORP_*"}))
 	want := []string{"CORPORATE", "KEEP"}
 	if !slices.Equal(got, want) {
 		t.Errorf("scrubbed env = %v, want %v", got, want)
@@ -85,7 +76,7 @@ func TestConfigDirRedirectsDerivedFromHarnessTable(t *testing.T) {
 }
 
 func TestWithAddsNamesWithoutMutatingReceiver(t *testing.T) {
-	base := envscrub.SecretMaterial()
+	base := envscrub.New("SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE")
 	ext := base.With(envscrub.ConfigDirRedirects()...)
 	if base.Matches("CLAUDE_CONFIG_DIR") {
 		t.Error("With mutated the receiver")
@@ -126,7 +117,7 @@ func TestLegacyCredentialNames(t *testing.T) {
 
 func TestScrubDoesNotAliasInput(t *testing.T) {
 	env := []string{"A=1", "SOPS_AGE_KEY=2", "B=3"}
-	_ = envscrub.ScrubCredentials(env, envscrub.SecretMaterial(), nil)
+	_ = envscrub.ScrubCredentials(env, envscrub.Credentials(), nil)
 	if env[1] != "SOPS_AGE_KEY=2" {
 		t.Errorf("input mutated: %v", env)
 	}

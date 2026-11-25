@@ -3,16 +3,13 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"sort"
-	"strings"
-	"text/template"
 
 	"github.com/spf13/cobra"
 
 	"github.com/jskswamy/aide/internal/config"
-	"github.com/jskswamy/aide/internal/sandbox"
+	"github.com/jskswamy/aide/internal/doctor"
 	"github.com/jskswamy/aide/internal/trust"
 )
 
@@ -31,67 +28,17 @@ func validateCmd() *cobra.Command {
 
 			var errors []string
 			var warnings []string
-			secretsCount := make(map[string]bool)
-
-			for ctxName, ctx := range cfg.Contexts {
-				if ctx.Agent != "" && len(cfg.Agents) > 0 {
-					if _, ok := cfg.Agents[ctx.Agent]; !ok {
-						errors = append(errors, fmt.Sprintf(
-							"profile %q references unknown agent %q", ctxName, ctx.Agent,
-						))
-					}
-				}
-
-				if ctx.Secret != "" {
-					secretsCount[ctx.Secret] = true
-					path := config.ResolveSecretPath(ctx.Secret)
-					if _, err := os.Stat(path); os.IsNotExist(err) {
-						errors = append(errors, fmt.Sprintf(
-							"profile %q references secret %q which does not exist", ctxName, ctx.Secret,
-						))
-					}
-				}
-
-				if ctx.Sandbox != nil {
-					if err := sandbox.ValidateSandboxRef(ctx.Sandbox, cfg.Sandboxes); err != nil {
-						errors = append(errors, fmt.Sprintf(
-							"profile %q has invalid sandbox config: %s", ctxName, err,
-						))
-					}
-				}
-
-				if ctxName != cfg.DefaultContext && ctxName != "default" {
-					if len(ctx.Match) == 0 {
-						warnings = append(warnings, fmt.Sprintf(
-							"profile %q has no match rules (will never activate)", ctxName,
-						))
-					}
-				}
-
-				for envKey, envVal := range ctx.Env {
-					if strings.Contains(envVal, "{{") {
-						if _, tmplErr := template.New("").Parse(envVal); tmplErr != nil {
-							errors = append(errors, fmt.Sprintf(
-								"profile %q env var %q has invalid template syntax: %s", ctxName, envKey, tmplErr,
-							))
-						} else if strings.Contains(envVal, ".secrets.") && ctx.Secret == "" {
-							errors = append(errors, fmt.Sprintf(
-								"profile %q env var %q references secrets but no secret is configured", ctxName, envKey,
-							))
-						}
-					}
+			for _, f := range doctor.ConfigChecks(cfg, exec.LookPath) {
+				if f.Severity == doctor.SeverityError {
+					errors = append(errors, f.Message)
+				} else {
+					warnings = append(warnings, f.Message)
 				}
 			}
-
-			for agentName, agentDef := range cfg.Agents {
-				binary := agentDef.Binary
-				if binary == "" {
-					binary = agentName
-				}
-				if _, err := exec.LookPath(binary); err != nil {
-					warnings = append(warnings, fmt.Sprintf(
-						"agent %q binary %q not found on PATH", agentName, binary,
-					))
+			secretsCount := make(map[string]bool)
+			for _, ctx := range cfg.Contexts {
+				if ctx.Secret != "" {
+					secretsCount[ctx.Secret] = true
 				}
 			}
 

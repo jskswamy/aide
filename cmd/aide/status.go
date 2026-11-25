@@ -294,7 +294,8 @@ func whichCmd() *cobra.Command {
 			// choices apply, pending ones fall back to the default.
 			sbRes, _ := launcher.ResolveSandbox(cfg, resolved, launcher.SandboxInputs{
 				ProjectRoot: projectRoot, HomeDir: homeDir,
-				Variants: sandbox.VariantSelectionOptions{Consent: consent.DefaultStore()},
+				Getenv:   launcher.PreviewGetenv(resolved.Context.Env, homeDir),
+				Variants: sandbox.VariantSelectionOptions{Consent: consent.DefaultStore(), EnvLookup: launcher.PreviewGetenv(resolved.Context.Env, homeDir)},
 			})
 			resolvedSandbox, sbDisabled := sbRes.Config, sbRes.Disabled
 			resolvedCapSet, capOverrides, capProvenance := sbRes.Caps, sbRes.Overrides, sbRes.Provenance
@@ -760,32 +761,21 @@ func statusCmd() *cobra.Command {
 				secretKeyCount = len(names)
 			}
 
-			// Build capability registry and resolve capabilities
-			registry := env.Registry()
-
-			var disabledCaps []string
-			if cfg.ProjectOverride != nil {
-				disabledCaps = cfg.ProjectOverride.DisabledCapabilities
-			}
-			capNames := capability.AutoInclude(resolved.Context.Capabilities, disabledCaps, homeDir, os.Getenv)
-			var capSet *capability.Set
-			if len(capNames) > 0 {
-				capSet, err = capability.ResolveAll(capNames, registry, cfg.NeverAllow, cfg.NeverAllowEnv)
-				if err != nil {
-					return fmt.Errorf("resolving capabilities: %w", err)
-				}
-				sandbox.AddDynamicPaths(capSet.Capabilities, cfg)
-			}
-
-			// Resolve sandbox policy for rule count
-			sandboxPolicy, sandboxDisabled, _ := sandbox.ResolveSandboxRef(
-				resolved.Context.Sandbox, cfg.Sandboxes,
-			)
+			// The capabilities and sandbox launch would apply, without asking.
+			projectRoot := aidectx.ProjectRoot(cwd)
+			// Like which, status still reports when the sandbox does not
+			// resolve; the problem shows in sandbox_tier.
+			sbRes, sbErr := launcher.ResolveSandbox(cfg, resolved, launcher.SandboxInputs{
+				ProjectRoot: projectRoot, HomeDir: homeDir,
+				Getenv:   launcher.PreviewGetenv(resolved.Context.Env, homeDir),
+				Variants: sandbox.VariantSelectionOptions{Consent: consent.DefaultStore(), EnvLookup: launcher.PreviewGetenv(resolved.Context.Env, homeDir)},
+			})
+			capSet := sbRes.Caps
+			sandboxPolicy, sandboxDisabled := sbRes.Config, sbRes.Disabled
+			previewPaths := sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: "/tmp/aide-preview", HomeDir: homeDir, TempDir: os.TempDir()}
 			var guardCount int
 			if !sandboxDisabled {
-				homeDir, _ := os.UserHomeDir()
-				tempDir := os.TempDir()
-				pol, _, _ := sandbox.PolicyFromConfig(sandboxPolicy, sandbox.Paths{ProjectRoot: cwd, HomeDir: homeDir, TempDir: tempDir})
+				pol, _, _ := sandbox.PolicyFromConfig(sandboxPolicy, previewPaths)
 				if pol != nil {
 					guardCount = len(pol.Guards)
 				}
@@ -851,21 +841,18 @@ func statusCmd() *cobra.Command {
 			}
 
 			var sandboxTierLine string
-			if sandboxDisabled {
+			pol, _, polErr := sandbox.PolicyFromConfig(sandboxPolicy, previewPaths)
+			switch {
+			case sbErr != nil:
+				sandboxTierLine = fmt.Sprintf("does not resolve: %v", sbErr)
+			case sandboxDisabled:
 				sandboxTierLine = "disabled"
-			} else {
-				homeDir, _ := os.UserHomeDir()
-				tempDir := os.TempDir()
-				pol, _, polErr := sandbox.PolicyFromConfig(sandboxPolicy, sandbox.Paths{ProjectRoot: cwd, HomeDir: homeDir, TempDir: tempDir})
-				switch {
-				case polErr != nil:
-					sandboxTierLine = fmt.Sprintf("policy load failed: %v", polErr)
-				case pol == nil:
-					sandboxTierLine = "policy unavailable"
-				default:
-					tier := sandbox.PlatformIsolationTier(*pol)
-					sandboxTierLine = formatIsolationTierStatus(tier)
-				}
+			case polErr != nil:
+				sandboxTierLine = fmt.Sprintf("policy load failed: %v", polErr)
+			case pol == nil:
+				sandboxTierLine = "policy unavailable"
+			default:
+				sandboxTierLine = formatIsolationTierStatus(sandbox.PlatformIsolationTier(*pol))
 			}
 
 			result := statusResult{

@@ -1,0 +1,179 @@
+{
+  "agent": "claude",
+  "agent_config_dir": "~/.claude-work",
+  "agent_icon": "🤖",
+  "agent_name": "claude",
+  "agent_path": "$HOME/bin/golden-claude",
+  "agent_source": "profile",
+  "auth_mode": "api",
+  "available_agents": [
+    {
+      "config_dir": "~/.pi-work",
+      "name": "pi"
+    }
+  ],
+  "context_name": "work",
+  "credential_source": "profile",
+  "credentials": [
+    {
+      "agent": "claude",
+      "choice": "anthropic",
+      "env": [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL"
+      ],
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "ANTHROPIC_API_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "source": "profile",
+      "store": "work",
+      "target_file": "~/.claude-work/cache/aide-gateway-anthropic.json",
+      "target_sync": "pending",
+      "url": "https://api.anthropic.com"
+    }
+  ],
+  "env_items": [
+    {
+      "annotation": "= $HOME/.claude-work",
+      "badge": "📌",
+      "key": "CLAUDE_CONFIG_DIR"
+    }
+  ],
+  "gateway_choices": [
+    {
+      "agent": "claude",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "ANTHROPIC_API_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "source": "profile",
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    },
+    {
+      "agent": "codex",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "profile"
+    },
+    {
+      "agent": "omp",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "AIDE_GW_ANTHROPIC_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "others": 1,
+      "source": "profile",
+      "startup": true,
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    },
+    {
+      "agent": "opencode",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "AIDE_GW_ANTHROPIC_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "others": 1,
+      "source": "profile",
+      "startup": true,
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    },
+    {
+      "agent": "pi",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "AIDE_GW_ANTHROPIC_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "others": 1,
+      "source": "profile",
+      "startup": true,
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    }
+  ],
+  "match_reason": "default_context (work)",
+  "profile_name": "work",
+  "profile_source": "default",
+  "sandbox": {
+    "active": [
+      {
+        "name": "base"
+      },
+      {
+        "name": "system-runtime"
+      },
+      {
+        "name": "network"
+      },
+      {
+        "name": "filesystem"
+      },
+      {
+        "name": "git-integration",
+        "readable": [
+          "$HOME/.gitconfig",
+          "$HOME/.config/git/config",
+          "/etc/gitconfig",
+          "$HOME/.config/git/ignore",
+          "$HOME/.config/git/attributes",
+          "$HOME/.gitignore"
+        ]
+      },
+      {
+        "name": "keychain"
+      },
+      {
+        "name": "node-toolchain"
+      },
+      {
+        "name": "project-secrets",
+        "protected": [
+          "$HOME/repo/.git/hooks"
+        ]
+      }
+    ],
+    "available": [
+      "git-remote",
+      "ssh"
+    ],
+    "network": "outbound only",
+    "skipped": [
+      {
+        "name": "dev-credentials",
+        "reason": "$HOME/.config/gh not found; $HOME/.cargo/credentials.toml not found; $HOME/.gradle/gradle.properties not found; $HOME/.m2/settings.xml not found; $HOME/.config/hub not found; $HOME/.config/glab-cli not found; $HOME/.pypirc not found; $HOME/.gem/credentials not found; $HOME/.git-credentials not found"
+      },
+      {
+        "name": "aide-secrets",
+        "reason": "$HOME/.config/aide/secrets not found"
+      }
+    ]
+  },
+  "suggested_caps": [
+    {
+      "confirmed_at": "0001-01-01T00:00:00Z",
+      "name": "git-remote",
+      "source": "detected",
+      "suggested": true
+    }
+  ],
+  "warnings": [
+    "⚠ profile \"work\": never synced — run `aide sync` to install declared plugins/MCP servers"
+  ]
+}

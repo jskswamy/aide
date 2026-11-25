@@ -1,0 +1,165 @@
+{
+  "agent": "claude",
+  "agent_config_dir": "~/.claude-work",
+  "agent_icon": "🤖",
+  "agent_name": "claude",
+  "agent_path": "$HOME/bin/golden-claude",
+  "agent_source": "profile",
+  "available_agents": [
+    {
+      "config_dir": "~/.pi-work",
+      "name": "pi"
+    }
+  ],
+  "capabilities": [
+    {
+      "confirmed_at": "0001-01-01T00:00:00Z",
+      "env_vars": [
+        "GOPATH",
+        "GOROOT",
+        "GOBIN"
+      ],
+      "name": "go",
+      "source": "context config",
+      "writable_paths": [
+        "~/go"
+      ]
+    }
+  ],
+  "context_name": "work",
+  "credential_source": "profile",
+  "env_items": [
+    {
+      "annotation": "= $HOME/.claude-work",
+      "badge": "📌",
+      "key": "CLAUDE_CONFIG_DIR"
+    },
+    {
+      "annotation": "← go",
+      "badge": "🔧",
+      "key": "GOBIN"
+    },
+    {
+      "annotation": "← go",
+      "badge": "🔧",
+      "key": "GOPATH"
+    },
+    {
+      "annotation": "← go",
+      "badge": "🔧",
+      "key": "GOROOT"
+    }
+  ],
+  "extra_readable": [
+    "~/data"
+  ],
+  "extra_writable": [
+    "~/out"
+  ],
+  "gateway_choices": [
+    {
+      "agent": "claude",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "codex",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "omp",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "opencode",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "pi",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    }
+  ],
+  "match_reason": "default_context (work)",
+  "profile_name": "work",
+  "profile_source": "default",
+  "sandbox": {
+    "active": [
+      {
+        "name": "base"
+      },
+      {
+        "name": "system-runtime"
+      },
+      {
+        "name": "network"
+      },
+      {
+        "name": "filesystem"
+      },
+      {
+        "name": "git-integration",
+        "readable": [
+          "$HOME/.gitconfig",
+          "$HOME/.config/git/config",
+          "/etc/gitconfig",
+          "$HOME/.config/git/ignore",
+          "$HOME/.config/git/attributes",
+          "$HOME/.gitignore"
+        ]
+      },
+      {
+        "name": "keychain"
+      },
+      {
+        "name": "node-toolchain"
+      },
+      {
+        "name": "project-secrets",
+        "protected": [
+          "$HOME/repo/.git/hooks"
+        ]
+      }
+    ],
+    "available": [
+      "git-remote",
+      "ssh"
+    ],
+    "network": "outbound only",
+    "ports": "443",
+    "skipped": [
+      {
+        "name": "dev-credentials",
+        "reason": "$HOME/.config/gh not found; $HOME/.cargo/credentials.toml not found; $HOME/.gradle/gradle.properties not found; $HOME/.m2/settings.xml not found; $HOME/.config/hub not found; $HOME/.config/glab-cli not found; $HOME/.pypirc not found; $HOME/.gem/credentials not found; $HOME/.git-credentials not found"
+      },
+      {
+        "name": "aide-secrets",
+        "reason": "$HOME/.config/aide/secrets not found"
+      }
+    ]
+  },
+  "suggested_caps": [
+    {
+      "confirmed_at": "0001-01-01T00:00:00Z",
+      "name": "git-remote",
+      "source": "detected",
+      "suggested": true
+    }
+  ],
+  "warnings": [
+    "⚠ profile \"work\": never synced — run `aide sync` to install declared plugins/MCP servers"
+  ]
+}

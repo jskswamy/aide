@@ -1,0 +1,63 @@
+{
+  "agent": "claude",
+  "agent_path": "$HOME/bin/claude",
+  "agent_source": "profile",
+  "auto_approve": false,
+  "capabilities": [
+    {
+      "env_allow": [
+        "GOPATH",
+        "GOROOT",
+        "GOBIN"
+      ],
+      "name": "go",
+      "writable": [
+        "~/go"
+      ]
+    }
+  ],
+  "context": "work",
+  "credential_source": "profile",
+  "gateway_choices": [
+    {
+      "agent": "claude",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "codex",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "omp",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "opencode",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    },
+    {
+      "agent": "pi",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "no-candidates"
+    }
+  ],
+  "matched": "default_context (work)",
+  "network": "outbound only (ports 443)",
+  "profile": "work",
+  "profile_source": "default",
+  "sandbox_guard_count": 11
+}

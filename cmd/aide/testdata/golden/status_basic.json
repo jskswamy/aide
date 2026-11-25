@@ -1,0 +1,101 @@
+{
+  "agent": "claude",
+  "agent_path": "$HOME/bin/claude",
+  "agent_source": "profile",
+  "auth_mode": "api",
+  "auto_approve": false,
+  "context": "work",
+  "credential_source": "profile",
+  "credentials": [
+    {
+      "agent": "claude",
+      "choice": "anthropic",
+      "env": [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL"
+      ],
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "ANTHROPIC_API_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "source": "profile",
+      "store": "work",
+      "target_file": "~/.claude-work/cache/aide-gateway-anthropic.json",
+      "target_sync": "pending",
+      "url": "https://api.anthropic.com"
+    }
+  ],
+  "gateway_choices": [
+    {
+      "agent": "claude",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "ANTHROPIC_API_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "source": "profile",
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    },
+    {
+      "agent": "codex",
+      "choice": "none",
+      "env": null,
+      "name": "",
+      "source": "profile"
+    },
+    {
+      "agent": "omp",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "AIDE_GW_ANTHROPIC_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "others": 1,
+      "source": "profile",
+      "startup": true,
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    },
+    {
+      "agent": "opencode",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "AIDE_GW_ANTHROPIC_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "others": 1,
+      "source": "profile",
+      "startup": true,
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    },
+    {
+      "agent": "pi",
+      "choice": "anthropic",
+      "env": null,
+      "is_gateway": true,
+      "key": "anthropic_api_key",
+      "key_env": "AIDE_GW_ANTHROPIC_KEY",
+      "kind": "gateway",
+      "name": "anthropic",
+      "others": 1,
+      "source": "profile",
+      "startup": true,
+      "store": "work",
+      "url": "https://api.anthropic.com"
+    }
+  ],
+  "matched": "default_context (work)",
+  "network": "outbound only (all ports)",
+  "profile": "work",
+  "profile_source": "default",
+  "sandbox_guard_count": 11
+}

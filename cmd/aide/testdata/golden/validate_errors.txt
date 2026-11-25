@@ -1,0 +1,14 @@
+Errors:
+  - profile "bad-sandbox" has invalid sandbox config: sandbox profile "no-such-sandbox" not found (no sandboxes defined)
+  - profile "bad-template" env var "BROKEN" has invalid template syntax: template: :1: unclosed action
+  - profile "missing-secret" references secret "missing-store" which does not exist
+  - profile "secret-without-store" env var "TOKEN" references secrets but no secret is configured
+  - profile "unknown-agent" references unknown agent "nobody"
+
+Warnings:
+  - agent "ghost" binary "aide-golden-no-such-binary" not found on PATH
+  - profile "no-match" has no match rules (will never activate)
+
+5 errors, 2 warnings
+Error: validation found 5 error(s)
+exit: error: validation found 5 error(s)

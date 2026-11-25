@@ -157,7 +157,10 @@ type Launcher struct {
 	StdinIsTTY          func() bool  // override for testing (default: checks os.Stdin)
 	IgnoreProjectConfig bool         // skip .aide.yaml entirely
 	UnrestrictedNetwork bool         // force unrestricted network, clear port rules (-N flag)
-	TrustStore          *trust.Store // override for testing (default: trust.DefaultStore())
+	// PolicyHook, when set, receives the final sandbox policy just
+	// before it is applied. Tests use it to see what launch builds.
+	PolicyHook func(sandbox.Policy)
+	TrustStore *trust.Store // override for testing (default: trust.DefaultStore())
 	// Auth selects API credential injection (default) or native login,
 	// which injects no provider credentials.
 	Auth AuthMode
@@ -624,6 +627,9 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 				Path: binary,
 				Args: append([]string{binary}, extraArgs...),
 				Env:  env,
+			}
+			if l.PolicyHook != nil {
+				l.PolicyHook(*policy)
 			}
 			sb := sandbox.NewSandbox()
 			if err := sb.Apply(cmd, *policy, rtDir.Path()); err != nil {

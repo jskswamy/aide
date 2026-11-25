@@ -1,0 +1,42 @@
+{
+  "Guards": [
+    "base",
+    "system-runtime",
+    "network",
+    "filesystem",
+    "git-integration",
+    "keychain",
+    "node-toolchain",
+    "nix-toolchain",
+    "project-secrets",
+    "dev-credentials",
+    "aide-secrets"
+  ],
+  "CustomGuards": {},
+  "AgentModule": null,
+  "ProjectRoot": "$CWD",
+  "RuntimeDir": "",
+  "TempDir": "$TMP",
+  "Env": null,
+  "Network": "unrestricted",
+  "AllowPorts": null,
+  "DenyPorts": null,
+  "SSHPorts": null,
+  "ExtraDenied": null,
+  "ExtraWritable": [
+    "$HOME/out",
+    "$HOME/go"
+  ],
+  "ExtraReadable": [
+    "$HOME/data"
+  ],
+  "ExtraAllow": null,
+  "HomeDir": "$HOME",
+  "AllowSubprocess": true,
+  "CleanEnv": false,
+  "EnvAllow": [
+    "GOPATH",
+    "GOROOT",
+    "GOBIN"
+  ]
+}

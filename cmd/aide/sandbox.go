@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -782,10 +783,10 @@ func sandboxAllowCmd() *cobra.Command {
 	var contextName string
 	var global bool
 	var write bool
-	var noAgentGrant bool
+	var noAgentGrant, remove bool
 	cmd := &cobra.Command{
 		Use:          "allow <path>",
-		Short:        "Add a path to readable_extra or writable_extra (project-level by default)",
+		Short:        "Add a path to readable_extra or writable_extra, or --remove one (project-level by default)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -800,6 +801,9 @@ func sandboxAllowCmd() *cobra.Command {
 				} else {
 					sp.ReadableExtra = append(sp.ReadableExtra, path)
 				}
+			}
+			if remove {
+				return removeAllowed(cmd, global, contextName, path, write, listName)
 			}
 			if err := runScopedMutation(cmd.OutOrStdout(), global, contextName, scopedMutation{
 				contextMutate: func(ctx *config.Context) error {
@@ -830,7 +834,50 @@ func sandboxAllowCmd() *cobra.Command {
 	addProfileFlag(cmd, &contextName)
 	cmd.Flags().BoolVar(&write, "write", false, "add to writable_extra instead of readable_extra")
 	cmd.Flags().BoolVar(&noAgentGrant, "no-agent-grant", false, "skip granting this path in the agent's own permission store")
+	cmd.Flags().BoolVar(&remove, "remove", false, "remove the path from readable_extra (or writable_extra with --write) instead of adding it")
 	return cmd
+}
+
+// removeAllowed removes one exact entry from a profile's own sandbox
+// block or the project's. It changes config only: the agent's
+// permission store keeps the path, since a broader rule may still grant
+// it. A profile using a named sandbox is left alone.
+func removeAllowed(cmd *cobra.Command, global bool, contextName, path string, write bool, listName string) error {
+	drop := func(sp *config.SandboxPolicy, where string) error {
+		list := &sp.ReadableExtra
+		if write {
+			list = &sp.WritableExtra
+		}
+		if !slices.Contains(*list, path) {
+			return fmt.Errorf("%s is not in %s %s", path, where, listName)
+		}
+		*list = display.RemoveFromSlice(*list, path)
+		return nil
+	}
+	return runScopedMutation(cmd.OutOrStdout(), global, contextName, scopedMutation{
+		contextMutate: func(ctx *config.Context) error {
+			if ctx.Sandbox != nil && ctx.Sandbox.ProfileName != "" {
+				return fmt.Errorf("the profile uses the named sandbox %q; remove the path with: aide sandbox edit %s --remove-readable|--remove-writable %s",
+					ctx.Sandbox.ProfileName, ctx.Sandbox.ProfileName, path)
+			}
+			if ctx.Sandbox == nil || ctx.Sandbox.Inline == nil {
+				return fmt.Errorf("%s is not in the profile's %s", path, listName)
+			}
+			return drop(ctx.Sandbox.Inline, "the profile's")
+		},
+		projectMutate: func(po *config.ProjectOverride) error {
+			if po.Sandbox == nil {
+				return fmt.Errorf("%s is not in the project's %s", path, listName)
+			}
+			return drop(po.Sandbox, "the project's")
+		},
+		successGlobal: func(ctxName string) string {
+			return fmt.Sprintf("Removed %s from %s for context %q (global)", path, listName, ctxName)
+		},
+		successProject: func(poPath string) string {
+			return fmt.Sprintf("Removed %s from %s in project (%s)", path, listName, poPath)
+		},
+	})
 }
 
 func sandboxResetCmd() *cobra.Command {

@@ -1010,7 +1010,7 @@ aide sandbox remove strict
 ### aide sandbox allow
 
 ```
-aide sandbox allow <path> [--write] [--profile name]
+aide sandbox allow <path> [--write] [--remove] [--profile name]
 ```
 
 Adds a path to `readable_extra` (default) or `writable_extra` for a profile's
@@ -1021,6 +1021,7 @@ Claude), the path is also granted in the agent's own permission store; pass
 | Flag | Description |
 |------|-------------|
 | `--write` | Add to writable_extra instead of readable_extra |
+| `--remove` | Remove the exact path from readable_extra (or writable_extra with `--write`) instead of adding it. Changes config only; the agent's permission store keeps the path. A profile using a named sandbox is left alone: use `aide sandbox edit <name> --remove-readable` or `--remove-writable` |
 | `--profile <name>` | Target profile (default: CWD-matched) |
 | `--no-agent-grant` | Skip granting/revoking this path in the agent's own permission store (e.g. Claude's additionalDirectories) |
 

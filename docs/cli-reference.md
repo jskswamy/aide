@@ -311,7 +311,7 @@ aide validate
 ## aide doctor
 
 ```
-aide doctor [--profile <name>] [--format human|json]
+aide doctor [--profile <name>] [--fix] [--format human|json]
 ```
 
 Reports what launch would use in the current directory (profile and why it
@@ -325,6 +325,14 @@ It changes nothing, never prompts and never decrypts secrets. It exits
 non-zero only when it finds an error, as `aide validate` does. Inside an aide
 session (`AIDE_SANDBOX=on`) the report says so; on Linux the sandbox hides the
 config, and the report asks you to run `aide doctor` in a separate terminal.
+
+`--fix` offers each finding's command one at a time, shows what it changes
+and its side effects (and whether it widens what the agent can reach), and
+runs it only after a yes. Without a terminal it runs nothing. After each fix
+the checks run again; the first failing fix stops the run. `--fix` refuses to
+run inside an aide session, when the config does not load, on the legacy
+single-file layout, or while a gateway migration is pending. The report then
+lists each fix as `ran`, `failed`, `skipped` or `not-run`.
 
 `--format json` prints the report with a `schema_version` for scripts and the
 Claude Code plugin. To explain a run that already failed, use

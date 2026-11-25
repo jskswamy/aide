@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"cmp"
 	"errors"
 	"fmt"
@@ -27,8 +28,21 @@ import (
 	"github.com/jskswamy/aide/internal/secrets"
 )
 
+// doctorFixHooks are what --fix uses to ask and to run a fix; tests
+// replace them.
+var doctorFixHooks = struct {
+	interactive func() bool
+	ask         func(doctor.Finding) bool
+	run         func(argv []string) (string, int, error)
+}{
+	interactive: func() bool { return isInteractiveTerminal(os.Stdin) && isInteractiveTerminal(os.Stderr) },
+	ask:         askFix,
+	run:         runFixCommand,
+}
+
 func doctorCmd() *cobra.Command {
 	var sf selectionFlags
+	var fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report what is wrong with aide's setup here, and how to fix it",
@@ -46,8 +60,21 @@ To explain a run that already failed, use aide --diagnose.`,
 				return err
 			}
 			r := runDoctor(cmd, &sf)
+			var refused error
+			if fix {
+				if refused = fixRefusal(r); refused == nil {
+					r.FixResults = doctor.ApplyFixes(r, doctorFixHooks.interactive(), doctorFixHooks.ask, doctorFixHooks.run,
+						func() doctor.Report { return runDoctor(cmd, &sf) })
+					results := r.FixResults
+					r = runDoctor(cmd, &sf)
+					r.FixResults = results
+				}
+			}
 			if err := output.Emit(cmd.OutOrStdout(), format, r, r.RenderText); err != nil {
 				return err
+			}
+			if refused != nil {
+				return refused
 			}
 			if r.HasErrors() {
 				return fmt.Errorf("doctor found %d error(s)", r.Counts.Errors)
@@ -56,7 +83,57 @@ To explain a run that already failed, use aide --diagnose.`,
 		},
 	}
 	sf.register(cmd, agentFlagUsage)
+	cmd.Flags().BoolVar(&fix, "fix", false, "run each finding's fix command, asking before each one")
 	return cmd
+}
+
+// fixRefusal says why --fix must not run at all.
+func fixRefusal(r doctor.Report) error {
+	switch {
+	case r.InsideSandbox:
+		return errors.New("--fix refused: running inside an aide sandbox, which cannot write the config; run aide doctor --fix in a separate terminal")
+	case r.Directory == nil || r.Directory.Profile == "":
+		return errors.New("--fix refused: the config does not load")
+	case r.LegacyLayout:
+		return errors.New("--fix refused: the config uses the legacy single-file layout; run aide config migrate first")
+	case r.GatewayMigration:
+		return errors.New("--fix refused: a gateway migration is pending; run aide once to migrate first")
+	}
+	return nil
+}
+
+// askFix shows one fix and asks for a yes on the terminal.
+func askFix(f doctor.Finding) bool {
+	fmt.Fprintf(os.Stderr, "\n%s\n  run: %s\n", f.Message, strings.Join(f.Fix.Argv, " "))
+	if f.Source != "" {
+		fmt.Fprintf(os.Stderr, "  changes: %s (%s)\n", f.Source, f.Layer)
+	}
+	for _, s := range f.Fix.SideEffects {
+		fmt.Fprintf(os.Stderr, "  also: %s\n", s)
+	}
+	if f.WidensAccess {
+		fmt.Fprintln(os.Stderr, "  this widens what the agent can reach")
+	}
+	fmt.Fprint(os.Stderr, "Apply? [y/N] ")
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	return strings.EqualFold(strings.TrimSpace(line), "y")
+}
+
+// runFixCommand runs an aide command with this binary, stdin closed and
+// output captured.
+func runFixCommand(argv []string) (string, int, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", -1, err
+	}
+	c := exec.Command(self, argv[1:]...)
+	c.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "AIDE_FORMAT=") })
+	out, err := c.CombinedOutput()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return string(out), exitErr.ExitCode(), nil
+	}
+	return string(out), 0, err
 }
 
 // runDoctor builds the report. It never fails: problems, including a
@@ -84,6 +161,7 @@ func runDoctor(cmd *cobra.Command, sf *selectionFlags) doctor.Report {
 	}
 	r := doctor.NewReport(version, dir, findings)
 	r.InsideSandbox = inside
+	r.LegacyLayout, r.GatewayMigration = cfg.LegacyMonolithic, cfg.NeedsGatewayMigration
 	return r
 }
 

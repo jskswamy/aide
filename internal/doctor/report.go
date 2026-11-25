@@ -12,12 +12,15 @@ const SchemaVersion = 1
 
 // Report is what aide doctor prints, as text or JSON.
 type Report struct {
-	SchemaVersion int        `json:"schema_version"`
-	AideVersion   string     `json:"aide_version"`
-	InsideSandbox bool       `json:"inside_sandbox"`
-	Directory     *Directory `json:"directory"` // nil when the config did not load
-	Counts        Counts     `json:"counts"`
-	Findings      []Finding  `json:"findings"`
+	SchemaVersion int         `json:"schema_version"`
+	AideVersion   string      `json:"aide_version"`
+	InsideSandbox bool        `json:"inside_sandbox"`
+	Directory     *Directory  `json:"directory"` // nil when the config did not load
+	Counts        Counts      `json:"counts"`
+	Findings      []Finding   `json:"findings"`
+	FixResults    []FixResult `json:"fix_results"`
+	// Why --fix must not write; not part of the JSON.
+	LegacyLayout, GatewayMigration bool `json:"-"`
 }
 
 // Counts tallies findings by severity.
@@ -60,7 +63,7 @@ var severityRank = map[Severity]int{SeverityError: 0, SeverityWarning: 1, Severi
 // NewReport counts and orders findings: this directory's profile first,
 // then other profiles; within each, worst first.
 func NewReport(version string, dir *Directory, findings []Finding) Report {
-	r := Report{SchemaVersion: SchemaVersion, AideVersion: version, Directory: dir, Findings: append([]Finding{}, findings...)}
+	r := Report{SchemaVersion: SchemaVersion, AideVersion: version, Directory: dir, Findings: append([]Finding{}, findings...), FixResults: []FixResult{}}
 	for i := range r.Findings {
 		fx := &r.Findings[i].Fix
 		fx.Argv, fx.SideEffects, fx.Steps = nonNil(fx.Argv), nonNil(fx.SideEffects), nonNil(fx.Steps)
@@ -152,6 +155,12 @@ func (r Report) RenderText(w io.Writer) error {
 		}
 		for _, s := range f.Fix.Steps {
 			fmt.Fprintf(&b, "      → %s\n", s)
+		}
+	}
+	if len(r.FixResults) > 0 {
+		b.WriteString("\nFixes\n")
+		for _, f := range r.FixResults {
+			fmt.Fprintf(&b, "  %s %s: %s%s\n", f.ID, f.Subject, f.Status, paren(f.Reason))
 		}
 	}
 	_, err := io.WriteString(w, b.String())

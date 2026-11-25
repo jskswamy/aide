@@ -53,6 +53,7 @@
       "widens_access": true
     }
   ],
+  "fix_results": [],
   "inside_sandbox": false,
   "schema_version": 1
 }

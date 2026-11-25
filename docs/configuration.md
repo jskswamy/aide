@@ -1018,7 +1018,39 @@ aide sync                                               # write to agent config
 ## Viewing and Editing
 
 ```
-aide config show               # print all global config files (with YAML syntax highlighting on TTY)
-aide config edit               # open $EDITOR on config.yaml, validate after save
-aide config migrate [--write]  # split a single-file config.yaml into modular files
+aide config show                      # print all global config files (with YAML syntax highlighting on TTY)
+aide config edit                      # open $EDITOR on config.yaml, validate after save
+aide config migrate [--write]         # split a single-file config.yaml into modular files
+aide config schema show <kind>        # print an embedded JSON Schema to stdout
+aide config schema export [--dir]     # export all JSON Schemas locally
+aide config schema stamp [flags]      # add yaml-language-server $schema headers to existing files
 ```
+
+---
+
+## Editor Schema & Autocomplete
+
+`aide` ships Draft 2020-12 JSON Schemas for all five YAML configuration file shapes. Adding a `yaml-language-server` modeline at the top of a file prevents SchemaStore false positives (such as `profiles/*.yaml` matching unrelated schemas) and enables autocomplete, hover docs, and validation in Neovim, VS Code, Helix, Zed, and other YAML LSP editors:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/jskswamy/aide/main/schemas/profile.schema.json
+agent: claude
+capabilities:
+  - k8s
+```
+
+| File | Schema Kind | Hosted URL (`main`) |
+|------|-------------|---------------------|
+| `~/.config/aide/config.yaml` | `config` | `https://raw.githubusercontent.com/jskswamy/aide/main/schemas/config.schema.json` |
+| `~/.config/aide/profiles/<name>.yaml` | `profile` | `https://raw.githubusercontent.com/jskswamy/aide/main/schemas/profile.schema.json` |
+| `~/.config/aide/sandbox.yaml` | `sandbox` | `https://raw.githubusercontent.com/jskswamy/aide/main/schemas/sandbox.schema.json` |
+| `~/.config/aide/provisioning.yaml` | `provisioning` | `https://raw.githubusercontent.com/jskswamy/aide/main/schemas/provisioning.schema.json` |
+| `.aide.yaml` | `project` | `https://raw.githubusercontent.com/jskswamy/aide/main/schemas/project.schema.json` |
+
+Version-pinned release assets are also published on each GitHub Release at `https://github.com/jskswamy/aide/releases/download/<tag>/<kind>.schema.json` (and `releases/latest/download/<kind>.schema.json`).
+
+**Automatic headers & preservation:** Whenever `aide` writes a new or modified config file (or migrates a config), it prepends the default `# yaml-language-server: $schema=...` header if none is present. Existing custom `# yaml-language-server:` headers are always preserved.
+
+**Dotfiles / Nix & offline use:**
+- For configs stored in dotfiles, Nix/Home Manager repos, or shared `.aide.yaml` files, the hosted URL is portable across machines and teammates.
+- For offline editing, run `aide config schema export` (writes to `~/.config/aide/schemas/`) or `aide config schema stamp --local` to export and stamp percent-encoded `file://` URIs onto existing config files.

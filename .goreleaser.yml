@@ -27,6 +27,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - schemas/*.schema.json
 
 checksum:
   name_template: "sha256sums.txt"
@@ -42,3 +43,5 @@ release:
     owner: jskswamy
     name: aide
   header: '{{ readFile "RELEASE_NOTES.md" }}'
+  extra_files:
+    - glob: schemas/*.schema.json

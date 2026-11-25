@@ -1335,6 +1335,52 @@ aide config migrate
 aide config migrate --write
 ```
 
+### aide config schema
+
+Inspect, export, or stamp embedded JSON Schemas (Draft 2020-12) for `aide`'s five YAML configuration file shapes (`config`, `profile`, `sandbox`, `provisioning`, `project`).
+
+#### `aide config schema show`
+
+```
+aide config schema show <kind>
+```
+
+Prints the embedded JSON Schema for `<kind>` (`config`, `profile`, `sandbox`, `provisioning`, or `project`) to stdout.
+
+#### `aide config schema export`
+
+```
+aide config schema export [--dir <path>]
+```
+
+Writes all five embedded `*.schema.json` files atomically to `<path>` (default: `~/.config/aide/schemas`). Supports `--format json`.
+
+| Flag | Description |
+|------|-------------|
+| `--dir <path>` | Target directory (default: `~/.config/aide/schemas`) |
+
+#### `aide config schema stamp`
+
+```
+aide config schema stamp [--local] [--dir <path>] [--project] [--force]
+```
+
+Prepends `# yaml-language-server: $schema=...` to existing global config files (`config.yaml`, `sandbox.yaml`, `provisioning.yaml`, `profiles/*.yaml`). Files that already have a `# yaml-language-server:` header are skipped unless `--force` is set. When `--project` is passed and `.aide.yaml` is already trusted, its trust entry is updated after stamping (untrusted files are never auto-trusted). Supports `--format json`.
+
+| Flag | Description |
+|------|-------------|
+| `--local` | Export schemas locally and stamp `file://` URIs instead of hosted GitHub URLs |
+| `--dir <path>` | Local export directory when used with `--local` (default: `~/.config/aide/schemas`) |
+| `--project` | Also stamp the current project's `.aide.yaml` if present |
+| `--force` | Replace existing `# yaml-language-server:` directives |
+
+```
+aide config schema show profile
+aide config schema export
+aide config schema stamp --project
+aide config schema stamp --local --force
+```
+
 ---
 
 ## aide statusline

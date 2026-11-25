@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jskswamy/aide/schemas"
 )
 
 func TestWriteConfig_FullFormat(t *testing.T) {
@@ -637,5 +639,63 @@ func TestWriteConfigTo_SynthesizedDefaultSkipVsMaterialize(t *testing.T) {
 	}
 	if _, err := os.Stat(ProfileFilePath(dir, DefaultProfileName)); err != nil {
 		t.Errorf("expected profiles/default.yaml written when mutated, stat err = %v", err)
+	}
+}
+
+func TestWriteConfigTo_SchemaModelineInjectAndPreserve(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := &Config{
+		ProfileSchema:  true,
+		DefaultContext: "work",
+		Agents:         map[string]AgentDef{"claude": {Binary: "claude"}},
+		Contexts: map[string]Context{
+			"work": {Agent: "claude", Icon: "💼", Env: map[string]string{"A": "1"}},
+		},
+		NeverAllow: []string{"~/.ssh"},
+		MCPServers: MCPServerMap{"srv": {Command: "npx"}},
+	}
+	if err := WriteConfigTo(cfg, path); err != nil {
+		t.Fatalf("WriteConfigTo: %v", err)
+	}
+
+	files := map[string]schemas.Kind{
+		path:                             schemas.KindConfig,
+		ProfileFilePath(dir, "work"):     schemas.KindProfile,
+		filepath.Join(dir, "sandbox.yaml"):      schemas.KindSandbox,
+		filepath.Join(dir, "provisioning.yaml"): schemas.KindProvisioning,
+	}
+	for p, kind := range files {
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", p, err)
+		}
+		wantPrefix := schemas.Modeline(schemas.DefaultURL(kind)) + "\n"
+		if !strings.HasPrefix(string(got), wantPrefix) {
+			t.Errorf("%s missing expected modeline prefix %q:\n%s", filepath.Base(p), wantPrefix, got)
+		}
+	}
+
+	// Custom modeline on profiles/work.yaml must survive even when the first YAML key is removed.
+	workPath := ProfileFilePath(dir, "work")
+	customHeader := "# yaml-language-server: $schema=file:///custom/profile.schema.json"
+	initial := customHeader + "\nicon: \"💼\"\nagent: claude\n"
+	if err := os.WriteFile(workPath, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Contexts["work"] = Context{Agent: "claude", Env: map[string]string{"A": "2"}}
+	if err := WriteConfigTo(cfg, path); err != nil {
+		t.Fatalf("WriteConfigTo (preserve custom): %v", err)
+	}
+	after, err := os.ReadFile(workPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(after), customHeader+"\n") {
+		t.Errorf("custom modeline was not preserved after first key removal:\n%s", after)
+	}
+	if strings.Count(string(after), "# yaml-language-server:") != 1 {
+		t.Errorf("expected exactly 1 modeline, got:\n%s", after)
 	}
 }

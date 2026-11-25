@@ -8,6 +8,7 @@ import (
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/trust"
 	"github.com/jskswamy/aide/internal/yamlnode"
+	"github.com/jskswamy/aide/schemas"
 )
 
 // WriteProjectOverride writes the given ProjectOverride to the given path atomically.
@@ -17,7 +18,15 @@ func WriteProjectOverride(path string, po *ProjectOverride) error {
 		return fmt.Errorf("marshaling project override: %w", err)
 	}
 	if existing, err := os.ReadFile(path); err == nil {
+		existingModeline, hadModeline := schemas.ExtractModeline(existing)
 		data = yamlnode.Merge(existing, data)
+		if hadModeline {
+			data = schemas.EnsureModelineLine(data, existingModeline)
+		} else {
+			data = schemas.EnsureModeline(data, schemas.DefaultURL(schemas.KindProject))
+		}
+	} else {
+		data = schemas.EnsureModeline(data, schemas.DefaultURL(schemas.KindProject))
 	}
 	return fsutil.AtomicWrite(path, data)
 }

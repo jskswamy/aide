@@ -11,6 +11,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/yamlnode"
+	"github.com/jskswamy/aide/schemas"
 	"gopkg.in/yaml.v3"
 )
 
@@ -114,14 +115,14 @@ func WriteConfigTo(cfg *Config, path string) error {
 	}
 
 	// 2. Write core config.yaml first (validates directory permissions before side effects).
-	if err := writeIfChanged(path, coreData, sameStructYAML[CoreConfig](coreData)); err != nil {
+	if err := writeIfChanged(path, schemas.KindConfig, coreData, sameStructYAML[CoreConfig](coreData)); err != nil {
 		return err
 	}
 
 	// 3. Write or remove sandbox.yaml.
 	sbxPath := filepath.Join(configDir, "sandbox.yaml")
 	if len(sbxData) > 0 {
-		if err := writeIfChanged(sbxPath, sbxData, sameStructYAML[SandboxFile](sbxData)); err != nil {
+		if err := writeIfChanged(sbxPath, schemas.KindSandbox, sbxData, sameStructYAML[SandboxFile](sbxData)); err != nil {
 			return err
 		}
 	} else if err := removeIfExists(sbxPath); err != nil {
@@ -131,7 +132,7 @@ func WriteConfigTo(cfg *Config, path string) error {
 	// 4. Write or remove provisioning.yaml.
 	provPath := filepath.Join(configDir, "provisioning.yaml")
 	if len(provData) > 0 {
-		if err := writeIfChanged(provPath, provData, sameStructYAML[ProvisioningFile](provData)); err != nil {
+		if err := writeIfChanged(provPath, schemas.KindProvisioning, provData, sameStructYAML[ProvisioningFile](provData)); err != nil {
 			return err
 		}
 	} else if err := removeIfExists(provPath); err != nil {
@@ -145,7 +146,7 @@ func WriteConfigTo(cfg *Config, path string) error {
 			continue
 		}
 		pPath := ProfileFilePath(configDir, name)
-		if err := writeIfChanged(pPath, data, sameProfileYAML(name, data)); err != nil {
+		if err := writeIfChanged(pPath, schemas.KindProfile, data, sameProfileYAML(name, data)); err != nil {
 			return err
 		}
 	}
@@ -200,16 +201,24 @@ func validateConfigStruct(cfg *Config, home, what string) error {
 	return nil
 }
 
-func writeIfChanged(path string, data []byte, same func(existing []byte) bool) error {
+func writeIfChanged(path string, kind schemas.Kind, data []byte, same func(existing []byte) bool) error {
 	existing, err := os.ReadFile(path)
 	if err == nil {
 		if bytes.Equal(existing, data) || (same != nil && same(existing)) {
 			return nil
 		}
+		existingModeline, hadModeline := schemas.ExtractModeline(existing)
 		if same != nil {
 			existing = bytes.ReplaceAll(existing, []byte("harnesses:"), []byte("agents:"))
 			data = yamlnode.Merge(existing, data)
 		}
+		if hadModeline {
+			data = schemas.EnsureModelineLine(data, existingModeline)
+		} else {
+			data = schemas.EnsureModeline(data, schemas.DefaultURL(kind))
+		}
+	} else {
+		data = schemas.EnsureModeline(data, schemas.DefaultURL(kind))
 	}
 	return fsutil.AtomicWrite(path, data)
 }

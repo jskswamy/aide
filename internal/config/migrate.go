@@ -17,6 +17,7 @@ import (
 	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/statedir"
 	"github.com/jskswamy/aide/internal/yamlnode"
+	"github.com/jskswamy/aide/schemas"
 )
 
 // MigrateOptions tunes MigrateProfiles.
@@ -89,11 +90,11 @@ func ApplyMigrationSplit(configDir string, m *Migration) error {
 		return m.SplitErr
 	}
 	if !m.SplitLayout || len(m.SplitFiles) == 0 {
-		return writeIfChanged(filepath.Join(configDir, "config.yaml"), m.Output, nil)
+		return writeIfChanged(filepath.Join(configDir, "config.yaml"), schemas.KindConfig, m.Output, nil)
 	}
 	for _, rel := range slices.Sorted(maps.Keys(m.SplitFiles)) {
 		target := filepath.Join(configDir, filepath.FromSlash(rel))
-		if err := writeIfChanged(target, m.SplitFiles[rel], nil); err != nil {
+		if err := writeIfChanged(target, schemas.KindForSplitRel(rel), m.SplitFiles[rel], nil); err != nil {
 			return err
 		}
 	}

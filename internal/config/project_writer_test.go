@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jskswamy/aide/internal/trust"
+	"github.com/jskswamy/aide/schemas"
 	"gopkg.in/yaml.v3"
 )
 
@@ -199,5 +200,41 @@ func TestWriteProjectOverrideWithTrust_NewFile(t *testing.T) {
 	content, _ := os.ReadFile(path)
 	if store.Check(path, content) != trust.Untrusted {
 		t.Error("new file should not be auto-trusted")
+	}
+}
+
+func TestWriteProjectOverride_SchemaModelineInjectAndPreserve(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ProjectConfigFileName)
+
+	if err := WriteProjectOverride(path, &ProjectOverride{Agent: "claude", Capabilities: []string{"go"}}); err != nil {
+		t.Fatalf("WriteProjectOverride: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrefix := schemas.Modeline(schemas.DefaultURL(schemas.KindProject)) + "\n"
+	if !strings.HasPrefix(string(got), wantPrefix) {
+		t.Errorf(".aide.yaml missing expected modeline prefix %q:\n%s", wantPrefix, got)
+	}
+
+	// Custom modeline must survive even when the first YAML key ("agent") is removed.
+	customHeader := "# yaml-language-server: $schema=file:///custom/project.schema.json"
+	if err := os.WriteFile(path, []byte(customHeader+"\nagent: claude\ncapabilities:\n  - go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteProjectOverride(path, &ProjectOverride{Capabilities: []string{"go", "docker"}}); err != nil {
+		t.Fatalf("WriteProjectOverride (preserve custom): %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(after), customHeader+"\n") {
+		t.Errorf("custom modeline lost after first key removal:\n%s", after)
+	}
+	if strings.Count(string(after), "# yaml-language-server:") != 1 {
+		t.Errorf("expected exactly 1 modeline, got:\n%s", after)
 	}
 }

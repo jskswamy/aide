@@ -76,3 +76,39 @@ func TestFilterEnv_PreservesProfileAgentConfigDirKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterEnv_PreservesNonCredentialPolicyEnvAllow(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"XDG_DATA_HOME=/home/user/.custom-share",
+		"XDG_STATE_HOME=/home/user/.custom-state",
+		"TERMINAL_BROWSER_INTEROP_DIR=/home/user/.tb-interop",
+		"AWS_SECRET_ACCESS_KEY=secret-should-drop",
+		"ANTHROPIC_API_KEY=sk-ant-should-drop",
+		"UNRELATED_VAR=drop-me",
+	}
+	filtered := filterEnv(env, Policy{
+		EnvAllow: []string{
+			"XDG_DATA_HOME",
+			"XDG_STATE_HOME",
+			"TERMINAL_BROWSER_INTEROP_DIR",
+			"AWS_SECRET_ACCESS_KEY",
+			"ANTHROPIC_API_KEY",
+		},
+	})
+	got := map[string]string{}
+	for _, e := range filtered {
+		k, v, _ := strings.Cut(e, "=")
+		got[k] = v
+	}
+	for _, keep := range []string{"PATH", "XDG_DATA_HOME", "XDG_STATE_HOME", "TERMINAL_BROWSER_INTEROP_DIR"} {
+		if got[keep] == "" {
+			t.Errorf("expected %s to survive CleanEnv, got %v", keep, filtered)
+		}
+	}
+	for _, drop := range []string{"AWS_SECRET_ACCESS_KEY", "ANTHROPIC_API_KEY", "UNRELATED_VAR"} {
+		if _, ok := got[drop]; ok {
+			t.Errorf("expected %s to be stripped under CleanEnv, got %v", drop, filtered)
+		}
+	}
+}

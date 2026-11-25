@@ -38,7 +38,7 @@ func TestFilterEssentialEnv(t *testing.T) {
 		"RANDOM_VAR=value",
 		"TERM=xterm",
 	}
-	got := filterEssentialEnv(env)
+	got := filterEssentialEnv(env, nil)
 	want := map[string]bool{
 		"PATH=/usr/bin":   true,
 		"HOME=/home/user": true,
@@ -56,9 +56,9 @@ func TestFilterEssentialEnv(t *testing.T) {
 }
 
 func TestFilterEssentialEnv_Empty(t *testing.T) {
-	got := filterEssentialEnv(nil)
+	got := filterEssentialEnv(nil, nil)
 	if len(got) != 0 {
-		t.Errorf("filterEssentialEnv(nil) = %v, want empty", got)
+		t.Errorf("filterEssentialEnv(nil, nil) = %v, want empty", got)
 	}
 }
 

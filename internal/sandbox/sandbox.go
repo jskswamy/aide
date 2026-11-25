@@ -99,6 +99,10 @@ type Policy struct {
 	// When true the agent starts with only aide-injected env vars
 	// (DD-17). When false the agent inherits the full shell env.
 	CleanEnv bool
+
+	// EnvAllow holds capability-declared environment variable names that
+	// should survive CleanEnv filtering (still subject to credential scrubbing).
+	EnvAllow []string
 }
 
 // NetworkMode describes the network access policy for a sandboxed agent.
@@ -559,6 +563,9 @@ func filterEnv(env []string, policy Policy) []string {
 		"TMPDIR": true, "XDG_RUNTIME_DIR": true, "XDG_CONFIG_HOME": true,
 	}
 	for _, k := range agentEnvKeys(policy) {
+		essential[k] = true
+	}
+	for _, k := range policy.EnvAllow {
 		essential[k] = true
 	}
 	credentials := envscrub.Credentials()

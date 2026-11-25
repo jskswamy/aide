@@ -515,7 +515,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// re-admits the ambient cloud variables it grants.
 	baseEnv := os.Environ()
 	if cleanEnv {
-		baseEnv = filterEssentialEnv(baseEnv)
+		baseEnv = filterEssentialEnv(baseEnv, capOverrides.EnvAllow)
 	}
 	permitted := slices.Clone(capOverrides.EnvAllow)
 	for _, b := range credPlan.Bindings {
@@ -589,8 +589,10 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 			return fmt.Errorf("building sandbox policy: %w", err)
 		}
 		if policy != nil {
-			// 12b. Propagate merged env so modules can inspect env vars.
+			// 12b. Propagate merged env and capability EnvAllow so modules and
+			// CleanEnv filtering see the active session's allowed keys.
 			policy.Env = env
+			policy.EnvAllow = capOverrides.EnvAllow
 			// 12c. Set agent module for sandbox profile
 			policy.AgentModule = ResolveAgentModule(cfg.HarnessOf(agentName))
 			// 12d. Apply agent-module env overrides (e.g. claude's
@@ -867,17 +869,25 @@ func profileLabel(cfg *config.Config, name string) string {
 	return fmt.Sprintf("profile (context) %q", name)
 }
 
-// filterEssentialEnv keeps only essential environment variables.
-func filterEssentialEnv(env []string) []string {
+// filterEssentialEnv keeps only essential environment variables plus
+// non-credential keys from extraAllowed (e.g. capability EnvAllow).
+// Credential names from envscrub.Credentials() are always stripped under
+// clean_env, matching sandbox.filterEnv so --no-sandbox --clean-env cannot
+// leak ambient credentials from other active capabilities.
+func filterEssentialEnv(env, extraAllowed []string) []string {
 	essential := map[string]bool{
 		"PATH": true, "HOME": true, "USER": true,
 		"SHELL": true, "TERM": true, "LANG": true,
 		"TMPDIR": true, "XDG_RUNTIME_DIR": true, "XDG_CONFIG_HOME": true,
 	}
+	for _, k := range extraAllowed {
+		essential[k] = true
+	}
+	credentials := envscrub.Credentials()
 	var filtered []string
 	for _, e := range env {
 		k, _, _ := strings.Cut(e, "=")
-		if essential[k] {
+		if essential[k] && !credentials.Matches(k) {
 			filtered = append(filtered, e)
 		}
 	}

@@ -223,6 +223,7 @@ type landlockPolicyJSON struct {
 	ExtraAllow      []string                            `json:"ExtraAllow,omitempty"`
 	AllowSubprocess bool                                `json:"AllowSubprocess"`
 	CleanEnv        bool                                `json:"CleanEnv"`
+	EnvAllow        []string                            `json:"EnvAllow,omitempty"`
 	AgentReadable   []string                            `json:"AgentReadable,omitempty"`
 	AgentWritable   []string                            `json:"AgentWritable,omitempty"`
 }
@@ -246,6 +247,7 @@ func policyToJSON(p Policy) (landlockPolicyJSON, error) {
 		ExtraAllow:      p.ExtraAllow,
 		AllowSubprocess: p.AllowSubprocess,
 		CleanEnv:        p.CleanEnv,
+		EnvAllow:        p.EnvAllow,
 	}
 	if p.AgentModule != nil {
 		// Re-evaluate the module so we can serialise its per-platform path
@@ -298,6 +300,7 @@ func policyFromJSON(j landlockPolicyJSON) Policy {
 		ExtraAllow:      j.ExtraAllow,
 		AllowSubprocess: j.AllowSubprocess,
 		CleanEnv:        j.CleanEnv,
+		EnvAllow:        j.EnvAllow,
 	}
 }
 

@@ -26,6 +26,7 @@ import (
 	"github.com/jskswamy/aide/internal/output"
 	"github.com/jskswamy/aide/internal/sandbox"
 	"github.com/jskswamy/aide/internal/secrets"
+	"github.com/jskswamy/aide/pkg/seatbelt/guards"
 )
 
 // doctorFixHooks are what --fix uses to ask and to run a fix; tests
@@ -263,6 +264,12 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 	}
 
 	if store := rc.Context.Secret; store != "" {
+		// The recipient list is sops metadata, readable without decrypting.
+		if keys, err := secrets.ListRecipients(config.ResolveSecretPath(store)); err == nil && len(keys) == 1 {
+			add("secret.single-recipient", store, doctor.SeverityTip,
+				fmt.Sprintf("secret store %q is encrypted for one key only; losing it loses the secrets", store),
+				fmt.Sprintf("Add a second key, such as a teammate's or a backup: aide secrets rotate %s --add-key <age-public-key>", store))
+		}
 		if keys, known := secrets.KeyNames(config.ResolveSecretPath(store)); known {
 			for name, val := range rc.Context.Env {
 				for _, m := range secretRef.FindAllStringSubmatch(val, -1) {
@@ -319,6 +326,7 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 			add("sandbox.policy-failed", rc.Name, doctor.SeverityError, fmt.Sprintf("building the sandbox policy fails: %v; launch would fail", err))
 		case pol != nil:
 			dir.Guards, dir.Network = pol.Guards, string(pol.Network)
+			here = append(here, sandboxTips(rc.Name, pol)...)
 		}
 		// Granted paths that do not exist are common and harmless; one
 		// tip covers them all.
@@ -407,6 +415,36 @@ func redundantAllows(cfg *config.Config, profile, home string) []doctor.Finding 
 		}
 		s := doctor.Scope{Profile: profile, Inherited: l.Source == config.LayerInherited, Source: homepath.Tilde(l.Path, home)}
 		out = append(out, doctor.RedundantAllows(l.Override.Sandbox, home, s)...)
+	}
+	return out
+}
+
+// sandboxTips suggests tightening a policy: unrestricted network and
+// opt-in guards that are available but off.
+func sandboxTips(profile string, pol *sandbox.Policy) []doctor.Finding {
+	var out []doctor.Finding
+	if pol.Network == "unrestricted" {
+		out = append(out, doctor.Finding{
+			ID: "sandbox.network-unrestricted", Subject: profile, Profile: profile, Severity: doctor.SeverityTip,
+			Message: "the agent's network is unrestricted, inbound and outbound",
+			Fix: doctor.Fix{Steps: []string{
+				"If it only needs web access: aide sandbox network outbound, then aide sandbox ports 443",
+				"If the network capability opened it, disable that instead: aide cap disable network",
+			}},
+		})
+	}
+	var off []string
+	for _, g := range guards.AllGuards() {
+		if g.Type() == "opt-in" && !slices.Contains(pol.Guards, g.Name()) {
+			off = append(off, g.Name())
+		}
+	}
+	if len(off) > 0 {
+		out = append(out, doctor.Finding{
+			ID: "sandbox.opt-in-guards", Subject: profile, Profile: profile, Severity: doctor.SeverityTip,
+			Message: "opt-in guards available but off: " + strings.Join(off, ", "),
+			Fix:     doctor.Fix{Steps: []string{"See what each protects with: aide sandbox guards", "Turn one on with: aide sandbox guard <name>"}},
+		})
 	}
 	return out
 }

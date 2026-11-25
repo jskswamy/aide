@@ -207,6 +207,9 @@ Findings with written steps have `widens_access: false`.
 | `selection.failed` | selection | error | n/a (steps) | — | No profile can be selected; steps: `aide which` |
 | `capability.suggested` | ResolveSandbox (markers) | tip | yes | capability | See item 7 |
 | `profile.match-tie` | `context.TiedMatches` | warning | n/a (steps) | tied profiles | Steps: make one rule more specific (`aide profile bind <profile> --scope repo`) |
+| `sandbox.network-unrestricted` | PolicyFromConfig | tip | n/a (steps) | profile | Steps: `aide sandbox network outbound`, `aide sandbox ports 443`, or `aide cap disable network` |
+| `sandbox.opt-in-guards` | `guards.AllGuards` | tip | n/a (steps) | profile | Steps: `aide sandbox guards`, `aide sandbox guard <name>` |
+| `secret.single-recipient` | `secrets.ListRecipients` (sops metadata, no decryption) | tip | n/a (steps) | store | Steps: `aide secrets rotate <store> --add-key <key>` |
 | `sandbox.default-policy` | doctor (no sandbox in profile or project) | tip | n/a (steps) | profile | Steps: `aide sandbox show`, then allow, deny or guard |
 
 Stage 2 adds `sandbox.redundant-allow` (tip, `widens_access: false`, fix per item 7). Each later check story adds its rows here with producer, severity, `widens_access` and fix; the AIDE-5mk stories cover overlapping match rules, no sandbox override, unrestricted network, guards worth enabling, single-recipient secrets and the variant cross-check.

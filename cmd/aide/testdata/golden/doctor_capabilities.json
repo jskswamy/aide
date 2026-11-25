@@ -1,7 +1,7 @@
 {
   "counts": {
     "errors": 0,
-    "tips": 1,
+    "tips": 2,
     "warnings": 0
   },
   "directory": {
@@ -51,6 +51,22 @@
       "severity": "tip",
       "subject": "git-remote",
       "widens_access": true
+    },
+    {
+      "fix": {
+        "argv": [],
+        "side_effects": [],
+        "steps": [
+          "See what each protects with: aide sandbox guards",
+          "Turn one on with: aide sandbox guard \u003cname\u003e"
+        ]
+      },
+      "id": "sandbox.opt-in-guards",
+      "message": "opt-in guards available but off: git-remote, ssh",
+      "profile": "work",
+      "severity": "tip",
+      "subject": "work",
+      "widens_access": false
     }
   ],
   "fix_results": [],

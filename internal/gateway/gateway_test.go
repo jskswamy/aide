@@ -435,46 +435,81 @@ func TestMaterialize_Claude(t *testing.T) {
 	if err != nil || st.State != StateSynced {
 		t.Fatalf("MaterializeHarness() = %+v, %v", st, err)
 	}
-	path := filepath.Join(f.dir("claude"), "cache", "gateway-models.json")
+	path := filepath.Join(f.dir("claude"), "cache", "aide-gateway-corp.json")
 	if st.FilePath != path {
 		t.Errorf("FilePath = %q, want %q", st.FilePath, path)
 	}
 	var doc struct {
-		BaseURL   string `json:"baseUrl"`
-		FetchedAt int64  `json:"fetchedAt"`
-		Models    []struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"display_name"`
-			Description string `json:"description"`
-		} `json:"models"`
+		ModelPicker struct {
+			ReplaceBuiltInOptions bool `json:"replaceBuiltInOptions"`
+			Options               []struct {
+				Model       string `json:"model"`
+				Label       string `json:"label"`
+				Description string `json:"description"`
+			} `json:"options"`
+		} `json:"modelPicker"`
 	}
 	if err := json.Unmarshal([]byte(readFile(t, path)), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.BaseURL != "https://gw.example.com" || doc.FetchedAt != f.cat.FetchedAt.UnixMilli() || len(doc.Models) != 2 {
+	if !doc.ModelPicker.ReplaceBuiltInOptions || len(doc.ModelPicker.Options) != 2 {
 		t.Errorf("doc = %+v", doc)
 	}
-	if doc.Models[0].Description != "corp · 200K context" || doc.Models[1].Description != "corp" {
-		t.Errorf("descriptions = %q, %q", doc.Models[0].Description, doc.Models[1].Description)
+	if doc.ModelPicker.Options[0].Model != "claude-sonnet-4-5" ||
+		doc.ModelPicker.Options[0].Label != "Claude Sonnet 4.5" ||
+		doc.ModelPicker.Options[0].Description != "corp · 200K context" ||
+		doc.ModelPicker.Options[1].Description != "corp" {
+		t.Errorf("options = %+v", doc.ModelPicker.Options)
 	}
 	if got := InspectHarness(f.ctx, "corp", f.gw, f.cat, "claude", f.home); got.State != StateSynced {
 		t.Errorf("InspectHarness() = %+v, want synced", got)
 	}
 
-	// Another gateway's file is left alone on remove.
+	// Another gateway has its own file, so removing it leaves corp alone.
 	other := f.gw
 	other.BaseURL = "https://other.example.com"
 	if removed, err := RemoveFromHarness(f.ctx, "other", other, "claude", f.home); err != nil || removed {
 		t.Errorf("RemoveFromHarness(other) = %v, %v; want false", removed, err)
 	}
-	if got := InspectHarness(f.ctx, "other", other, f.cat, "claude", f.home); got.State != StatePending {
-		t.Errorf("InspectHarness(other) = %+v, want pending: it is not claude's chosen gateway", got)
+	if got := InspectHarness(f.ctx, "other", other, f.cat, "claude", f.home); got.State != StateStale {
+		t.Errorf("InspectHarness(other) = %+v, want stale (not written yet)", got)
 	}
 	if removed, err := RemoveFromHarness(f.ctx, "corp", f.gw, "claude", f.home); err != nil || !removed {
 		t.Errorf("RemoveFromHarness() = %v, %v", removed, err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Error("gateway-models.json survived remove")
+		t.Error("aide-gateway-corp.json survived remove")
+	}
+}
+
+func TestPrune_ClaudeRemovesStaleAndLegacyGatewayFiles(t *testing.T) {
+	f := newFixture(t)
+	f.mkdirs(t, "claude")
+	cacheDir := filepath.Join(f.dir("claude"), "cache")
+	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "claude", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MaterializeHarness(f.ctx, "stale", f.gw, f.cat, "claude", f.home, false); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(cacheDir, "gateway-models.json")
+	if err := os.WriteFile(legacyPath, []byte(`{"baseUrl":"https://gw.example.com","fetchedAt":1,"models":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.ctx.Gateways = map[string]config.GatewayConfig{"corp": f.gw}
+
+	changed, err := Prune(f.ctx, "claude", f.home, []string{"corp"})
+	if err != nil || !changed {
+		t.Fatalf("Prune() = %v, %v; want true, nil", changed, err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "aide-gateway-corp.json")); err != nil {
+		t.Errorf("kept gateway file removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "aide-gateway-stale.json")); !os.IsNotExist(err) {
+		t.Error("stale aide-gateway-stale.json survived prune")
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Error("legacy gateway-models.json survived prune")
 	}
 }
 
@@ -892,9 +927,9 @@ func TestInspect_StaleWhenModelMetadataChanges(t *testing.T) {
 		}
 	}
 
-	claudeBody := readFile(t, filepath.Join(f.dir("claude"), "cache", "gateway-models.json"))
+	claudeBody := readFile(t, filepath.Join(f.dir("claude"), "cache", "aide-gateway-corp.json"))
 	if !strings.Contains(claudeBody, `"corp · 1M context"`) {
-		t.Errorf("claude gateway-models.json missing 1M description:\n%s", claudeBody)
+		t.Errorf("claude aide-gateway-corp.json missing 1M description:\n%s", claudeBody)
 	}
 
 	renamed := updated
@@ -1037,15 +1072,15 @@ func TestSync_ClaudeOnlyForDefaultGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, st := range res.HarnessStatuses {
-		if st.Harness == "claude" && st.State == StateSynced {
-			t.Errorf("beta (not claude's default) wrote Claude's file: %+v", st)
+		if st.Harness == "claude" && st.State != StateSynced {
+			t.Errorf("claude = %+v, want synced (each gateway has its own settings file)", st)
 		}
 		if st.Harness == "pi" && st.State != StateSynced {
 			t.Errorf("pi = %+v, want synced", st)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(f.dir("claude"), "cache", "gateway-models.json")); !os.IsNotExist(err) {
-		t.Error("gateway-models.json written for a non-default gateway")
+	if _, err := os.Stat(filepath.Join(f.dir("claude"), "cache", "aide-gateway-beta.json")); err != nil {
+		t.Errorf("aide-gateway-beta.json not written: %v", err)
 	}
 }
 
@@ -1115,20 +1150,6 @@ func TestMaterializeHarness_OpenCodeHonorsOPENCODE_CONFIG(t *testing.T) {
 	}
 }
 
-func TestCanSyncHarness_FollowsClaudeChoice(t *testing.T) {
-	ctx := config.Context{Profile: "work", GatewayChoice: map[string]string{"claude": "beta"}}
-	if CanSyncHarness(ctx, "alpha", "claude") || !CanSyncHarness(ctx, "beta", "claude") {
-		t.Error("claude's gateway file belongs to the chosen gateway only")
-	}
-	ctx.GatewayChoice = nil
-	if CanSyncHarness(ctx, "alpha", "claude") {
-		t.Error("an unset choice owns no claude gateway file")
-	}
-	if !CanSyncHarness(ctx, "alpha", "pi") {
-		t.Error("named-entry harnesses take every gateway")
-	}
-}
-
 func TestInspectHarness_StandbyGatewayNilCacheDoesNotPanic(t *testing.T) {
 	f := newFixture(t)
 	f.mkdirs(t, "claude")
@@ -1139,8 +1160,8 @@ func TestInspectHarness_StandbyGatewayNilCacheDoesNotPanic(t *testing.T) {
 	if _, err := MaterializeHarness(f.ctx, "corp", f.gw, f.cat, "claude", f.home, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := InspectHarness(f.ctx, "standby", standby, nil, "claude", f.home); got.State != StatePending {
-		t.Errorf("InspectHarness(standby, nil cache) = %+v, want pending", got)
+	if got := InspectHarness(f.ctx, "standby", standby, nil, "claude", f.home); got.State != StateStale {
+		t.Errorf("InspectHarness(standby, nil cache) = %+v, want stale", got)
 	}
 }
 
@@ -1161,7 +1182,7 @@ func TestMatchesBaseURL_AndInspectHarnessURLMismatch(t *testing.T) {
 	if st.State != StateStale || st.Detail != "base URL changed — run: aide gateway sync" {
 		t.Fatalf("InspectHarness(pi) = %+v, want stale base URL changed", st)
 	}
-	// SingleGatewayPerDir standby branch must also not report synced when cat.BaseURL mismatches gw.BaseURL.
+	// Claude must also not report synced when cat.BaseURL mismatches gw.BaseURL.
 	standbyCtx := f.ctx
 	standbyCtx.GatewayChoice = map[string]string{"claude": "other"}
 	stClaude := InspectHarness(standbyCtx, "corp", f.gw, f.cat, "claude", f.home)

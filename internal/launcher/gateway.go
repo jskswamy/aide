@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +29,7 @@ import (
 // start from env, printing why when the user's own flags win or the
 // gateway has no model to start on. ctx is the profile with its
 // gateways in launch form.
-func (l *Launcher) applyGatewayChoice(harnessName string, ctx config.Context, choice Choice, args []string) ([]string, map[string]string) {
+func (l *Launcher) applyGatewayChoice(profileName, harnessName string, ctx config.Context, choice Choice, homeDir string, args []string) ([]string, map[string]string) {
 	if choice.Value == "" || choice.Value == gatewayNone {
 		return args, nil
 	}
@@ -42,7 +43,52 @@ func (l *Launcher) applyGatewayChoice(harnessName string, ctx config.Context, ch
 	if notice != "" {
 		fmt.Fprintf(l.stderr(), "aide: note: %s\n", notice)
 	}
+	if harnessName == "claude" {
+		args = l.applyClaudeGatewaySettings(profileName, ctx, choice.Value, homeDir, args)
+	}
 	return args, env
+}
+
+// applyClaudeGatewaySettings prepends --settings <path> pointing at the
+// per-gateway modelPicker file written by sync, unless args is a Claude
+// management subcommand, the user already passed --settings, the gateway
+// is a provider switch, the cached catalogue does not match the gateway's
+// current URL, or the file has not been materialized yet.
+func (l *Launcher) applyClaudeGatewaySettings(profileName string, ctx config.Context, gwName, homeDir string, args []string) []string {
+	gw, ok := ctx.Gateways[gwName]
+	if !ok || gw.SwitchSpec() != nil {
+		return args
+	}
+	if d, ok := launchableHarness("claude"); ok && len(args) > 0 && slices.Contains(d.ManagementArgs, args[0]) {
+		return args
+	}
+	if hasFlag(args, "--settings") {
+		fmt.Fprintf(l.stderr(), "aide: note: claude sets --settings, so the gateway model picker for %q is not applied\n", gwName)
+		return args
+	}
+	cat, err := gateway.ReadCache(homeDir, profileName, gwName)
+	if err != nil || !gateway.MatchesBaseURL(cat, gateway.Endpoint(gw).BaseURL) {
+		return args
+	}
+	path, err := gateway.ClaudeSettingsPath(ctx, gwName, homeDir)
+	if err != nil {
+		return args
+	}
+	if _, err := os.Stat(path); err != nil {
+		return args
+	}
+	return append([]string{"--settings", path}, args...)
+}
+
+// hasFlag reports whether args contains flag as "--flag" or "--flag=...".
+func hasFlag(args []string, flag string) bool {
+	prefix := flag + "="
+	for _, a := range args {
+		if a == flag || strings.HasPrefix(a, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeChoiceEnv adds the startup env a harness needs for the chosen
@@ -154,17 +200,8 @@ func (l *Launcher) rememberChoice(scope ui.Remember, key prefs.Key, harnessName,
 // written without fetching. Nothing here stops a launch: a gateway that
 // cannot be reached falls back to its cached catalogue, or launches
 // without one, with a warning.
-func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName, homeDir string, choice Choice, credPlan CredentialPlan, credEnv map[string]string) {
-	// Claude's gateway file follows the profile's saved choice; a choice
-	// derived from a legacy config that could not be migrated stands in.
+func (l *Launcher) ensureGatewaySynced(rc *aidectx.ResolvedContext, harnessName, homeDir string, credPlan CredentialPlan, credEnv map[string]string) {
 	ctx := rc.Context
-	if choice.Derived {
-		ctx.GatewayChoice = maps.Clone(ctx.GatewayChoice)
-		if ctx.GatewayChoice == nil {
-			ctx.GatewayChoice = map[string]string{}
-		}
-		ctx.GatewayChoice[harnessName] = choice.Value
-	}
 	var injected []string
 	logs := make([]bytes.Buffer, len(credPlan.Bindings))
 	var wg sync.WaitGroup

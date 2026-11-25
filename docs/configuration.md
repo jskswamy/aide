@@ -630,7 +630,7 @@ Agent config files name the variable, never the key.
 
 | Agent | Variable injected | File written |
 | :--- | :--- | :--- |
-| `claude` | `ANTHROPIC_BASE_URL` and the key as `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` | `<dir>/cache/gateway-models.json`, only for the chosen gateway |
+| `claude` | `ANTHROPIC_BASE_URL` and the key as `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`); `--settings <dir>/cache/aide-gateway-corp.json` | `<dir>/cache/aide-gateway-corp.json` (`modelPicker` with `replaceBuiltInOptions: true`) |
 | `pi` | `AIDE_GW_CORP_KEY` | `<dir>/models.json`, `providers.aide-corp` |
 | `omp` | `AIDE_GW_CORP_KEY` | `<dir>/models.yml`, `providers.aide-corp` |
 | `opencode` | `AIDE_GW_CORP_KEY` | `<dir>/opencode.jsonc`, `providers.aide-corp` |

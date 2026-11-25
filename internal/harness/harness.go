@@ -87,6 +87,14 @@ const (
 // treats as management.
 var commonManagementArgs = []string{"login", "logout", "auth", "mcp", "completion", "help", "--help", "--version"}
 
+// claudeManagementArgs are the Claude Code invocations that do not start
+// an interactive or print session and should not receive gateway flags.
+var claudeManagementArgs = append(slices.Clone(commonManagementArgs),
+	"auto-mode", "doctor", "gateway", "import", "install", "kill",
+	"logs", "plugin", "plugins", "purge", "respawn", "rm",
+	"setup-token", "stop", "ultrareview", "update", "upgrade",
+)
+
 // userChoiceFlags are the flags with which a user picks a model or
 // provider; a launch that carries one keeps it over aide's choice.
 var userChoiceFlags = []string{"--model", "-m", "--provider"}
@@ -326,7 +334,7 @@ var descriptors = []Descriptor{
 		YoloFlag:         "--dangerously-skip-permissions",
 		Icon:             "🤖",
 		Reach:            ReachSlot,
-		ManagementArgs:   commonManagementArgs,
+		ManagementArgs:   claudeManagementArgs,
 	},
 	{
 		Name:             "codex",

@@ -358,7 +358,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		withheldNotes = append(withheldNotes, fmt.Sprintf("gateway %q is withheld for this launch: %v", name, withheld[name]))
 	}
 	credPlan.Bindings = slices.DeleteFunc(credPlan.Bindings, func(b PlannedCredential) bool { return withheld[b.Name] != nil })
-	l.ensureGatewaySynced(rc, cfg.HarnessOf(agentName), homeDir, sel.Gateway, credPlan, credEnv)
+	l.ensureGatewaySynced(rc, cfg.HarnessOf(agentName), homeDir, credPlan, credEnv)
 
 	// 5b. Resolve effective auto-approve from config layers + CLI flags.
 	// Priority: --no-auto-approve/--no-yolo (highest) > --auto-approve/--yolo flag > project override > context > preferences
@@ -367,7 +367,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		prefYolo = cfg.Preferences.Yolo
 	}
 	effectiveYolo := l.resolveEffectiveYolo(prefYolo, rc.Context.Yolo, nil)
-	extraArgs, choiceEnv := l.applyGatewayChoice(cfg.HarnessOf(agentName), rc.Context, sel.Gateway, extraArgs)
+	extraArgs, choiceEnv := l.applyGatewayChoice(rc.Name, cfg.HarnessOf(agentName), rc.Context, sel.Gateway, homeDir, extraArgs)
 	extraArgs = ApplyLaunchArgs(cfg.HarnessOf(agentName), extraArgs)
 	if effectiveYolo {
 		var err error

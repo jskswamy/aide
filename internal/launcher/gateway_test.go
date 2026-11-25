@@ -225,7 +225,7 @@ func TestLauncher_GatewayHarnessSwitchMaterializes(t *testing.T) {
 			t.Errorf("%s: no materialize notice:\n%s", agent, stderr)
 		}
 	}
-	for _, f := range []string{".pi-work/models.json", ".opencode-work/opencode.jsonc", ".codex-work/config.toml", ".claude-work/cache/gateway-models.json"} {
+	for _, f := range []string{".pi-work/models.json", ".opencode-work/opencode.jsonc", ".codex-work/config.toml", ".claude-work/cache/aide-gateway-corp.json"} {
 		if _, err := os.Stat(filepath.Join(home, f)); err != nil {
 			t.Errorf("%s not materialized: %v", f, err)
 		}
@@ -325,12 +325,13 @@ func TestLauncher_GatewayCredentialSwitchRewritesClaude(t *testing.T) {
         key: beta_token
 default_profile: work`, betaURL), 1)
 
-	claudeFile := filepath.Join(home, ".claude-work", "cache", "gateway-models.json")
+	corpFile := filepath.Join(home, ".claude-work", "cache", "aide-gateway-corp.json")
+	betaFile := filepath.Join(home, ".claude-work", "cache", "aide-gateway-gw-beta.json")
 	env, _ := launchGateway(t, home, cfg, "claude", "")
 	if got, _ := envValue(env, "ANTHROPIC_BASE_URL"); got != gs.URL {
 		t.Errorf("default launch ANTHROPIC_BASE_URL = %q, want corp's", got)
 	}
-	if data, _ := os.ReadFile(claudeFile); !strings.Contains(string(data), "corp-model") {
+	if data, _ := os.ReadFile(corpFile); !strings.Contains(string(data), "corp-model") {
 		t.Errorf("default launch wrote %s", data)
 	}
 
@@ -338,8 +339,12 @@ default_profile: work`, betaURL), 1)
 	if got, _ := envValue(env, "ANTHROPIC_BASE_URL"); got != betaURL {
 		t.Errorf("--credential gw-beta ANTHROPIC_BASE_URL = %q, want beta's", got)
 	}
-	if data, _ := os.ReadFile(claudeFile); !strings.Contains(string(data), "beta-model") {
-		t.Errorf("--credential gw-beta left %s", data)
+	if data, _ := os.ReadFile(betaFile); !strings.Contains(string(data), "beta-model") {
+		t.Errorf("--credential gw-beta wrote %s", data)
+	}
+	// Switching to gw-beta leaves corp's settings file intact for concurrent launches.
+	if data, _ := os.ReadFile(corpFile); !strings.Contains(string(data), "corp-model") {
+		t.Errorf("--credential gw-beta clobbered corp file: %s", data)
 	}
 }
 
@@ -374,5 +379,74 @@ func TestLauncher_GatewayFlagKeepsDefaultCredentials(t *testing.T) {
 	env, _ := launchGateway(t, t.TempDir(), cfg, "", AuthAPI, "corp")
 	if got, _ := envValue(env, "GITHUB_TOKEN"); got != gatewayTestToken {
 		t.Errorf("GITHUB_TOKEN = %q, want the default credential kept under --gateway corp", got)
+	}
+}
+
+func TestApplyClaudeGatewaySettings(t *testing.T) {
+	home := t.TempDir()
+	ctx := config.Context{
+		Name:    "work",
+		Profile: "work",
+		Gateways: map[string]config.GatewayConfig{
+			"corp":    {BaseURL: "https://gw.example.com", Store: "work", Key: "corp_token"},
+			"bedrock": {Preset: "bedrock", Region: "us-east-1"},
+		},
+	}
+	cat := &gateway.CachedCatalogue{
+		Profile:   "work",
+		Gateway:   "corp",
+		BaseURL:   "https://gw.example.com",
+		FetchedAt: time.Now(),
+		Models:    []gateway.Model{{ID: "zai-org/GLM-5.3-Flash", DisplayName: "GLM 5.3 Flash"}},
+	}
+	if err := gateway.WriteCache(home, cat); err != nil {
+		t.Fatal(err)
+	}
+	st, err := gateway.MaterializeHarness(ctx, "corp", ctx.Gateways["corp"], cat, "claude", home, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	l := &Launcher{Stderr: &stderr}
+
+	// Normal session launch prepends --settings <path>.
+	got, _ := l.applyGatewayChoice("work", "claude", ctx, Choice{Value: "corp"}, home, []string{"-p", "hi"})
+	if len(got) != 4 || got[0] != "--settings" || got[1] != st.FilePath || got[2] != "-p" || got[3] != "hi" {
+		t.Errorf("applyGatewayChoice() = %v, want [--settings %s -p hi]", got, st.FilePath)
+	}
+
+	// Stale settings file from a previous URL is not injected when the gateway URL changed.
+	movedCtx := ctx
+	movedCtx.Gateways = map[string]config.GatewayConfig{
+		"corp": {BaseURL: "https://new-gw.example.com", Store: "work", Key: "corp_token"},
+	}
+	got, _ = l.applyGatewayChoice("work", "claude", movedCtx, Choice{Value: "corp"}, home, []string{"-p", "hi"})
+	if len(got) != 2 || got[0] != "-p" {
+		t.Errorf("mismatched URL injected stale --settings: %v", got)
+	}
+
+	// User-supplied --settings wins with a note.
+	stderr.Reset()
+	got, _ = l.applyGatewayChoice("work", "claude", ctx, Choice{Value: "corp"}, home, []string{"--settings", "/tmp/mine.json"})
+	if len(got) != 2 || got[0] != "--settings" || got[1] != "/tmp/mine.json" {
+		t.Errorf("user --settings overwritten: %v", got)
+	}
+	if !strings.Contains(stderr.String(), "claude sets --settings") {
+		t.Errorf("expected note about --settings, got: %q", stderr.String())
+	}
+
+	// Management subcommands do not receive --settings.
+	for _, sub := range []string{"doctor", "mcp", "plugin", "auth"} {
+		got, _ = l.applyGatewayChoice("work", "claude", ctx, Choice{Value: "corp"}, home, []string{sub})
+		if len(got) != 1 || got[0] != sub {
+			t.Errorf("subcommand %q received gateway flags: %v", sub, got)
+		}
+	}
+
+	// Provider switch gateways do not inject --settings.
+	got, _ = l.applyGatewayChoice("work", "claude", ctx, Choice{Value: "bedrock"}, home, []string{"-p", "hi"})
+	if len(got) != 2 || got[0] != "-p" {
+		t.Errorf("provider switch injected flags: %v", got)
 	}
 }

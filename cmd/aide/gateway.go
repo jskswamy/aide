@@ -995,8 +995,6 @@ func gatewayRemoveCmd(profile *string) *cobra.Command {
 					fmt.Fprintf(out, "  ✗ %-9s %v\n", h, err)
 				case !removed:
 					fmt.Fprintf(out, "  - %-9s skipped %s (no entry for %q)\n", h, homepath.Tilde(dir, home), name)
-				case gateway.SingleGatewayPerDir(h):
-					fmt.Fprintf(out, "  ✓ %-9s removed gateway model cache in %s\n", h, homepath.Tilde(dir, home))
 				default:
 					fmt.Fprintf(out, "  ✓ %-9s removed provider %q in %s\n", h, name, homepath.Tilde(dir, home))
 				}
@@ -1418,7 +1416,7 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 	} else {
 		newSet := newGW.EffectiveHarnesses()
 		for _, h := range oldGW.EffectiveHarnesses() {
-			if !slices.Contains(newSet, h) || (h == "claude" && !gateway.CanSyncHarness(updatedCtx, newName, "claude")) {
+			if !slices.Contains(newSet, h) {
 				_, _ = gateway.RemoveFromHarness(ctx, oldName, oldGW, h, home)
 			}
 		}
@@ -1453,9 +1451,6 @@ func applyGatewayEdit(syncCtx context.Context, out, errOut io.Writer, cfg *confi
 func materializeGatewayFromCache(out io.Writer, ctx config.Context, name string, gw config.GatewayConfig, cat *gateway.CachedCatalogue, home string) {
 	var statuses []gateway.HarnessFileStatus
 	for _, h := range gw.EffectiveHarnesses() {
-		if !gateway.CanSyncHarness(ctx, name, h) {
-			continue
-		}
 		st, err := gateway.MaterializeHarness(ctx, name, gw, cat, h, home, false)
 		if err != nil {
 			st.State, st.Detail = gateway.StateStale, err.Error()
@@ -1486,9 +1481,7 @@ func reconcileProfileHarnesses(ctx config.Context, profileName, skipGateway, hom
 			if !slices.Contains(gw.EffectiveHarnesses(), h) {
 				continue
 			}
-			if gateway.CanSyncHarness(ctx, g, h) {
-				_, _ = gateway.MaterializeHarness(ctx, g, gw, cat, h, home, false)
-			}
+			_, _ = gateway.MaterializeHarness(ctx, g, gw, cat, h, home, false)
 		}
 	}
 }
@@ -1854,7 +1847,7 @@ func printHarnessStatuses(w io.Writer, statuses []gateway.HarnessFileStatus, hom
 		case gateway.StateStale:
 			mark, detail = "!", "stale, "+st.Detail
 		default:
-			if !gateway.SingleGatewayPerDir(st.Harness) {
+			if st.EnvVar != "" {
 				detail += fmt.Sprintf(", %s, env: %s", st.Detail, st.EnvVar)
 			} else {
 				detail += ", " + st.Detail

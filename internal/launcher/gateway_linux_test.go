@@ -52,12 +52,12 @@ default_profile: default
 	if got, _ := envValue(env, "CLAUDE_CONFIG_DIR"); got != wantDir {
 		t.Fatalf("CLAUDE_CONFIG_DIR = %q, want %q", got, wantDir)
 	}
-	wantFile := filepath.Join(wantDir, "cache", "gateway-models.json")
+	wantFile := filepath.Join(wantDir, "cache", "aide-gateway-corp.json")
 	data, err := os.ReadFile(wantFile)
 	if err != nil {
-		t.Fatalf("expected gateway-models.json in redirected dir %q: %v", wantFile, err)
+		t.Fatalf("expected aide-gateway-corp.json in redirected dir %q: %v", wantFile, err)
 	}
 	if !strings.Contains(string(data), "corp-model") {
-		t.Errorf("gateway-models.json = %s, want corp-model", data)
+		t.Errorf("aide-gateway-corp.json = %s, want corp-model", data)
 	}
 }

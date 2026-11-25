@@ -491,9 +491,8 @@ func GatewayBinding(name string, gw GatewayConfig) CredentialBinding {
 		if h == "claude" {
 			env := []string{}
 			set := map[string]string{
-				claudeGatewayBaseURLEnv:   NormalizeGatewayBaseURL(baseURL),
-				claudeGatewayDiscoveryEnv: "1",
-				claudeGatewayAPIKeyEnv:    "",
+				claudeGatewayBaseURLEnv: NormalizeGatewayBaseURL(baseURL),
+				claudeGatewayAPIKeyEnv:  "",
 			}
 			switch e := gw.TokenEnv(name, h); e {
 			case "":

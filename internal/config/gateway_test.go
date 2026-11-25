@@ -209,14 +209,16 @@ func TestGateway_SynthesizeCredentials(t *testing.T) {
 		t.Errorf("claude route = %+v, %v", claude, ok)
 	}
 	wantSet := map[string]string{
-		"ANTHROPIC_BASE_URL":                         "https://alpha.gateway.example.com",
-		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
-		"ANTHROPIC_API_KEY":                          "",
+		"ANTHROPIC_BASE_URL": "https://alpha.gateway.example.com",
+		"ANTHROPIC_API_KEY":  "",
 	}
 	for k, v := range wantSet {
 		if gotV, ok := claude.Set[k]; !ok || gotV != v {
 			t.Errorf("claude set %s = %q (present %v), want %q", k, gotV, ok, v)
 		}
+	}
+	if _, ok := claude.Set["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"]; ok {
+		t.Error("claude set must not inject CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY (uses modelPicker --settings)")
 	}
 	for _, h := range []string{"pi", "opencode", "codex"} {
 		r, ok := b.Route("corp", h)

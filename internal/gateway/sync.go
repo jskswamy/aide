@@ -37,10 +37,8 @@ type SyncResult struct {
 // Sync fetches the gateway's models, caches them, and writes them into
 // the config file of every harness the gateway serves whose dir
 // already exists (the others stay pending until their first launch).
-// Claude Code reads one gateway file per config dir, so only the
-// gateway the profile's gateway_choice names for claude writes it. A fetch error leaves
-// the cache and every harness file untouched. Without a deadline on
-// ctx, the fetch is bounded by DefaultFetchTimeout.
+// A fetch error leaves the cache and every harness file untouched.
+// Without a deadline on ctx, the fetch is bounded by DefaultFetchTimeout.
 func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -79,12 +77,9 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	fmt.Fprintf(progress, "✓ Cached %d LLM models in %s\n", len(models), homepath.Tilde(cachePath, opts.HomeDir))
 
 	res := &SyncResult{Catalogue: cat}
-	var err error
 	for _, h := range opts.Gateway.EffectiveHarnesses() {
-		var st HarnessFileStatus
-		if !CanSyncHarness(opts.Profile, opts.GatewayName, h) {
-			st = InspectHarness(opts.Profile, opts.GatewayName, opts.Gateway, cat, h, opts.HomeDir)
-		} else if st, err = MaterializeHarness(opts.Profile, opts.GatewayName, opts.Gateway, cat, h, opts.HomeDir, false); err != nil {
+		st, err := MaterializeHarness(opts.Profile, opts.GatewayName, opts.Gateway, cat, h, opts.HomeDir, false)
+		if err != nil {
 			st.State, st.Detail = StateStale, err.Error()
 		}
 		res.HarnessStatuses = append(res.HarnessStatuses, st)

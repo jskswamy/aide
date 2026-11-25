@@ -27,11 +27,7 @@ import (
 // keeps the rest of the file.
 type harnessFile interface {
 	// path is the config file for this harness under ctx.
-	path(ctx config.Context, dir, home string) string
-	// singleGatewayPerDir reports whether the harness's config dir
-	// holds only one gateway's models at a time (rather than named
-	// provider entries).
-	singleGatewayPerDir() bool
+	path(ctx config.Context, dir, home, gwName string) string
 	write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error
 	// mismatch describes how the file differs from cat, or "" when it
 	// carries the catalogue.
@@ -58,13 +54,6 @@ func lookupHarnessFile(harnessName string) (harnessFile, error) {
 		return nil, fmt.Errorf("gateway: %q is not a gateway harness", harnessName)
 	}
 	return hf, nil
-}
-
-// SingleGatewayPerDir reports whether harnessName keeps one gateway
-// file per config dir rather than named provider entries.
-func SingleGatewayPerDir(harnessName string) bool {
-	hf, ok := harnessFiles[harnessName]
-	return ok && hf.singleGatewayPerDir()
 }
 
 // HarnessConfigDir is the config dir a launch of harnessName under ctx
@@ -94,7 +83,7 @@ var ErrSharedNativeDir = errors.New("gateway: named profile would use the shared
 // harnessTarget resolves the harness's file handler, dir and file. A
 // named profile never gets the native dir: only the built-in default
 // profile owns it.
-func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, string, string, error) {
+func harnessTarget(ctx config.Context, harnessName, home, gwName string) (harnessFile, string, string, error) {
 	hf, err := lookupHarnessFile(harnessName)
 	if err != nil {
 		return nil, "", "", err
@@ -106,11 +95,18 @@ func harnessTarget(ctx config.Context, harnessName, home string) (harnessFile, s
 	if d, ok := harness.Lookup(harnessName); ok && ctx.Name != "" && !config.IsDefaultProfile(ctx.Name) && fsutil.SameDir(d.DefaultDir(home), dir) {
 		return nil, "", "", fmt.Errorf("%w: profile %q, %s dir %s; set its dir variable aside: config_dir_name or config_dirs in the profile instead of env", ErrSharedNativeDir, ctx.Name, harnessName, homepath.Tilde(dir, home))
 	}
-	path := hf.path(ctx, dir, home)
-	if !hf.singleGatewayPerDir() {
+	path := hf.path(ctx, dir, home, gwName)
+	if _, ok := hf.(openCodeFile); ok {
 		dir = filepath.Dir(path)
 	}
 	return hf, dir, path, nil
+}
+
+// ClaudeSettingsPath returns the per-gateway Claude Code --settings file
+// path for gwName under ctx (<claude-dir>/cache/aide-gateway-<gw>.json).
+func ClaudeSettingsPath(ctx config.Context, gwName, home string) (string, error) {
+	_, _, path, err := harnessTarget(ctx, "claude", home, gwName)
+	return path, err
 }
 
 // unwritable says why harnessName gets no entry for gw, or "": a
@@ -150,7 +146,7 @@ var harnessWrites sync.Mutex
 // nothing is written and the status is pending: aide leaves a harness
 // dir to its first launch.
 func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string, createDirIfMissing bool) (HarnessFileStatus, error) {
-	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
+	hf, dir, path, err := harnessTarget(ctx, harnessName, home, gwName)
 	if err != nil {
 		return HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(gwName, harnessName)}, err
 	}
@@ -184,7 +180,7 @@ func MaterializeHarness(ctx config.Context, gwName string, gw config.GatewayConf
 // InspectHarness reports whether harnessName's config file carries the
 // fresh catalogue cat for gwName.
 func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, cat *CachedCatalogue, harnessName, home string) HarnessFileStatus {
-	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
+	hf, dir, path, err := harnessTarget(ctx, harnessName, home, gwName)
 	st := HarnessFileStatus{Harness: harnessName, EnvVar: gw.TokenEnv(gwName, harnessName), FilePath: path}
 	if err != nil {
 		st.State, st.Detail = StateStale, err.Error()
@@ -196,18 +192,6 @@ func InspectHarness(ctx config.Context, gwName string, gw config.GatewayConfig, 
 	}
 	if !dirExists(dir) {
 		st.State, st.Detail = StatePending, "dir not provisioned"
-		return st
-	}
-	if SingleGatewayPerDir(harnessName) && !CanSyncHarness(ctx, gwName, harnessName) {
-		if MatchesBaseURL(cat, Endpoint(gw).BaseURL) && !IsExpired(cat, gw.TTL(), time.Now()) {
-			if _, err := os.Stat(path); err == nil {
-				if diff, err := hf.mismatch(path, gwName, gw, cat); err == nil && diff == "" {
-					st.State, st.Detail = StateSynced, fmt.Sprintf("%d models", len(cat.Models))
-					return st
-				}
-			}
-		}
-		st.State, st.Detail = StatePending, fmt.Sprintf("not %s's active gateway; syncs when selected", harnessName)
 		return st
 	}
 	switch {
@@ -243,7 +227,7 @@ func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfi
 	if Endpoint(gw).Switch != nil {
 		return false, nil
 	}
-	hf, _, path, err := harnessTarget(ctx, harnessName, home)
+	hf, _, path, err := harnessTarget(ctx, harnessName, home, gwName)
 	if err != nil {
 		return false, err
 	}
@@ -260,11 +244,16 @@ func RemoveFromHarness(ctx config.Context, gwName string, gw config.GatewayConfi
 // pin. A pin it did not write stays. It reports whether the file
 // changed; a missing file is not an error.
 func Prune(ctx config.Context, harnessName, home string, configured []string) (bool, error) {
-	hf, dir, path, err := harnessTarget(ctx, harnessName, home)
+	hf, dir, path, err := harnessTarget(ctx, harnessName, home, "")
 	if err != nil {
 		return false, err
 	}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	if _, isClaude := hf.(claudeFile); isClaude {
+		path = filepath.Join(dir, "cache")
+		if !dirExists(path) {
+			return false, nil
+		}
+	} else if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
 	keep := setOf(configured)
@@ -302,15 +291,6 @@ func jsonEntryNames(doc map[string]json.RawMessage, section string) ([]string, e
 		}
 	}
 	return slices.Sorted(maps.Keys(entries)), nil
-}
-
-// CanSyncHarness reports whether background sync or gateway add may
-// write gwName's catalogue to harnessName's config file. For harnesses
-// with named provider entries (pi, omp, opencode, codex), it is always
-// true. A single-gateway-per-dir harness (claude) holds only the
-// profile's saved gateway_choice for it.
-func CanSyncHarness(ctx config.Context, gwName, harnessName string) bool {
-	return !SingleGatewayPerDir(harnessName) || ctx.GatewayChoice[harnessName] == gwName
 }
 
 func dirExists(dir string) bool {
@@ -393,54 +373,111 @@ func updateJSONEntry(path, section, name string, v any) (bool, error) {
 	return existed, fsutil.WriteJSON(path, doc)
 }
 
-// claudeFile is Claude Code's gateway model cache,
-// <claude-dir>/cache/gateway-models.json: one file per config dir, so
-// it holds one gateway at a time.
+// claudeFile is a per-gateway Claude Code --settings file,
+// <claude-dir>/cache/aide-gateway-<gw>.json, carrying modelPicker so
+// Claude Code's /model picker lists every model the gateway serves
+// (including non-Anthropic IDs) without colliding across concurrent
+// gateway launches or being overwritten by Claude's /v1/models discovery.
 type claudeFile struct{}
 
-type claudeDoc struct {
-	BaseURL   string        `json:"baseUrl"`
-	FetchedAt int64         `json:"fetchedAt"`
-	Models    []claudeModel `json:"models"`
+type claudeSettingsDoc struct {
+	ModelPicker claudeModelPicker `json:"modelPicker"`
 }
 
-type claudeModel struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
+type claudeModelPicker struct {
+	ReplaceBuiltInOptions bool                `json:"replaceBuiltInOptions"`
+	Options               []claudePickerModel `json:"options"`
+}
+
+type claudePickerModel struct {
+	Model       string `json:"model"`
+	Label       string `json:"label"`
 	Description string `json:"description"`
 }
 
-func (claudeFile) path(_ config.Context, dir, _ string) string {
-	return filepath.Join(dir, "cache", "gateway-models.json")
+const (
+	claudeSettingsPrefix = "aide-gateway-"
+	claudeSettingsSuffix = ".json"
+)
+
+func (claudeFile) path(_ config.Context, dir, _, gwName string) string {
+	return filepath.Join(dir, "cache", claudeSettingsPrefix+gwName+claudeSettingsSuffix)
 }
 
-func (claudeFile) singleGatewayPerDir() bool { return true }
-
-// prune has nothing to do: the cache file holds one gateway's models.
-func (claudeFile) prune(string, map[string]config.GatewayConfig, map[string]bool) (bool, error) {
-	return false, nil
+// prune removes stale aide-gateway-<x>.json files in cacheDir whose x
+// is not in keep, plus any legacy cache/gateway-models.json pointing at
+// one of gws's URLs.
+func (claudeFile) prune(cacheDir string, gws map[string]config.GatewayConfig, keep map[string]bool) (bool, error) {
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	changed := false
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if keep != nil && strings.HasPrefix(name, claudeSettingsPrefix) && strings.HasSuffix(name, claudeSettingsSuffix) {
+			gw := strings.TrimSuffix(strings.TrimPrefix(name, claudeSettingsPrefix), claudeSettingsSuffix)
+			if !keep[gw] {
+				if err := os.Remove(filepath.Join(cacheDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return changed, err
+				}
+				changed = true
+			}
+		}
+	}
+	// Clean up legacy cache/gateway-models.json when it points at one of gws's URLs.
+	legacyPath := filepath.Join(cacheDir, "gateway-models.json")
+	if data, err := os.ReadFile(legacyPath); err == nil { // #nosec G304 -- Claude's legacy gateway cache in the profile's dir
+		var legacy struct {
+			BaseURL string `json:"baseUrl"`
+		}
+		if json.Unmarshal(data, &legacy) == nil && legacy.BaseURL != "" {
+			legacyURL := NormalizeBaseURL(legacy.BaseURL)
+			for _, gw := range gws {
+				if NormalizeBaseURL(Endpoint(gw).BaseURL) == legacyURL {
+					if err := os.Remove(legacyPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+						return changed, err
+					}
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return changed, nil
 }
 
-func claudeModels(gwName string, models []Model) []claudeModel {
-	out := make([]claudeModel, len(models))
+func claudePickerModels(gwName string, models []Model) []claudePickerModel {
+	out := make([]claudePickerModel, len(models))
 	for i, m := range models {
-		out[i] = claudeModel{ID: m.ID, DisplayName: m.DisplayName, Description: formatClaudeDesc(gwName, m)}
+		label := m.DisplayName
+		if label == "" {
+			label = m.ID
+		}
+		out[i] = claudePickerModel{Model: m.ID, Label: label, Description: formatClaudeDesc(gwName, m)}
 	}
 	return out
 }
 
-func (claudeFile) write(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) error {
-	doc := claudeDoc{
-		BaseURL:   Endpoint(gw).BaseURL,
-		FetchedAt: cat.FetchedAt.UnixMilli(),
-		Models:    claudeModels(gwName, cat.Models),
+func (claudeFile) write(path, gwName string, _ config.GatewayConfig, cat *CachedCatalogue) error {
+	doc := claudeSettingsDoc{
+		ModelPicker: claudeModelPicker{
+			ReplaceBuiltInOptions: true,
+			Options:               claudePickerModels(gwName, cat.Models),
+		},
 	}
 	return fsutil.WriteJSON(path, doc)
 }
 
-func (claudeFile) read(path string) (claudeDoc, error) {
-	var doc claudeDoc
-	data, err := os.ReadFile(path) // #nosec G304 -- Claude's gateway cache in the profile's dir
+func (claudeFile) read(path string) (claudeSettingsDoc, error) {
+	var doc claudeSettingsDoc
+	data, err := os.ReadFile(path) // #nosec G304 -- Claude's gateway settings in the profile's dir
 	if err != nil {
 		return doc, err
 	}
@@ -450,29 +487,26 @@ func (claudeFile) read(path string) (claudeDoc, error) {
 	return doc, nil
 }
 
-func (c claudeFile) mismatch(path, gwName string, gw config.GatewayConfig, cat *CachedCatalogue) (string, error) {
+func (c claudeFile) mismatch(path, gwName string, _ config.GatewayConfig, cat *CachedCatalogue) (string, error) {
 	doc, err := c.read(path)
 	if err != nil {
 		return "", err
 	}
-	if NormalizeBaseURL(doc.BaseURL) != NormalizeBaseURL(Endpoint(gw).BaseURL) {
-		return "points at another gateway", nil
+	if !doc.ModelPicker.ReplaceBuiltInOptions {
+		return "modelPicker settings differ", nil
 	}
-	if !slices.Equal(doc.Models, claudeModels(gwName, cat.Models)) {
+	if !slices.Equal(doc.ModelPicker.Options, claudePickerModels(gwName, cat.Models)) {
 		return "model list differs", nil
 	}
 	return "", nil
 }
 
-func (c claudeFile) remove(path, _ string, gw config.GatewayConfig) (bool, error) {
-	doc, err := c.read(path)
-	if err != nil {
-		return false, err
-	}
-	if NormalizeBaseURL(doc.BaseURL) != NormalizeBaseURL(Endpoint(gw).BaseURL) {
+func (claudeFile) remove(path, _ string, _ config.GatewayConfig) (bool, error) {
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	return true, os.Remove(path)
+	return err == nil, err
 }
 
 func formatContextTokens(n int) string {
@@ -519,9 +553,9 @@ type piModel struct {
 	MaxTokens     int    `json:"maxTokens,omitempty"`
 }
 
-func (piFile) path(_ config.Context, dir, _ string) string { return filepath.Join(dir, "models.json") }
-
-func (piFile) singleGatewayPerDir() bool { return false }
+func (piFile) path(_ config.Context, dir, _, _ string) string {
+	return filepath.Join(dir, "models.json")
+}
 
 func piModels(models []Model) []piModel {
 	out := make([]piModel, len(models))
@@ -675,7 +709,7 @@ type ompModel struct {
 	MaxTokens     int    `yaml:"maxTokens,omitempty"`
 }
 
-func (ompFile) path(_ config.Context, dir, _ string) string {
+func (ompFile) path(_ config.Context, dir, _, _ string) string {
 	yml := filepath.Join(dir, "models.yml")
 	if _, err := os.Stat(yml); errors.Is(err, os.ErrNotExist) {
 		yamlAlt := filepath.Join(dir, "models.yaml")
@@ -685,8 +719,6 @@ func (ompFile) path(_ config.Context, dir, _ string) string {
 	}
 	return yml
 }
-
-func (ompFile) singleGatewayPerDir() bool { return false }
 
 func readOMPModelsDoc(path string) ([]byte, map[string]yaml.Node, error) {
 	doc := map[string]yaml.Node{}
@@ -916,14 +948,12 @@ type openCodeCompat struct {
 	SupportsThinkingBlockBinding bool `json:"supportsThinkingBlockBinding"`
 }
 
-func (openCodeFile) path(ctx config.Context, dir, home string) string {
+func (openCodeFile) path(ctx config.Context, dir, home, _ string) string {
 	if v := ctx.Env["OPENCODE_CONFIG"]; v != "" {
 		return homepath.Expand(v, home)
 	}
 	return filepath.Join(dir, "opencode.jsonc")
 }
-
-func (openCodeFile) singleGatewayPerDir() bool { return false }
 
 func openCodeAPIKey(gwName string) string { return "{env:" + config.GatewayKeyVar(gwName) + "}" }
 
@@ -1160,11 +1190,9 @@ func (openCodeFile) remove(path, gwName string, gw config.GatewayConfig) (bool, 
 // file.
 type codexFile struct{}
 
-func (codexFile) path(_ config.Context, dir, _ string) string {
+func (codexFile) path(_ config.Context, dir, _, _ string) string {
 	return filepath.Join(dir, "config.toml")
 }
-
-func (codexFile) singleGatewayPerDir() bool { return false }
 
 // codexWireAPI is the only wire_api Codex 0.167+ loads.
 const codexWireAPI = "responses"

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -522,16 +523,24 @@ func formatContextTokens(n int) string {
 
 // formatClaudeDesc is the /model picker's description line.
 func formatClaudeDesc(gwName string, m Model) string {
-	switch {
-	case gwName != "" && m.ContextWindow > 0:
-		return fmt.Sprintf("%s · %s context", gwName, formatContextTokens(m.ContextWindow))
-	case gwName != "":
-		return gwName
-	case m.ContextWindow > 0:
-		return fmt.Sprintf("%s context", formatContextTokens(m.ContextWindow))
-	default:
+	var parts []string
+	if gwName != "" {
+		parts = append(parts, gwName)
+	}
+	if m.ContextWindow > 0 {
+		parts = append(parts, fmt.Sprintf("%s context", formatContextTokens(m.ContextWindow)))
+	}
+	if m.Cost != nil {
+		parts = append(parts, fmt.Sprintf("$%s/$%s per Mtok", formatPrice(m.Cost.InputPerMtok), formatPrice(m.Cost.OutputPerMtok)))
+	}
+	if len(parts) == 0 {
 		return "Custom gateway model"
 	}
+	return strings.Join(parts, " · ")
+}
+
+func formatPrice(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 // piFile is Pi's <pi-dir>/models.json; a gateway is providers.<name>.

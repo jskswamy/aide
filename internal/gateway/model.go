@@ -8,13 +8,21 @@ package gateway
 
 import "time"
 
+// ModelCost is a model's per-million-token prices in USD, populated when
+// the gateway's /v1/models response includes pricing metadata.
+type ModelCost struct {
+	InputPerMtok  float64 `json:"input_per_mtok"`
+	OutputPerMtok float64 `json:"output_per_mtok"`
+}
+
 // Model is one gateway model, reduced to display metadata.
 type Model struct {
-	ID              string `json:"id"`
-	DisplayName     string `json:"display_name"`
-	Provider        string `json:"provider,omitempty"`
-	ContextWindow   int    `json:"context_window,omitempty"`
-	MaxOutputTokens int    `json:"max_output_tokens,omitempty"`
+	ID              string     `json:"id"`
+	DisplayName     string     `json:"display_name"`
+	Provider        string     `json:"provider,omitempty"`
+	ContextWindow   int        `json:"context_window,omitempty"`
+	MaxOutputTokens int        `json:"max_output_tokens,omitempty"`
+	Cost            *ModelCost `json:"cost,omitempty"`
 }
 
 // CachedCatalogue is the cache file for one gateway on one profile.

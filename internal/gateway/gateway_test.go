@@ -526,12 +526,53 @@ func TestFormatClaudeDesc(t *testing.T) {
 		{"corp", Model{ContextWindow: 1_500_000}, "corp · 1.5M context"},
 		{"corp", Model{ContextWindow: 512}, "corp · 512 context"},
 		{"corp", Model{Provider: "anthropic"}, "corp"},
+		{"corp", Model{ContextWindow: 200_000, Cost: &ModelCost{InputPerMtok: 3, OutputPerMtok: 15}}, "corp · 200K context · $3/$15 per Mtok"},
+		{"corp", Model{Cost: &ModelCost{InputPerMtok: 0.25, OutputPerMtok: 1.25}}, "corp · $0.25/$1.25 per Mtok"},
+		{"corp", Model{Cost: &ModelCost{InputPerMtok: 0, OutputPerMtok: 0}}, "corp · $0/$0 per Mtok"},
+		{"", Model{Cost: &ModelCost{InputPerMtok: 5, OutputPerMtok: 25}}, "$5/$25 per Mtok"},
 		{"", Model{ContextWindow: 128_000}, "128K context"},
 		{"", Model{}, "Custom gateway model"},
 	}
 	for _, tc := range cases {
 		if got := formatClaudeDesc(tc.gw, tc.m); got != tc.want {
 			t.Errorf("formatClaudeDesc(%q, %+v) = %q, want %q", tc.gw, tc.m, got, tc.want)
+		}
+	}
+}
+
+func TestParseModels_Cost(t *testing.T) {
+	body := `{"data":[
+		{"id":"openrouter-str","pricing":{"prompt":"0.000003","completion":"0.000015"}},
+		{"id":"openrouter-dynamic","pricing":{"prompt":"-1","completion":"-1"}},
+		{"id":"openrouter-overflow","pricing":{"prompt":"1e308","completion":"0"}},
+		{"id":"openrouter-free","pricing":{"prompt":"0","completion":"0"}},
+		{"id":"litellm-flat","input_cost_per_token":0.00000025,"output_cost_per_token":0.00000125},
+		{"id":"litellm-info","model_info":{"input_cost_per_token":0.000005,"output_cost_per_token":0.000025}},
+		{"id":"mtok-cost","cost":{"input":1.5,"output":6}},
+		{"id":"plain-openai"}
+	]}`
+	models, err := parseModels([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]*ModelCost{}
+	for _, m := range models {
+		byID[m.ID] = m.Cost
+	}
+	want := map[string]*ModelCost{
+		"openrouter-str":      {InputPerMtok: 3, OutputPerMtok: 15},
+		"openrouter-dynamic":  nil,
+		"openrouter-overflow": nil,
+		"openrouter-free":     {InputPerMtok: 0, OutputPerMtok: 0},
+		"litellm-flat":        {InputPerMtok: 0.25, OutputPerMtok: 1.25},
+		"litellm-info":        {InputPerMtok: 5, OutputPerMtok: 25},
+		"mtok-cost":           {InputPerMtok: 1.5, OutputPerMtok: 6},
+		"plain-openai":        nil,
+	}
+	for id, w := range want {
+		got := byID[id]
+		if (got == nil) != (w == nil) || (got != nil && *got != *w) {
+			t.Errorf("%s: Cost = %+v, want %+v", id, got, w)
 		}
 	}
 }

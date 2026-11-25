@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -164,6 +166,7 @@ func parseModels(body []byte) ([]Model, error) {
 			Provider:        truncate(Sanitize(firstString(e, "provider", "owned_by")), maxProviderBytes),
 			ContextWindow:   firstInt(e, "max_context_tokens", "context_window", "context_length"),
 			MaxOutputTokens: firstInt(e, "max_output_tokens", "max_tokens"),
+			Cost:            parseCost(e),
 		})
 	}
 	slices.SortFunc(models, func(a, b Model) int { return strings.Compare(a.ID, b.ID) })
@@ -191,6 +194,90 @@ func firstInt(e map[string]any, keys ...string) int {
 		}
 	}
 	return 0
+}
+
+// parseCost extracts optional input/output per-million-token USD pricing
+// from common gateway /v1/models shapes:
+//   - OpenRouter: pricing.{prompt,completion} (or input/output), USD/token
+//   - LiteLLM: input_cost_per_token + output_cost_per_token (top-level or
+//     under model_info), USD/token
+//   - models.dev / Pi / OpenCode: cost.{input,output}, USD/Mtok
+//
+// Missing, non-finite, or negative values (such as OpenRouter's "-1"
+// dynamic-pricing sentinel) return nil.
+func parseCost(e map[string]any) *ModelCost {
+	if p, ok := e["pricing"].(map[string]any); ok {
+		in, okIn := firstNonNegFloat(p, "prompt", "input")
+		out, okOut := firstNonNegFloat(p, "completion", "output")
+		if okIn && okOut {
+			return newModelCost(in*1e6, out*1e6)
+		}
+	}
+	if in, okIn := firstNonNegFloat(e, "input_cost_per_token"); okIn {
+		if out, okOut := firstNonNegFloat(e, "output_cost_per_token"); okOut {
+			return newModelCost(in*1e6, out*1e6)
+		}
+	}
+	if info, ok := e["model_info"].(map[string]any); ok {
+		if in, okIn := firstNonNegFloat(info, "input_cost_per_token"); okIn {
+			if out, okOut := firstNonNegFloat(info, "output_cost_per_token"); okOut {
+				return newModelCost(in*1e6, out*1e6)
+			}
+		}
+	}
+	if c, ok := e["cost"].(map[string]any); ok {
+		in, okIn := firstNonNegFloat(c, "input")
+		out, okOut := firstNonNegFloat(c, "output")
+		if okIn && okOut {
+			return newModelCost(in, out)
+		}
+	}
+	return nil
+}
+
+func newModelCost(inPerMtok, outPerMtok float64) *ModelCost {
+	in := roundPrice(inPerMtok)
+	out := roundPrice(outPerMtok)
+	if math.IsNaN(in) || math.IsInf(in, 0) || math.IsNaN(out) || math.IsInf(out, 0) {
+		return nil
+	}
+	return &ModelCost{
+		InputPerMtok:  in,
+		OutputPerMtok: out,
+	}
+}
+
+func roundPrice(v float64) float64 {
+	return math.Round(v*1e4) / 1e4
+}
+
+// firstNonNegFloat parses the first finite, non-negative float (JSON
+// number or numeric string) under keys.
+func firstNonNegFloat(m map[string]any, keys ...string) (float64, bool) {
+	for _, k := range keys {
+		raw, ok := m[k]
+		if !ok {
+			continue
+		}
+		var v float64
+		switch t := raw.(type) {
+		case float64:
+			v = t
+		case string:
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
+			if err != nil {
+				continue
+			}
+			v = parsed
+		default:
+			continue
+		}
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+			continue
+		}
+		return v, true
+	}
+	return 0, false
 }
 
 // Sanitize drops invalid UTF-8 and C0/C1 control characters, which

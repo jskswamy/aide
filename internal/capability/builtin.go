@@ -324,17 +324,23 @@ func init() {
 			Name:        "skillshare",
 			Description: "Read-only access to Skillshare's skills, agents, plugins and configured sources (auto-included when Skillshare is set up).",
 		},
-		// Paths depend on XDG dirs, hashed install-root dirs, and env
-		// overrides, so sandbox.AddDynamicPaths adds them at launch.
+		// Explicit opt-in only (not auto-included): on macOS it grants
+		// signal (target others) for host-instance kill(pid, 0) liveness
+		// checks and localhost:* TCP for Chromium's ephemeral CDP WebSocket
+		// port. Dynamic paths are filled in by sandbox.AddDynamicPaths.
 		"terminal-browser": {
 			Name:        "terminal-browser",
-			Description: "terminal-browser CLI data, state/runtime sockets, config (read-only), and interop paths (auto-included when terminal-browser has been run on the host).",
+			Description: "terminal-browser CLI data, state/runtime sockets, config (read-only), interop paths, host-process signal, and localhost CDP TCP (explicit opt-in).",
 			EnvAllow: []string{
 				"TERMINAL_BROWSER_CONFIG_DIR",
 				"TERMINAL_BROWSER_INTEROP_DIR",
 				"TERMINAL_BROWSER_INTEROP_TARGET",
 				"XDG_DATA_HOME",
 				"XDG_STATE_HOME",
+			},
+			Allow: []string{
+				`signal (target others)`,
+				`network-outbound (remote tcp "localhost:*")`,
 			},
 		},
 

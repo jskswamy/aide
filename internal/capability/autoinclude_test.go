@@ -130,71 +130,18 @@ func TestAutoInclude_PonytailWhenInstalled(t *testing.T) {
 	}
 }
 
-func TestAutoInclude_TerminalBrowserWhenHashedDirExists(t *testing.T) {
-	for name, rel := range map[string]string{
-		"release data dir":  ".local/share/terminal-browser-58a67c5b",
-		"dev state dir":     ".local/state/terminal-browser-dev-abcdef01",
-		"release state dir": ".local/state/terminal-browser-01234567",
-	} {
-		t.Run(name, func(t *testing.T) {
-			homeDir := t.TempDir()
-			if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 1 {
-				t.Errorf("got %v, want [k8s] without terminal-browser", got)
-			}
-			if err := os.MkdirAll(filepath.Join(homeDir, rel), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 2 || got[1] != "terminal-browser" {
-				t.Errorf("got %v, want [k8s terminal-browser]", got)
-			}
-			if got := AutoInclude([]string{"terminal-browser"}, nil, homeDir, noEnv); len(got) != 1 {
-				t.Errorf("got %v, want [terminal-browser] (not duplicated)", got)
-			}
-			if got := AutoInclude([]string{"k8s"}, []string{"terminal-browser"}, homeDir, noEnv); len(got) != 1 {
-				t.Errorf("got %v, want [k8s] (exclusion honored)", got)
-			}
-		})
-	}
-}
-
-func TestAutoInclude_TerminalBrowserIgnoresNonMatchingAndFiles(t *testing.T) {
+func TestAutoInclude_TerminalBrowserNotAutoIncluded(t *testing.T) {
 	homeDir := t.TempDir()
-	// Non-matching sibling dirs and a regular file with a matching name must not trigger auto-include.
-	for _, dir := range []string{
-		".local/share/terminal-browser-interop",
-		".local/share/terminal-browser-short",
-		".local/share/terminal-browser-ZZZZZZZZ",
-		".local/share/other-app",
+	for _, rel := range []string{
+		".local/share/terminal-browser-58a67c5b",
+		".local/state/terminal-browser-58a67c5b",
+		".local/state/terminal-browser-dev-abcdef01",
 	} {
-		if err := os.MkdirAll(filepath.Join(homeDir, dir), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(homeDir, rel), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(homeDir, ".local", "share", "terminal-browser-58a67c5b"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 1 || got[0] != "k8s" {
-		t.Errorf("got %v, want [k8s]", got)
-	}
-}
-
-func TestAutoInclude_TerminalBrowserFollowsXDGAndSymlinks(t *testing.T) {
-	homeDir := t.TempDir()
-	rtDir := t.TempDir()
-	target := filepath.Join(t.TempDir(), "tb-real")
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(target, filepath.Join(rtDir, "terminal-browser-deadbeef")); err != nil {
-		t.Fatal(err)
-	}
-	env := func(k string) string {
-		if k == "XDG_RUNTIME_DIR" {
-			return rtDir
-		}
-		return ""
-	}
-	if got := AutoInclude(nil, nil, homeDir, env); len(got) != 1 || got[0] != "terminal-browser" {
-		t.Errorf("got %v, want [terminal-browser]", got)
+		t.Errorf("terminal-browser must require explicit opt-in, got %v", got)
 	}
 }

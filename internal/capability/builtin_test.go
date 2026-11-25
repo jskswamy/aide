@@ -446,7 +446,14 @@ func TestBuiltin_TerminalBrowser_Exists(t *testing.T) {
 	if !reflect.DeepEqual(c.EnvAllow, wantEnv) {
 		t.Errorf("EnvAllow = %v, want %v", c.EnvAllow, wantEnv)
 	}
-	if len(c.Readable) != 0 || len(c.Writable) != 0 || len(c.Allow) != 0 || len(c.Markers) != 0 {
+	wantAllow := []string{
+		`signal (target others)`,
+		`network-outbound (remote tcp "localhost:*")`,
+	}
+	if !reflect.DeepEqual(c.Allow, wantAllow) {
+		t.Errorf("Allow = %v, want %v", c.Allow, wantAllow)
+	}
+	if len(c.Readable) != 0 || len(c.Writable) != 0 || len(c.Markers) != 0 {
 		t.Errorf("terminal-browser paths are dynamic and auto-included only: %+v", c)
 	}
 }

@@ -54,12 +54,16 @@ func TestResolveTerminalBrowserGrants_DefaultXDG(t *testing.T) {
 		t.Errorf("config dir %q must be read-only, not writable", resolvedCfg)
 	}
 
-	// macOS emits scoped unix-socket Allow rules for runtime & state interop dirs.
+	// macOS emits scoped unix-socket outbound + bind Allow rules for state, runtime & state interop dirs.
 	for _, sd := range []string{stateDir, devDir, interopState} {
 		r, _ := filepath.EvalSymlinks(sd)
-		wantRule := fmt.Sprintf(`network-outbound (remote unix-socket (subpath "%s"))`, r)
-		if !slices.Contains(g.Allow, wantRule) {
-			t.Errorf("Allow missing %q; got %v", wantRule, g.Allow)
+		for _, wantRule := range []string{
+			fmt.Sprintf(`network-outbound (remote unix-socket (subpath "%s"))`, r),
+			fmt.Sprintf(`network-bind (local unix-socket (subpath "%s"))`, r),
+		} {
+			if !slices.Contains(g.Allow, wantRule) {
+				t.Errorf("Allow missing %q; got %v", wantRule, g.Allow)
+			}
 		}
 	}
 
@@ -196,5 +200,35 @@ func TestAddDynamicPaths_InheritsViaSources(t *testing.T) {
 	}
 	if len(caps[1].Writable) != 0 || len(caps[1].Readable) != 0 || len(caps[1].Allow) != 0 {
 		t.Errorf("unrelated capability should not receive dynamic paths: %+v", caps[1])
+	}
+}
+
+func TestResolveTerminalBrowserGrants_DistinctRuntimeAndStateSocketRules(t *testing.T) {
+	home := t.TempDir()
+	stateDir := filepath.Join(home, ".local", "state", "terminal-browser-58a67c5b")
+	rtRoot := filepath.Join(home, "custom-runtime")
+	rtDir := filepath.Join(rtRoot, "terminal-browser-58a67c5b")
+	for _, d := range []string{stateDir, rtDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := func(k string) string {
+		if k == "XDG_RUNTIME_DIR" {
+			return rtRoot
+		}
+		return ""
+	}
+	g := resolveTerminalBrowserGrants(nil, home, env, "darwin")
+	for _, sd := range []string{stateDir, rtDir} {
+		r, _ := filepath.EvalSymlinks(sd)
+		for _, wantRule := range []string{
+			fmt.Sprintf(`network-outbound (remote unix-socket (subpath "%s"))`, r),
+			fmt.Sprintf(`network-bind (local unix-socket (subpath "%s"))`, r),
+		} {
+			if !slices.Contains(g.Allow, wantRule) {
+				t.Errorf("Allow missing %q when XDG_RUNTIME_DIR differs from state dir; got %v", wantRule, g.Allow)
+			}
+		}
 	}
 }

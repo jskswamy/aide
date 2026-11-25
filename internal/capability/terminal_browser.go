@@ -35,13 +35,6 @@ func TerminalBrowserHashedDirs(homeDir string, getenv func(string) string) (data
 	return dataDirs, stateDirs, runtimeDirs
 }
 
-// TerminalBrowserInstalled reports whether terminal-browser on-disk state
-// exists for this user (at least one hashed data, state, or runtime dir).
-func TerminalBrowserInstalled(homeDir string, getenv func(string) string) bool {
-	dataDirs, stateDirs, runtimeDirs := TerminalBrowserHashedDirs(homeDir, getenv)
-	return len(dataDirs) > 0 || len(stateDirs) > 0 || len(runtimeDirs) > 0
-}
-
 func scanTerminalBrowserDirs(root string) []string {
 	if root == "" {
 		return nil

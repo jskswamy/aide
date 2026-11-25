@@ -62,12 +62,15 @@ func resolveTerminalBrowserGrants(cfg *config.Config, home string, getenv func(s
 	}
 
 	// 1. Hashed XDG data, state, and runtime directories.
+	// Both stateDirs and runtimeDirs carry Unix sockets (daemon.sock,
+	// instances/*.sock, agent-browser/*) — e.g. when the host browser was
+	// launched without XDG_RUNTIME_DIR while the sandbox has XDG_RUNTIME_DIR set.
 	dataDirs, stateDirs, runtimeDirs := capability.TerminalBrowserHashedDirs(home, getenv)
 	for _, d := range dataDirs {
 		addWritable(d, false)
 	}
 	for _, d := range stateDirs {
-		addWritable(d, false)
+		addWritable(d, true)
 	}
 	for _, d := range runtimeDirs {
 		addWritable(d, true)
@@ -93,15 +96,18 @@ func resolveTerminalBrowserGrants(cfg *config.Config, home string, getenv func(s
 		addUnique(&out.Readable, cfgGranted...)
 	}
 
-	// 4. Scoped macOS Seatbelt Unix-socket outbound rules so terminal-browser
-	// can connect to daemon.sock / instances/*.sock / agent-browser/*.sock
-	// even under network: none or allow_ports. On Linux Landlock, connecting
-	// to filesystem-backed Unix sockets is governed by directory write access
-	// (already covered by Writable).
+	// 4. Scoped macOS Seatbelt Unix-socket rules so terminal-browser and its
+	// bundled agent-browser can connect to and bind sockets under
+	// daemon.sock / instances/*.sock / agent-browser/* even under network: none
+	// or allow_ports. On Linux Landlock, filesystem-backed Unix sockets are
+	// governed by directory write access (already covered by Writable).
 	if goos == "darwin" {
 		for _, dir := range socketDirs {
 			if pathguard.SafeSeatbeltPath(dir) {
-				addUnique(&out.Allow, fmt.Sprintf(`network-outbound (remote unix-socket (subpath "%s"))`, dir))
+				addUnique(&out.Allow,
+					fmt.Sprintf(`network-outbound (remote unix-socket (subpath "%s"))`, dir),
+					fmt.Sprintf(`network-bind (local unix-socket (subpath "%s"))`, dir),
+				)
 			}
 		}
 	}

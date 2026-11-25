@@ -61,6 +61,10 @@ var severityRank = map[Severity]int{SeverityError: 0, SeverityWarning: 1, Severi
 // then other profiles; within each, worst first.
 func NewReport(version string, dir *Directory, findings []Finding) Report {
 	r := Report{SchemaVersion: SchemaVersion, AideVersion: version, Directory: dir, Findings: append([]Finding{}, findings...)}
+	for i := range r.Findings {
+		fx := &r.Findings[i].Fix
+		fx.Argv, fx.SideEffects, fx.Steps = nonNil(fx.Argv), nonNil(fx.SideEffects), nonNil(fx.Steps)
+	}
 	for _, f := range r.Findings {
 		switch f.Severity {
 		case SeverityError:
@@ -166,4 +170,12 @@ func paren(s string) string {
 		return ""
 	}
 	return " (" + s + ")"
+}
+
+// nonNil keeps JSON lists as [] rather than null.
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }

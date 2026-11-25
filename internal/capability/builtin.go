@@ -319,10 +319,23 @@ func init() {
 			Writable:    []string{"~/.config/ponytail/band"},
 		},
 		// Readable paths depend on XDG dirs and Skillshare's config, so
-		// sandbox.ResolveCapabilitiesWithVariants adds them at launch.
+		// sandbox.AddDynamicPaths adds them at launch.
 		"skillshare": {
 			Name:        "skillshare",
 			Description: "Read-only access to Skillshare's skills, agents, plugins and configured sources (auto-included when Skillshare is set up).",
+		},
+		// Paths depend on XDG dirs, hashed install-root dirs, and env
+		// overrides, so sandbox.AddDynamicPaths adds them at launch.
+		"terminal-browser": {
+			Name:        "terminal-browser",
+			Description: "terminal-browser CLI data, state/runtime sockets, config (read-only), and interop paths (auto-included when terminal-browser has been run on the host).",
+			EnvAllow: []string{
+				"TERMINAL_BROWSER_CONFIG_DIR",
+				"TERMINAL_BROWSER_INTEROP_DIR",
+				"TERMINAL_BROWSER_INTEROP_TARGET",
+				"XDG_DATA_HOME",
+				"XDG_STATE_HOME",
+			},
 		},
 
 		// Network

@@ -30,11 +30,14 @@ const (
 //     so its band can write the task ledger;
 //   - "skillshare" when Skillshare's config dir exists, so the agent can
 //     read the skills, agents and plugins Skillshare links into its
-//     config dir.
+//     config dir;
+//   - "terminal-browser" when at least one hashed terminal-browser data,
+//     state, or runtime dir exists on the host, so `terminal-browser ls`,
+//     `action`, and `open` can reach their data and Unix sockets.
 //
 // A capability already in capNames is not added twice, and one named in
 // excluded (--without and the project's disabled_capabilities) is not
-// added at all. getenv reads XDG_CONFIG_HOME for Skillshare's dir.
+// added at all. getenv reads XDG_* dirs for Skillshare and terminal-browser.
 //
 // Lives in internal/capability (rather than internal/launcher) so it can be
 // called from every place a context's effective capability set is computed
@@ -47,7 +50,8 @@ func AutoInclude(capNames, excluded []string, homeDir string, getenv func(string
 	_, err = os.Stat(homepath.Expand(bivouacConfigDir, homeDir))
 	capNames = autoInclude(capNames, excluded, "bivouac", err == nil)
 	capNames = autoInclude(capNames, excluded, "ponytail", ponytailInstalled(homeDir))
-	return autoInclude(capNames, excluded, "skillshare", skillshare.Installed(homeDir, getenv))
+	capNames = autoInclude(capNames, excluded, "skillshare", skillshare.Installed(homeDir, getenv))
+	return autoInclude(capNames, excluded, "terminal-browser", TerminalBrowserInstalled(homeDir, getenv))
 }
 
 func autoInclude(capNames, excluded []string, name string, installed bool) []string {

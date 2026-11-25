@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"runtime"
 	"slices"
 
 	"github.com/jskswamy/aide/internal/capability"
@@ -78,6 +79,7 @@ type VariantSelectionOptions struct {
 	Prompter     capability.Prompter
 	Interactive  bool
 	AutoYes      bool
+	EnvLookup    func(string) string // optional session env lookup (nil falls back to os.Getenv)
 }
 
 // ResolveCapabilitiesWithVariants resolves capNames, then for each
@@ -95,7 +97,7 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 		return nil, config.SandboxOverrides{}, nil, err
 	}
 
-	AddSkillsharePaths(capSet.Capabilities, cfg)
+	AddDynamicPathsWithEnv(capSet.Capabilities, cfg, opts.EnvLookup)
 
 	provenance := make(map[string]capability.Provenance)
 	// For each resolved capability, if its defining built-in (or user
@@ -128,21 +130,35 @@ func ResolveCapabilitiesWithVariants(capNames []string, cfg *config.Config, opts
 	return capSet, capSet.ToSandboxOverrides(), provenance, nil
 }
 
-// AddSkillsharePaths fills in the read paths of every capability in caps
-// that is or extends "skillshare": they depend on XDG dirs, Skillshare's
-// config and the profile dirs in cfg its sources: must not reach, so the
-// built-in cannot declare them. Every caller that resolves capabilities
-// for a launch or for display calls it, so what `aide cap show` and
-// `aide status` print is what the sandbox grants. Without a home dir it
-// adds nothing.
-func AddSkillsharePaths(caps []capability.ResolvedCapability, cfg *config.Config) {
+// AddDynamicPaths fills in runtime-computed paths and rules for every
+// capability in caps that is or extends a dynamic built-in ("skillshare" or
+// "terminal-browser"), reading overrides from os.Getenv.
+func AddDynamicPaths(caps []capability.ResolvedCapability, cfg *config.Config) {
+	AddDynamicPathsWithEnv(caps, cfg, os.Getenv)
+}
+
+// AddDynamicPathsWithEnv is like AddDynamicPaths but reads environment
+// variables via getenv (falling back to os.Getenv when nil), so callers with
+// profile-resolved session env (such as launcher.Launch) grant the exact
+// directories the agent process will see.
+func AddDynamicPathsWithEnv(caps []capability.ResolvedCapability, cfg *config.Config, getenv func(string) string) {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return
 	}
+	if getenv == nil {
+		getenv = os.Getenv
+	}
 	for i := range caps {
-		if rc := &caps[i]; slices.Contains(rc.Sources, "skillshare") {
-			rc.Readable = sliceutil.Dedup(append(rc.Readable, skillshare.ReadableDirs(cfg, home, os.Getenv)...))
+		rc := &caps[i]
+		if slices.Contains(rc.Sources, "skillshare") {
+			rc.Readable = sliceutil.Dedup(append(rc.Readable, skillshare.ReadableDirs(cfg, home, getenv)...))
+		}
+		if slices.Contains(rc.Sources, "terminal-browser") {
+			g := resolveTerminalBrowserGrants(cfg, home, getenv, runtime.GOOS)
+			rc.Readable = sliceutil.Dedup(append(rc.Readable, g.Readable...))
+			rc.Writable = sliceutil.Dedup(append(rc.Writable, g.Writable...))
+			rc.Allow = sliceutil.Dedup(append(rc.Allow, g.Allow...))
 		}
 	}
 }

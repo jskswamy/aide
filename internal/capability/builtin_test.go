@@ -23,8 +23,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 27 {
-		t.Errorf("expected 27 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 28 {
+		t.Errorf("expected 28 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -425,6 +425,29 @@ func TestBuiltin_Ponytail_Paths(t *testing.T) {
 	}
 	if len(c.Readable) != 0 || len(c.Markers) != 0 {
 		t.Errorf("ponytail is write-only and auto-included: %+v", c)
+	}
+}
+
+func TestBuiltin_TerminalBrowser_Exists(t *testing.T) {
+	c, ok := Builtins()["terminal-browser"]
+	if !ok {
+		t.Fatal("missing built-in capability 'terminal-browser'")
+	}
+	if c.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	wantEnv := []string{
+		"TERMINAL_BROWSER_CONFIG_DIR",
+		"TERMINAL_BROWSER_INTEROP_DIR",
+		"TERMINAL_BROWSER_INTEROP_TARGET",
+		"XDG_DATA_HOME",
+		"XDG_STATE_HOME",
+	}
+	if !reflect.DeepEqual(c.EnvAllow, wantEnv) {
+		t.Errorf("EnvAllow = %v, want %v", c.EnvAllow, wantEnv)
+	}
+	if len(c.Readable) != 0 || len(c.Writable) != 0 || len(c.Allow) != 0 || len(c.Markers) != 0 {
+		t.Errorf("terminal-browser paths are dynamic and auto-included only: %+v", c)
 	}
 }
 

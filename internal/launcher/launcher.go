@@ -444,13 +444,20 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 	// wrapper below.
 	agentBinary := binary
 
+	sessionGetenv := func(k string) string {
+		if v, ok := resolvedEnv[k]; ok {
+			return v
+		}
+		return os.Getenv(k)
+	}
+
 	// 12. Resolve capabilities and merge into sandbox config.
 	capNames := sandbox.MergeCapNames(rc.Context.Capabilities, withCaps, withoutCaps)
 	excludedCaps := slices.Clone(withoutCaps)
 	if cfg.ProjectOverride != nil {
 		excludedCaps = append(excludedCaps, cfg.ProjectOverride.DisabledCapabilities...)
 	}
-	capNames = capability.AutoInclude(capNames, excludedCaps, homeDir, os.Getenv)
+	capNames = capability.AutoInclude(capNames, excludedCaps, homeDir, sessionGetenv)
 
 	// Build capability source map: track whether each cap came from context or --with.
 	contextCapSet := make(map[string]bool, len(rc.Context.Capabilities))
@@ -487,6 +494,7 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		Prompter:     l.Prompter,
 		Interactive:  l.Interactive,
 		AutoYes:      l.AutoYes,
+		EnvLookup:    sessionGetenv,
 	}
 	resolvedCapSet, capOverrides, capProvenance, err := sandbox.ResolveCapabilitiesWithVariants(capNames, cfg, variantOpts)
 	if err != nil {

@@ -336,7 +336,7 @@ func capShowCmd() *cobra.Command {
 				return fmt.Errorf("resolving capability: %w", err)
 			}
 			one := []capability.ResolvedCapability{*resolved}
-			sandbox.AddSkillsharePaths(one, env.Config())
+			sandbox.AddDynamicPaths(one, env.Config())
 			resolved = &one[0]
 
 			entry := registry[name]
@@ -951,7 +951,7 @@ This is a preview — nothing is launched or modified.`,
 			if err != nil {
 				return err
 			}
-			sandbox.AddSkillsharePaths(set.Capabilities, cfg)
+			sandbox.AddDynamicPaths(set.Capabilities, cfg)
 
 			result := buildCapReportResult(set, "")
 			format, ferr := output.FromCmd(cmd)
@@ -1004,7 +1004,7 @@ func capAuditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sandbox.AddSkillsharePaths(set.Capabilities, cfg)
+			sandbox.AddDynamicPaths(set.Capabilities, cfg)
 
 			result := buildCapReportResult(set, ctxName)
 			format, ferr := output.FromCmd(cmd)

@@ -84,15 +84,29 @@ one warns that this grants the whole capability.
 | `gpu` | GPU compute and offscreen rendering (Metal, OpenGL, CUDA, ROCm, Vulkan); see [GPU](#gpu) | Linux only: GPU sysfs, driver registries, `/opt/rocm*` | Linux only: `CUDA_VISIBLE_DEVICES`, `NVIDIA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES` |
 | `ccstatusline` | Read access to ccstatusline's settings, for `aide statusline` invoked from a ccstatusline Custom Command widget | `~/.config/ccstatusline/settings.json` | - |
 | `skillshare` | Read-only access to the skills, agents and plugins [Skillshare](skillshare.md) links into agent config dirs | `skills/` and `agents/` in `$XDG_CONFIG_HOME/skillshare` (else `~/.config/skillshare`), `$XDG_STATE_HOME/skillshare/plugins` (else `~/.local/state/skillshare/plugins`), and the safe `sources:` paths of Skillshare's config | - |
+| `terminal-browser` | `terminal-browser` CLI data, state/runtime Unix sockets, read-only config, and interop dirs | Existing `terminal-browser-(dev-)?<8-hex>` dirs under XDG data/state/runtime, `~/.local/{state,share}/terminal-browser-interop` (or `$TERMINAL_BROWSER_INTEROP_DIR`), and `$XDG_CONFIG_HOME/terminal-browser` (or `$TERMINAL_BROWSER_CONFIG_DIR`, read-only) | `TERMINAL_BROWSER_CONFIG_DIR`, `TERMINAL_BROWSER_INTEROP_DIR`, `TERMINAL_BROWSER_INTEROP_TARGET`, `XDG_DATA_HOME`, `XDG_STATE_HOME` |
 
-Two built-ins auto-enable themselves when their tool is set up:
-`ccstatusline` when its settings file exists, and `skillshare` when
+Built-in tools auto-enable themselves when their on-disk setup is detected:
+`ccstatusline` when its settings file exists, `skillshare` when
 Skillshare's config dir (`$XDG_CONFIG_HOME/skillshare`, else
-`~/.config/skillshare`) exists. They are added to the effective capability
-set (and shown as enabled by `aide cap list`) without `--with` or a
+`~/.config/skillshare`) exists, and `terminal-browser` when at least one
+existing `terminal-browser-<8-hex>` or `terminal-browser-dev-<8-hex>`
+directory exists under XDG data, state, or runtime roots (so `terminal-browser`
+must have been run at least once on the host). They are added to the effective
+capability set (and shown as enabled by `aide cap list`) without `--with` or a
 `capabilities:` entry. Opt out like any other capability: `--without
-skillshare` for a session, or `disabled_capabilities: [skillshare]` in
-`.aide.yaml`. Every other built-in requires explicit opt-in.
+terminal-browser` for a session, or `disabled_capabilities: [terminal-browser]`
+in `.aide.yaml`. Every other built-in requires explicit opt-in.
+
+`terminal-browser` resolves concrete directories in Go so grants work
+identically on macOS Seatbelt and Linux Landlock. Its config directory stays
+read-only, env-derived overrides are validated against sensitive and system
+directories (and writable overrides must stay strictly inside `$HOME`,
+`/run/user/<uid>`, or the user's temp directory), and macOS emits scoped
+`network-outbound (remote unix-socket (subpath ...))` rules so Unix sockets
+keep working under `network: none` or `allow_ports`. On Linux `bwrap` with
+`network: none` (`--unshare-net`), filesystem-backed Unix sockets work via
+bind mounts, whereas abstract Unix sockets cannot cross the network namespace.
 
 `skillshare` grants read access only, to the symlink-resolved paths (and
 the literal path when it differs), and skips dirs that do not exist. It

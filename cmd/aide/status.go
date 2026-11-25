@@ -797,7 +797,7 @@ func statusCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("resolving capabilities: %w", err)
 				}
-				sandbox.AddSkillsharePaths(capSet.Capabilities, cfg)
+				sandbox.AddDynamicPaths(capSet.Capabilities, cfg)
 			}
 
 			// Resolve sandbox policy for rule count

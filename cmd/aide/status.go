@@ -15,6 +15,7 @@ import (
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
+	"github.com/jskswamy/aide/internal/consent"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/display"
 	"github.com/jskswamy/aide/internal/fsutil"
@@ -289,40 +290,16 @@ func whichCmd() *cobra.Command {
 
 			// Resolve capabilities & merge into sandbox policy (non-interactive preview)
 			projectRoot := aidectx.ProjectRoot(cwd)
-			capNames := sandbox.MergeCapNames(resolved.Context.Capabilities, nil, nil)
-			var excludedCaps []string
-			if cfg.ProjectOverride != nil {
-				excludedCaps = append(excludedCaps, cfg.ProjectOverride.DisabledCapabilities...)
-			}
-			capNames = capability.AutoInclude(capNames, excludedCaps, homeDir, os.Getenv)
-			contextCapSet := make(map[string]bool, len(resolved.Context.Capabilities))
-			for _, c := range resolved.Context.Capabilities {
-				contextCapSet[c] = true
-			}
-
-			resolvedSandbox, sbDisabled, _ := sandbox.ResolveSandboxRef(resolved.Context.Sandbox, cfg.Sandboxes)
-			var configWritableExtra, configReadableExtra, configDeniedExtra []string
-			if resolvedSandbox != nil {
-				configWritableExtra = append([]string{}, resolvedSandbox.WritableExtra...)
-				configReadableExtra = append([]string{}, resolvedSandbox.ReadableExtra...)
-				configDeniedExtra = append([]string{}, resolvedSandbox.DeniedExtra...)
-			}
-
-			var yamlPins map[string][]string
-			if cfg.ProjectOverride != nil && len(cfg.ProjectOverride.CapabilityVariants) > 0 {
-				yamlPins = make(map[string][]string, len(cfg.ProjectOverride.CapabilityVariants))
-				for k, v := range cfg.ProjectOverride.CapabilityVariants {
-					yamlPins[k] = append([]string(nil), v...)
-				}
-			}
-			variantOpts := sandbox.VariantSelectionOptions{
-				ProjectRoot: projectRoot,
-				FS:          os.DirFS(projectRoot),
-				YAMLPins:    yamlPins,
-				Interactive: false,
-			}
-			resolvedCapSet, capOverrides, capProvenance, _ := sandbox.ResolveCapabilitiesWithVariants(capNames, cfg, variantOpts)
-			sandbox.ApplyOverrides(&resolvedSandbox, capOverrides)
+			// What launch would use without asking: saved variant
+			// choices apply, pending ones fall back to the default.
+			sbRes, _ := launcher.ResolveSandbox(cfg, resolved, launcher.SandboxInputs{
+				ProjectRoot: projectRoot, HomeDir: homeDir,
+				Variants: sandbox.VariantSelectionOptions{Consent: consent.DefaultStore()},
+			})
+			resolvedSandbox, sbDisabled := sbRes.Config, sbRes.Disabled
+			resolvedCapSet, capOverrides, capProvenance := sbRes.Caps, sbRes.Overrides, sbRes.Provenance
+			contextCapSet := sbRes.ContextCaps
+			configWritableExtra, configReadableExtra, configDeniedExtra := sbRes.ConfigWritable, sbRes.ConfigReadable, sbRes.ConfigDenied
 
 			// Build unified env items
 			var resolvedValues map[string]string

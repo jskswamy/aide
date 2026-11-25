@@ -454,70 +454,32 @@ func (l *Launcher) Launch(cwd string, agentOverride string, extraArgs []string, 
 		return os.Getenv(k)
 	}
 
-	// 12. Resolve capabilities and merge into sandbox config.
-	capNames := sandbox.MergeCapNames(rc.Context.Capabilities, withCaps, withoutCaps)
-	excludedCaps := slices.Clone(withoutCaps)
-	if cfg.ProjectOverride != nil {
-		excludedCaps = append(excludedCaps, cfg.ProjectOverride.DisabledCapabilities...)
-	}
-	capNames = capability.AutoInclude(capNames, excludedCaps, homeDir, sessionGetenv)
-
-	// Build capability source map: track whether each cap came from context or --with.
-	contextCapSet := make(map[string]bool, len(rc.Context.Capabilities))
-	for _, c := range rc.Context.Capabilities {
-		contextCapSet[c] = true
-	}
-
-	// 13. Apply sandbox (DD-18: always applied unless explicitly disabled).
-	// ResolveSandboxRef resolves named profiles; PolicyFromConfig handles nil → defaults.
-	sandboxCfg, sbDisabled, sbErr := sandbox.ResolveSandboxRef(rc.Context.Sandbox, cfg.Sandboxes)
-	if sbErr != nil {
-		cleanup()
-		return fmt.Errorf("resolving sandbox: %w", sbErr)
-	}
-
-	// Snapshot original config paths before capability overrides merge them.
-	var configWritableExtra, configReadableExtra, configDeniedExtra []string
-	if sandboxCfg != nil {
-		configWritableExtra = append([]string{}, sandboxCfg.WritableExtra...)
-		configReadableExtra = append([]string{}, sandboxCfg.ReadableExtra...)
-		configDeniedExtra = append([]string{}, sandboxCfg.DeniedExtra...)
-	}
-
-	// Merge capability overrides into sandbox config before PolicyFromConfig.
+	// 12-13. Resolve capabilities and merge them into the sandbox config
+	// (DD-18: the sandbox always applies unless explicitly disabled).
 	if l.Prompter == nil && l.Interactive {
 		l.Prompter = ui.NewTTYPrompter(l.stdinReader(), l.stderr())
 	}
-	variantOpts := sandbox.VariantSelectionOptions{
-		ProjectRoot:  projectRoot,
-		FS:           os.DirFS(projectRoot),
-		CLIOverrides: l.VariantOverrides,
-		YAMLPins:     yamlVariantPins(cfg.ProjectOverride),
-		Consent:      l.ConsentStore,
-		Prompter:     l.Prompter,
-		Interactive:  l.Interactive,
-		AutoYes:      l.AutoYes,
-		EnvLookup:    sessionGetenv,
-	}
-	resolvedCapSet, capOverrides, capProvenance, err := sandbox.ResolveCapabilitiesWithVariants(capNames, cfg, variantOpts)
+	sbRes, err := ResolveSandbox(cfg, rc, SandboxInputs{
+		ProjectRoot: projectRoot, HomeDir: homeDir, Getenv: sessionGetenv,
+		WithCaps: withCaps, WithoutCaps: withoutCaps,
+		UnrestrictedNetwork: l.UnrestrictedNetwork,
+		Variants: sandbox.VariantSelectionOptions{
+			CLIOverrides: l.VariantOverrides,
+			Consent:      l.ConsentStore,
+			Prompter:     l.Prompter,
+			Interactive:  l.Interactive,
+			AutoYes:      l.AutoYes,
+			EnvLookup:    sessionGetenv,
+		},
+	})
 	if err != nil {
 		cleanup()
-		return fmt.Errorf("resolving capabilities: %w", err)
+		return err
 	}
-	sandbox.ApplyOverrides(&sandboxCfg, capOverrides)
-
-	// -N flag: force unrestricted network and clear port rules.
-	if l.UnrestrictedNetwork {
-		if sandboxCfg == nil {
-			sandboxCfg = &config.SandboxPolicy{}
-		}
-		if sandboxCfg.Network == nil {
-			sandboxCfg.Network = &config.NetworkPolicy{}
-		}
-		sandboxCfg.Network.Mode = "unrestricted"
-		sandboxCfg.Network.AllowPorts = nil
-		sandboxCfg.Network.DenyPorts = nil
-	}
+	sandboxCfg, sbDisabled := sbRes.Config, sbRes.Disabled
+	resolvedCapSet, capOverrides, capProvenance := sbRes.Caps, sbRes.Overrides, sbRes.Provenance
+	contextCapSet := sbRes.ContextCaps
+	configWritableExtra, configReadableExtra, configDeniedExtra := sbRes.ConfigWritable, sbRes.ConfigReadable, sbRes.ConfigDenied
 
 	// Build environment: the inherited env with credentials
 	// scrubbed (independent of --clean-env), then the context/profile

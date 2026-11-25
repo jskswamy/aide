@@ -217,6 +217,16 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		here = append(here, doctor.Finding{ID: id, Subject: subject, Profile: rc.Name, Severity: sev, Message: msg, Fix: doctor.Fix{Steps: steps}})
 	}
 
+	if tied := aidectx.TiedMatches(cfg, cwd, aidectx.GitRemotes(cwd)); len(tied) > 1 {
+		add("profile.match-tie", strings.Join(tied, ","), doctor.SeverityWarning,
+			fmt.Sprintf("profiles %s match this directory equally well; %s wins only because its name sorts first", strings.Join(tied, ", "), tied[0]),
+			"Make one profile's match rule more specific: aide profile bind <profile> --scope repo binds it to this repository", "See the rules with: aide profile list")
+	}
+	if rc.Context.Sandbox == nil && (cfg.ProjectOverride == nil || cfg.ProjectOverride.Sandbox == nil) {
+		add("sandbox.default-policy", rc.Name, doctor.SeverityTip,
+			"the profile uses aide's default sandbox; that may be what you want",
+			"Review it with: aide sandbox show", "Tune it with: aide sandbox allow, aide sandbox deny or aide sandbox guard")
+	}
 	for _, n := range res.Notices {
 		add("selection.notice", rc.Name, doctor.SeverityWarning, n)
 	}

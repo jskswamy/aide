@@ -154,6 +154,31 @@ func bestMatch(cfg *config.Config, cwd string, remotes RemoteLookup) *ResolvedCo
 	}
 }
 
+// TiedMatches returns the profiles that share the best match score for
+// cwd, in the order the resolver tries them (the first one wins), or
+// nil when the best match is unique.
+func TiedMatches(cfg *config.Config, cwd string, remotes RemoteLookup) []string {
+	var tied []string
+	best := 0
+	for _, name := range slices.Sorted(maps.Keys(cfg.Contexts)) {
+		score := 0
+		for i := range cfg.Contexts[name].Match {
+			score = max(score, scoreRule(&cfg.Contexts[name].Match[i], cwd, remotes))
+		}
+		switch {
+		case score == 0 || score < best:
+		case score > best:
+			best, tied = score, []string{name}
+		default:
+			tied = append(tied, name)
+		}
+	}
+	if len(tied) < 2 {
+		return nil
+	}
+	return tied
+}
+
 // defaultContext returns the fallback context named by cfg.DefaultContext (or
 // config.DefaultProfileName when DefaultContext is unset) when it exists in
 // cfg.Contexts, or nil.

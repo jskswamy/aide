@@ -205,7 +205,8 @@ Findings with written steps have `widens_access: false`.
 | `sandbox.paths-missing` | PolicyFromConfig ("skipped:" warnings) | tip | n/a (steps) | profile | One tip counting granted paths that do not exist; steps: `aide sandbox show` |
 | `credential.plan-failed` | PlanProfileCredentials | error | n/a (steps) | profile | The error; launch would fail |
 | `selection.failed` | selection | error | n/a (steps) | — | No profile can be selected; steps: `aide which` |
-| `capability.suggested` | ResolveSandbox (markers) | tip | yes | capability | See item 7 |
+| `capability.suggested` | ResolveSandbox (markers); for `gpu`, doctor's own GPU-library markers, since `gpu` has none by design | tip | yes | capability | See item 7 |
+| `capability.path-denied` | doctor (capability paths vs `denied_extra`) | warning | n/a (steps) | capability:path | Steps: drop the deny, or `aide cap disable <name>` |
 | `profile.match-tie` | `context.TiedMatches` | warning | n/a (steps) | tied profiles | Steps: make one rule more specific (`aide profile bind <profile> --scope repo`) |
 | `sandbox.network-unrestricted` | PolicyFromConfig | tip | n/a (steps) | profile | Steps: `aide sandbox network outbound`, `aide sandbox ports 443`, or `aide cap disable network` |
 | `sandbox.opt-in-guards` | `guards.AllGuards` | tip | n/a (steps) | profile | Steps: `aide sandbox guards`, `aide sandbox guard <name>` |

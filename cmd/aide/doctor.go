@@ -20,6 +20,7 @@ import (
 	"github.com/jskswamy/aide/internal/consent"
 	aidectx "github.com/jskswamy/aide/internal/context"
 	"github.com/jskswamy/aide/internal/doctor"
+	"github.com/jskswamy/aide/internal/fsutil"
 	"github.com/jskswamy/aide/internal/harness"
 	"github.com/jskswamy/aide/internal/homepath"
 	"github.com/jskswamy/aide/internal/launcher"
@@ -327,6 +328,9 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		case pol != nil:
 			dir.Guards, dir.Network = pol.Guards, string(pol.Network)
 			here = append(here, sandboxTips(rc.Name, pol)...)
+			if sb.Caps != nil {
+				here = append(here, deniedCapabilityPaths(rc.Name, sb.Caps.Capabilities, pol.ExtraDenied, home)...)
+			}
 		}
 		// Granted paths that do not exist are common and harmless; one
 		// tip covers them all.
@@ -356,13 +360,25 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		}
 	}
 	projectFS := os.DirFS(projectRoot)
-	for _, name := range capability.DetectProject(projectFS) {
+	detected := capability.DetectProject(projectFS)
+	// gpu has no markers on purpose (importing torch must never turn it
+	// on), so only doctor looks for GPU libraries, and only to suggest.
+	if capability.AnyMarkerMatches(projectFS, gpuLibraryMarkers) {
+		detected = append(detected, "gpu")
+	}
+	markersOf := func(name string) []capability.Marker {
+		if name == "gpu" {
+			return gpuLibraryMarkers
+		}
+		return capability.Builtins()[name].Markers
+	}
+	for _, name := range detected {
 		if slices.Contains(active, name) || slices.Contains(disabled, name) {
 			continue
 		}
 		dir.Detected = append(dir.Detected, name)
 		c := capability.Builtins()[name]
-		here = append(here, doctor.SuggestedCapability(name, matchedMarker(projectFS, c.Markers), append(slices.Clone(c.Readable), c.Writable...), rc.Name, local))
+		here = append(here, doctor.SuggestedCapability(name, matchedMarker(projectFS, markersOf(name)), append(slices.Clone(c.Readable), c.Writable...), rc.Name, local))
 	}
 	return dir, here, nil
 }
@@ -445,6 +461,40 @@ func sandboxTips(profile string, pol *sandbox.Policy) []doctor.Finding {
 			Message: "opt-in guards available but off: " + strings.Join(off, ", "),
 			Fix:     doctor.Fix{Steps: []string{"See what each protects with: aide sandbox guards", "Turn one on with: aide sandbox guard <name>"}},
 		})
+	}
+	return out
+}
+
+// gpuLibraryMarkers are signs a Python project uses the GPU.
+var gpuLibraryMarkers = func() []capability.Marker {
+	var ms []capability.Marker
+	for _, lib := range []string{"torch", "jax", "tensorflow", "moderngl", "cupy"} {
+		ms = append(ms,
+			capability.Marker{Contains: capability.ContainsSpec{File: "requirements.txt", Pattern: lib}},
+			capability.Marker{Contains: capability.ContainsSpec{File: "pyproject.toml", Pattern: lib}},
+			capability.Marker{GlobContains: capability.GlobContainsSpec{Glob: "*.py", Pattern: "import " + lib}},
+		)
+	}
+	return ms
+}()
+
+// deniedCapabilityPaths reports capability paths that a denied_extra
+// rule blocks, so the capability does not do what it says.
+func deniedCapabilityPaths(profile string, caps []capability.ResolvedCapability, denied []string, home string) []doctor.Finding {
+	var out []doctor.Finding
+	for _, c := range caps {
+		for _, p := range append(slices.Clone(c.Readable), c.Writable...) {
+			path := homepath.Expand(p, home)
+			for _, d := range denied {
+				if fsutil.IsUnderDir(path, homepath.Expand(d, home)) {
+					out = append(out, doctor.Finding{
+						ID: "capability.path-denied", Subject: c.Name + ":" + p, Profile: profile, Severity: doctor.SeverityWarning,
+						Message: fmt.Sprintf("the %s capability grants %s, but denied_extra %s blocks it", c.Name, p, d),
+						Fix:     doctor.Fix{Steps: []string{fmt.Sprintf("Drop %s from denied_extra, or disable %s: aide cap disable %s", d, c.Name, c.Name)}},
+					})
+				}
+			}
+		}
 	}
 	return out
 }

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jskswamy/aide/main/schemas/provisioning.schema.json",
+  "title": "aide Provisioning Configuration (provisioning.yaml)",
+  "description": "Shared plugin, MCP server, and hook declarations stored in ~/.config/aide/provisioning.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "plugins": {
+      "type": "object",
+      "description": "Top-level declarative plugin declarations keyed by repo path (list/null) or plugin name (string).",
+      "additionalProperties": {
+        "$ref": "#/$defs/PluginEntry"
+      }
+    },
+    "mcp_servers": {
+      "type": "object",
+      "description": "Top-level MCP server definitions keyed by server name.",
+      "additionalProperties": {
+        "$ref": "#/$defs/MCPServer"
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Top-level normalized agent lifecycle hooks keyed by event name.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/HookEntry"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "PluginEntry": {
+      "description": "Plugin entry: list of plugin names (marketplace), string install reference (URL-direct), or null (declare-only marketplace).",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        { "type": "string" },
+        { "type": "null" }
+      ]
+    },
+    "MCPServer": {
+      "type": "object",
+      "description": "MCP server definition (stdio command or remote URL).",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Executable command for a stdio MCP server."
+        },
+        "url": {
+          "type": "string",
+          "description": "HTTP/SSE endpoint URL for a remote MCP server."
+        },
+        "args": {
+          "type": "array",
+          "description": "Command-line arguments passed to the command.",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for the MCP server.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "HookEntry": {
+      "type": "object",
+      "description": "Normalized agent lifecycle hook entry.",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional identifier used by per-profile exclude_hooks."
+        },
+        "matcher": {
+          "type": "string",
+          "description": "Optional tool/event matcher expression."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command executed when the hook triggers."
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds (0 uses the agent driver default).",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jskswamy/aide/main/schemas/project.schema.json",
+  "title": "aide Project Override (.aide.yaml)",
+  "description": "Per-project configuration overrides stored in .aide.yaml at a repository or workspace root.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "type": "string",
+      "description": "Name of an existing user profile to select for this project."
+    },
+    "agent": {
+      "description": "Override the coding agent launched in this project.",
+      "anyOf": [
+        { "enum": ["claude", "codex", "gemini", "omp", "opencode", "pi", "agy"] },
+        { "type": "string" }
+      ]
+    },
+    "env": {
+      "type": "object",
+      "description": "Project-specific environment variables merged over the active profile.",
+      "additionalProperties": { "type": "string" }
+    },
+    "mcp_servers": {
+      "type": "array",
+      "description": "Additional MCP server names enabled for this project.",
+      "items": { "type": "string" }
+    },
+    "sandbox": {
+      "description": "Project-level sandbox policy overrides (or false to disable).",
+      "oneOf": [
+        { "const": false },
+        { "$ref": "#/$defs/SandboxPolicy" }
+      ]
+    },
+    "preferences": {
+      "$ref": "#/$defs/Preferences"
+    },
+    "statusline": {
+      "$ref": "#/$defs/StatuslineConfig"
+    },
+    "yolo": {
+      "type": "boolean",
+      "description": "Override auto-approve / yolo mode for this project."
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Capabilities enabled for this project.",
+      "items": { "$ref": "#/$defs/CapabilityName" }
+    },
+    "disabled_capabilities": {
+      "type": "array",
+      "description": "Capabilities disabled for this project even if enabled by the active profile.",
+      "items": { "$ref": "#/$defs/CapabilityName" }
+    },
+    "capability_variants": {
+      "type": "object",
+      "description": "Pin specific variants for named capabilities (e.g. python: [venv, uv]).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "CapabilityName": {
+      "anyOf": [
+        {
+          "enum": [
+            "aws", "gcp", "azure", "digitalocean", "oci",
+            "docker", "k8s", "helm", "terraform", "vault", "ssh",
+            "npm", "go", "rust", "python", "ruby", "java",
+            "github", "git-remote", "gpg", "clipboard",
+            "ccstatusline", "bivouac", "ponytail", "skillshare", "network"
+          ]
+        },
+        { "type": "string" }
+      ]
+    },
+    "NetworkPolicy": {
+      "description": "Network policy: a mode string ('outbound', 'none', 'unrestricted') or structured port policy.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["outbound", "none", "unrestricted"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["outbound", "none", "unrestricted"],
+              "description": "Base network access mode."
+            },
+            "allow_ports": {
+              "type": "array",
+              "description": "Additional destination TCP ports allowed.",
+              "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            },
+            "deny_ports": {
+              "type": "array",
+              "description": "Destination TCP ports explicitly blocked.",
+              "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        }
+      ]
+    },
+    "SandboxPolicy": {
+      "type": "object",
+      "description": "OS-native sandbox constraints for this project.",
+      "additionalProperties": false,
+      "properties": {
+        "writable": {
+          "type": "array",
+          "description": "Replace default writable paths.",
+          "items": { "type": "string" }
+        },
+        "readable": {
+          "type": "array",
+          "description": "Replace default readable paths.",
+          "items": { "type": "string" }
+        },
+        "denied": {
+          "type": "array",
+          "description": "Replace default denied paths.",
+          "items": { "type": "string" }
+        },
+        "writable_extra": {
+          "type": "array",
+          "description": "Additional paths granted read+write access.",
+          "items": { "type": "string" }
+        },
+        "readable_extra": {
+          "type": "array",
+          "description": "Additional paths granted read-only access.",
+          "items": { "type": "string" }
+        },
+        "denied_extra": {
+          "type": "array",
+          "description": "Additional paths explicitly denied.",
+          "items": { "type": "string" }
+        },
+        "network": {
+          "$ref": "#/$defs/NetworkPolicy"
+        },
+        "allow_subprocess": {
+          "type": "boolean",
+          "description": "Allow spawning subprocesses inside the sandbox."
+        },
+        "clean_env": {
+          "type": "boolean",
+          "description": "Scrub inherited environment variables before launch."
+        },
+        "guards": {
+          "type": "array",
+          "description": "Replace default active guard names.",
+          "items": { "type": "string" }
+        },
+        "guards_extra": {
+          "type": "array",
+          "description": "Additional guards to enable.",
+          "items": { "type": "string" }
+        },
+        "unguard": {
+          "type": "array",
+          "description": "Guards to disable for this policy.",
+          "items": { "type": "string" }
+        },
+        "allow": {
+          "type": "array",
+          "description": "Explicitly allowed paths/resources overriding guards.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "Preferences": {
+      "type": "object",
+      "description": "Project-level display and launch behavior overrides.",
+      "additionalProperties": false,
+      "properties": {
+        "show_info": {
+          "type": "boolean",
+          "description": "Show the startup info banner before launching an agent."
+        },
+        "info_style": {
+          "description": "Visual style of the startup info banner.",
+          "anyOf": [
+            { "enum": ["compact", "box", "minimal"] },
+            { "type": "string" }
+          ]
+        },
+        "info_detail": {
+          "description": "Verbosity level of the startup info banner.",
+          "anyOf": [
+            { "enum": ["minimal", "normal", "full"] },
+            { "type": "string" }
+          ]
+        },
+        "yolo": {
+          "type": "boolean",
+          "description": "Enable agent auto-approve / yolo mode."
+        },
+        "prompt_gateway": {
+          "type": "boolean",
+          "description": "Prompt interactively to pick a gateway on launch."
+        }
+      }
+    },
+    "StatuslineConfig": {
+      "type": "object",
+      "description": "Project-level statusline module ordering and customization.",
+      "additionalProperties": false,
+      "properties": {
+        "order": {
+          "type": "array",
+          "description": "Ordered list of statusline modules to render.",
+          "items": {
+            "anyOf": [
+              { "enum": ["sandbox", "network", "caps", "trust", "context", "auto_approve", "agent", "gateway"] },
+              { "type": "string" }
+            ]
+          }
+        },
+        "sandbox": { "$ref": "#/$defs/ModuleConfig" },
+        "network": { "$ref": "#/$defs/ModuleConfig" },
+        "caps": { "$ref": "#/$defs/ModuleConfig" },
+        "trust": { "$ref": "#/$defs/ModuleConfig" },
+        "context": { "$ref": "#/$defs/ModuleConfig" },
+        "auto_approve": { "$ref": "#/$defs/ModuleConfig" },
+        "agent": { "$ref": "#/$defs/ModuleConfig" },
+        "gateway": { "$ref": "#/$defs/ModuleConfig" }
+      }
+    },
+    "ModuleConfig": {
+      "type": "object",
+      "description": "Per-module statusline rendering configuration.",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": { "type": "boolean" },
+        "icon": { "type": "string" },
+        "on": { "type": "string" },
+        "off": { "type": "string" },
+        "outbound": { "type": "string" },
+        "unrestricted": { "type": "string" },
+        "untrusted": { "type": "string" },
+        "unmanaged": { "type": "string" },
+        "value": { "type": "string" }
+      }
+    }
+  }
+}

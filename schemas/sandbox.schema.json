@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jskswamy/aide/main/schemas/sandbox.schema.json",
+  "title": "aide Sandbox Configuration (sandbox.yaml)",
+  "description": "Security, guard, sandbox policy, and capability definitions stored in ~/.config/aide/sandbox.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "type": "object",
+      "description": "Custom or extended capability definitions keyed by capability name.",
+      "additionalProperties": {
+        "$ref": "#/$defs/CapabilityDef"
+      }
+    },
+    "sandboxes": {
+      "type": "object",
+      "description": "Named sandbox policies referenced by profiles.",
+      "additionalProperties": {
+        "oneOf": [
+          { "const": false },
+          { "$ref": "#/$defs/SandboxPolicy" }
+        ]
+      }
+    },
+    "custom_guards": {
+      "type": "object",
+      "description": "User-defined sandbox guards keyed by guard name.",
+      "additionalProperties": {
+        "$ref": "#/$defs/CustomGuard"
+      }
+    },
+    "guard_types": {
+      "type": "object",
+      "description": "Custom guard type behaviors keyed by type name.",
+      "additionalProperties": {
+        "$ref": "#/$defs/GuardType"
+      }
+    },
+    "never_allow": {
+      "type": "array",
+      "description": "Paths that can never be granted to any sandboxed agent.",
+      "items": { "type": "string" }
+    },
+    "never_allow_env": {
+      "type": "array",
+      "description": "Environment variable names/patterns that are never allowed into agent processes.",
+      "items": { "type": "string" }
+    },
+    "scrub_env": {
+      "type": "array",
+      "description": "Additional environment variable names to scrub before launching agents.",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "CapabilityDef": {
+      "type": "object",
+      "description": "Reusable capability granting filesystem, environment, or port access.",
+      "additionalProperties": false,
+      "properties": {
+        "extends": {
+          "type": "string",
+          "description": "Single parent capability to inherit from."
+        },
+        "combines": {
+          "type": "array",
+          "description": "Multiple peer capabilities combined into this capability.",
+          "items": { "type": "string" }
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this capability grants."
+        },
+        "readable": {
+          "type": "array",
+          "description": "Read-only paths granted by this capability.",
+          "items": { "type": "string" }
+        },
+        "writable": {
+          "type": "array",
+          "description": "Read-write paths granted by this capability.",
+          "items": { "type": "string" }
+        },
+        "deny": {
+          "type": "array",
+          "description": "Paths explicitly denied by this capability.",
+          "items": { "type": "string" }
+        },
+        "env_allow": {
+          "type": "array",
+          "description": "Environment variable names/patterns preserved when this capability is active.",
+          "items": { "type": "string" }
+        },
+        "allow": {
+          "type": "array",
+          "description": "Guard allowlist entries granted by this capability.",
+          "items": { "type": "string" }
+        },
+        "ports": {
+          "type": "array",
+          "description": "Capability-specific port list (used by the ssh capability).",
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        }
+      }
+    },
+    "NetworkPolicy": {
+      "description": "Network policy: a mode string ('outbound', 'none', 'unrestricted') or structured port policy.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["outbound", "none", "unrestricted"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["outbound", "none", "unrestricted"],
+              "description": "Base network access mode."
+            },
+            "allow_ports": {
+              "type": "array",
+              "description": "Additional destination TCP ports allowed.",
+              "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            },
+            "deny_ports": {
+              "type": "array",
+              "description": "Destination TCP ports explicitly blocked.",
+              "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        }
+      ]
+    },
+    "SandboxPolicy": {
+      "type": "object",
+      "description": "OS-native sandbox constraints for an agent.",
+      "additionalProperties": false,
+      "properties": {
+        "writable": {
+          "type": "array",
+          "description": "Replace default writable paths.",
+          "items": { "type": "string" }
+        },
+        "readable": {
+          "type": "array",
+          "description": "Replace default readable paths.",
+          "items": { "type": "string" }
+        },
+        "denied": {
+          "type": "array",
+          "description": "Replace default denied paths.",
+          "items": { "type": "string" }
+        },
+        "writable_extra": {
+          "type": "array",
+          "description": "Additional paths granted read+write access.",
+          "items": { "type": "string" }
+        },
+        "readable_extra": {
+          "type": "array",
+          "description": "Additional paths granted read-only access.",
+          "items": { "type": "string" }
+        },
+        "denied_extra": {
+          "type": "array",
+          "description": "Additional paths explicitly denied.",
+          "items": { "type": "string" }
+        },
+        "network": {
+          "$ref": "#/$defs/NetworkPolicy"
+        },
+        "allow_subprocess": {
+          "type": "boolean",
+          "description": "Allow spawning subprocesses inside the sandbox."
+        },
+        "clean_env": {
+          "type": "boolean",
+          "description": "Scrub inherited environment variables before launch."
+        },
+        "guards": {
+          "type": "array",
+          "description": "Replace default active guard names.",
+          "items": { "type": "string" }
+        },
+        "guards_extra": {
+          "type": "array",
+          "description": "Additional guards to enable.",
+          "items": { "type": "string" }
+        },
+        "unguard": {
+          "type": "array",
+          "description": "Guards to disable for this policy.",
+          "items": { "type": "string" }
+        },
+        "allow": {
+          "type": "array",
+          "description": "Explicitly allowed paths/resources overriding guards.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "CustomGuard": {
+      "type": "object",
+      "description": "User-defined sandbox guard protecting sensitive paths.",
+      "additionalProperties": false,
+      "required": ["paths"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Guard type name (built-in or defined in guard_types)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this guard."
+        },
+        "paths": {
+          "type": "array",
+          "description": "Paths protected by this guard.",
+          "items": { "type": "string" }
+        },
+        "env_override": {
+          "type": "string",
+          "description": "Optional environment variable that overrides the guard's target path."
+        },
+        "allowed": {
+          "type": "array",
+          "description": "Subpaths explicitly allowed inside the guarded paths.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "GuardType": {
+      "type": "object",
+      "description": "Custom guard type definition.",
+      "additionalProperties": false,
+      "required": ["behavior", "description"],
+      "properties": {
+        "behavior": {
+          "type": "string",
+          "description": "Enforcement behavior for guards of this type."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this guard type."
+        }
+      }
+    }
+  }
+}

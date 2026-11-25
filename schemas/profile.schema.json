@@ -1,0 +1,546 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jskswamy/aide/main/schemas/profile.schema.json",
+  "title": "aide Profile Configuration (profiles/<name>.yaml)",
+  "description": "Profile configuration stored in ~/.config/aide/profiles/<name>.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "match": {
+      "type": "array",
+      "description": "Rules that automatically select this profile based on git remote or filesystem path.",
+      "items": {
+        "$ref": "#/$defs/MatchRule"
+      }
+    },
+    "agent": {
+      "description": "Default coding agent to launch for this profile.",
+      "anyOf": [
+        { "enum": ["claude", "codex", "gemini", "omp", "opencode", "pi", "agy"] },
+        { "type": "string" }
+      ]
+    },
+    "icon": {
+      "type": "string",
+      "description": "Optional icon displayed for this profile in banners and statuslines."
+    },
+    "secret": {
+      "type": "string",
+      "description": "Name of an encrypted secret store under ~/.config/aide/secrets/ (or absolute path) decrypted for template expressions."
+    },
+    "env": {
+      "type": "object",
+      "description": "Environment variables injected into the agent process (supports {{ .secrets.<key> }}, {{ .project_root }}, {{ .runtime_dir }}).",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "config_dir_name": {
+      "type": "string",
+      "description": "Suffix for per-profile agent native config directories (e.g. ~/.claude-<name>)."
+    },
+    "config_dir": {
+      "type": "string",
+      "description": "Explicit base directory override for agent native configuration."
+    },
+    "config_dirs": {
+      "type": "object",
+      "description": "Per-harness explicit native config directory overrides keyed by canonical harness name.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "credentials": {
+      "type": "object",
+      "description": "Named provider credential bindings backed by age/sops secret stores or keyless routes.",
+      "additionalProperties": {
+        "$ref": "#/$defs/CredentialBinding"
+      }
+    },
+    "default_credentials": {
+      "type": "array",
+      "description": "Credential binding names injected by default when no explicit selection is made.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "gateways": {
+      "type": "object",
+      "description": "Custom or preset LLM gateways available in this profile.",
+      "additionalProperties": {
+        "$ref": "#/$defs/GatewayConfig"
+      }
+    },
+    "gateway_choice": {
+      "type": "object",
+      "description": "Default gateway per harness: a gateway name, 'none', or omitted for unset.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "sandbox": {
+      "$ref": "#/$defs/SandboxRef"
+    },
+    "yolo": {
+      "type": "boolean",
+      "description": "Override auto-approve / yolo mode for this profile."
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Capabilities granted to agents launched under this profile.",
+      "items": {
+        "$ref": "#/$defs/CapabilityName"
+      }
+    },
+    "mcp_servers": {
+      "description": "MCP servers enabled in this profile: either a list of server names or an override block ({ only, exclude, extra }).",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        {
+          "$ref": "#/$defs/MCPServerOverride"
+        }
+      ]
+    },
+    "plugins": {
+      "$ref": "#/$defs/PluginOverride"
+    },
+    "hooks": {
+      "$ref": "#/$defs/HooksOverride"
+    }
+  },
+  "$defs": {
+    "HarnessName": {
+      "anyOf": [
+        { "enum": ["claude", "codex", "gemini", "omp", "opencode", "pi", "agy"] },
+        { "type": "string" }
+      ]
+    },
+    "CapabilityName": {
+      "anyOf": [
+        {
+          "enum": [
+            "aws", "gcp", "azure", "digitalocean", "oci",
+            "docker", "k8s", "helm", "terraform", "vault", "ssh",
+            "npm", "go", "rust", "python", "ruby", "java",
+            "github", "git-remote", "gpg", "clipboard",
+            "ccstatusline", "bivouac", "ponytail", "skillshare", "network"
+          ]
+        },
+        { "type": "string" }
+      ]
+    },
+    "MatchRule": {
+      "type": "object",
+      "description": "Matches a workspace by git remote glob or filesystem path glob.",
+      "additionalProperties": false,
+      "properties": {
+        "remote": {
+          "type": "string",
+          "description": "Glob pattern matched against the normalized git remote URL (e.g. github.com/org/*)."
+        },
+        "path": {
+          "type": "string",
+          "description": "Glob pattern matched against the workspace directory path (supports ~ and **)."
+        },
+        "remote_name": {
+          "type": "string",
+          "description": "Git remote name to inspect (defaults to 'origin').",
+          "default": "origin"
+        }
+      }
+    },
+    "CredentialBinding": {
+      "type": "object",
+      "description": "Named provider credential route backed by an age/sops secret store or keyless provider.",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "type": "string",
+          "description": "Secret backend (currently 'age').",
+          "enum": ["age"]
+        },
+        "store": {
+          "type": "string",
+          "description": "Secret store name under ~/.config/aide/secrets/ or absolute path."
+        },
+        "key": {
+          "type": "string",
+          "description": "Key name inside the encrypted secret store."
+        },
+        "env": {
+          "type": "array",
+          "description": "Environment variable names to inject the secret into.",
+          "items": { "type": "string" }
+        },
+        "agents": {
+          "type": "array",
+          "description": "Restrict this credential binding to the listed agents.",
+          "items": { "$ref": "#/$defs/HarnessName" }
+        },
+        "for": {
+          "type": "object",
+          "description": "Per-agent route overrides (replaces top-level env/agents).",
+          "additionalProperties": {
+            "$ref": "#/$defs/CredentialRoute"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "description": "Additional capabilities automatically enabled when this binding is selected.",
+          "items": { "$ref": "#/$defs/CapabilityName" }
+        }
+      }
+    },
+    "CredentialRoute": {
+      "type": "object",
+      "description": "Per-agent environment variable injection and companion settings for a credential binding.",
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "type": "array",
+          "description": "Environment variable names receiving the secret value.",
+          "items": { "type": "string" }
+        },
+        "set": {
+          "type": "object",
+          "description": "Non-secret companion environment variables set alongside the credential.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "GatewayConfig": {
+      "type": "object",
+      "description": "LLM gateway configuration (preset or custom endpoint).",
+      "additionalProperties": false,
+      "properties": {
+        "preset": {
+          "description": "Built-in gateway preset name.",
+          "anyOf": [
+            {
+              "enum": [
+                "anthropic", "openai", "codex", "openrouter",
+                "openrouter-anthropic", "opencode-go", "zai",
+                "ollama", "bedrock", "vertex"
+              ]
+            },
+            { "type": "string" }
+          ]
+        },
+        "url": {
+          "type": "string",
+          "description": "Gateway base URL."
+        },
+        "base_url": {
+          "type": "string",
+          "description": "Deprecated legacy gateway base URL (prefer 'url' + 'api').",
+          "deprecated": true
+        },
+        "api": {
+          "description": "Wire protocol spoken by the gateway.",
+          "anyOf": [
+            { "enum": ["anthropic-messages", "openai-chat", "openai-responses"] },
+            { "type": "string" }
+          ]
+        },
+        "no_auth": {
+          "type": "boolean",
+          "description": "Use this gateway without an API key or secret store."
+        },
+        "model": {
+          "type": "string",
+          "description": "Default model ID to select when using this gateway."
+        },
+        "region": {
+          "type": "string",
+          "description": "Cloud region (used by provider-switch presets such as bedrock or vertex)."
+        },
+        "project": {
+          "type": "string",
+          "description": "Cloud project ID (used by provider-switch presets such as vertex)."
+        },
+        "refresh_ttl": {
+          "type": "string",
+          "description": "Go duration controlling how long cached model discovery results stay fresh (e.g. '24h')."
+        },
+        "store": {
+          "type": "string",
+          "description": "Secret store name containing the gateway token."
+        },
+        "key": {
+          "type": "string",
+          "description": "Key name inside the secret store for the gateway bearer/API token."
+        },
+        "agents": {
+          "type": "array",
+          "description": "Agents served by this gateway.",
+          "items": { "$ref": "#/$defs/HarnessName" }
+        }
+      }
+    },
+    "NetworkPolicy": {
+      "description": "Network policy: a mode string ('outbound', 'none', 'unrestricted') or structured port policy.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["outbound", "none", "unrestricted"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["outbound", "none", "unrestricted"],
+              "description": "Base network access mode."
+            },
+            "allow_ports": {
+              "type": "array",
+              "description": "Additional destination TCP ports allowed.",
+              "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            },
+            "deny_ports": {
+              "type": "array",
+              "description": "Destination TCP ports explicitly blocked.",
+              "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        }
+      ]
+    },
+    "SandboxPolicy": {
+      "type": "object",
+      "description": "Inline OS-native sandbox policy.",
+      "additionalProperties": false,
+      "properties": {
+        "writable": {
+          "type": "array",
+          "description": "Replace default writable paths.",
+          "items": { "type": "string" }
+        },
+        "readable": {
+          "type": "array",
+          "description": "Replace default readable paths.",
+          "items": { "type": "string" }
+        },
+        "denied": {
+          "type": "array",
+          "description": "Replace default denied paths.",
+          "items": { "type": "string" }
+        },
+        "writable_extra": {
+          "type": "array",
+          "description": "Additional paths granted read+write access.",
+          "items": { "type": "string" }
+        },
+        "readable_extra": {
+          "type": "array",
+          "description": "Additional paths granted read-only access.",
+          "items": { "type": "string" }
+        },
+        "denied_extra": {
+          "type": "array",
+          "description": "Additional paths explicitly denied.",
+          "items": { "type": "string" }
+        },
+        "network": {
+          "$ref": "#/$defs/NetworkPolicy"
+        },
+        "allow_subprocess": {
+          "type": "boolean",
+          "description": "Allow spawning subprocesses inside the sandbox."
+        },
+        "clean_env": {
+          "type": "boolean",
+          "description": "Scrub inherited environment variables before launch."
+        },
+        "guards": {
+          "type": "array",
+          "description": "Replace default active guard names.",
+          "items": { "type": "string" }
+        },
+        "guards_extra": {
+          "type": "array",
+          "description": "Additional guards to enable.",
+          "items": { "type": "string" }
+        },
+        "unguard": {
+          "type": "array",
+          "description": "Guards to disable for this policy.",
+          "items": { "type": "string" }
+        },
+        "allow": {
+          "type": "array",
+          "description": "Explicitly allowed paths/resources overriding guards.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "SandboxRef": {
+      "description": "Sandbox setting: false to disable, a named sandbox profile string, { profile }, { inline }, or an inline SandboxPolicy.",
+      "oneOf": [
+        { "const": false },
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile"],
+          "properties": {
+            "profile": {
+              "type": "string",
+              "description": "Name of a sandbox policy defined in sandbox.yaml (or 'default' / 'none')."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inline"],
+          "properties": {
+            "inline": {
+              "$ref": "#/$defs/SandboxPolicy"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/SandboxPolicy"
+        }
+      ]
+    },
+    "MCPServer": {
+      "type": "object",
+      "description": "MCP server definition.",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Executable command for a stdio MCP server."
+        },
+        "url": {
+          "type": "string",
+          "description": "HTTP/SSE endpoint URL for a remote MCP server."
+        },
+        "args": {
+          "type": "array",
+          "description": "Command-line arguments for a stdio MCP server.",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for the MCP server.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "MCPServerOverride": {
+      "type": "object",
+      "description": "Per-profile delta over top-level mcp_servers declared in provisioning.yaml.",
+      "additionalProperties": false,
+      "properties": {
+        "only": {
+          "type": "array",
+          "description": "Replace inherited MCP servers with only these names.",
+          "items": { "type": "string" }
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Remove these MCP server names from the inherited set.",
+          "items": { "type": "string" }
+        },
+        "extra": {
+          "type": "object",
+          "description": "Additional MCP servers defined only for this profile.",
+          "additionalProperties": { "$ref": "#/$defs/MCPServer" }
+        }
+      }
+    },
+    "PluginEntry": {
+      "description": "Plugin entry: list of plugin names (marketplace), string install reference (URL-direct), or null (declare-only marketplace).",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        { "type": "string" },
+        { "type": "null" }
+      ]
+    },
+    "PluginOverride": {
+      "type": "object",
+      "description": "Per-profile delta over top-level plugins declared in provisioning.yaml.",
+      "additionalProperties": false,
+      "properties": {
+        "only": {
+          "type": "array",
+          "description": "Replace inherited plugins with only these repo or repo/plugin paths.",
+          "items": { "type": "string" }
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Remove these repo or repo/plugin paths from the inherited set.",
+          "items": { "type": "string" }
+        },
+        "extra": {
+          "type": "object",
+          "description": "Additional plugin entries for this profile.",
+          "additionalProperties": { "$ref": "#/$defs/PluginEntry" }
+        }
+      }
+    },
+    "HookEntry": {
+      "type": "object",
+      "description": "Normalized agent lifecycle hook entry.",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional identifier used by exclude_hooks."
+        },
+        "matcher": {
+          "type": "string",
+          "description": "Optional tool/event matcher expression."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command executed when the hook triggers."
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds (0 uses the agent driver default).",
+          "minimum": 0
+        }
+      }
+    },
+    "HooksOverride": {
+      "type": "object",
+      "description": "Per-profile additions and suppressions over top-level hooks declared in provisioning.yaml.",
+      "additionalProperties": false,
+      "properties": {
+        "exclude": {
+          "type": "array",
+          "description": "Hook event names to suppress completely.",
+          "items": { "type": "string" }
+        },
+        "exclude_hooks": {
+          "type": "object",
+          "description": "Map of event name to list of named hooks to exclude.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "extra": {
+          "type": "object",
+          "description": "Additional hooks keyed by normalized event name.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/HookEntry" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jskswamy/aide/main/schemas/config.schema.json",
+  "title": "aide Core Configuration (config.yaml)",
+  "description": "Global settings stored in ~/.config/aide/config.yaml under the modular split layout.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "default_profile": {
+      "type": "string",
+      "description": "Name of the fallback profile used when no profile match rule matches the current directory."
+    },
+    "agents": {
+      "type": "object",
+      "description": "Registered coding agent binaries keyed by agent name (e.g. claude, codex, gemini, pi, omp, opencode, agy).",
+      "additionalProperties": {
+        "$ref": "#/$defs/AgentDef"
+      }
+    },
+    "preferences": {
+      "$ref": "#/$defs/Preferences"
+    },
+    "statusline": {
+      "$ref": "#/$defs/StatuslineConfig"
+    }
+  },
+  "$defs": {
+    "AgentDef": {
+      "type": "object",
+      "description": "Definition of a coding agent binary. Agents carry no environment variables or secrets.",
+      "additionalProperties": false,
+      "required": ["binary"],
+      "properties": {
+        "binary": {
+          "type": "string",
+          "description": "Executable name on PATH or absolute path to the agent binary."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Optional icon displayed for this agent in banners and statuslines."
+        }
+      }
+    },
+    "Preferences": {
+      "type": "object",
+      "description": "Global display and launch behavior preferences.",
+      "additionalProperties": false,
+      "properties": {
+        "show_info": {
+          "type": "boolean",
+          "description": "Show the startup info banner before launching an agent.",
+          "default": true
+        },
+        "info_style": {
+          "description": "Visual style of the startup info banner.",
+          "anyOf": [
+            { "enum": ["compact", "box", "minimal"] },
+            { "type": "string" }
+          ],
+          "default": "compact"
+        },
+        "info_detail": {
+          "description": "Verbosity level of the startup info banner.",
+          "anyOf": [
+            { "enum": ["minimal", "normal", "full"] },
+            { "type": "string" }
+          ],
+          "default": "normal"
+        },
+        "yolo": {
+          "type": "boolean",
+          "description": "Enable agent auto-approve / yolo mode by default.",
+          "default": false
+        },
+        "prompt_gateway": {
+          "type": "boolean",
+          "description": "Prompt interactively to pick a gateway when launching if multiple gateways are configured."
+        }
+      }
+    },
+    "StatuslineConfig": {
+      "type": "object",
+      "description": "Statusline module ordering and per-module icon/label customization.",
+      "additionalProperties": false,
+      "properties": {
+        "order": {
+          "type": "array",
+          "description": "Ordered list of statusline modules to render.",
+          "items": {
+            "anyOf": [
+              { "enum": ["sandbox", "network", "caps", "trust", "context", "auto_approve", "agent", "gateway"] },
+              { "type": "string" }
+            ]
+          }
+        },
+        "sandbox": { "$ref": "#/$defs/ModuleConfig" },
+        "network": { "$ref": "#/$defs/ModuleConfig" },
+        "caps": { "$ref": "#/$defs/ModuleConfig" },
+        "trust": { "$ref": "#/$defs/ModuleConfig" },
+        "context": { "$ref": "#/$defs/ModuleConfig" },
+        "auto_approve": { "$ref": "#/$defs/ModuleConfig" },
+        "agent": { "$ref": "#/$defs/ModuleConfig" },
+        "gateway": { "$ref": "#/$defs/ModuleConfig" }
+      }
+    },
+    "ModuleConfig": {
+      "type": "object",
+      "description": "Per-module statusline rendering configuration.",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "type": "boolean",
+          "description": "Disable this statusline module."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Prefix icon for list-style or value-style modules."
+        },
+        "on": {
+          "type": "string",
+          "description": "Rendered string when the module state is on."
+        },
+        "off": {
+          "type": "string",
+          "description": "Rendered string when the module state is off."
+        },
+        "outbound": {
+          "type": "string",
+          "description": "Rendered string for outbound network mode."
+        },
+        "unrestricted": {
+          "type": "string",
+          "description": "Rendered string for unrestricted network mode."
+        },
+        "untrusted": {
+          "type": "string",
+          "description": "Rendered string when project config is untrusted."
+        },
+        "unmanaged": {
+          "type": "string",
+          "description": "Rendered string when running outside aide management."
+        },
+        "value": {
+          "type": "string",
+          "description": "Rendered string when a flag-style module is active."
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "counts": {
     "errors": 0,
-    "tips": 0,
+    "tips": 1,
     "warnings": 0
   },
   "directory": {
@@ -34,7 +34,25 @@
     "profile": "work",
     "project_config": []
   },
-  "findings": [],
+  "findings": [
+    {
+      "fix": {
+        "argv": [],
+        "side_effects": [],
+        "steps": [
+          "Run: aide cap enable git-remote",
+          "Review the .aide.yaml it writes",
+          "Run: aide trust"
+        ]
+      },
+      "id": "capability.suggested",
+      "message": ".git/config found, but the git-remote capability is not enabled",
+      "profile": "work",
+      "severity": "tip",
+      "subject": "git-remote",
+      "widens_access": true
+    }
+  ],
   "inside_sandbox": false,
   "schema_version": 1
 }

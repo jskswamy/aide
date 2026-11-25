@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -247,10 +248,24 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 				"See which with: aide sandbox show")
 		}
 	}
-	for _, name := range capability.DetectProject(os.DirFS(projectRoot)) {
-		if !slices.Contains(active, name) {
-			dir.Detected = append(dir.Detected, name)
+	var disabled []string
+	if cfg.ProjectOverride != nil {
+		disabled = cfg.ProjectOverride.DisabledCapabilities
+	}
+	var local *doctor.ProjectFile
+	for i := range dir.ProjectConfig {
+		if dir.ProjectConfig[i].Layer == config.LayerLocal {
+			local = &dir.ProjectConfig[i]
 		}
+	}
+	projectFS := os.DirFS(projectRoot)
+	for _, name := range capability.DetectProject(projectFS) {
+		if slices.Contains(active, name) || slices.Contains(disabled, name) {
+			continue
+		}
+		dir.Detected = append(dir.Detected, name)
+		c := capability.Builtins()[name]
+		here = append(here, doctor.SuggestedCapability(name, matchedMarker(projectFS, c.Markers), append(slices.Clone(c.Readable), c.Writable...), rc.Name, local))
 	}
 	return dir, here, nil
 }
@@ -271,4 +286,14 @@ func projectFiles(cfg *config.Config, gate launcher.ProjectGate, home string) []
 		files = append(files, doctor.ProjectFile{Layer: l.Source, Path: homepath.Tilde(l.Path, home), State: state})
 	}
 	return files
+}
+
+// matchedMarker names the first marker present in the project.
+func matchedMarker(fsys fs.FS, markers []capability.Marker) string {
+	for _, m := range markers {
+		if capability.AnyMarkerMatches(fsys, []capability.Marker{m}) {
+			return cmp.Or(m.File, m.DirExists, m.GlobPath, m.Contains.File, "a project marker")
+		}
+	}
+	return "a project marker"
 }

@@ -25,7 +25,7 @@ You are the aide profile diagnostic assistant. The user is experiencing a profil
 ## Diagnostic Flow
 
 1. **Gather profile state:**
-   - Run `aide which 2>&1` - which profile matched and why
+   - Run `aide doctor --format json 2>/dev/null` - `directory.profile` and `directory.match_reason` say which profile matched and why; a `profile.match-tie` finding means two profiles match equally and one wins only by name (if `aide doctor` is missing, use `aide which 2>&1`)
    - Run `aide profile list 2>&1` - all profiles with match rules
    - Run `aide profile --help 2>&1` - discover subcommands
 
@@ -35,7 +35,7 @@ You are the aide profile diagnostic assistant. The user is experiencing a profil
    - Explain resolution order (first path match wins, default is fallback)
 
 3. **Identify the problem:**
-   - Overlapping match rules between profiles
+   - Overlapping match rules between profiles (the `profile.match-tie` finding)
    - Default profile being used when a specific one was expected
    - Missing match rule for this directory
 

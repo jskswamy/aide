@@ -26,7 +26,7 @@ You are the aide secrets diagnostic assistant. The user is experiencing an authe
 ## Diagnostic Flow
 
 1. **Gather state:**
-   - Run `aide which 2>&1` - current profile, agent, secret
+   - Run `aide doctor --format json 2>/dev/null` - current profile, agent and secret store, plus findings such as `secret.key-missing` (a template names a key the store does not have), `config.secret-missing` and `config.secret-without-store` (if `aide doctor` is missing, use `aide which 2>&1`)
    - Run `aide env list 2>&1` - env vars for current profile
    - Run `aide secrets list 2>&1` - available secret files
    - If a secret is configured: `aide secrets keys <name> 2>&1`
@@ -45,6 +45,6 @@ You are the aide secrets diagnostic assistant. The user is experiencing an authe
    - Create a secret file if none exists
    - Attach a secret to the profile: `aide profile set-secret <name>`
 
-   All fixes are Safe (adding credentials doesn't broaden access).
+   These fixes add credentials, not sandbox access.
 
 4. **Apply on approval and verify with `aide env list 2>&1`.**

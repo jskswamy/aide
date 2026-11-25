@@ -35,19 +35,39 @@ func ConfigHash(path string) (string, error) {
 	}
 	rels = append(rels, splitRel...)
 
-	h := sha256.New()
+	contents := make(map[string][]byte, len(rels))
 	for _, rel := range rels {
 		full := filepath.Join(dir, filepath.FromSlash(rel))
 		data, err := os.ReadFile(full)
 		if err != nil {
 			return "", fmt.Errorf("provision: hashing config %s: %w", full, err)
 		}
+		contents[rel] = data
+	}
+	return HashConfigFiles(rels, contents), nil
+}
+
+// HashConfigFiles computes the same config hash as ConfigHash from in-memory
+// file snapshots keyed by slash-separated relative path under ~/.config/aide/
+// (in canonical order: "config.yaml", then SplitRelativePaths). Callers that
+// read and rewrite config files use it so oldHash and newHash reflect only the
+// exact bytes they observed and wrote, never hiding concurrent edits.
+func HashConfigFiles(rels []string, contents map[string][]byte) string {
+	if len(rels) == 0 {
+		return ""
+	}
+	if len(rels) == 1 && rels[0] == "config.yaml" {
+		sum := sha256.Sum256(contents["config.yaml"])
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	h := sha256.New()
+	for _, rel := range rels {
 		_, _ = h.Write([]byte(rel))
 		_, _ = h.Write([]byte{0})
-		_, _ = h.Write(data)
+		_, _ = h.Write(contents[rel])
 		_, _ = h.Write([]byte{0})
 	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 func singleFileHash(path string) (string, error) {

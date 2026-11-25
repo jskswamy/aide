@@ -46,3 +46,29 @@ func TestDoctorFix_SuggestsCapabilityFromMarker(t *testing.T) {
 		t.Errorf("with a trusted .aide.yaml: argv = %v, want aide cap enable go", fix["argv"])
 	}
 }
+
+func TestDoctorFix_RedundantAllowInProfileBlock(t *testing.T) {
+	selectionEnv(t, `
+agents:
+  claude: {binary: claude}
+profiles:
+  work:
+    agent: claude
+    sandbox:
+      readable_extra: ["~/docs", "~/docs/api"]
+default_profile: work
+`)
+	home, _ := os.UserHomeDir()
+	if err := os.MkdirAll(filepath.Join(home, "docs", "api"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	f := findingsByID(t)["sandbox.redundant-allow"]
+	if len(f) != 1 || f[0]["subject"] != "~/docs/api" {
+		t.Fatalf("sandbox.redundant-allow = %v, want one for ~/docs/api", f)
+	}
+	fix, _ := f[0]["fix"].(map[string]any)
+	want := []string{"aide", "sandbox", "allow", "--remove", "~/docs/api", "--global", "--profile", "work"}
+	if !slices.Equal(names(fix["argv"]), want) {
+		t.Errorf("argv = %v, want %v", fix["argv"], want)
+	}
+}

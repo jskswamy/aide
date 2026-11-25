@@ -248,6 +248,7 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 				"See which with: aide sandbox show")
 		}
 	}
+	here = append(here, redundantAllows(cfg, rc.Name, home)...)
 	var disabled []string
 	if cfg.ProjectOverride != nil {
 		disabled = cfg.ProjectOverride.DisabledCapabilities
@@ -296,4 +297,28 @@ func matchedMarker(fsys fs.FS, markers []capability.Marker) string {
 		}
 	}
 	return "a project marker"
+}
+
+// redundantAllows checks the sandbox blocks that apply to the current
+// profile: its own (or the named sandbox it uses) and each trusted
+// .aide.yaml.
+func redundantAllows(cfg *config.Config, profile, home string) []doctor.Finding {
+	var out []doctor.Finding
+	if ref := cfg.Contexts[profile].Sandbox; ref != nil {
+		if ref.ProfileName != "" {
+			if sp, ok := cfg.Sandboxes[ref.ProfileName]; ok {
+				out = append(out, doctor.RedundantAllows(&sp, home, doctor.Scope{Profile: profile, Named: ref.ProfileName})...)
+			}
+		} else {
+			out = append(out, doctor.RedundantAllows(ref.Inline, home, doctor.Scope{Profile: profile, Global: true})...)
+		}
+	}
+	for _, l := range cfg.ProjectLayers {
+		if l.Rejected || l.Override == nil {
+			continue
+		}
+		s := doctor.Scope{Profile: profile, Inherited: l.Source == config.LayerInherited, Source: homepath.Tilde(l.Path, home)}
+		out = append(out, doctor.RedundantAllows(l.Override.Sandbox, home, s)...)
+	}
+	return out
 }

@@ -1,7 +1,7 @@
 {
   "counts": {
     "errors": 0,
-    "tips": 2,
+    "tips": 1,
     "warnings": 0
   },
   "directory": {
@@ -13,9 +13,7 @@
       }
     ],
     "cwd": "$HOME/repo",
-    "detected_capabilities": [
-      "git-remote"
-    ],
+    "detected_capabilities": [],
     "guards": [
       "base",
       "system-runtime",
@@ -40,29 +38,12 @@
         "argv": [],
         "side_effects": [],
         "steps": [
-          "Run: aide cap enable git-remote",
-          "Review the .aide.yaml it writes",
-          "Run: aide trust"
-        ]
-      },
-      "id": "capability.suggested",
-      "message": ".git/config found, but the git-remote capability is not enabled",
-      "profile": "work",
-      "severity": "tip",
-      "subject": "git-remote",
-      "widens_access": true
-    },
-    {
-      "fix": {
-        "argv": [],
-        "side_effects": [],
-        "steps": [
           "See what each protects with: aide sandbox guards",
           "Turn one on with: aide sandbox guard \u003cname\u003e"
         ]
       },
       "id": "sandbox.opt-in-guards",
-      "message": "opt-in guards available but off: git-remote, ssh",
+      "message": "opt-in guards available but off: ssh",
       "profile": "work",
       "severity": "tip",
       "subject": "work",

@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -159,18 +160,18 @@ func TestEnableGuard_UnguardCleanupKeepsNonMatching(t *testing.T) {
 func TestEnableGuard_AddsToGuardsExtra(t *testing.T) {
 	// When guards list is empty, non-default guard should go to guards_extra
 	cfg := &config.SandboxPolicy{}
-	r := EnableGuard(cfg, "git-remote")
+	r := EnableGuard(cfg, "ssh")
 	if !r.OK() {
 		t.Fatalf("unexpected error: %v", r.Errors)
 	}
 	found := false
 	for _, g := range cfg.GuardsExtra {
-		if g == "git-remote" {
+		if g == "ssh" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("git-remote should be added to GuardsExtra when Guards is empty")
+		t.Error("ssh should be added to GuardsExtra when Guards is empty")
 	}
 	if len(cfg.Guards) != 0 {
 		t.Errorf("Guards should remain empty, got %v", cfg.Guards)
@@ -182,18 +183,18 @@ func TestEnableGuard_AddsToGuards(t *testing.T) {
 	cfg := &config.SandboxPolicy{
 		Guards: []string{"aide-secrets"},
 	}
-	r := EnableGuard(cfg, "git-remote")
+	r := EnableGuard(cfg, "ssh")
 	if !r.OK() {
 		t.Fatalf("unexpected error: %v", r.Errors)
 	}
 	found := false
 	for _, g := range cfg.Guards {
-		if g == "git-remote" {
+		if g == "ssh" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("git-remote should be added to Guards when Guards list exists")
+		t.Error("ssh should be added to Guards when Guards list exists")
 	}
 }
 
@@ -218,15 +219,15 @@ func TestDisableGuard_Unknown(t *testing.T) {
 
 func TestDisableGuard_RemovesFromGuards(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		Guards: []string{"aide-secrets", "git-remote"},
+		Guards: []string{"aide-secrets", "ssh"},
 	}
-	r := DisableGuard(cfg, "git-remote")
+	r := DisableGuard(cfg, "ssh")
 	if !r.OK() {
 		t.Fatalf("unexpected error: %v", r.Errors)
 	}
 	for _, g := range cfg.Guards {
-		if g == "git-remote" {
-			t.Error("git-remote should be removed from Guards")
+		if g == "ssh" {
+			t.Error("ssh should be removed from Guards")
 		}
 	}
 	if len(cfg.Guards) != 1 || cfg.Guards[0] != "aide-secrets" {
@@ -240,9 +241,9 @@ func TestDisableGuard_RemovesFromGuards(t *testing.T) {
 
 func TestDisableGuard_RemovesFromGuardsExtra(t *testing.T) {
 	cfg := &config.SandboxPolicy{
-		GuardsExtra: []string{"git-remote"},
+		GuardsExtra: []string{"ssh"},
 	}
-	r := DisableGuard(cfg, "git-remote")
+	r := DisableGuard(cfg, "ssh")
 	if !r.OK() {
 		t.Fatalf("unexpected error: %v", r.Errors)
 	}
@@ -287,4 +288,39 @@ func TestDefaultGuard_DisableEnableRoundTrip(t *testing.T) {
 	if len(cfg.Unguard) != 1 {
 		t.Errorf("expected Unguard=[project-secrets], got %v", cfg.Unguard)
 	}
+}
+
+func TestDisableGuard_RemovesRetiredGitRemote(t *testing.T) {
+	cfg := &config.SandboxPolicy{GuardsExtra: []string{"git-remote", "ssh"}}
+	r := DisableGuard(cfg, "git-remote")
+	if len(r.Errors) > 0 {
+		t.Fatalf("unexpected error: %v", r.Errors)
+	}
+	if len(cfg.GuardsExtra) != 1 || cfg.GuardsExtra[0] != "ssh" {
+		t.Errorf("GuardsExtra = %v, want [ssh]", cfg.GuardsExtra)
+	}
+}
+
+// guards: [git-remote] selected only the always-on guards, since the
+// retired name expands to nothing. Removing it must keep that set, not
+// fall back to the defaults.
+func TestDisableGuard_RetiredLastExplicitGuardKeepsEffectiveSet(t *testing.T) {
+	cfg := &config.SandboxPolicy{Guards: []string{"git-remote"}}
+	before := EffectiveGuards(cfg)
+	if r := DisableGuard(cfg, "git-remote"); len(r.Errors) > 0 {
+		t.Fatalf("unexpected error: %v", r.Errors)
+	}
+	if slices.Contains(cfg.Guards, "git-remote") || slices.Contains(cfg.GuardsExtra, "git-remote") {
+		t.Errorf("git-remote still listed: %+v", cfg)
+	}
+	after := EffectiveGuards(cfg)
+	if !slices.Equal(sortedCopy(before), sortedCopy(after)) {
+		t.Errorf("effective guards changed: before %v, after %v", before, after)
+	}
+}
+
+func sortedCopy(s []string) []string {
+	c := slices.Clone(s)
+	slices.Sort(c)
+	return c
 }

@@ -202,8 +202,10 @@ manage.
   `aide-secrets`. Active out of the box, can be disabled with
   `unguard`.
 
-- **Opt-in guards (2):** `git-remote`, `ssh`. Inactive by default,
-  enabled automatically when a capability that needs them is active.
+- **Opt-in guards (1):** `ssh`. Inactive by default, enabled
+  automatically when the `ssh` capability is active. (`git-remote` is
+  retired: it only re-allowed outbound HTTPS, which the network rules
+  decide, so it never restricted git remotes.)
 
 **Guard resolution:**
 

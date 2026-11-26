@@ -297,9 +297,10 @@ func TestDetectProject_GitRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// git-remote is retired and never suggested, even with a remote.
 	suggestions := DetectProject(os.DirFS(tmp))
-	if !slices.Contains(suggestions, "git-remote") {
-		t.Errorf("expected git-remote in suggestions, got %v", suggestions)
+	if slices.Contains(suggestions, "git-remote") {
+		t.Errorf("retired git-remote suggested: %v", suggestions)
 	}
 }
 
@@ -352,8 +353,8 @@ func TestDetectProject_MultipleDetections(t *testing.T) {
 
 	suggestions := DetectProject(os.DirFS(tmp))
 
-	// Should detect go, github, and git-remote
-	expected := map[string]bool{"go": false, "github": false, "git-remote": false}
+	// Should detect go and github (git-remote is retired)
+	expected := map[string]bool{"go": false, "github": false}
 	for _, s := range suggestions {
 		if _, ok := expected[s]; ok {
 			expected[s] = true

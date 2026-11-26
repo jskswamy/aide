@@ -43,6 +43,18 @@ func (g *gitIntegrationGuard) Rules(ctx *seatbelt.Context) seatbelt.GuardResult 
 		})
 	}
 
+	// Git Credential Manager's config, read-only, so HTTPS remotes that
+	// use it work.
+	gcmDir := filepath.Join(home, ".config", "git-credential-manager")
+	if dirExists(gcmDir) {
+		result.Rules = append(result.Rules,
+			seatbelt.SectionAllow("Git Credential Manager config (read-only)"),
+			seatbelt.AllowRule(fmt.Sprintf("(allow file-read* %s)",
+				seatbelt.HomeSubpath(home, ".config/git-credential-manager"))),
+		)
+		result.Readable = append(result.Readable, gcmDir)
+	}
+
 	allPaths := gcResult.AllPaths()
 	if len(allPaths) == 0 {
 		return result

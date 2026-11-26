@@ -169,32 +169,21 @@ func TestApplyOverrides_NetworkMode_Empty(t *testing.T) {
 	}
 }
 
-func TestResolveCapabilities_GitRemote_EnableGuard(t *testing.T) {
-	cfg := &config.Config{}
-	capSet, overrides, err := ResolveCapabilities([]string{"git-remote"}, cfg)
+// git-remote is retired: it never gated git remotes. Configs that list
+// it still resolve, to nothing, and its guard name is ignored.
+func TestRetiredGitRemote_ResolvesToNothing(t *testing.T) {
+	capSet, overrides, err := ResolveCapabilities([]string{"git-remote"}, &config.Config{})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("a config listing git-remote must still resolve: %v", err)
 	}
-	if capSet == nil {
-		t.Fatal("expected non-nil capSet")
+	if capSet == nil || len(overrides.EnableGuard) != 0 || overrides.NetworkMode != "" || len(overrides.ReadableExtra) != 0 {
+		t.Errorf("git-remote must grant nothing, got overrides %+v", overrides)
 	}
-
-	// EnableGuard should flow through to overrides
-	if len(overrides.EnableGuard) != 1 || overrides.EnableGuard[0] != "git-remote" {
-		t.Errorf("expected EnableGuard [git-remote], got %v", overrides.EnableGuard)
+	if _, _, err := resolveGuards(&config.SandboxPolicy{GuardsExtra: []string{"git-remote"}}); err != nil {
+		t.Errorf("guards_extra: [git-remote] must still load: %v", err)
 	}
-
-	// After the split: git-remote MUST NOT bring SSH_AUTH_SOCK — that lives in ssh capability.
-	if slices.Contains(overrides.EnvAllow, "SSH_AUTH_SOCK") {
-		t.Error("git-remote must NOT include SSH_AUTH_SOCK in EnvAllow — moved to ssh capability")
-	}
-
-	// ApplyOverrides should add to GuardsExtra
-	var sandboxCfg *config.SandboxPolicy
-	ApplyOverrides(&sandboxCfg, overrides)
-
-	if len(sandboxCfg.GuardsExtra) != 1 || sandboxCfg.GuardsExtra[0] != "git-remote" {
-		t.Errorf("expected GuardsExtra [git-remote], got %v", sandboxCfg.GuardsExtra)
+	if _, _, err := resolveGuards(&config.SandboxPolicy{Guards: []string{"git-remote"}}); err != nil {
+		t.Errorf("guards: [git-remote] must still load: %v", err)
 	}
 }
 

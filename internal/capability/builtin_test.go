@@ -229,13 +229,15 @@ func TestBuiltin_GitRemote_DropsSSHAuthSock(t *testing.T) {
 	}
 }
 
-func TestBuiltin_GitRemote_DescriptionMentionsHTTPSAndPointsToSSH(t *testing.T) {
+// git-remote is retired: no markers, no guard, nothing granted, and its
+// description says so rather than claiming to gate git remotes.
+func TestBuiltin_GitRemote_IsRetired(t *testing.T) {
 	gr := Builtins()["git-remote"]
-	if !contains(gr.Description, "HTTPS") {
-		t.Errorf("git-remote description should mention HTTPS; got %q", gr.Description)
+	if len(gr.Markers) != 0 || len(gr.EnableGuard) != 0 || len(gr.Readable)+len(gr.Writable)+len(gr.EnvAllow) != 0 || gr.NetworkMode != "" {
+		t.Errorf("retired git-remote must grant and detect nothing: %+v", gr)
 	}
-	if !contains(gr.Description, "ssh") {
-		t.Errorf("git-remote description should reference 'ssh' capability for SSH transport; got %q", gr.Description)
+	if !contains(gr.Description, "Retired") {
+		t.Errorf("description = %q, want it to say the capability is retired", gr.Description)
 	}
 }
 
@@ -305,7 +307,7 @@ func TestBuiltins_AllCapabilitiesDetectableByDetectProject_HaveMarkers(t *testin
 		"docker": true, "terraform": true, "go": true, "rust": true,
 		"python": true, "ruby": true, "java": true, "k8s": true,
 		"github": true, "helm": true, "aws": true, "gcp": true,
-		"npm": true, "vault": true, "git-remote": true,
+		"npm": true, "vault": true,
 	}
 	b := Builtins()
 	for name := range detectable {

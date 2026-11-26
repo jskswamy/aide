@@ -281,6 +281,6 @@ func TestGuard_SSH_Rules_NoPort443(t *testing.T) {
 	result := g.Rules(ctx)
 	output := renderTestRules(result.Rules)
 	if strings.Contains(output, `"*:443"`) {
-		t.Error("ssh guard must not grant port 443 (HTTPS belongs to git-remote)")
+		t.Error("ssh guard must not grant port 443 (HTTPS follows the network rules)")
 	}
 }

@@ -323,6 +323,20 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		Getenv:   launcher.PreviewGetenv(rc.Context.Env, home),
 		Variants: sandbox.VariantSelectionOptions{Consent: consent.DefaultStore(), EnvLookup: launcher.PreviewGetenv(rc.Context.Env, home)},
 	})
+	if slices.Contains(rc.Context.Capabilities, guards.RetiredGuardGitRemote) {
+		add("capability.retired", "capability:git-remote", doctor.SeverityTip,
+			"the git-remote capability is retired and grants nothing; git remotes follow the sandbox's network rules",
+			"Remove it: aide cap disable git-remote (add --global --profile "+rc.Name+" if the profile lists it)")
+	}
+	if sb.Config != nil && (slices.Contains(sb.Config.Guards, guards.RetiredGuardGitRemote) || slices.Contains(sb.Config.GuardsExtra, guards.RetiredGuardGitRemote)) {
+		// aide sandbox unguard edits only the profile's or project's own
+		// block; a named sandbox has to be edited directly.
+		step := "Remove it: aide sandbox unguard git-remote (add --global --profile " + rc.Name + " if the profile lists it)"
+		if ref := rc.Context.Sandbox; ref != nil && ref.ProfileName != "" {
+			step = "Remove git-remote from guards or guards_extra in the named sandbox " + ref.ProfileName + " (sandboxes: in your aide config)"
+		}
+		add("capability.retired", "guard:git-remote", doctor.SeverityTip, "the git-remote guard is retired and grants nothing", step)
+	}
 	if sbErr != nil {
 		add("sandbox.resolve-failed", rc.Name, doctor.SeverityError, fmt.Sprintf("%v; launch would fail", sbErr))
 	}

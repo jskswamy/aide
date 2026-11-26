@@ -225,9 +225,11 @@ aide ships with 13 built-in guards across three tiers:
 
 `project-secrets`, `dev-credentials`, `aide-secrets`
 
-**Opt-in guards** (2) - not active by default; enabled automatically when a capability that needs them is active (e.g. the `git-remote` and `ssh` capabilities):
+**Opt-in guards** (1) - not active by default; enabled automatically when a capability that needs it is active (the `ssh` capability):
 
-`git-remote`, `ssh`
+`ssh`
+
+The `git-remote` guard is retired: it only re-allowed outbound HTTPS, which the network rules already decide, so it never restricted git remotes. A config that still lists it loads and gets nothing; remove it with `aide sandbox unguard git-remote`. Git Credential Manager's config is now read by `git-integration`.
 
 ### Guard commands
 

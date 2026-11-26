@@ -33,7 +33,6 @@ func init() {
 	)
 	// opt-in guards (activated via capability EnableGuard)
 	builtinGuards = append(builtinGuards,
-		GitRemoteGuard(),
 		SSHGuard(),
 	)
 }
@@ -69,11 +68,18 @@ func ByType(typ string) []seatbelt.Guard {
 	return out
 }
 
+// RetiredGuardGitRemote named a guard that only re-allowed outbound
+// HTTPS; configs that still list it load and get nothing.
+const RetiredGuardGitRemote = "git-remote"
+
 // ExpandGuardName expands meta-guard names:
 //   - "all-default" → all guards with type "default"
+//   - a retired guard → nothing
 //   - anything else → []string{name}
 func ExpandGuardName(name string) []string {
 	switch name {
+	case RetiredGuardGitRemote:
+		return nil
 	case "all-default":
 		var names []string
 		for _, g := range all() {

@@ -378,3 +378,17 @@ func TestGuard_GitIntegration_NilContext(t *testing.T) {
 		t.Error("expected no rules for nil context")
 	}
 }
+
+// Git Credential Manager's config moved here from the retired git-remote guard.
+func TestGuard_GitIntegration_GrantsCredentialManagerConfig(t *testing.T) {
+	home := t.TempDir()
+	gcm := filepath.Join(home, ".config", "git-credential-manager")
+	if err := os.MkdirAll(gcm, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	ctx := &seatbelt.Context{HomeDir: home}
+	got := guards.GitIntegrationGuard().Rules(ctx)
+	if !slices.Contains(got.Readable, gcm) {
+		t.Errorf("Readable = %v, want %s", got.Readable, gcm)
+	}
+}

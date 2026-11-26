@@ -96,6 +96,25 @@ func DisableGuard(cfg *config.SandboxPolicy, name string) *seatbelt.ValidationRe
 		return r
 	}
 
+	// A retired guard can still be removed from a config that lists it.
+	if name == guards.RetiredGuardGitRemote {
+		hadGuards := len(cfg.Guards) > 0
+		cfg.Guards = slices.DeleteFunc(cfg.Guards, func(s string) bool { return s == name })
+		cfg.GuardsExtra = slices.DeleteFunc(cfg.GuardsExtra, func(s string) bool { return s == name })
+		// An explicit guards: list that only named git-remote selected
+		// the always-on guards; an empty one means the defaults. Keep
+		// the effective set by unguarding the default guards instead.
+		if hadGuards && len(cfg.Guards) == 0 {
+			for _, g := range guards.ByType("default") {
+				if !slices.Contains(cfg.Unguard, g.Name()) {
+					cfg.Unguard = append(cfg.Unguard, g.Name())
+				}
+			}
+		}
+		r.AddWarning("guard %q is retired and granted nothing; removed it from the config", name)
+		return r
+	}
+
 	// Validate guard exists
 	g, ok := guards.GuardByName(name)
 	if !ok {

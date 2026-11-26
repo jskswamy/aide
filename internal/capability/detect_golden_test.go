@@ -59,9 +59,9 @@ func TestDetectProject_Golden(t *testing.T) {
 		{"gcp via requirements", map[string]string{
 			"requirements.txt": "google-cloud-storage\n",
 		}, []string{"python", "gcp"}},
-		{"git-remote via config", map[string]string{
+		{"git remote suggests nothing", map[string]string{
 			".git/config": "[remote \"origin\"]\n\turl = git@github.com:x/y.git\n",
-		}, []string{"git-remote"}},
+		}, nil},
 
 		// 5 combo fixtures
 		{"go service + docker + ci", map[string]string{

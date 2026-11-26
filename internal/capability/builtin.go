@@ -248,13 +248,12 @@ func init() {
 			Writable:    []string{"~/.config/gh"},
 			EnvAllow:    []string{"GITHUB_TOKEN", "GH_TOKEN"},
 		},
+		// Retired: it only re-allowed outbound HTTPS, which the network
+		// rules already decide, so it never gated git remotes. Kept as a
+		// no-op so configs that list it still load.
 		"git-remote": {
 			Name:        "git-remote",
-			Description: "Git remote operations over HTTPS (port 443). For SSH-based remotes, also enable the 'ssh' capability.",
-			Markers: []Marker{
-				{Contains: ContainsSpec{File: ".git/config", Pattern: "[remote "}},
-			},
-			EnableGuard: []string{"git-remote"},
+			Description: "Retired: grants nothing. Git remotes follow the sandbox's network rules; remove this from your config.",
 		},
 		"gpg": {
 			Name:        "gpg",

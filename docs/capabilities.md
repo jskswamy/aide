@@ -78,7 +78,7 @@ one warns that this grants the whole capability.
 | Capability | What it unlocks | Paths | Key env vars |
 |------------|----------------|-------|-------------|
 | `github` | GitHub CLI and credentials | `~/.config/gh/` | `GITHUB_TOKEN`, `GH_TOKEN` |
-| `git-remote` | Git remote operations over HTTPS (port 443) - for SSH-based remotes, also enable `ssh` | - | - |
+| `git-remote` | Retired: grants nothing. Git remotes follow the sandbox's network rules (outbound by default; with `aide sandbox ports`, include 443 for HTTPS). Kept so configs that list it still load; remove it with `aide cap disable git-remote` | - | - |
 | `gpg` | GPG keys and signing | `~/.gnupg/` | `GNUPGHOME` |
 | `clipboard` | Read/write access to the system clipboard (macOS only) | - | - |
 | `gpu` | GPU compute and offscreen rendering (Metal, OpenGL, CUDA, ROCm, Vulkan); see [GPU](#gpu) | Linux only: GPU sysfs, driver registries, `/opt/rocm*` | Linux only: `CUDA_VISIBLE_DEVICES`, `NVIDIA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES` |

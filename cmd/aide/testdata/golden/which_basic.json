@@ -150,7 +150,6 @@
       }
     ],
     "available": [
-      "git-remote",
       "ssh"
     ],
     "network": "outbound only",
@@ -165,14 +164,6 @@
       }
     ]
   },
-  "suggested_caps": [
-    {
-      "confirmed_at": "0001-01-01T00:00:00Z",
-      "name": "git-remote",
-      "source": "detected",
-      "suggested": true
-    }
-  ],
   "warnings": [
     "⚠ profile \"work\": never synced — run `aide sync` to install declared plugins/MCP servers"
   ]

@@ -11,10 +11,10 @@ import (
 // as a command only when that file exists and is trusted: aide re-trusts
 // a file it writes only if it was trusted before, and an untrusted
 // .aide.yaml would not apply. Otherwise the steps include aide trust.
-func SuggestedCapability(name, marker string, opens []string, profile string, local *ProjectFile) Finding {
+func SuggestedCapability(name, why string, opens []string, profile string, local *ProjectFile) Finding {
 	f := Finding{
 		ID: "capability.suggested", Subject: name, Profile: profile, Severity: SeverityTip, WidensAccess: true,
-		Message: fmt.Sprintf("%s found, but the %s capability is not enabled", marker, name),
+		Message: fmt.Sprintf("%s, but the %s capability is not enabled", why, name),
 	}
 	if local != nil && local.State == "trusted" {
 		f.Layer, f.Source = "local", local.Path

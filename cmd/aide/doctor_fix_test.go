@@ -122,3 +122,20 @@ func TestDoctorFix_RefusedInsideSandbox(t *testing.T) {
 		t.Errorf("err = %v, want a refusal inside the sandbox", err)
 	}
 }
+
+func TestDoctorFix_SuggestionSaysWhy(t *testing.T) {
+	selectionEnv(t, "agents:\n  claude: {binary: claude}\nprofiles:\n  work: {agent: claude}\ndefault_profile: work\n")
+	repo, _ := os.Getwd()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module x\nrequire github.com/aws/aws-sdk-go-v2 v1.0.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findingsByID(t)["capability.suggested"] {
+		if f["subject"] == "aws" {
+			if msg, _ := f["message"].(string); !strings.HasPrefix(msg, `go.mod mentions "aws-sdk-go"`) {
+				t.Errorf("message = %q, want it to say what matched", msg)
+			}
+			return
+		}
+	}
+	t.Fatal("no aws suggestion")
+}

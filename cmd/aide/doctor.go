@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -425,7 +424,7 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		}
 		dir.Detected = append(dir.Detected, name)
 		c := capability.Builtins()[name]
-		here = append(here, doctor.SuggestedCapability(name, matchedMarker(projectFS, markersOf(name)), append(slices.Clone(c.Readable), c.Writable...), rc.Name, local))
+		here = append(here, doctor.SuggestedCapability(name, capability.MatchedReason(projectFS, markersOf(name)), append(slices.Clone(c.Readable), c.Writable...), rc.Name, local))
 	}
 	return dir, here, nil
 }
@@ -446,16 +445,6 @@ func projectFiles(cfg *config.Config, gate launcher.ProjectGate, home string) []
 		files = append(files, doctor.ProjectFile{Layer: l.Source, Path: homepath.Tilde(l.Path, home), State: state})
 	}
 	return files
-}
-
-// matchedMarker names the first marker present in the project.
-func matchedMarker(fsys fs.FS, markers []capability.Marker) string {
-	for _, m := range markers {
-		if capability.AnyMarkerMatches(fsys, []capability.Marker{m}) {
-			return cmp.Or(m.File, m.DirExists, m.GlobPath, m.Contains.File, "a project marker")
-		}
-	}
-	return "a project marker"
 }
 
 // redundantAllows checks the sandbox blocks that apply to the current

@@ -10,6 +10,7 @@ package capability
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"strings"
 )
@@ -147,6 +148,9 @@ func (m Marker) MatchSummary() string {
 // path within fsys and reports whether pattern appears as a substring.
 // Unreadable files yield false; pattern matches truncated to the read
 // boundary are accepted intentionally (matches Task 3 design doc).
+//
+// In go.mod, lines marked "// indirect" are skipped: a dependency pulled
+// in by another module says nothing about what the project itself uses.
 func containsInBoundedFileFS(fsys fs.FS, path, pattern string) bool {
 	f, err := fsys.Open(path)
 	if err != nil {
@@ -155,7 +159,49 @@ func containsInBoundedFileFS(fsys fs.FS, path, pattern string) bool {
 	defer func() { _ = f.Close() }()
 	buf := make([]byte, markerMaxReadSize)
 	n, _ := f.Read(buf)
-	return strings.Contains(string(buf[:n]), pattern)
+	text := string(buf[:n])
+	if path == "go.mod" || strings.HasSuffix(path, "/go.mod") {
+		for line := range strings.Lines(text) {
+			if !strings.Contains(line, "// indirect") && strings.Contains(line, pattern) {
+				return true
+			}
+		}
+		return false
+	}
+	return strings.Contains(text, pattern)
+}
+
+// Reason says in words what the marker looks for, for showing why a
+// capability was suggested.
+func (m Marker) Reason() string {
+	switch {
+	case m.File != "":
+		return m.File + " present"
+	case m.Contains.File != "":
+		return fmt.Sprintf("%s mentions %q", m.Contains.File, m.Contains.Pattern)
+	case m.GlobPath != "":
+		return m.GlobPath + " present"
+	case m.DirExists != "":
+		return m.DirExists + "/ directory present"
+	case m.GlobContains.Glob != "":
+		return fmt.Sprintf("a %s file mentions %q", m.GlobContains.Glob, m.GlobContains.Pattern)
+	}
+	return "a project marker"
+}
+
+// WhyDetected names the first of markers that matches in fsys, or "".
+func WhyDetected(fsys fs.FS, name string) string {
+	return MatchedReason(fsys, Builtins()[name].Markers)
+}
+
+// MatchedReason is the Reason of the first marker in ms that matches.
+func MatchedReason(fsys fs.FS, ms []Marker) string {
+	for _, m := range ms {
+		if m.Match(fsys) {
+			return m.Reason()
+		}
+	}
+	return ""
 }
 
 // AnyMarkerMatches reports whether at least one marker in ms matches

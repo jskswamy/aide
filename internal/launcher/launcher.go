@@ -1036,6 +1036,7 @@ func (l *Launcher) buildBannerData(
 					WritablePaths: capDef.Writable,
 					Suggested:     true,
 					Source:        "detected",
+					DetectionHint: capability.WhyDetected(os.DirFS(projectRoot), name),
 				})
 			}
 		}

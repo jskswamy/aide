@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jskswamy/aide/internal/config"
@@ -54,7 +55,7 @@ func TestDoctorHere_UntrustedProjectConfig(t *testing.T) {
 	}
 	fix, _ := f["project.untrusted"][0]["fix"].(map[string]any)
 	steps := names(fix["steps"])
-	if len(steps) == 0 || steps[len(steps)-1] != "Run: aide trust" {
+	if len(steps) == 0 || !strings.HasPrefix(steps[len(steps)-1], "Run: aide trust ") {
 		t.Errorf("steps = %v, want review then aide trust", steps)
 	}
 }

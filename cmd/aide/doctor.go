@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/jskswamy/aide/internal/capability"
 	"github.com/jskswamy/aide/internal/config"
@@ -106,7 +107,7 @@ func fixRefusal(r doctor.Report) error {
 
 // askFix shows one fix and asks for a yes on the terminal.
 func askFix(f doctor.Finding) bool {
-	fmt.Fprintf(os.Stderr, "\n%s\n  run: %s\n", f.Message, strings.Join(f.Fix.Argv, " "))
+	fmt.Fprintf(os.Stderr, "\n%s\n  run: %s\n", f.Message, doctor.ShellJoin(f.Fix.Argv))
 	if f.Source != "" {
 		fmt.Fprintf(os.Stderr, "  changes: %s (%s)\n", f.Source, f.Layer)
 	}
@@ -202,13 +203,19 @@ func ownedByHere(config []doctor.Finding, dir *doctor.Directory, here []doctor.F
 	})
 }
 
-var secretRef = regexp.MustCompile(`\.secrets\.([A-Za-z0-9_]+)`)
+var (
+	templateAction = regexp.MustCompile(`\{\{[^}]*\}\}`)
+	secretRef      = regexp.MustCompile(`\.secrets\.([A-Za-z0-9_]+)`)
+)
 
 // doctorDirectory resolves what launch would use here, without asking
 // anything, writing anything or decrypting secrets, and reports what
 // launch would warn about or fail on.
 func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *selectionFlags) (*doctor.Directory, []doctor.Finding, error) {
 	home, _ := os.UserHomeDir()
+	// Selection merges project and capability paths into the profile's
+	// sandbox block; the redundant-rule check needs each file's own.
+	pristine, _ := config.Load(config.Dir(), cwd)
 	res, err := previewSelection(cmd, cfg, cwd, home, sf)
 	if err != nil {
 		return nil, nil, err
@@ -219,7 +226,7 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		here = append(here, doctor.Finding{ID: id, Subject: subject, Profile: rc.Name, Severity: sev, Message: msg, Fix: doctor.Fix{Steps: steps}})
 	}
 
-	if tied := aidectx.TiedMatches(cfg, cwd, aidectx.GitRemotes(cwd)); len(tied) > 1 {
+	if tied := aidectx.TiedMatches(cfg, cwd, aidectx.GitRemotes(cwd)); rc.Source == aidectx.SourceMatch && len(tied) > 1 {
 		add("profile.match-tie", strings.Join(tied, ","), doctor.SeverityWarning,
 			fmt.Sprintf("profiles %s match this directory equally well; %s wins only because its name sorts first", strings.Join(tied, ", "), tied[0]),
 			"Make one profile's match rule more specific: aide profile bind <profile> --scope repo binds it to this repository", "See the rules with: aide profile list")
@@ -239,14 +246,35 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		if f.Status == "denied" {
 			add("project.denied", f.Path, doctor.SeverityTip, fmt.Sprintf("%s is denied, so it does not apply", f.Path), "To be asked again, run: aide untrust "+f.Path)
 		} else {
-			add("project.untrusted", f.Path, doctor.SeverityWarning, fmt.Sprintf("%s is not trusted, so it does not apply", f.Path), "Review "+f.Path, "Run: aide trust")
+			add("project.untrusted", f.Path, doctor.SeverityWarning, fmt.Sprintf("%s is not trusted, so it does not apply", f.Path), "Review "+f.Path, "Run: aide trust "+doctor.ShellQuote(layerPath(cfg, f.Source, f.Path)))
 		}
 	}
 
-	credCtx, _, credErr := launcher.PlanProfileCredentials(cfg, rc, res.Inputs, &res.Sel)
+	credCtx, credPlan, credErr := launcher.PlanProfileCredentials(cfg, rc, res.Inputs, &res.Sel)
 	rc.Context = credCtx
 	if credErr != nil {
 		add("credential.plan-failed", rc.Name, doctor.SeverityError, fmt.Sprintf("credentials cannot be planned: %v; launch would fail", credErr))
+	}
+	for _, b := range credPlan.Bindings {
+		// Launch refuses a selected keyless gateway off loopback.
+		if gw, ok := rc.Context.Gateways[b.Name]; ok {
+			if err := config.ValidateGatewayTarget(b.Name, gw); err != nil {
+				add("gateway.target-refused", b.Name, doctor.SeverityError, fmt.Sprintf("%v; launch would fail", err))
+			}
+		}
+		if b.Store == "" || b.Optional {
+			continue
+		}
+		path := config.ResolveSecretPath(b.Store)
+		if _, err := os.Stat(path); err != nil {
+			add("credential.store-missing", b.Name, doctor.SeverityError,
+				fmt.Sprintf("credential %q reads secret store %q, which does not exist; launch would fail", b.Name, b.Store),
+				fmt.Sprintf("Create it with: aide secrets create %s", b.Store))
+		} else if keys, known := secrets.KeyNames(path); known && !slices.Contains(keys, b.Key) {
+			add("credential.key-missing", b.Name, doctor.SeverityError,
+				fmt.Sprintf("credential %q needs key %q, which store %q does not have; launch would fail", b.Name, b.Key, b.Store),
+				fmt.Sprintf("Add %s to the store with: aide secrets edit %s", b.Key, b.Store))
+		}
 	}
 	harnessName := cfg.HarnessOf(rc.Context.Agent)
 	if d, ok := harness.Lookup(harnessName); ok && d.Reach != harness.ReachMulti && res.Sel.Gateway.Source == launcher.SourceUnset {
@@ -257,7 +285,7 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 
 	agent := rc.Context.Agent
 	// An agent missing from the agents map is config.unknown-agent.
-	if binary, err := launcher.ResolveAgentBinary(cfg, agent); err == nil && !filepath.IsAbs(binary) {
+	if binary, err := launcher.ResolveAgentBinary(cfg, agent); err == nil {
 		if _, err := exec.LookPath(binary); err != nil {
 			add("agent.not-found", agent, doctor.SeverityError, fmt.Sprintf("agent %q binary %q not found on PATH; launch would fail", agent, binary),
 				fmt.Sprintf("Install %s, or set agents.%s.binary", binary, agent))
@@ -273,7 +301,7 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		}
 		if keys, known := secrets.KeyNames(config.ResolveSecretPath(store)); known {
 			for name, val := range rc.Context.Env {
-				for _, m := range secretRef.FindAllStringSubmatch(val, -1) {
+				for _, m := range secretRef.FindAllStringSubmatch(strings.Join(templateAction.FindAllString(val, -1), " "), -1) {
 					if !slices.Contains(keys, m[1]) {
 						add("secret.key-missing", rc.Name+"."+name, doctor.SeverityError,
 							fmt.Sprintf("env var %s uses secret key %q, which store %q does not have; launch would fail", name, m[1], store),
@@ -292,7 +320,8 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 	}
 	sb, sbErr := launcher.ResolveSandbox(cfg, rc, launcher.SandboxInputs{
 		ProjectRoot: projectRoot, HomeDir: home,
-		Variants: sandbox.VariantSelectionOptions{Consent: consent.DefaultStore()},
+		Getenv:   launcher.PreviewGetenv(rc.Context.Env, home),
+		Variants: sandbox.VariantSelectionOptions{Consent: consent.DefaultStore(), EnvLookup: launcher.PreviewGetenv(rc.Context.Env, home)},
 	})
 	if sbErr != nil {
 		add("sandbox.resolve-failed", rc.Name, doctor.SeverityError, fmt.Sprintf("%v; launch would fail", sbErr))
@@ -319,7 +348,9 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 		}
 	}
 	dir.Network = "sandbox disabled"
-	if !sb.Disabled {
+	if sbErr != nil {
+		dir.Network = "unknown: the sandbox does not resolve"
+	} else if !sb.Disabled {
 		paths := sandbox.Paths{ProjectRoot: projectRoot, RuntimeDir: "/tmp/aide-preview", HomeDir: home, TempDir: os.TempDir()}
 		pol, pathWarnings, err := sandbox.PolicyFromConfig(sb.Config, paths)
 		switch {
@@ -348,7 +379,9 @@ func doctorDirectory(cmd *cobra.Command, cfg *config.Config, cwd string, sf *sel
 				"See which with: aide sandbox show")
 		}
 	}
-	here = append(here, redundantAllows(cfg, rc.Name, home)...)
+	if pristine != nil {
+		here = append(here, redundantAllows(pristine, cfg, rc.Name, home)...)
+	}
 	var disabled []string
 	if cfg.ProjectOverride != nil {
 		disabled = cfg.ProjectOverride.DisabledCapabilities
@@ -414,7 +447,7 @@ func matchedMarker(fsys fs.FS, markers []capability.Marker) string {
 // redundantAllows checks the sandbox blocks that apply to the current
 // profile: its own (or the named sandbox it uses) and each trusted
 // .aide.yaml.
-func redundantAllows(cfg *config.Config, profile, home string) []doctor.Finding {
+func redundantAllows(cfg, applied *config.Config, profile, home string) []doctor.Finding {
 	var out []doctor.Finding
 	if ref := cfg.Contexts[profile].Sandbox; ref != nil {
 		if ref.ProfileName != "" {
@@ -426,11 +459,20 @@ func redundantAllows(cfg *config.Config, profile, home string) []doctor.Finding 
 		}
 	}
 	for _, l := range cfg.ProjectLayers {
-		if l.Rejected || l.Override == nil {
+		// Trust is decided by selection, on the applied config.
+		if !slices.ContainsFunc(applied.ProjectLayers, func(a config.ProjectLayer) bool { return a.Path == l.Path && !a.Rejected }) {
 			continue
 		}
-		s := doctor.Scope{Profile: profile, Inherited: l.Source == config.LayerInherited, Source: homepath.Tilde(l.Path, home)}
-		out = append(out, doctor.RedundantAllows(l.Override.Sandbox, home, s)...)
+		// The loader rewrites relative paths; --remove matches the file's
+		// own text, so read the rules as written.
+		var raw config.ProjectOverride
+		if err := yaml.Unmarshal(l.Contents, &raw); err != nil {
+			continue
+		}
+		// Relative rules resolve against the checkout root, as the loader does.
+		base, _ := config.CheckoutRoot(filepath.Dir(l.Path))
+		s := doctor.Scope{Profile: profile, Inherited: l.Source == config.LayerInherited, Source: homepath.Tilde(l.Path, home), Base: base}
+		out = append(out, doctor.RedundantAllows(raw.Sandbox, home, s)...)
 	}
 	return out
 }
@@ -497,4 +539,15 @@ func deniedCapabilityPaths(profile string, caps []capability.ResolvedCapability,
 		}
 	}
 	return out
+}
+
+// layerPath is the real path of the .aide.yaml layer a trust entry
+// names; the entry itself holds a ~-shortened path for display.
+func layerPath(cfg *config.Config, source, display string) string {
+	for _, l := range cfg.ProjectLayers {
+		if l.Source == source {
+			return l.Path
+		}
+	}
+	return display
 }

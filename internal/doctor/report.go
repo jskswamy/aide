@@ -151,7 +151,7 @@ func (r Report) RenderText(w io.Writer) error {
 		}
 		fmt.Fprintf(&b, "  %s %s\n", marks[f.Severity], f.Message)
 		if len(f.Fix.Argv) > 0 {
-			fmt.Fprintf(&b, "      fix: %s\n", strings.Join(f.Fix.Argv, " "))
+			fmt.Fprintf(&b, "      fix: %s\n", ShellJoin(f.Fix.Argv))
 		}
 		for _, s := range f.Fix.Steps {
 			fmt.Fprintf(&b, "      → %s\n", s)

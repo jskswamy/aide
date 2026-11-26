@@ -31,7 +31,7 @@ func shouldNudgeForCmd(cmd *cobra.Command) bool {
 		return false
 	}
 	switch cmd.Name() {
-	case "migrate", "prompt", "statusline":
+	case "migrate", "prompt", "statusline", "doctor": // doctor promises to write nothing
 		return false
 	}
 	return true

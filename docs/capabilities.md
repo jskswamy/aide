@@ -85,13 +85,15 @@ one warns that this grants the whole capability.
 | `ccstatusline` | Read access to ccstatusline's settings, for `aide statusline` invoked from a ccstatusline Custom Command widget | `~/.config/ccstatusline/settings.json` | - |
 | `bivouac` | Read-only access to bivouac config and read/write access to bivouac/herdr state (`ssh` stays behind `--with ssh`) | `~/.config/bivouac` (read), `~/.local/state/bivouac`, `~/.local/state/.bivouac-state.json.lock`, `~/.local/state/herdr/client` | - |
 | `ponytail` | Read/write access to ponytail's band task ledger | `~/.config/ponytail/band` | - |
+| `rtk` | Read/write access to rtk's tracking database, tee spool and config, so its command-rewrite hook records savings under the sandbox | macOS: `~/Library/Application Support/rtk`; Linux: `~/.local/share/rtk`, `~/.config/rtk` (read) | - |
 | `skillshare` | Read-only access to the skills, agents and plugins [Skillshare](skillshare.md) links into agent config dirs | `skills/` and `agents/` in `$XDG_CONFIG_HOME/skillshare` (else `~/.config/skillshare`), `$XDG_STATE_HOME/skillshare/plugins` (else `~/.local/state/skillshare/plugins`), and the safe `sources:` paths of Skillshare's config | - |
 | `terminal-browser` | `terminal-browser` CLI data, state/runtime Unix sockets, read-only config, and interop dirs | Existing `terminal-browser-(dev-)?<8-hex>` dirs under XDG data/state/runtime, `~/.local/{state,share}/terminal-browser-interop` (or `$TERMINAL_BROWSER_INTEROP_DIR`), and `$XDG_CONFIG_HOME/terminal-browser` (or `$TERMINAL_BROWSER_CONFIG_DIR`, read-only) | `TERMINAL_BROWSER_CONFIG_DIR`, `TERMINAL_BROWSER_INTEROP_DIR`, `TERMINAL_BROWSER_INTEROP_TARGET`, `XDG_DATA_HOME`, `XDG_STATE_HOME` |
 
-Four built-ins auto-enable themselves when their tool is set up:
+Five built-ins auto-enable themselves when their tool is set up:
 `ccstatusline` when `~/.config/ccstatusline/settings.json` exists, `bivouac`
 when `~/.config/bivouac` exists, `ponytail` when `~/.config/ponytail` or a
-Skillshare ponytail plugin exists, and `skillshare` when Skillshare's config
+Skillshare ponytail plugin exists, `rtk` when its data dir (`~/Library/Application
+Support/rtk` on macOS, `~/.local/share/rtk` on Linux) exists, and `skillshare` when Skillshare's config
 dir (`$XDG_CONFIG_HOME/skillshare`, else `~/.config/skillshare`) exists. They
 are added to the effective capability set (and shown as enabled by `aide cap
 list`) without `--with` or a `capabilities:` entry. Opt out like any other

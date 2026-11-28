@@ -72,7 +72,7 @@
             "docker", "k8s", "helm", "terraform", "vault", "ssh",
             "npm", "go", "rust", "python", "ruby", "java",
             "github", "git-remote", "gpg", "clipboard",
-            "ccstatusline", "bivouac", "ponytail", "skillshare", "network"
+            "ccstatusline", "bivouac", "ponytail", "rtk", "skillshare", "network"
           ]
         },
         { "type": "string" }

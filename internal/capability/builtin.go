@@ -317,6 +317,7 @@ func init() {
 			Description: "ponytail's task ledger (read/write) so the band can record each task under the sandbox (auto-included when ponytail is set up).",
 			Writable:    []string{"~/.config/ponytail/band"},
 		},
+		"rtk": rtkCapability(runtime.GOOS),
 		// Readable paths depend on XDG dirs and Skillshare's config, so
 		// sandbox.AddDynamicPaths adds them at launch.
 		"skillshare": {
@@ -354,6 +355,26 @@ func init() {
 
 // gpuCapability builds the gpu builtin for goos, so tests can check every
 // OS. See docs/superpowers/specs/2026-11-23-gpu-capability-design.md.
+// rtkCapability grants rtk's own dirs, where its command-rewrite hook
+// keeps the tracking database, tee spool and config. rtk resolves them
+// with Rust's dirs crate: one Application Support dir on macOS, XDG data
+// (read/write) and config (read-only) on Linux.
+// shortcut: default locations only (as with bivouac); RTK_DB_PATH,
+// RTK_TEE_DIR and XDG_* overrides need writable_extra.
+func rtkCapability(goos string) Capability {
+	c := Capability{
+		Name:        "rtk",
+		Description: "rtk's tracking database, tee spool and config so its command-rewrite hook can record savings under the sandbox (auto-included when rtk's data dir exists).",
+	}
+	if goos == "darwin" {
+		c.Writable = []string{"~/Library/Application Support/rtk"}
+		return c
+	}
+	c.Readable = []string{"~/.config/rtk"}
+	c.Writable = []string{"~/.local/share/rtk"}
+	return c
+}
+
 func gpuCapability(goos string) Capability {
 	c := Capability{
 		Name:        "gpu",

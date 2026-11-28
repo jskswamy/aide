@@ -3,6 +3,7 @@ package capability
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 
 	"github.com/jskswamy/aide/internal/homepath"
@@ -28,6 +29,8 @@ const (
 //     can read their config and state;
 //   - "ponytail" when its config dir exists or Skillshare has it installed,
 //     so its band can write the task ledger;
+//   - "rtk" when its data dir exists, so its command-rewrite hook (which
+//     agents run inside the sandbox) can write its tracking database;
 //   - "skillshare" when Skillshare's config dir exists, so the agent can
 //     read the skills, agents and plugins Skillshare links into its
 //     config dir.
@@ -52,6 +55,8 @@ func AutoInclude(capNames, excluded []string, homeDir string, getenv func(string
 	_, err = os.Stat(homepath.Expand(bivouacConfigDir, homeDir))
 	capNames = autoInclude(capNames, excluded, "bivouac", err == nil)
 	capNames = autoInclude(capNames, excluded, "ponytail", ponytailInstalled(homeDir))
+	_, err = os.Stat(homepath.Expand(rtkCapability(runtime.GOOS).Writable[0], homeDir))
+	capNames = autoInclude(capNames, excluded, "rtk", err == nil)
 	return autoInclude(capNames, excluded, "skillshare", skillshare.Installed(homeDir, getenv))
 }
 

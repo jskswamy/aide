@@ -23,8 +23,8 @@ func TestBuiltins_AllPresent(t *testing.T) {
 }
 
 func TestBuiltins_Count(t *testing.T) {
-	if len(Builtins()) != 28 {
-		t.Errorf("expected 28 built-in capabilities, got %d", len(Builtins()))
+	if len(Builtins()) != 29 {
+		t.Errorf("expected 29 built-in capabilities, got %d", len(Builtins()))
 	}
 }
 
@@ -427,6 +427,23 @@ func TestBuiltin_Ponytail_Paths(t *testing.T) {
 	}
 	if len(c.Readable) != 0 || len(c.Markers) != 0 {
 		t.Errorf("ponytail is write-only and auto-included: %+v", c)
+	}
+}
+
+func TestBuiltin_Rtk_Paths(t *testing.T) {
+	if _, ok := Builtins()["rtk"]; !ok {
+		t.Fatal("missing built-in capability 'rtk'")
+	}
+	mac := rtkCapability("darwin")
+	if want := []string{"~/Library/Application Support/rtk"}; !reflect.DeepEqual(mac.Writable, want) || len(mac.Readable) != 0 {
+		t.Errorf("darwin: %+v, want Writable %v only", mac, want)
+	}
+	linux := rtkCapability("linux")
+	if want := []string{"~/.local/share/rtk"}; !reflect.DeepEqual(linux.Writable, want) {
+		t.Errorf("linux Writable = %v, want %v", linux.Writable, want)
+	}
+	if want := []string{"~/.config/rtk"}; !reflect.DeepEqual(linux.Readable, want) {
+		t.Errorf("linux Readable = %v, want %v", linux.Readable, want)
 	}
 }
 

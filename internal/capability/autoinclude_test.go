@@ -3,7 +3,10 @@ package capability
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/jskswamy/aide/internal/homepath"
 )
 
 func writeCcstatuslineSettings(t *testing.T, homeDir string) {
@@ -143,5 +146,25 @@ func TestAutoInclude_TerminalBrowserNotAutoIncluded(t *testing.T) {
 	}
 	if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 1 || got[0] != "k8s" {
 		t.Errorf("terminal-browser must require explicit opt-in, got %v", got)
+	}
+}
+
+func TestAutoInclude_RtkWhenDataDirExists(t *testing.T) {
+	homeDir := t.TempDir()
+	if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 1 {
+		t.Errorf("got %v, want [k8s] without rtk", got)
+	}
+	dataDir := homepath.Expand(rtkCapability(runtime.GOOS).Writable[0], homeDir)
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := AutoInclude([]string{"k8s"}, nil, homeDir, noEnv); len(got) != 2 || got[1] != "rtk" {
+		t.Errorf("got %v, want [k8s rtk]", got)
+	}
+	if got := AutoInclude([]string{"rtk"}, nil, homeDir, noEnv); len(got) != 1 {
+		t.Errorf("got %v, want [rtk] (not duplicated)", got)
+	}
+	if got := AutoInclude([]string{"k8s"}, []string{"rtk"}, homeDir, noEnv); len(got) != 1 {
+		t.Errorf("got %v, want [k8s] (exclusion honored)", got)
 	}
 }
